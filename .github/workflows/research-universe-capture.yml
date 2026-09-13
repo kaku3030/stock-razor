@@ -32,6 +32,10 @@ jobs:
           python scripts/compute_cross_sectional_rs.py \
             --input-dir artifacts/universe \
             --output artifacts/universe/rs_rankings.json
+      - name: Run historical RS replay
+        run: |
+          python scripts/run_rs_replay.py --input-dir artifacts/universe \
+            --output artifacts/universe/rs_replay.json
       - name: Upload universe captures
         if: always()
         uses: actions/upload-artifact@v4
