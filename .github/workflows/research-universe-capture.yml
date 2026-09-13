@@ -27,6 +27,11 @@ jobs:
           python scripts/capture_research_universe.py \
             --config config/research_universe_v0_1.json \
             --output-dir artifacts/universe
+      - name: Validate captured universe evidence
+        run: |
+          python scripts/validate_research_universe_capture.py \
+            --config config/research_universe_v0_1.json \
+            --input-dir artifacts/universe
       - name: Compute cross-sectional RS
         run: |
           python scripts/compute_cross_sectional_rs.py \
