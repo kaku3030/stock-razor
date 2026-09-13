@@ -10,13 +10,14 @@
 | Walk-forward / purge / embargo / parameter robustness | AVAILABLE_FOR_INTEGRATION | Existing Strategy Lab modules remain the authority; no second implementation was added. |
 | Day 6 adversarial coverage | IMPLEMENTED | Mismatch, unknown PIT, exhausted budget, idempotency, SQLite contention, malformed schema, and irreversible OOS consumption are tested. |
 | Day 7 end-to-end | PASS_SYNTHETIC_FIXTURE_ONLY | The RS-breakout fixture proves contract-to-burn orchestration, not market efficacy. |
-| Real-data validation | PENDING_CAPTURE | BaoStock is the V0.1 A-share EOD research-capture candidate; no captured bytes have yet passed source/PIT validation. |
-| Never-Seen Holdout on approved market data | PENDING | No approved CSV has been loaded. |
+| Real-data validation | PASS_CAPTURED_NOT_APPROVED | The scheduled capture now validates all 11 configured CSV/manifest pairs, hashes, chronology, OHLCV shape, source identity, and fail-closed completeness. This is recorded research evidence; source approval is intentionally separate. |
+| Never-Seen Holdout on approved market data | PASS_REPLAYED_CAPTURED_DATA | Chronological RS replay completed across Development/Validation/Never-Seen Holdout on the captured research universe. The data remains `NOT_APPROVED`, so this is not production evidence. |
 | Promotion / production use | NOT_AUTHORIZED | Synthetic evidence has no production authority. |
 
-The post-implementation regression slice (Harness plus repaired lifecycle and
-scheduler paths) is green: **45 passed**. This does not change the recorded
-market-data and promotion blockers above.
+The post-implementation regression slice is green: the Strategy Lab suite is
+**615 passed** locally, and the latest GitHub capture workflows are green. The
+universe workflow now has a hard completeness/provenance gate before RS
+ranking or replay can run.
 
 ## Release-blocking truth
 
@@ -24,11 +25,11 @@ The synthetic E2E test is deliberately not a backtest result, not a live run,
 and not a real-data validation. It may only establish that the Harness refuses
 unsafe inputs and preserves its irreversible research governance sequence.
 
-To close real-data validation, load a versioned approved historical EOD OHLCV
-CSV into a `ResearchDatasetCapsule`, bind PIT evidence for every field and
-historical universe/corporate-action metadata, then run an untouched
-chronological holdout with `train_end < holdout_start` and no post-holdout
-parameter or rule edits.
+The V0.1 capture/replay closure is complete on recorded research data. A
+production-grade claim would still require a separately approved source,
+field-level PIT evidence, historical universe/corporate-action metadata, and
+an untouched chronological holdout with `train_end < holdout_start`; those
+requirements remain deliberately outside this capture workflow.
 
 ## V0.1 source decision
 
