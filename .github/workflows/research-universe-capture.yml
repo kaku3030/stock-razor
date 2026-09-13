@@ -36,6 +36,11 @@ jobs:
         run: |
           python scripts/run_rs_replay.py --input-dir artifacts/universe \
             --output artifacts/universe/rs_replay.json
+      - name: Summarize RS replay
+        run: |
+          python scripts/summarize_rs_replay.py \
+            --input artifacts/universe/rs_replay.json \
+            --output artifacts/universe/rs_summary.json
       - name: Upload universe captures
         if: always()
         uses: actions/upload-artifact@v4
