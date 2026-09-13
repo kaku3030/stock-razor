@@ -13,6 +13,7 @@
 | Real-data validation | PASS_CAPTURED_NOT_APPROVED | The scheduled capture now validates all 11 configured CSV/manifest pairs, hashes, chronology, OHLCV shape, source identity, and fail-closed completeness. This is recorded research evidence; source approval is intentionally separate. |
 | Never-Seen Holdout on approved market data | PASS_REPLAYED_CAPTURED_DATA | Chronological RS replay completed across Development/Validation/Never-Seen Holdout on the captured research universe. The data remains `NOT_APPROVED`, so this is not production evidence. |
 | Promotion / production use | NOT_AUTHORIZED | Synthetic evidence has no production authority. |
+| Cross-source comparison | TOOLING_IMPLEMENTED | Offline comparator now fail-closes on same-source inputs, manifest/hash errors, adjustment mismatch, insufficient overlap, and OHLCV divergence. A second-source capture is still required before issuing a source-consistency claim. |
 
 The post-implementation regression slice is green: the Strategy Lab suite is
 **618 passed** locally, and the latest GitHub capture workflows are green. The
