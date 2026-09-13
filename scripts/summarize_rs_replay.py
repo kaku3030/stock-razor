@@ -13,5 +13,5 @@ def main():
     result={'schema':'radar-rs-summary-v0.1','source':str(a.input),'splits':{},'top_k':{}}
     for name,part in [('development',rows[:c1]),('validation',rows[c1:c2]),('never_seen_holdout',rows[c2:])]: result['splits'][name]=summarize(part, data.get('top_k',3))
     for k in (1,3,5): result['top_k'][str(k)]=summarize(rows,k)
-    a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(result,indent=2,sort_keys=True),encoding='utf-8'); print(json.dumps({'status':'SUMMARIZED','output':str(a.output)}))
+    a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(result,indent=2,sort_keys=True),encoding='utf-8'); print(json.dumps({'status':'SUMMARIZED','output':str(a.output),'summary':result}, sort_keys=True))
 if __name__=='__main__': main()
