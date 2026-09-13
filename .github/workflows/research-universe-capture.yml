@@ -1,0 +1,37 @@
+name: Research Universe Capture
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/rule-validation-harness-v0-1
+  schedule:
+    - cron: "45 22 * * 1-5"
+
+jobs:
+  capture-universe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install capture dependencies
+        run: python -m pip install --upgrade -r requirements.txt
+      - name: Validate research universe contract
+        run: python scripts/validate_research_universe.py --config config/research_universe_v0_1.json
+      - name: Capture frozen research universe
+        continue-on-error: true
+        run: |
+          python scripts/capture_research_universe.py \
+            --config config/research_universe_v0_1.json \
+            --output-dir artifacts/universe
+      - name: Upload universe captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-universe-${{ github.run_id }}
+          path: artifacts/universe/
+          if-no-files-found: warn
+          retention-days: 14
