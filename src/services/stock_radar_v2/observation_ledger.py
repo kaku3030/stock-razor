@@ -184,6 +184,10 @@ def observation_capture_record(
         "portfolio_admissible": observation.portfolio_admissible,
         "portfolio_block_reasons": list(observation.portfolio_block_reasons),
         "execution_feasible": observation.execution_feasible,
+        "execution_record_id": observation.execution_record_id,
+        "interrupted_reason": observation.interrupted_reason,
+        "confirmed_at": observation.confirmed_at,
+        "earliest_executable_at": observation.earliest_executable_at,
         "canonical_permission": observation.canonical_permission,
         "timestamps": _capture_timestamps(observation),
         "later_outcome_label": observation.later_outcome_label,
@@ -217,7 +221,9 @@ def observation_from_capture_record(record: Mapping[str, Any]) -> Observation:
         evidence_ids=tuple(record.get("evidence_ids", ())), strategy_gate_results=dict(record.get("strategy_gate_results", {})),
         strategy_eligible=record.get("strategy_eligible"), portfolio_admissible=record.get("portfolio_admissible"),
         portfolio_block_reasons=tuple(record.get("portfolio_block_reasons", ())), execution_feasible=record.get("execution_feasible"),
+        execution_record_id=record.get("execution_record_id"), interrupted_reason=record.get("interrupted_reason"),
         decision_available_at=record.get("timestamps", {}).get("decision_available_at"),
+        confirmed_at=record.get("confirmed_at"), earliest_executable_at=record.get("earliest_executable_at"),
         canonical_permission=str(record.get("canonical_permission", "UNKNOWN")), later_outcome_label=record.get("later_outcome_label"),
         censored=bool(record.get("censored", False)), mfe=record.get("mfe"), mae=record.get("mae"),
         universe_snapshot_id=record.get("universe_snapshot_id"), latency=LatencyTrace(**latency_values),
@@ -268,6 +274,8 @@ class ObservationCaptureWriter:
         return record
 
     def append_outcome(self, observation_id: str, **outcome: Any) -> dict[str, Any]:
+        if observation_id not in self._observations:
+            raise ValueError("outcome enrichment requires an existing observation")
         record = {"record_type": "outcome_enrichment", "schema_version": OBSERVATION_CAPTURE_CONTRACT_VERSION,
                   "observation_id": observation_id, **outcome}
         encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

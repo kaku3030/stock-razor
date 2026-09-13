@@ -73,3 +73,8 @@ def test_conflicting_outcome_enrichment_fails_loud(tmp_path):
     writer.append_outcome("o", later_outcome_label="WIN")
     with pytest.raises(ValueError, match="conflicting outcome"):
         writer.append_outcome("o", later_outcome_label="LOSS")
+
+
+def test_orphan_outcome_is_not_a_stable_id_join(tmp_path):
+    with pytest.raises(ValueError, match="existing observation"):
+        ObservationCaptureWriter(tmp_path / "capture.jsonl").append_outcome("missing", later_outcome_label="WIN")
