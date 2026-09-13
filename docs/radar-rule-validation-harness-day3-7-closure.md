@@ -15,7 +15,7 @@
 | Promotion / production use | NOT_AUTHORIZED | Synthetic evidence has no production authority. |
 
 The post-implementation regression slice is green: the Strategy Lab suite is
-**615 passed** locally, and the latest GitHub capture workflows are green. The
+**618 passed** locally, and the latest GitHub capture workflows are green. The
 universe workflow now has a hard completeness/provenance gate before RS
 ranking or replay can run.
 
