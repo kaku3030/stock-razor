@@ -50,3 +50,16 @@ def test_research_status_does_not_expose_token(monkeypatch):
     assert payload["research_only"] is True
     assert payload["production_promotion"] == "locked"
     assert "secret-value" not in str(payload)
+
+
+from api.v1.endpoints.research_validation import submit_research_config
+
+
+def test_research_task_id_is_deterministic():
+    config = ResearchValidationConfig(
+        rule_id="demo", symbol="SPY", development_end="2024-01-01",
+        validation_end="2025-01-01", holdout_id="holdout-v1",
+    )
+    first = asyncio.run(submit_research_config(config))
+    second = asyncio.run(submit_research_config(config))
+    assert first["task_id"] == second["task_id"]
