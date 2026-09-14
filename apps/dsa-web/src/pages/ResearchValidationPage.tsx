@@ -10,6 +10,29 @@ const ResearchValidationPage: React.FC = () => {
   const [counterfactual, setCounterfactual] = useState<Counterfactual | null>(null);
   const [error, setError] = useState('');
 
+  const loadLatestArtifact = async () => {
+    try {
+      const response = await fetch('/api/v1/research-validation/artifact');
+      if (!response.ok) throw new Error('artifact unavailable');
+      const payload = await response.json();
+      const files = payload.files || {};
+      const summaryFile = Object.entries(files).find(([name]) => name.endsWith('rs_summary.json'))?.[1] as Summary | undefined;
+      const counterfactualFile = Object.entries(files).find(([name]) => name.endsWith('counterfactual.json'))?.[1] as Counterfactual | undefined;
+      if (summaryFile) setSummary(summaryFile);
+      if (counterfactualFile) setCounterfactual(counterfactualFile);
+      setError(summaryFile || counterfactualFile ? '' : 'Artifact 中未找到研究 JSON');
+    } catch { setError('无法读取最新 Artifact，请确认服务端已配置 RADAR_GITHUB_TOKEN'); }
+  };
+
+  const submitResearch = async () => {
+    try {
+      const response = await fetch('/api/v1/research-validation/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rule_id: 'rs-baseline', symbol: 'universe', development_end: '2024-12-31', validation_end: '2025-12-31', holdout_id: 'never-seen-v0.1', research_only: true }) });
+      if (!response.ok) throw new Error('submit failed');
+      const payload = await response.json();
+      setError(`已登记研究任务：${payload.task_id}`);
+    } catch { setError('研究任务登记失败'); }
+  };
+
   const exportConfig = () => {
     const payload = { schema: 'radar-rule-validation-experiment-v0.1', rule_version: 'RS / baseline counterfactual v0.1', universe: 'frozen-research-universe-v0.1', symbols: 17, cost_bps: 10, slippage_bps: 5, splits: ['development', 'validation', 'never_seen_holdout'], production_promotion: 'LOCKED' };
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
@@ -42,7 +65,7 @@ const ResearchValidationPage: React.FC = () => {
           <label className="block text-sm">研究股票池<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value="Frozen universe · 17 symbols" readOnly /></label>
           <label className="block text-sm">加载 RS summary<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'summary')} /></label>
           <label className="block text-sm">加载 counterfactual<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'counterfactual')} /></label>
-          <button className="btn-primary w-full" type="button" onClick={exportConfig}>导出实验配置 JSON</button>\n          <button className="btn-secondary w-full" type="button" disabled>提交研究实验（即将开放）</button>
+          <button className="btn-primary w-full" type="button" onClick={exportConfig}>导出实验配置 JSON</button>\n          <button className="btn-secondary w-full" type="button" onClick={loadLatestArtifact}>读取最新 CI Artifact</button>\n          <button className="btn-secondary w-full" type="button" onClick={submitResearch}>登记研究实验（仅研究）</button>
           <p className="text-xs text-muted-text">参数提交会经过 PIT、预算和 Holdout 门禁。</p>
           {error && <p className="text-xs text-danger">{error}</p>}
         </div>
