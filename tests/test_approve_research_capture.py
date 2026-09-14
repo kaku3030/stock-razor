@@ -16,7 +16,10 @@ def _write_capture(tmp_path, payload=b"symbol,date,open,high,low,close,volume\nS
         "status": "CAPTURED_NOT_APPROVED",
         "raw_sha256": hashlib.sha256(payload).hexdigest(),
         "source_id": "test",
+        "endpoint_id": "history_eod",
         "market": "us",
+        "retrieved_at": "2026-01-01T00:00:00+00:00",
+        "adjustment": "unadjusted",
     }), encoding="utf-8")
     return csv_path, manifest_path
 
