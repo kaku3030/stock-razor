@@ -17,7 +17,7 @@ from .research_dataset import LateEventPolicy, ResearchDataEvent, ResearchDatase
 from .temporal_contract import canonical_utc_datetime
 
 
-def load_recorded_capture(csv_path: str | Path, manifest_path: str | Path) -> "MarketDataCapture":
+def load_recorded_capture(csv_path: str | Path, manifest_path: str | Path, *, require_pit_approved: bool = False) -> "MarketDataCapture":
     """Load one EOD capture only when its sidecar provenance verifies."""
     csv_file, manifest_file = Path(csv_path), Path(manifest_path)
     payload = csv_file.read_bytes()
