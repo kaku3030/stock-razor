@@ -22,8 +22,9 @@ def load_recorded_capture(csv_path: str | Path, manifest_path: str | Path, *, re
     csv_file, manifest_file = Path(csv_path), Path(manifest_path)
     payload = csv_file.read_bytes()
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    if manifest.get("status") != "CAPTURED_NOT_APPROVED":
-        raise ValueError("capture manifest is not approved for research: " + str(manifest.get("status")))
+    allowed_status = {"PIT_APPROVED"} if require_pit_approved else {"CAPTURED_NOT_APPROVED", "PIT_APPROVED"}
+    if manifest.get("status") not in allowed_status:
+        raise ValueError("capture manifest is not eligible for research: " + str(manifest.get("status")))
     digest = hashlib.sha256(payload).hexdigest()
     if manifest.get("raw_sha256") != digest:
         raise ValueError("capture manifest raw_sha256 mismatch")
