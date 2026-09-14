@@ -32,6 +32,19 @@ jobs:
           python scripts/validate_research_universe_capture.py \
             --config config/research_universe_v0_1.json \
             --input-dir artifacts/universe
+      - name: Capture AKShare cross-source sample
+        run: |
+          python scripts/capture_research_eod.py \
+            --market cn --source akshare --symbol sh.600000 \
+            --start 2015-01-01 --end "$(date -u +%Y-%m-%d)" \
+            --output artifacts/universe/cn_sh_600000_akshare.csv --retries 3
+      - name: Compare Baostock and AKShare sample
+        run: |
+          python scripts/compare_recorded_captures.py \
+            --left-csv artifacts/universe/cn_sh_600000.csv \
+            --left-manifest artifacts/universe/cn_sh_600000.csv.manifest.json \
+            --right-csv artifacts/universe/cn_sh_600000_akshare.csv \
+            --right-manifest artifacts/universe/cn_sh_600000_akshare.csv.manifest.json
       - name: Compute cross-sectional RS
         run: |
           python scripts/compute_cross_sectional_rs.py \
