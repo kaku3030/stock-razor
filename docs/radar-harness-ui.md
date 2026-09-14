@@ -79,3 +79,6 @@ python scripts/check_direct_market_sources.py --symbol 600000 --days 5
 ### Baostock 回补与校验
 
 `BaostockFetcher` 作为免费历史数据源，用于 A 股日线回补和交叉校验。每次请求都显式执行登录→查询→登出；登录失败、查询失败或空结果会进入统一回退链。Baostock 不覆盖美股、港股和北交所，这些代码会直接交给其他数据源处理。
+
+
+CI 快速门禁还会先编译新浪、腾讯、Baostock 和诊断脚本，语法错误会在联网测试前直接失败。
