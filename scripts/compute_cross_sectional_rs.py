@@ -23,6 +23,10 @@ def main() -> int:
     lookbacks = tuple(int(value) for value in args.lookbacks.split(","))
     rankings = {}
     for path in sorted(args.input_dir.glob("*.csv")):
+        # Cross-source mirror captures live beside the primary universe for
+        # artifact atomicity; they must never become extra securities.
+        if path.stem.endswith("_akshare"):
+            continue
         symbol, rows = _series(path)
         if not rows:
             continue
