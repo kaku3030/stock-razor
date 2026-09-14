@@ -112,6 +112,7 @@ def main() -> int:
     except Exception as exc:
         manifest = args.output.with_suffix(args.output.suffix + ".manifest.json")
         manifest.write_text(json.dumps({"source_id": source_id, "market": args.market, "endpoint_id": "history_eod", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "CAPTURE_BLOCKED", "error_type": type(exc).__name__, "error": str(exc)}, indent=2), encoding="utf-8")
+        print(json.dumps({"status": "CAPTURE_BLOCKED", "source_id": source_id, "market": args.market, "symbol": args.symbol, "error_type": type(exc).__name__, "error": str(exc)}, sort_keys=True))
         return 2
     with args.output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=("symbol", "date", "open", "high", "low", "close", "volume"))
