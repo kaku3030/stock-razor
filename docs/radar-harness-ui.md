@@ -71,3 +71,6 @@ python scripts/check_direct_market_sources.py --symbol 600000 --days 5
 
 
 脚本位置：`scripts/check_direct_market_sources.py`。退出码为 0 表示两个源均成功，非 0 仅表示本次诊断有源失败，不代表市场状态或策略结论。
+
+
+诊断脚本的离线行为由 `tests/test_direct_market_sources.py` 覆盖，成功与单源失败均不会访问外网。
