@@ -73,11 +73,11 @@ jobs:
       - name: Run baseline counterfactual on captured sample
         run: |
           if [ -f artifacts/universe/cn_sh_600000.csv ]; then
-            python scripts/run_baseline_counterfactual.py \\
-              --csv artifacts/universe/cn_sh_600000.csv \\
+            python scripts/run_baseline_counterfactual.py \
+              --csv artifacts/universe/cn_sh_600000.csv \
               > artifacts/universe/cn_sh_600000_counterfactual.json
           else
-            echo '{"status":"UNKNOWN","reason":"PRIMARY_CAPTURE_UNAVAILABLE"}' \\
+            echo '{"status":"UNKNOWN","reason":"PRIMARY_CAPTURE_UNAVAILABLE"}' \
               > artifacts/universe/cn_sh_600000_counterfactual.json
           fi
       - name: Upload universe captures
