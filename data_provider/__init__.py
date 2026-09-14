@@ -18,6 +18,7 @@
 5. BaostockFetcher (Priority 3) - 来自 baostock 库
 6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
 7. TencentFetcher (Priority 5) - 腾讯直连日 K 最终兜底
+8. SinaResearchFetcher (Priority 6) - 新浪直连研究兜底
 
 【未配置 TUSHARE_TOKEN 时】
 1. EfinanceFetcher (Priority 0) - 最高优先级，来自 efinance 库
@@ -27,7 +28,8 @@
 5. BaostockFetcher (Priority 3) - 来自 baostock 库
 6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
 7. TencentFetcher (Priority 5) - 腾讯直连日 K 最终兜底
-8. LongbridgeFetcher (Priority 5) - 长桥 OpenAPI（美股/港股兜底，与 Tencent 市场不重叠）
+8. SinaResearchFetcher (Priority 6) - 新浪直连研究兜底
+9. LongbridgeFetcher (Priority 5) - 长桥 OpenAPI（美股/港股兜底，与 Tencent 市场不重叠）
 
 提示：优先级数字越小越优先，同优先级按初始化顺序排列
 """
@@ -35,6 +37,7 @@
 from .base import BaseFetcher, DataFetcherManager
 from .efinance_fetcher import EfinanceFetcher
 from .tencent_fetcher import TencentFetcher
+from .sina_research_fetcher import SinaResearchFetcher
 from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
 from .tushare_fetcher import TushareFetcher
 from .pytdx_fetcher import PytdxFetcher
@@ -50,6 +53,7 @@ __all__ = [
     'DataFetcherManager',
     'EfinanceFetcher',
     'TencentFetcher',
+    'SinaResearchFetcher',
     'AkshareFetcher',
     'TushareFetcher',
     'PytdxFetcher',

@@ -63,7 +63,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-CURRENT_SCHEMA_VERSION = "2026-09-07-oos-consumption-ledger-v0.1"
+CURRENT_SCHEMA_VERSION = "2026-09-13-rule-validation-registry-v0.1"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -143,6 +143,43 @@ class OOSConsumptionEventRecord(Base):
     oos_end_utc_text = Column(String(40), nullable=False)
     event_kind = Column(String(32), nullable=False, index=True)
     declared_occurred_at_utc_text = Column(String(40), nullable=False)
+    recorded_at_utc_text = Column(String(40), nullable=False)
+
+
+class ExperimentBudgetPolicyRecord(Base):
+    """Frozen per-rule-family budget policy for the validation harness."""
+
+    __tablename__ = 'experiment_budget_policy_records'
+
+    rule_family_id = Column(String(128), primary_key=True)
+    budget_fingerprint = Column(String(64), nullable=False)
+    max_trials = Column(Integer, nullable=False)
+    max_parameter_sets = Column(Integer, nullable=False)
+    max_model_calls = Column(Integer, nullable=False)
+    max_human_mutations = Column(Integer, nullable=False)
+    registered_at_utc_text = Column(String(40), nullable=False)
+
+
+class ExperimentRegistryReservationRecord(Base):
+    """Append-only, budget-consuming experiment registration."""
+
+    __tablename__ = 'experiment_registry_reservation_records'
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    registration_id = Column(Integer, primary_key=True, autoincrement=True)
+    operation_id = Column(String(128), unique=True, nullable=False, index=True)
+    operation_fingerprint = Column(String(64), nullable=False)
+    experiment_id = Column(String(128), unique=True, nullable=False, index=True)
+    manifest_hash = Column(String(64), nullable=False)
+    contract_fingerprint = Column(String(64), nullable=False)
+    rule_family_id = Column(String(128), nullable=False, index=True)
+    budget_fingerprint = Column(String(64), nullable=False)
+    reserved_trials = Column(Integer, nullable=False)
+    reserved_parameter_sets = Column(Integer, nullable=False)
+    reserved_model_calls = Column(Integer, nullable=False)
+    reserved_human_mutations = Column(Integer, nullable=False)
+    decision_time_utc_text = Column(String(40), nullable=False)
+    declared_at_utc_text = Column(String(40), nullable=False)
     recorded_at_utc_text = Column(String(40), nullable=False)
 
 
@@ -1436,6 +1473,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # migration version is stamped: a malformed/partial Ledger table
             # must fail closed without recording the version as applied.
             self._ensure_oos_consumption_ledger_schema()
+            self._ensure_rule_validation_registry_schema()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
 
@@ -1616,6 +1654,76 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         if problems:
             raise RuntimeError(
                 "OOS Consumption Ledger schema validation failed -- refusing to stamp "
+                "the migration version: " + "; ".join(problems)
+            )
+
+    def _ensure_rule_validation_registry_schema(self) -> None:
+        """Create and fail-closed validate the Harness registry tables."""
+
+        if not self._is_sqlite_engine:
+            return
+        inspector = inspect(self._engine)
+        for table in (ExperimentBudgetPolicyRecord.__table__, ExperimentRegistryReservationRecord.__table__):
+            if not inspector.has_table(table.name):
+                table.create(self._engine, checkfirst=True)
+        inspector = inspect(self._engine)
+        required_columns = {
+            ExperimentBudgetPolicyRecord.__tablename__: {
+                "rule_family_id": True, "budget_fingerprint": True, "max_trials": True,
+                "max_parameter_sets": True, "max_model_calls": True,
+                "max_human_mutations": True, "registered_at_utc_text": True,
+            },
+            ExperimentRegistryReservationRecord.__tablename__: {
+                "registration_id": True, "operation_id": True, "operation_fingerprint": True,
+                "experiment_id": True, "manifest_hash": True, "contract_fingerprint": True,
+                "rule_family_id": True, "budget_fingerprint": True, "reserved_trials": True,
+                "reserved_parameter_sets": True, "reserved_model_calls": True,
+                "reserved_human_mutations": True, "decision_time_utc_text": True,
+                "declared_at_utc_text": True, "recorded_at_utc_text": True,
+            },
+        }
+        temporal_columns = {
+            ExperimentBudgetPolicyRecord.__tablename__: {"registered_at_utc_text"},
+            ExperimentRegistryReservationRecord.__tablename__: {
+                "decision_time_utc_text", "declared_at_utc_text", "recorded_at_utc_text"
+            },
+        }
+        primary_keys = {
+            ExperimentBudgetPolicyRecord.__tablename__: ["rule_family_id"],
+            ExperimentRegistryReservationRecord.__tablename__: ["registration_id"],
+        }
+        unique_columns = {
+            ExperimentRegistryReservationRecord.__tablename__: ("operation_id", "experiment_id"),
+        }
+        problems: list[str] = []
+        for table_name, specification in required_columns.items():
+            columns = {column["name"]: column for column in inspector.get_columns(table_name)}
+            for column_name, not_null in specification.items():
+                column = columns.get(column_name)
+                if column is None:
+                    problems.append(f"table {table_name!r} is missing required column {column_name!r}")
+                    continue
+                if not_null and column.get("nullable", True):
+                    problems.append(f"table {table_name!r} column {column_name!r} must be NOT NULL")
+                if column_name in temporal_columns[table_name] and not any(
+                    token in str(column["type"]).upper() for token in ("CHAR", "TEXT", "CLOB")
+                ):
+                    problems.append(f"table {table_name!r} column {column_name!r} must be TEXT-affine")
+            if list(inspector.get_pk_constraint(table_name).get("constrained_columns") or []) != primary_keys[table_name]:
+                problems.append(f"table {table_name!r} primary key must be {primary_keys[table_name]!r}")
+            for column_name in unique_columns.get(table_name, ()):
+                if not self._has_exact_single_column_unique(inspector, table_name, column_name):
+                    problems.append(f"table {table_name!r} lacks dedicated UNIQUE on {column_name!r}")
+        with self._engine.connect() as connection:
+            ddl = connection.exec_driver_sql(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=:name",
+                {"name": ExperimentRegistryReservationRecord.__tablename__},
+            ).scalar_one_or_none()
+        if not ddl or "AUTOINCREMENT" not in ddl.upper():
+            problems.append("experiment registry reservations must use AUTOINCREMENT")
+        if problems:
+            raise RuntimeError(
+                "Rule Validation Harness registry schema validation failed -- refusing to stamp "
                 "the migration version: " + "; ".join(problems)
             )
 

@@ -10,8 +10,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 from requests import Response
+import requests
 
+from data_provider.base import DataFetchError, RateLimitError
 from data_provider.tencent_fetcher import TencentFetcher, _to_tencent_symbol
 
 
@@ -440,3 +443,41 @@ def test_tencent_fetcher_rejects_capped_incomplete_history() -> None:
 
     assert ",day,2020-01-01,2026-05-10,800,qfq" in captured["params"]["param"]
     assert df.empty
+
+
+def test_tencent_transport_failure_is_normalized(monkeypatch):
+    def failed_get(*args, **kwargs):
+        raise requests.Timeout("timed out")
+
+    monkeypatch.setattr("data_provider.tencent_fetcher.requests.get", failed_get)
+    with pytest.raises(DataFetchError, match="Tencent request failed"):
+        TencentFetcher()._fetch_raw_data("600000", "2024-01-01", "2024-01-02")
+
+
+def test_tencent_429_is_rate_limit_error(monkeypatch):
+    response = Response()
+    response.status_code = 429
+
+    def limited_get(*args, **kwargs):
+        raise requests.HTTPError("429", response=response)
+
+    monkeypatch.setattr("data_provider.tencent_fetcher.requests.get", limited_get)
+    with pytest.raises(RateLimitError):
+        TencentFetcher()._fetch_raw_data("600000", "2024-01-01", "2024-01-02")
+
+
+def test_direct_cn_fallback_sources_are_registered():
+    from data_provider.base import DataFetcherManager
+
+    support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
+    assert support["TencentFetcher"] == {"cn"}
+    assert support["SinaResearchFetcher"] == {"cn"}
+
+
+def test_manager_initializes_dual_direct_fallback_instances(monkeypatch):
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("TICKFLOW_API_KEY", raising=False)
+    from data_provider.base import DataFetcherManager
+
+    names = {fetcher.name for fetcher in DataFetcherManager()._get_fetchers_snapshot()}
+    assert {"TencentFetcher", "SinaResearchFetcher"} <= names

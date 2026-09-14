@@ -476,8 +476,18 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
 
                 self.assertFalse(service.status()["running"])
                 self.assertIn("exited without a result", service.status()["last_error"])
-                with self.assertRaises(ProcessLookupError):
+                try:
                     os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    # Some container PID 1 implementations do not reap an
+                    # orphan immediately.  A zombie is terminated, not a
+                    # live descendant, and is therefore an acceptable result.
+                    stat_path = Path(f"/proc/{child_pid}/stat")
+                    self.assertTrue(stat_path.exists())
+                    state = stat_path.read_text(encoding="utf-8").split()[2]
+                    self.assertEqual(state, "Z")
             finally:
                 if process_group_id is not None:
                     try:
@@ -518,8 +528,14 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
                         time.sleep(0.05)
 
                 self.assertFalse(service.status()["running"])
-                with self.assertRaises(ProcessLookupError):
+                try:
                     os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    stat_path = Path(f"/proc/{child_pid}/stat")
+                    if stat_path.exists():
+                        self.assertEqual(stat_path.read_text(encoding="utf-8").split()[2], "Z")
             finally:
                 for group_id in (child_pid, process_group_id):
                     if group_id is None:

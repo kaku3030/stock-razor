@@ -7,7 +7,7 @@ import json
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional, Tuple, get_args
 
 from data_provider.base import canonical_stock_code, normalize_stock_code
@@ -161,6 +161,7 @@ class DecisionSignalService:
             )
             self._invalidate_history_bound_if_superseded(result.row.id)
 
+        self.repo.expire_due_signals()
         final_row = self.repo.get(result.row.id)
         if final_row is None:
             raise DecisionSignalStorageError(
@@ -662,9 +663,19 @@ class DecisionSignalService:
             metadata["market_phase_summary"] = sanitized_phase_summary
             payload["metadata"] = metadata
 
+        # History reports may carry the session phase only in metadata.  Use it
+        # when deriving the lifecycle horizon; otherwise an intraday report is
+        # incorrectly persisted as the generic multi-day default.
+        phase_for_horizon = payload.get("market_phase")
+        if not phase_for_horizon:
+            phase_metadata = payload.get("metadata")
+            if isinstance(phase_metadata, dict):
+                summary = phase_metadata.get("market_phase_summary")
+                if isinstance(summary, dict):
+                    phase_for_horizon = summary.get("phase")
         horizon = payload.get("horizon") or self._default_horizon(
             action=str(payload.get("action") or ""),
-            market_phase=payload.get("market_phase"),
+            market_phase=phase_for_horizon,
         )
         if horizon:
             payload["horizon"] = horizon
@@ -702,14 +713,10 @@ class DecisionSignalService:
         if value.tzinfo is not None:
             return to_utc_naive_datetime(value)
 
-        local_tz = datetime.now().astimezone().tzinfo
-        if local_tz is None or local_tz.utcoffset(value) is None:
-            return to_utc_naive_datetime(value)
-
-        try:
-            return value.replace(tzinfo=local_tz).astimezone(timezone.utc).replace(tzinfo=None)
-        except (OverflowError, OSError):
-            return to_utc_naive_datetime(value)
+        # Database timestamps are persisted as naive UTC values.  Interpreting
+        # them in the host's local timezone makes a backfilled signal appear
+        # hours in the future on non-UTC runners.
+        return to_utc_naive_datetime(value)
 
     def _invalidate_history_bound_if_superseded(self, signal_id: int) -> None:
         row = self.repo.get(signal_id)

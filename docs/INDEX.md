@@ -47,6 +47,8 @@
 | [实时告警中心](alerts.md) | EventMonitor 基线、Web 规则管理、通知结果、冷却状态和 Phase 边界 |
 | [DecisionSignal 决策信号专题](decision-signals.md) | AI 建议池字段语义、API、Web 展示、告警/通知/组合风险联动、后验评估、脱敏、迁移与回滚 |
 | [Strategy Lab V0.1 冻结规格](strategy-lab-v0.1-spec-freeze.md) | Stock Radar 策略验证基础设施的冻结范围、Hard Gate、永久对抗测试、验收矩阵与非目标 |
+| [Radar Rule Validation Harness V0.1](radar-rule-validation-harness-v0.1.md) | 规则合同、PIT/anti-leak preflight、原子实验预算 Registry、Never-Seen Holdout 边界、counterfactual 计划与 OSS-first 决策记录 |
+| [Radar Rule Validation Harness Day 3–7 closure](radar-rule-validation-harness-day3-7-closure.md) | Dataset Capsule、reservation→OOS 编排、合成 fixture E2E 与真实数据/Promotion 阻塞状态 |
 | [ResearchArtifact 结构化研究产物](research-artifact.md) | structured_report 字段、Thesis / Evidence / Invalidation / Next Action / Data Quality 契约和旧报告兼容边界 |
 | [资讯 / 情报源](intelligence-sources.md) | RSS/Atom 合规资讯源配置、测试、拉取、去重、存储、查询与安全边界 |
 | [分析上下文包契约、运行态消费与可见性](analysis-context-pack.md) | AnalysisContextPack 首版范围、字段质量状态、P1/P2 内部契约、P3 Prompt 摘要消费、P4 历史/API/Web 低敏可见性、P5 数据质量评分、P6 迁移回滚与源码锚点；完整指南补充 #1386 阶段感知分析、迁移与回滚入口 |
