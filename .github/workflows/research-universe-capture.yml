@@ -35,22 +35,27 @@ jobs:
       - name: Capture AKShare cross-source sample
         continue-on-error: true
         run: |
-          python scripts/capture_research_eod.py \
-            --market cn --source akshare --symbol sh.600000 \
-            --start 2015-01-01 --end "$(date -u +%Y-%m-%d)" \
-            --output artifacts/universe/cn_sh_600000_akshare.csv --retries 3
+          for symbol in sh.600000 sh.000001 sz.300750; do
+            safe_symbol=${symbol//./_}
+            python scripts/capture_research_eod.py \
+              --market cn --source akshare --symbol "$symbol" \
+              --start 2015-01-01 --end "$(date -u +%Y-%m-%d)" \
+              --output "artifacts/universe/cn_${safe_symbol}_akshare.csv" --retries 3 || true
+          done
       - name: Compare Baostock and AKShare sample
         run: |
-          if [ -f artifacts/universe/cn_sh_600000_akshare.csv ] && \
-             [ -f artifacts/universe/cn_sh_600000_akshare.csv.manifest.json ]; then
-            python scripts/compare_recorded_captures.py \
-              --left-csv artifacts/universe/cn_sh_600000.csv \
-              --left-manifest artifacts/universe/cn_sh_600000.csv.manifest.json \
-              --right-csv artifacts/universe/cn_sh_600000_akshare.csv \
-              --right-manifest artifacts/universe/cn_sh_600000_akshare.csv.manifest.json
-          else
-            echo '{"status":"UNKNOWN","reason":"AKSHARE_CAPTURE_UNAVAILABLE"}'
-          fi
+          for symbol in sh.600000 sh.000001 sz.300750; do
+            safe_symbol=${symbol//./_}
+            right="artifacts/universe/cn_${safe_symbol}_akshare.csv"
+            if [ -f "$right" ] && [ -f "$right.manifest.json" ]; then
+              python scripts/compare_recorded_captures.py \
+                --left-csv "artifacts/universe/cn_${safe_symbol}.csv" \
+                --left-manifest "artifacts/universe/cn_${safe_symbol}.csv.manifest.json" \
+                --right-csv "$right" --right-manifest "$right.manifest.json"
+            else
+              echo "{\"status\":\"UNKNOWN\",\"reason\":\"AKSHARE_CAPTURE_UNAVAILABLE\",\"symbol\":\"$symbol\"}"
+            fi
+          done
       - name: Compute cross-sectional RS
         run: |
           python scripts/compute_cross_sectional_rs.py \
