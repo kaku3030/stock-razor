@@ -135,4 +135,4 @@ jobs:
             tests/test_run_stock_radar_technical_state.py
 
       - name: Import smoke test for US research scan
-        run: python -c "import scripts.run_us_research_scan; import scripts.run_stock_radar_qa; import scripts.run_stock_radar_technical_state; print('research runtime imports ok')"
+        run: python -c "import scripts.run_us_research_scan; import scripts.run_stock_radar_qa; import scripts.run_stock_radar_technical_state; import scripts.check_direct_market_sources; print('research runtime imports ok')"
