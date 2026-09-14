@@ -38,6 +38,7 @@ on:
       - "tests/test_sina_research_fetcher.py"
       - "tests/test_tencent_fetcher.py"
       - "tests/test_direct_market_sources.py"
+      - "tests/test_baostock_fetcher.py"
       - "tests/test_candidate_pool_industry_metrics.py"
       - "tests/test_candidate_pool_financials.py"
       - "tests/test_industry_radar.py"
@@ -92,6 +93,7 @@ jobs:
             tests/test_sina_research_fetcher.py \
             tests/test_tencent_fetcher.py \
             tests/test_direct_market_sources.py \
+            tests/test_baostock_fetcher.py \
             tests/test_candidate_pool_repo.py \
             tests/test_candidate_pool_industry_metrics.py \
             tests/test_candidate_pool_financials.py \
