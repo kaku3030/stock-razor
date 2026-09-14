@@ -48,3 +48,6 @@ Harness 的 A 股日线管理器已接入 `SinaResearchFetcher`（Priority 6）�
 
 
 运维覆盖：可设置 `STOCK_RAZOR_SINA_KLINE_URL` 替换接口地址，`STOCK_RAZOR_SINA_TIMEOUT_SECONDS` 调整超时（最低 1 秒）。默认配置无需额外 Key 或积分。
+
+
+双直连回退顺序：常规数据源失败后，先尝试 `TencentFetcher`，再尝试 `SinaResearchFetcher`；两者均只提供 A 股日线研究回退，不改变主数据源优先级。
