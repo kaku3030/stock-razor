@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from scripts.approve_research_capture import main
+from src.services.strategy_lab.market_data_capture import load_recorded_capture
 
 
 def _write_capture(tmp_path, payload=b"symbol,date,open,high,low,close,volume\nSPY,2025-01-01,1,2,0.5,1.5,100\n"):
@@ -44,3 +45,15 @@ def test_approval_rejects_hash_mismatch(tmp_path, monkeypatch):
     ])
     with pytest.raises(ValueError, match="sha256 mismatch"):
         main()
+
+
+def test_approved_capture_enters_strict_pit_mode(tmp_path, monkeypatch):
+    csv_path, manifest_path = _write_capture(tmp_path)
+    monkeypatch.setattr(sys, "argv", [
+        "approve_research_capture.py", "--csv", str(csv_path),
+        "--manifest", str(manifest_path), "--approver", "reviewer-1",
+        "--reason", "PIT review completed",
+    ])
+    assert main() == 0
+    capture = load_recorded_capture(csv_path, manifest_path, require_pit_approved=True)
+    assert capture.source_id == "test"
