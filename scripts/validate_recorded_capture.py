@@ -19,8 +19,9 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--dataset-id", required=True)
     parser.add_argument("--dataset-version", required=True)
+    parser.add_argument("--require-pit-approved", action="store_true")
     args = parser.parse_args()
-    capture = load_recorded_capture(args.csv, args.manifest)
+    capture = load_recorded_capture(args.csv, args.manifest, require_pit_approved=args.require_pit_approved)
     capsule = capture.to_capsule(args.dataset_id, args.dataset_version)
     print(json.dumps({"status": "VALIDATED", "dataset_id": capsule.dataset_id,
                       "dataset_version": capsule.dataset_version,
