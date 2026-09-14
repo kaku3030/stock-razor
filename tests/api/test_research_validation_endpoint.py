@@ -37,3 +37,16 @@ def test_research_config_rejects_inverted_dates():
         assert "development_end must be before validation_end" in str(exc)
     else:
         raise AssertionError("inverted dates were accepted")
+
+
+import asyncio
+from api.v1.endpoints.research_validation import get_research_status
+
+
+def test_research_status_does_not_expose_token(monkeypatch):
+    monkeypatch.setenv("RADAR_GITHUB_TOKEN", "secret-value")
+    payload = asyncio.run(get_research_status())
+    assert payload["artifact_proxy_configured"] is True
+    assert payload["research_only"] is True
+    assert payload["production_promotion"] == "locked"
+    assert "secret-value" not in str(payload)
