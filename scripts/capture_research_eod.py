@@ -30,6 +30,16 @@ def capture_baostock(symbol: str, start: str, end: str):
         bs.logout()
 
 
+def _resolve_column(frame, *aliases: str) -> str:
+    """Resolve provider-specific OHLCV column names without assuming one schema."""
+    available = {str(column).strip().lower(): column for column in frame.columns}
+    for alias in aliases:
+        column = available.get(alias.strip().lower())
+        if column is not None:
+            return column
+    raise KeyError(aliases[0])
+
+
 def capture_akshare(symbol: str, start: str, end: str):
     import akshare as ak
     numeric = symbol.split(".", 1)[-1]
@@ -48,16 +58,24 @@ def capture_akshare(symbol: str, start: str, end: str):
             end_date=end.replace("-", ""), adjust="",
         )
         columns = {"date": "date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "vol"}
+    resolved = {
+        "date": _resolve_column(frame, columns["date"], "date", "日期", "时间"),
+        "open": _resolve_column(frame, columns["open"], "open", "开盘"),
+        "high": _resolve_column(frame, columns["high"], "high", "最高"),
+        "low": _resolve_column(frame, columns["low"], "low", "最低"),
+        "close": _resolve_column(frame, columns["close"], "close", "收盘"),
+        "volume": _resolve_column(frame, columns["volume"], "volume", "vol", "成交量", "成交额"),
+    }
     rows = []
     for _, row in frame.iterrows():
         rows.append({
             "symbol": symbol,
-            "date": str(row[columns["date"]]),
-            "open": float(row[columns["open"]]),
-            "high": float(row[columns["high"]]),
-            "low": float(row[columns["low"]]),
-            "close": float(row[columns["close"]]),
-            "volume": float(row[columns["volume"]]),
+            "date": str(row[resolved["date"]]),
+            "open": float(row[resolved["open"]]),
+            "high": float(row[resolved["high"]]),
+            "low": float(row[resolved["low"]]),
+            "close": float(row[resolved["close"]]),
+            "volume": float(row[resolved["volume"]]),
         })
     return rows
 
