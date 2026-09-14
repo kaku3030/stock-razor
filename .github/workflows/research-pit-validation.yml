@@ -69,7 +69,7 @@ jobs:
           APPROVER: ${{ inputs.approver }}
           REASON: ${{ inputs.reason }}
         run: |
-          shopt -s nullglob
+          shopt -s nullglob globstar
           manifests=(artifacts/pit/data/**/*.manifest.json artifacts/pit/data/*.manifest.json)
           test "${#manifests[@]}" -gt 0
           for manifest in "${manifests[@]}"; do
