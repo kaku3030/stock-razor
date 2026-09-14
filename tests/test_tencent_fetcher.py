@@ -472,3 +472,12 @@ def test_direct_cn_fallback_sources_are_registered():
     support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
     assert support["TencentFetcher"] == {"cn"}
     assert support["SinaResearchFetcher"] == {"cn"}
+
+
+def test_manager_initializes_dual_direct_fallback_instances(monkeypatch):
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("TICKFLOW_API_KEY", raising=False)
+    from data_provider.base import DataFetcherManager
+
+    names = {fetcher.name for fetcher in DataFetcherManager()._get_fetchers_snapshot()}
+    assert {"TencentFetcher", "SinaResearchFetcher"} <= names
