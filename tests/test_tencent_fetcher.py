@@ -11,7 +11,9 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 from requests import Response
+import requests
 
+from data_provider.base import DataFetchError, RateLimitError
 from data_provider.tencent_fetcher import TencentFetcher, _to_tencent_symbol
 
 
@@ -440,3 +442,24 @@ def test_tencent_fetcher_rejects_capped_incomplete_history() -> None:
 
     assert ",day,2020-01-01,2026-05-10,800,qfq" in captured["params"]["param"]
     assert df.empty
+
+
+def test_tencent_transport_failure_is_normalized(monkeypatch):
+    def failed_get(*args, **kwargs):
+        raise requests.Timeout("timed out")
+
+    monkeypatch.setattr("data_provider.tencent_fetcher.requests.get", failed_get)
+    with pytest.raises(DataFetchError, match="Tencent request failed"):
+        TencentFetcher().get_daily_data("600000", start_date="2024-01-01", end_date="2024-01-02")
+
+
+def test_tencent_429_is_rate_limit_error(monkeypatch):
+    response = Response()
+    response.status_code = 429
+
+    def limited_get(*args, **kwargs):
+        raise requests.HTTPError("429", response=response)
+
+    monkeypatch.setattr("data_provider.tencent_fetcher.requests.get", limited_get)
+    with pytest.raises(RateLimitError):
+        TencentFetcher().get_daily_data("600000", start_date="2024-01-01", end_date="2024-01-02")
