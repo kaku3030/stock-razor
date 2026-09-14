@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 type Summary = { splits?: Record<string, { average_forward_return?: number; win_rate?: number; observations?: number }>; top_k?: Record<string, { average_forward_return?: number; win_rate?: number }> };
 type Counterfactual = { variants?: Record<string, { cumulative_return_net?: number; hit_rate?: number; max_drawdown?: number; coverage?: number }> };
+type SourceStatus = { status: string; markets: string[]; auth: string };
 
 const pct = (value?: number) => value == null ? '--' : `${(value * 100).toFixed(2)}%`;
 
@@ -15,9 +16,10 @@ const ResearchValidationPage: React.FC = () => {
   const [developmentEnd, setDevelopmentEnd] = useState('2024-12-31');
   const [validationEnd, setValidationEnd] = useState('2025-12-31');
   const [proxyReady, setProxyReady] = useState<boolean | null>(null);
+  const [dataSources, setDataSources] = useState<Record<string, SourceStatus>>({});
 
   useEffect(() => {
-    fetch('/api/v1/research-validation/status').then((response) => response.ok ? response.json() : null).then((payload) => { const ready = payload?.artifact_proxy_configured ?? false; setProxyReady(ready); if (ready) loadLatestArtifact(); }).catch(() => setProxyReady(false));
+    fetch('/api/v1/research-validation/status').then((response) => response.ok ? response.json() : null).then((payload) => { const ready = payload?.artifact_proxy_configured ?? false; setProxyReady(ready); setDataSources(payload?.data_sources || {}); if (ready) loadLatestArtifact(); }).catch(() => setProxyReady(false));
   }, []);
 
   const loadLatestArtifact = async () => {
@@ -88,7 +90,7 @@ const ResearchValidationPage: React.FC = () => {
           <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">分阶段结果</h2><div className="mt-4 grid gap-3 sm:grid-cols-3">{Object.entries(summary?.splits || {}).map(([name, value]) => <div key={name} className="rounded-xl border p-3"><p className="text-xs text-muted-text">{name}</p><p className="mt-2 text-sm">收益 {pct(value.average_forward_return)}</p><p className="text-sm">胜率 {pct(value.win_rate)}</p></div>)}</div>{!summary && <p className="mt-3 text-sm text-muted-text">加载 CI Artifact 的 rs_summary.json 后显示真实结果。</p>}</div>
           <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">反事实结果</h2><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{Object.entries(counterfactual?.variants || {}).map(([name, value]) => <div key={name} className="rounded-xl border p-3"><p className="text-xs text-muted-text">{name}</p><p className="mt-2 text-sm">净收益 {pct(value.cumulative_return_net)}</p><p className="text-xs text-muted-text">回撤 {pct(value.max_drawdown)} · 覆盖 {pct(value.coverage)}</p></div>)}</div>{!counterfactual && <p className="mt-3 text-sm text-muted-text">加载 CI Artifact 的 counterfactual JSON 后显示真实结果。</p>}</div>
           <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">实验门禁</h2><div className="mt-3 grid gap-2 sm:grid-cols-5"><span className="rounded-lg border border-success/40 bg-success/5 p-2 text-xs text-success">PIT · HARD GATE</span><span className="rounded-lg border border-success/40 bg-success/5 p-2 text-xs text-success">Anti-leak · PASS</span><span className="rounded-lg border border-success/40 bg-success/5 p-2 text-xs text-success">Split · LOCKED</span><span className="rounded-lg border border-warning/40 bg-warning/5 p-2 text-xs text-warning">Holdout · PROTECTED</span><span className="rounded-lg border border-warning/40 bg-warning/5 p-2 text-xs text-warning">Budget · REQUIRED</span></div></div>
-          <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">数据源状态</h2><div className="mt-3 grid gap-2 sm:grid-cols-4"><span className="rounded-lg border p-2 text-xs">Baostock · 回补</span><span className="rounded-lg border p-2 text-xs">yfinance · 美股</span><span className="rounded-lg border p-2 text-xs">Tencent · 直连</span><span className="rounded-lg border p-2 text-xs">Sina · 多周期</span></div><p className="mt-3 text-xs text-muted-text">数据源仅用于研究、回补和校验，不代表生产可用。</p></div>
+          <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">数据源状态</h2><div className="mt-3 grid gap-2 sm:grid-cols-4">{Object.entries(dataSources).map(([name, source]) => <span key={name} className="rounded-lg border p-2 text-xs">{name} · {source.status} · {source.markets.join(',')}</span>)}{!Object.keys(dataSources).length && <span className="rounded-lg border border-warning/40 bg-warning/5 p-2 text-xs text-warning">状态代理未返回</span>}</div><p className="mt-3 text-xs text-muted-text">数据源能力由服务端状态接口提供，仅用于研究、回补和校验。</p></div>
           <div className="card-surface rounded-2xl p-5"><h2 className="font-medium">治理状态</h2><p className="mt-3 text-sm text-secondary-text">PIT / anti-leak：HARD GATE · Never-Seen Holdout：PROTECTED · Data status：NOT_APPROVED</p></div>
         </div>
       </section>
