@@ -9,14 +9,21 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Optional
+import os
 
 import pandas as pd
 import requests
 
 from .base import BaseFetcher, DataFetchError, RateLimitError, normalize_stock_code
 
-_SINA_KLINE_URL = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
-_TIMEOUT_SECONDS = 8
+_SINA_KLINE_URL = os.getenv(
+    "STOCK_RAZOR_SINA_KLINE_URL",
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData",
+)
+try:
+    _TIMEOUT_SECONDS = max(1.0, float(os.getenv("STOCK_RAZOR_SINA_TIMEOUT_SECONDS", "8")))
+except ValueError:
+    _TIMEOUT_SECONDS = 8.0
 _ALLOWED_FREQUENCIES = {"1m", "5m", "15m", "30m", "60m", "1d", "1w", "1M"}
 
 
