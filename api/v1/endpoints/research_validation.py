@@ -10,12 +10,12 @@ import io
 import json
 import os
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 router = APIRouter()
 
@@ -40,8 +40,8 @@ class ResearchValidationConfig(BaseModel):
     rule_id: str = Field(min_length=1, max_length=120)
     rule_version: str = Field(default="v0.1", min_length=1, max_length=40)
     symbol: str = Field(min_length=1, max_length=32)
-    development_end: str
-    validation_end: str
+    development_end: date
+    validation_end: date
     holdout_id: str = Field(min_length=1, max_length=120)
     counterfactuals: List[str] = Field(
         default_factory=lambda: sorted(_ALLOWED_COUNTERFACTUALS),
@@ -49,6 +49,12 @@ class ResearchValidationConfig(BaseModel):
         max_length=5,
     )
     research_only: bool = Field(default=True)
+
+    @model_validator(mode="after")
+    def _date_order(self) -> "ResearchValidationConfig":
+        if self.development_end >= self.validation_end:
+            raise ValueError("development_end must be before validation_end")
+        return self
 
     @field_validator("research_only")
     @classmethod
