@@ -594,6 +594,7 @@ class DataFetcherManager:
     _DAILY_MARKET_FETCHER_SUPPORT = {
         "EfinanceFetcher": {"cn"},
         "TencentFetcher": {"cn"},
+        "SinaResearchFetcher": {"cn"},
         "AkshareFetcher": {"cn", "hk"},
         "TushareFetcher": {"cn", "hk"},
         "TickFlowFetcher": {"cn"},
@@ -1760,6 +1761,7 @@ class DataFetcherManager:
         from src.config import get_config
         from .efinance_fetcher import EfinanceFetcher
         from .tencent_fetcher import TencentFetcher
+        from .sina_research_fetcher import SinaResearchFetcher
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
         from .tickflow_fetcher import TickFlowFetcher
@@ -1772,6 +1774,7 @@ class DataFetcherManager:
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         tencent = TencentFetcher()
+        sina = SinaResearchFetcher()
         akshare = AkshareFetcher()
         pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
         baostock = BaostockFetcher()
@@ -1832,6 +1835,7 @@ class DataFetcherManager:
                 baostock,
                 yfinance,
                 tencent,
+                sina,
                 *optional_fetchers,
             ]
 
