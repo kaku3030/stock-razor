@@ -106,6 +106,19 @@ def _json_files_from_zip(payload: bytes) -> Dict[str, Any]:
     return extracted
 
 
+@router.get("/status")
+async def get_research_status() -> Dict[str, Any]:
+    """Expose readiness without exposing credentials or mutable production state."""
+    return {
+        "research_only": True,
+        "production_promotion": "locked",
+        "artifact_proxy_configured": bool(os.getenv(_TOKEN_ENV, "").strip()),
+        "repository": _REPO,
+        "branch": _BRANCH,
+        "workflow": _WORKFLOW,
+    }
+
+
 @router.get("/artifact")
 async def get_latest_artifact() -> Dict[str, Any]:
     """Return the latest successful capture artifact as structured JSON."""
