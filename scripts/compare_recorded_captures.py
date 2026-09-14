@@ -54,7 +54,7 @@ def compare(left_path: Path, left_manifest_path: Path, right_path: Path, right_m
     if overlap_ratio < minimum_overlap:
         return {"status": "UNKNOWN", "reason": "INSUFFICIENT_DATE_OVERLAP", "overlap": len(overlap), "overlap_ratio": overlap_ratio}
     price_diffs = []
-    volume_diffs = []
+    volume_ratios = []
     for day in overlap:
         for field in PRICE_FIELDS:
             base = left[day][field]
@@ -62,11 +62,16 @@ def compare(left_path: Path, left_manifest_path: Path, right_path: Path, right_m
             price_diffs.append(abs(other - base) / abs(base) if base else float("inf"))
         base_volume = left[day]["volume"]
         other_volume = right[day]["volume"]
-        volume_diffs.append(abs(other_volume - base_volume) / abs(base_volume) if base_volume else 0.0)
+        if base_volume > 0 and other_volume > 0:
+            volume_ratios.append(other_volume / base_volume)
     max_price = max(price_diffs, default=float("inf"))
-    max_volume = max(volume_diffs, default=float("inf"))
+    # Providers may express volume in shares, lots, or contracts.  Accept a
+    # stable multiplicative unit factor, but still reject day-varying drift.
+    volume_scale = sorted(volume_ratios)[len(volume_ratios) // 2] if volume_ratios else 1.0
+    normalized_volume_diffs = [abs(ratio / volume_scale - 1.0) for ratio in volume_ratios]
+    max_volume = max(normalized_volume_diffs, default=float("inf"))
     status = "VALIDATED" if max_price <= maximum_price_rel_diff and max_volume <= maximum_volume_rel_diff else "DIVERGENT"
-    return {"status": status, "left_source": left_manifest.get("source_id"), "right_source": right_manifest.get("source_id"), "overlap": len(overlap), "overlap_ratio": overlap_ratio, "max_price_relative_difference": max_price, "max_volume_relative_difference": max_volume, "thresholds": {"minimum_overlap": minimum_overlap, "maximum_price_relative_difference": maximum_price_rel_diff, "maximum_volume_relative_difference": maximum_volume_rel_diff}}
+    return {"status": status, "left_source": left_manifest.get("source_id"), "right_source": right_manifest.get("source_id"), "overlap": len(overlap), "overlap_ratio": overlap_ratio, "max_price_relative_difference": max_price, "volume_scale_factor_right_over_left": volume_scale, "max_volume_relative_difference_after_scale": max_volume, "thresholds": {"minimum_overlap": minimum_overlap, "maximum_price_relative_difference": maximum_price_rel_diff, "maximum_volume_relative_difference": maximum_volume_rel_diff}}
 
 
 def main() -> int:
