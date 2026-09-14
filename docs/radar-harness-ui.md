@@ -51,3 +51,25 @@ Harness 的 A 股日线管理器已接入 `SinaResearchFetcher`（Priority 6）�
 
 
 双直连回退顺序：常规数据源失败后，先尝试 `TencentFetcher`，再尝试 `SinaResearchFetcher`；两者均只提供 A 股日线研究回退，不改变主数据源优先级。
+
+
+### 双直连源验证
+
+离线单元测试（不会访问行情网络）：
+
+```bash
+python -m pytest -q tests/test_sina_research_fetcher.py tests/test_tencent_fetcher.py
+```
+
+需要实际检查公共接口时，可在研究环境中执行：
+
+```bash
+python - <<'PY'
+from data_provider import SinaResearchFetcher, TencentFetcher
+for fetcher in (TencentFetcher(), SinaResearchFetcher()):
+    frame = fetcher.get_daily_data("600000", days=5)
+    print(fetcher.name, len(frame), list(frame.columns))
+PY
+```
+
+真实联网检查只用于数据源可用性诊断；结果不得直接作为生产交易授权或策略结论。
