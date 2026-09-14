@@ -1756,7 +1756,8 @@ class DataFetcherManager:
           2. PytdxFetcher (Priority 2) - 通达信
           3. BaostockFetcher (Priority 3)
           4. YfinanceFetcher (Priority 4)
-          5. TencentFetcher (Priority 5) - A 股最终兜底
+          5. TencentFetcher (Priority 5) - A 股直连兜底
+          6. SinaResearchFetcher (Priority 6) - 新浪研究兜底
         """
         from src.config import get_config
         from .efinance_fetcher import EfinanceFetcher
