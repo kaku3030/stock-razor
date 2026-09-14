@@ -13,7 +13,7 @@ from typing import Optional
 import pandas as pd
 import requests
 
-from .base import BaseFetcher, DataFetchError, normalize_stock_code
+from .base import BaseFetcher, DataFetchError, RateLimitError, normalize_stock_code
 
 _SINA_KLINE_URL = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
 _TIMEOUT_SECONDS = 8
@@ -58,6 +58,10 @@ class SinaResearchFetcher(BaseFetcher):
             )
             response.raise_for_status()
             payload = response.json()
+        except requests.HTTPError as exc:
+            if getattr(exc.response, "status_code", None) == 429:
+                raise RateLimitError(f"Sina rate limited for {stock_code}") from exc
+            raise DataFetchError(f"Sina request failed for {stock_code}: {exc}") from exc
         except (requests.RequestException, ValueError) as exc:
             raise DataFetchError(f"Sina request failed for {stock_code}: {exc}") from exc
         if not isinstance(payload, list):
