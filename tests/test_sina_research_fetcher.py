@@ -122,7 +122,7 @@ def test_sina_rejects_non_list_payload(monkeypatch):
 def test_sina_rejects_invalid_end_date(monkeypatch):
     monkeypatch.setattr(
         "data_provider.sina_research_fetcher.requests.get",
-        lambda *args, **kwargs: _Response([]),
+        lambda *args, **kwargs: _Response([{"day": "2024-01-01", "close": "1", "volume": "1"}]),
     )
     with pytest.raises(DataFetchError, match="invalid end_date"):
         SinaResearchFetcher().get_price("600000", end_date="not-a-date")
