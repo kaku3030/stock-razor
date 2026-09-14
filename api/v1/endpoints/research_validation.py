@@ -117,7 +117,13 @@ async def get_research_status() -> Dict[str, Any]:
         "repository": _REPO,
         "branch": _BRANCH,
         "workflow": _WORKFLOW,
-        "data_sources": {\n            "baostock": {"status": "fallback", "markets": ["cn"], "auth": "optional"},\n            "yfinance": {"status": "fallback", "markets": ["us"], "auth": "optional"},\n            "tencent": {"status": "direct", "markets": ["cn"], "auth": "none"},\n            "sina": {"status": "direct_multi_period", "markets": ["cn"], "auth": "none"},\n        },\n    },\n    }
+        "data_sources": {
+            "baostock": {"status": "fallback", "markets": ["cn"], "auth": "optional"},
+            "yfinance": {"status": "fallback", "markets": ["us"], "auth": "optional"},
+            "tencent": {"status": "direct", "markets": ["cn"], "auth": "none"},
+            "sina": {"status": "direct_multi_period", "markets": ["cn"], "auth": "none"},
+        },
+    }
 
 
 @router.get("/artifact")
