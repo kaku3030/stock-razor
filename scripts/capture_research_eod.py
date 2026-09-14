@@ -30,6 +30,30 @@ def capture_baostock(symbol: str, start: str, end: str):
         bs.logout()
 
 
+def capture_akshare(symbol: str, start: str, end: str):
+    import akshare as ak
+    numeric = symbol.split(".", 1)[-1]
+    frame = ak.stock_zh_a_hist(
+        symbol=numeric,
+        period="daily",
+        start_date=start.replace("-", ""),
+        end_date=end.replace("-", ""),
+        adjust="",
+    )
+    rows = []
+    for _, row in frame.iterrows():
+        rows.append({
+            "symbol": symbol,
+            "date": str(row["日期"]),
+            "open": float(row["开盘"]),
+            "high": float(row["最高"]),
+            "low": float(row["最低"]),
+            "close": float(row["收盘"]),
+            "volume": float(row["成交量"]),
+        })
+    return rows
+
+
 def capture_yfinance(symbol: str, start: str, end: str):
     import yfinance as yf
     frame = yf.download(symbol, start=start, end=end, auto_adjust=False, progress=False)
@@ -55,6 +79,7 @@ def capture_yfinance(symbol: str, start: str, end: str):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--market", choices=("cn", "us"), required=True)
+    parser.add_argument("--source", choices=("baostock", "akshare", "yfinance"), default=None)
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
@@ -62,12 +87,21 @@ def main() -> int:
     parser.add_argument("--retries", type=int, default=3)
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    source_id = "baostock" if args.market == "cn" else "yfinance"
+    source_id = args.source or ("baostock" if args.market == "cn" else "yfinance")
+    if args.market == "cn" and source_id == "yfinance":
+        raise ValueError("yfinance is not a CN capture source")
+    if args.market == "us" and source_id != "yfinance":
+        raise ValueError("only yfinance is supported for US capture")
     try:
         last_error = None
         for attempt in range(max(1, args.retries)):
             try:
-                rows = capture_baostock(args.symbol, args.start, args.end) if args.market == "cn" else capture_yfinance(args.symbol, args.start, args.end)
+                if source_id == "baostock":
+                    rows = capture_baostock(args.symbol, args.start, args.end)
+                elif source_id == "akshare":
+                    rows = capture_akshare(args.symbol, args.start, args.end)
+                else:
+                    rows = capture_yfinance(args.symbol, args.start, args.end)
                 break
             except Exception as exc:
                 last_error = exc
