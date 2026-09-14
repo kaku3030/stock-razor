@@ -28,6 +28,7 @@ on:
       - "src/services/strategy_lab/**"
       - "src/storage.py"
       - "scripts/run_us_research_scan.py"
+      - "scripts/check_direct_market_sources.py"
       - "scripts/run_stock_radar_qa.py"
       - "scripts/run_stock_radar_technical_state.py"
       - "tests/test_candidate_pool_repo.py"
