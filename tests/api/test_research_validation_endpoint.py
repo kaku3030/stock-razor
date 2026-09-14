@@ -49,6 +49,8 @@ def test_research_status_does_not_expose_token(monkeypatch):
     assert payload["artifact_proxy_configured"] is True
     assert payload["research_only"] is True
     assert payload["production_promotion"] == "locked"
+    assert payload["data_sources"]["sina"]["status"] == "direct_multi_period"
+    assert payload["data_sources"]["tencent"]["auth"] == "none"
     assert "secret-value" not in str(payload)
 
 
