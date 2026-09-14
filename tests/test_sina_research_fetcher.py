@@ -19,7 +19,7 @@ class _Response:
 def test_sina_daily_parses_and_normalizes(monkeypatch):
     calls = []
 
-    def fake_get(url, params=None, timeout=None):
+    def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append((url, params, timeout))
         return _Response([
             {"day": "2024-01-03", "open": "10", "high": "11", "low": "9", "close": "10.5", "volume": "1200", "amount": "12600", "changepercent": "1.2"},
@@ -43,7 +43,7 @@ def test_sina_daily_parses_and_normalizes(monkeypatch):
 def test_sina_frequency_scale(monkeypatch, frequency, scale):
     calls = []
 
-    def fake_get(url, params=None, timeout=None):
+    def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append(params)
         return _Response([])
 
@@ -66,7 +66,7 @@ def test_sina_rejects_invalid_requests(kwargs):
 
 
 def test_sina_raw_data_applies_date_window(monkeypatch):
-    def fake_get(url, params=None, timeout=None):
+    def fake_get(url, params=None, timeout=None, **kwargs):
         return _Response([
             {"day": "2024-01-01", "close": "1", "volume": "10"},
             {"day": "2024-01-02", "close": "2", "volume": "20"},
