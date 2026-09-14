@@ -6,11 +6,11 @@
   "markets": {
     "cn": {
       "source_id": "baostock",
-      "symbols": ["sh.600000", "sh.000001", "sz.300750"]
+      "symbols": ["sh.600000", "sh.000001", "sz.300750", "sh.600519", "sh.601318"]
     },
     "us": {
       "source_id": "yfinance",
-      "symbols": ["SPY", "QQQ", "NVDA", "AMD", "AAPL", "TSLA", "ANET", "MRVL"]
+      "symbols": ["SPY", "QQQ", "NVDA", "AMD", "AAPL", "TSLA", "ANET", "MRVL", "QCOM", "TSM", "COHR", "VRT"]
     }
   },
   "selection_policy": "fixed_symbols_before_experiment",
