@@ -451,7 +451,7 @@ def test_tencent_transport_failure_is_normalized(monkeypatch):
 
     monkeypatch.setattr("data_provider.tencent_fetcher.requests.get", failed_get)
     with pytest.raises(DataFetchError, match="Tencent request failed"):
-        TencentFetcher().get_daily_data("600000", start_date="2024-01-01", end_date="2024-01-02")
+        TencentFetcher()._fetch_raw_data("600000", "2024-01-01", "2024-01-02")
 
 
 def test_tencent_429_is_rate_limit_error(monkeypatch):
