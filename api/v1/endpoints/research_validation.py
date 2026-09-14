@@ -23,6 +23,8 @@ _REPO = os.getenv("RADAR_GITHUB_REPOSITORY", "kaku3030/stock-razor")
 _BRANCH = os.getenv("RADAR_GITHUB_BRANCH", "research/rule-validation-harness-v0-1")
 _WORKFLOW = os.getenv("RADAR_GITHUB_WORKFLOW", "research-universe-capture.yml")
 _TOKEN_ENV = "RADAR_GITHUB_TOKEN"
+_MAX_ARTIFACT_BYTES = 25 * 1024 * 1024
+_ARTIFACT_PREFIX = "research-universe-"
 _ALLOWED_COUNTERFACTUALS = {
     "without_rule",
     "with_rule",
@@ -115,10 +117,12 @@ async def get_latest_artifact() -> Dict[str, Any]:
         artifacts = await client.get(f"{base}/actions/runs/{run['id']}/artifacts", headers=headers)
         if artifacts.status_code != 200:
             raise HTTPException(status_code=502, detail={"error": "github_artifacts_failed", "status": artifacts.status_code})
-        available = [a for a in artifacts.json().get("artifacts", []) if not a.get("expired")]
+        available = [a for a in artifacts.json().get("artifacts", []) if not a.get("expired") and str(a.get("name", "")).startswith(_ARTIFACT_PREFIX)]
         if not available:
             raise HTTPException(status_code=404, detail={"error": "artifact_not_found"})
         artifact = available[0]
+        if int(artifact.get("size_in_bytes") or 0) > _MAX_ARTIFACT_BYTES:
+            raise HTTPException(status_code=413, detail={"error": "artifact_too_large"})
         download = await client.get(artifact["archive_download_url"], headers=headers)
         if download.status_code != 200:
             raise HTTPException(status_code=502, detail={"error": "github_download_failed", "status": download.status_code})
