@@ -34,6 +34,7 @@ on:
       - "tests/test_oos_consumption_ledger_repo.py"
       - "tests/test_alpaca_market_data_adapter.py"
       - "tests/test_sina_research_fetcher.py"
+      - "tests/test_tencent_fetcher.py"
       - "tests/test_candidate_pool_industry_metrics.py"
       - "tests/test_candidate_pool_financials.py"
       - "tests/test_industry_radar.py"
@@ -78,6 +79,7 @@ jobs:
           python -m pytest -q \
             tests/test_alpaca_market_data_adapter.py \
             tests/test_sina_research_fetcher.py \
+            tests/test_tencent_fetcher.py \
             tests/test_candidate_pool_repo.py \
             tests/test_candidate_pool_industry_metrics.py \
             tests/test_candidate_pool_financials.py \
