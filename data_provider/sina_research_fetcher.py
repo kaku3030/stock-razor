@@ -43,9 +43,9 @@ class SinaResearchFetcher(BaseFetcher):
         end_date: Optional[str] = None,
     ) -> pd.DataFrame:
         if frequency not in _ALLOWED_FREQUENCIES:
-            raise ValueError(f"unsupported frequency: {frequency}")
+            raise DataFetchError(f"unsupported frequency: {frequency}")
         if isinstance(count, bool) or not isinstance(count, int) or count <= 0 or count > 5000:
-            raise ValueError("count must be an integer between 1 and 5000")
+            raise DataFetchError("count must be an integer between 1 and 5000")
         symbol = _sina_symbol(stock_code)
         scale = {"1d": 240, "1w": 1200, "1M": 7200}.get(frequency, int(frequency[:-1]))
         params = {"symbol": symbol, "scale": scale, "ma": 5, "datalen": count}
