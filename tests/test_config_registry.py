@@ -7,8 +7,10 @@ page and /api/v1/system/config/schema can expose them.
 """
 import re
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
+from src.config import Config
 from src.core.config_registry import (
     SCHEMA_VERSION,
     WEB_SETTINGS_HIDDEN_FROM_UI,
@@ -16,6 +18,68 @@ from src.core.config_registry import (
     get_field_definition,
     get_registered_field_keys,
 )
+from src.llm.local_cli_backend import (
+    DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES,
+    DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS,
+)
+
+
+class TestGenerationBackendDefaultsConsistency(unittest.TestCase):
+    _DEFAULTS = {
+        "GENERATION_BACKEND_TIMEOUT_SECONDS": DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS,
+        "GENERATION_BACKEND_MAX_OUTPUT_BYTES": DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES,
+        "GENERATION_BACKEND_MAX_CONCURRENCY": DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY,
+        "LOCAL_CLI_BACKEND_MAX_CONCURRENCY": DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY,
+    }
+
+    def test_registry_defaults_project_runtime_constants(self):
+        for key, runtime_default in self._DEFAULTS.items():
+            self.assertEqual(get_field_definition(key)["default_value"], str(runtime_default))
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_env_override_and_empty_values_keep_runtime_parsing(self, _mock_parse, _mock_setup_env):
+        values = {
+            "STOCK_LIST": "600519",
+            "GENERATION_BACKEND_TIMEOUT_SECONDS": "301",
+            "GENERATION_BACKEND_MAX_OUTPUT_BYTES": "2048",
+            "GENERATION_BACKEND_MAX_CONCURRENCY": "2",
+            "LOCAL_CLI_BACKEND_MAX_CONCURRENCY": "3",
+        }
+        with patch.dict("os.environ", values, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.generation_backend_timeout_seconds, 301)
+        self.assertEqual(config.generation_backend_max_output_bytes, 2048)
+        self.assertEqual(config.generation_backend_max_concurrency, 2)
+        self.assertEqual(config.local_cli_backend_max_concurrency, 3)
+
+        with patch.dict("os.environ", {"STOCK_LIST": "600519"}, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.generation_backend_timeout_seconds, DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS)
+        self.assertEqual(config.generation_backend_max_output_bytes, DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES)
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_invalid_and_boundary_values_and_stock_list_semantics_are_unchanged(
+        self, _mock_parse, _mock_setup_env
+    ):
+        values = {
+            "STOCK_LIST": "600519,300750,002594",
+            "GENERATION_BACKEND_TIMEOUT_SECONDS": "not-int",
+            "GENERATION_BACKEND_MAX_OUTPUT_BYTES": "1",
+            "GENERATION_BACKEND_MAX_CONCURRENCY": "16",
+            "LOCAL_CLI_BACKEND_MAX_CONCURRENCY": "4",
+        }
+        with patch.dict("os.environ", values, clear=True):
+            config = Config._load_from_env()
+        self.assertEqual(config.generation_backend_timeout_seconds, DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS)
+        self.assertEqual(config.generation_backend_max_output_bytes, 1)
+        self.assertEqual(config.generation_backend_max_concurrency, 16)
+        self.assertEqual(config.local_cli_backend_max_concurrency, 4)
+        self.assertEqual(config.stock_list, ["600519", "300750", "002594"])
+        self.assertNotEqual(get_field_definition("STOCK_LIST")["default_value"], "")
 
 
 class TestSlackFieldsRegistered(unittest.TestCase):
