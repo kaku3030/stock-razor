@@ -111,8 +111,8 @@ class BaostockFetcher(BaseFetcher):
             # 登录 Baostock
             login_result = bs.login()
             
-            if login_result.error_code != '0':
-                raise DataFetchError(f"Baostock 登录失败: {login_result.error_msg}")
+            if getattr(login_result, "error_code", None) != '0':
+                raise DataFetchError(f"Baostock 登录失败: {getattr(login_result, 'error_msg', 'unknown error')}")
             
             logger.debug("Baostock 登录成功")
             
@@ -122,10 +122,10 @@ class BaostockFetcher(BaseFetcher):
             # 确保登出，防止连接泄露
             try:
                 logout_result = bs.logout()
-                if logout_result.error_code == '0':
+                if getattr(logout_result, "error_code", None) == '0':
                     logger.debug("Baostock 登出成功")
                 else:
-                    logger.warning(f"Baostock 登出异常: {logout_result.error_msg}")
+                    logger.warning(f"Baostock 登出异常: {getattr(logout_result, 'error_msg', 'unknown error')}")
             except Exception as e:
                 logger.warning(f"Baostock 登出时发生错误: {e}")
     
