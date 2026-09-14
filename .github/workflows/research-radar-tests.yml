@@ -39,6 +39,7 @@ on:
       - "tests/test_tencent_fetcher.py"
       - "tests/test_direct_market_sources.py"
       - "tests/test_baostock_fetcher.py"
+      - "tests/test_yfinance_fetcher.py"
       - "tests/test_candidate_pool_industry_metrics.py"
       - "tests/test_candidate_pool_financials.py"
       - "tests/test_industry_radar.py"
@@ -80,7 +81,7 @@ jobs:
 
       - name: Run direct market source fast gate
         run: |
-          python -m compileall -q data_provider/sina_research_fetcher.py data_provider/tencent_fetcher.py data_provider/baostock_fetcher.py scripts/check_direct_market_sources.py
+          python -m compileall -q data_provider/sina_research_fetcher.py data_provider/tencent_fetcher.py data_provider/baostock_fetcher.py data_provider/yfinance_fetcher.py scripts/check_direct_market_sources.py
           python -m pytest -q \
             tests/test_sina_research_fetcher.py \
             tests/test_tencent_fetcher.py \
@@ -94,6 +95,7 @@ jobs:
             tests/test_tencent_fetcher.py \
             tests/test_direct_market_sources.py \
             tests/test_baostock_fetcher.py \
+            tests/test_yfinance_fetcher.py \
             tests/test_candidate_pool_repo.py \
             tests/test_candidate_pool_industry_metrics.py \
             tests/test_candidate_pool_financials.py \
