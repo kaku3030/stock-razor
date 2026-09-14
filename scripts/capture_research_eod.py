@@ -33,23 +33,31 @@ def capture_baostock(symbol: str, start: str, end: str):
 def capture_akshare(symbol: str, start: str, end: str):
     import akshare as ak
     numeric = symbol.split(".", 1)[-1]
-    frame = ak.stock_zh_a_hist(
-        symbol=numeric,
-        period="daily",
-        start_date=start.replace("-", ""),
-        end_date=end.replace("-", ""),
-        adjust="",
-    )
+    try:
+        frame = ak.stock_zh_a_hist(
+            symbol=numeric, period="daily", start_date=start.replace("-", ""),
+            end_date=end.replace("-", ""), adjust="",
+        )
+        columns = {"date": "日期", "open": "开盘", "high": "最高", "low": "最低", "close": "收盘", "volume": "成交量"}
+    except Exception:
+        # Eastmoney-backed endpoint can intermittently close the connection;
+        # use AKShare's Tencent-backed historical endpoint as a source-local
+        # fallback, while preserving the same recorded-capture semantics.
+        frame = ak.stock_zh_a_hist_tx(
+            symbol=numeric, start_date=start.replace("-", ""),
+            end_date=end.replace("-", ""), adjust="",
+        )
+        columns = {"date": "date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "vol"}
     rows = []
     for _, row in frame.iterrows():
         rows.append({
             "symbol": symbol,
-            "date": str(row["日期"]),
-            "open": float(row["开盘"]),
-            "high": float(row["最高"]),
-            "low": float(row["最低"]),
-            "close": float(row["收盘"]),
-            "volume": float(row["成交量"]),
+            "date": str(row[columns["date"]]),
+            "open": float(row[columns["open"]]),
+            "high": float(row[columns["high"]]),
+            "low": float(row[columns["low"]]),
+            "close": float(row[columns["close"]]),
+            "volume": float(row[columns["volume"]]),
         })
     return rows
 
