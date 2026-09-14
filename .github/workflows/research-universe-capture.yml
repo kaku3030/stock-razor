@@ -35,7 +35,7 @@ jobs:
       - name: Capture AKShare cross-source sample
         continue-on-error: true
         run: |
-          for symbol in sh.600000 sh.000001 sz.300750; do
+          for symbol in sh.600000 sh.600519 sh.601318; do
             safe_symbol=${symbol//./_}
             python scripts/capture_research_eod.py \
               --market cn --source akshare --symbol "$symbol" \
@@ -44,7 +44,7 @@ jobs:
           done
       - name: Compare Baostock and AKShare sample
         run: |
-          for symbol in sh.600000 sh.000001 sz.300750; do
+          for symbol in sh.600000 sh.600519 sh.601318; do
             safe_symbol=${symbol//./_}
             right="artifacts/universe/cn_${safe_symbol}_akshare.csv"
             if [ -f "$right" ] && [ -f "$right.manifest.json" ]; then
