@@ -6,6 +6,7 @@ promote a rule or place an order.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -172,7 +173,7 @@ async def submit_research_config(config: ResearchValidationConfig) -> Dict[str, 
         "status": "accepted_for_research",
         "research_only": True,
         "production_promotion": "locked",
-        "task_id": f"radar-{config.rule_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-        "config": config.model_dump(),
+        "task_id": "radar-" + hashlib.sha256(json.dumps(config.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16],
+        "config": config.model_dump(mode="json"),
         "next_step": "Run through PIT/anti-leak and protected holdout gates.",
     }
