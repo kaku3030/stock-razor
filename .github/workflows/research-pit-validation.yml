@@ -69,8 +69,7 @@ jobs:
           APPROVER: ${{ inputs.approver }}
           REASON: ${{ inputs.reason }}
         run: |
-          shopt -s nullglob globstar
-          manifests=(artifacts/pit/data/**/*.manifest.json artifacts/pit/data/*.manifest.json)
+          mapfile -d '' manifests < <(find artifacts/pit/data -type f -name '*.manifest.json' -print0)
           test "${#manifests[@]}" -gt 0
           for manifest in "${manifests[@]}"; do
             csv="${manifest%.manifest.json}"
@@ -80,14 +79,16 @@ jobs:
           done
       - name: Require PIT-approved manifests
         run: |
-          shopt -s nullglob
-          for manifest in artifacts/pit/data/**/*.manifest.json artifacts/pit/data/*.manifest.json; do
+          mapfile -d '' manifests < <(find artifacts/pit/data -type f -name '*.manifest.json' -print0)
+          test "${#manifests[@]}" -gt 0
+          for manifest in "${manifests[@]}"; do
             test "$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$manifest")" = "PIT_APPROVED"
           done
       - name: Run strict recorded-capture validation
         run: |
-          shopt -s nullglob
-          for manifest in artifacts/pit/data/**/*.manifest.json artifacts/pit/data/*.manifest.json; do
+          mapfile -d '' manifests < <(find artifacts/pit/data -type f -name '*.manifest.json' -print0)
+          test "${#manifests[@]}" -gt 0
+          for manifest in "${manifests[@]}"; do
             csv="${manifest%.manifest.json}"
             [ -f "$csv" ] || continue
             python scripts/validate_recorded_capture.py --csv "$csv" --manifest "$manifest" --dataset-id "pit-$(basename "$csv" .csv)" --dataset-version "${GITHUB_SHA:0:12}" --require-pit-approved
