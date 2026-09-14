@@ -25,3 +25,15 @@ def test_research_config_rejects_unknown_counterfactual():
         assert "unsupported counterfactuals" in str(exc)
     else:
         raise AssertionError("unknown counterfactual was accepted")
+
+
+def test_research_config_rejects_inverted_dates():
+    try:
+        ResearchValidationConfig(
+            rule_id="demo", symbol="SPY", development_end="2026-01-01",
+            validation_end="2025-01-01", holdout_id="holdout-v1",
+        )
+    except ValueError as exc:
+        assert "development_end must be before validation_end" in str(exc)
+    else:
+        raise AssertionError("inverted dates were accepted")
