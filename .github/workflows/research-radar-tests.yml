@@ -80,7 +80,7 @@ jobs:
 
       - name: Run direct market source fast gate
         run: |
-          python -m compileall -q data_provider/sina_research_fetcher.py data_provider/tencent_fetcher.py scripts/check_direct_market_sources.py
+          python -m compileall -q data_provider/sina_research_fetcher.py data_provider/tencent_fetcher.py data_provider/baostock_fetcher.py scripts/check_direct_market_sources.py
           python -m pytest -q \
             tests/test_sina_research_fetcher.py \
             tests/test_tencent_fetcher.py \
