@@ -100,3 +100,6 @@ CI 快速门禁还会先编译新浪、腾讯、Baostock 和诊断脚本，语�
 - 全仓 CI：Run [34824621027](https://github.com/kaku3030/stock-razor/actions/runs/34824621027)，Docker、Web、Backend、治理检查全部 SUCCESS。
 - 交付 PR：[ #120](https://github.com/kaku3030/stock-razor/pull/120)，当前 OPEN，未合并。
 - 生产授权：NOT_AUTHORIZED；数据源仍限于研究、回补、校验和故障回退。
+
+
+- yfinance 美股链路：`IMPLEMENTED / FAILURE_TEST_COVERED`，测试不访问 Yahoo 实时网络。
