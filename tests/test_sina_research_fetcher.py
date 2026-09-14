@@ -108,3 +108,12 @@ def test_sina_429_is_rate_limit_error(monkeypatch):
     monkeypatch.setattr("data_provider.sina_research_fetcher.requests.get", limited_get)
     with pytest.raises(RateLimitError):
         SinaResearchFetcher().get_price("600000")
+
+
+def test_sina_rejects_non_list_payload(monkeypatch):
+    monkeypatch.setattr(
+        "data_provider.sina_research_fetcher.requests.get",
+        lambda *args, **kwargs: _Response({"error": "bad payload"}),
+    )
+    with pytest.raises(DataFetchError, match="invalid payload"):
+        SinaResearchFetcher().get_price("600000")
