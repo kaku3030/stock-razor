@@ -45,3 +45,27 @@ def test_baostock_session_releases_on_body_exception():
             raise RuntimeError("boom")
 
     assert module.logout_calls == 1
+
+
+class _MalformedBaostock:
+    def __init__(self):
+        self.logout_calls = 0
+
+    def login(self):
+        return object()
+
+    def logout(self):
+        self.logout_calls += 1
+        return object()
+
+
+def test_baostock_malformed_login_result_is_normalized():
+    module = _MalformedBaostock()
+    fetcher = BaostockFetcher()
+    fetcher._bs_module = module
+
+    with pytest.raises(DataFetchError, match="登录失败"):
+        with fetcher._baostock_session():
+            pass
+
+    assert module.logout_calls == 1
