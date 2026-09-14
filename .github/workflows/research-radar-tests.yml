@@ -15,6 +15,7 @@ on:
       - "src/repositories/stock_radar_technical_state_repo.py"
       - "data_provider/alpaca_market_data_adapter.py"
       - "data_provider/sina_research_fetcher.py"
+      - "data_provider/tencent_fetcher.py"
       - "src/schemas/research_financials.py"
       - "src/services/screening/industry_radar.py"
       - "src/services/screening/earnings_valuation_radar.py"
