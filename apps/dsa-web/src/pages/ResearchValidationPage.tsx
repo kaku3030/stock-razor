@@ -33,7 +33,7 @@ const ResearchValidationPage: React.FC = () => {
       <header>
         <p className="text-xs uppercase tracking-widest text-muted-text">STOCK RAZOR / RADAR</p>
         <h1 className="mt-2 text-3xl font-semibold">Rule Validation Harness</h1>
-        <p className="mt-2 text-sm text-secondary-text">研究回测控制台（证据读取模式）</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3"><p className="text-sm text-secondary-text">研究回测控制台（证据读取模式）</p><a className="text-sm text-primary underline" href="https://github.com/kaku3030/stock-razor/actions/workflows/research-universe-capture.yml" target="_blank" rel="noreferrer">打开最新 CI / 下载 Artifact</a></div>
       </header>
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="card-surface space-y-4 rounded-2xl p-5">
