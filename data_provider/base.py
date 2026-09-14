@@ -26,7 +26,7 @@ import pandas as pd
 import numpy as np
 from src.data.stock_index_loader import get_index_stock_name
 from src.data.stock_mapping import STOCK_NAME_MAP, is_meaningful_stock_name
-from src.services.market_symbol_utils import get_suffix_market
+from src.services.market_symbol_utils import is_suffix_market_symbol
 from src.services.run_diagnostics import record_provider_run, record_provider_run_started
 from src.services.stock_list_parser import AnalysisTarget, ParseStatus, parse_analysis_target
 from .fundamental_adapter import AkshareFundamentalAdapter
@@ -182,6 +182,25 @@ def _is_hk_market(code: str) -> bool:
     return False
 
 
+def _is_jp_market(code: str) -> bool:
+    """判定是否为日本 Yahoo Finance suffix 代码（如 7203.T）。"""
+    return is_suffix_market_symbol(code, "jp")
+
+
+def _is_kr_market(code: str) -> bool:
+    """判定是否为韩国 Yahoo Finance suffix 代码（如 005930.KS / 035720.KQ）。"""
+    return is_suffix_market_symbol(code, "kr")
+
+
+def _is_tw_market(code: str) -> bool:
+    """判定是否为台湾 Yahoo Finance suffix 代码（TWSE 上市 2330.TW / TPEx 上柜 6505.TWO）。
+
+    台股 base 为 4-6 位（普通股 4 位，ETF/其他至 6 位，如 00878 / 006208）。
+    仅带 .TW/.TWO 后缀的代码才识别为台股，裸 6 位代码仍按 A 股语义处理。
+    """
+    return is_suffix_market_symbol(code, "tw")
+
+
 def _is_etf_code(code: str) -> bool:
     """判定 A 股 ETF 基金代码（保守规则）。"""
     normalized = normalize_stock_code(code)
@@ -227,7 +246,13 @@ def _market_tag(code: str) -> str:
         return "us"
     if _is_hk_market(code):
         return "hk"
-    return get_suffix_market(code) or "cn"
+    if _is_jp_market(code):
+        return "jp"
+    if _is_kr_market(code):
+        return "kr"
+    if _is_tw_market(code):
+        return "tw"
+    return "cn"
 
 
 def is_bse_code(code: str) -> bool:
@@ -1910,15 +1935,17 @@ class DataFetcherManager:
         is_us_index = is_us_index_code(stock_code)
         is_us = is_us_index or is_us_stock_code(stock_code)
         is_hk = (not is_us) and _is_hk_market(stock_code)
-        suffix_market = None if is_us or is_hk else get_suffix_market(stock_code)
-        market = "us" if is_us else "hk" if is_hk else suffix_market or "cn"
+        is_jp = (not is_us) and (not is_hk) and _is_jp_market(stock_code)
+        is_kr = (not is_us) and (not is_hk) and _is_kr_market(stock_code)
+        is_tw = (not is_us) and (not is_hk) and _is_tw_market(stock_code)
+        market = "us" if is_us else "hk" if is_hk else "jp" if is_jp else "kr" if is_kr else "tw" if is_tw else "cn"
         if market != "cn":
             fetchers = self._filter_daily_fetchers_for_market(fetchers, market)
         fetchers = self._filter_fetchers_by_capability(fetchers, capability="daily_data")
         total_fetchers = len(fetchers)
 
         if total_fetchers == 0:
-            market_label = "美股指数" if is_us_index else "美股" if is_us else "港股" if is_hk else "台股" if market == "tw" else "A股"
+            market_label = "美股指数" if is_us_index else "美股" if is_us else "港股" if is_hk else "台股" if is_tw else "A股"
             error_summary = f"{market_label} {stock_code} 获取失败:\n暂无可用数据源"
             logger.error(f"[数据源终止] {stock_code} 获取失败: {error_summary}")
             raise DataFetchError(error_summary)
@@ -2407,10 +2434,9 @@ class DataFetcherManager:
         is_us_index = is_us_index_code(stock_code)
         is_us = is_us_index or _is_us_code(stock_code)
         is_hk = (not is_us) and _is_hk_market(stock_code)
-        suffix_market = None if is_us or is_hk else get_suffix_market(stock_code)
-        is_jp = suffix_market == "jp"
-        is_kr = suffix_market == "kr"
-        is_tw = suffix_market == "tw"
+        is_jp = (not is_us) and (not is_hk) and _is_jp_market(stock_code)
+        is_kr = (not is_us) and (not is_hk) and _is_kr_market(stock_code)
+        is_tw = (not is_us) and (not is_hk) and _is_tw_market(stock_code)
 
         if is_jp or is_kr or is_tw:
             market_label = "日股" if is_jp else "韩股" if is_kr else "台股"
