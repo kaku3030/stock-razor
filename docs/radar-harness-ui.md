@@ -34,7 +34,7 @@
 
 后端提供两个研究专用接口：
 
-- GET /api/v1/research-validation/artifact：服务端读取最新成功的 GitHub Artifact，并返回 JSON 证据。需要在部署环境设置 RADAR_GITHUB_TOKEN（令牌永不下发给浏览器），可选覆盖 RADAR_GITHUB_REPOSITORY、RADAR_GITHUB_BRANCH、RADAR_GITHUB_WORKFLOW。
+- GET /api/v1/research-validation/status：返回代理就绪状态（不返回令牌）。\n- GET /api/v1/research-validation/artifact：服务端读取最新成功的 GitHub Artifact，并返回 JSON 证据。需要在部署环境设置 RADAR_GITHUB_TOKEN（令牌永不下发给浏览器），可选覆盖 RADAR_GITHUB_REPOSITORY、RADAR_GITHUB_BRANCH、RADAR_GITHUB_WORKFLOW。
 - POST /api/v1/research-validation/submit：只校验并登记研究参数，返回 202 accepted_for_research；research_only 必须为 true，不会触发交易或生产 Promotion。
 
 未配置令牌时 Artifact 接口明确返回 503，不会回退到前端直连 GitHub。
