@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 type Summary = { splits?: Record<string, { average_forward_return?: number; win_rate?: number; observations?: number }>; top_k?: Record<string, { average_forward_return?: number; win_rate?: number }> };
 type Counterfactual = { variants?: Record<string, { cumulative_return_net?: number; hit_rate?: number; max_drawdown?: number; coverage?: number }> };
@@ -14,6 +14,11 @@ const ResearchValidationPage: React.FC = () => {
   const [holdoutId, setHoldoutId] = useState('never-seen-v0.1');
   const [developmentEnd, setDevelopmentEnd] = useState('2024-12-31');
   const [validationEnd, setValidationEnd] = useState('2025-12-31');
+  const [proxyReady, setProxyReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch('/api/v1/research-validation/status').then((response) => response.ok ? response.json() : null).then((payload) => setProxyReady(payload?.artifact_proxy_configured ?? false)).catch(() => setProxyReady(false));
+  }, []);
 
   const loadLatestArtifact = async () => {
     try {
@@ -61,7 +66,7 @@ const ResearchValidationPage: React.FC = () => {
       <header>
         <p className="text-xs uppercase tracking-widest text-muted-text">STOCK RAZOR / RADAR</p>
         <h1 className="mt-2 text-3xl font-semibold">Rule Validation Harness</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-3"><p className="text-sm text-secondary-text">研究回测控制台（证据读取模式）</p><a className="text-sm text-primary underline" href="https://github.com/kaku3030/stock-razor/actions/workflows/research-universe-capture.yml" target="_blank" rel="noreferrer">打开最新 CI / 下载 Artifact</a></div>
+        <div className="mt-2 flex flex-wrap items-center gap-3"><p className="text-sm text-secondary-text">研究回测控制台（证据读取模式） · Artifact 代理：{proxyReady === null ? "检查中" : proxyReady ? "已就绪" : "未配置"}</p><a className="text-sm text-primary underline" href="https://github.com/kaku3030/stock-razor/actions/workflows/research-universe-capture.yml" target="_blank" rel="noreferrer">打开最新 CI / 下载 Artifact</a></div>
       </header>
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="card-surface space-y-4 rounded-2xl p-5">
