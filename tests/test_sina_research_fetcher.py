@@ -83,3 +83,14 @@ def test_sina_is_registered_for_cn_daily_market():
 
     support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
     assert support["SinaResearchFetcher"] == {"cn"}
+
+
+def test_sina_transport_failure_is_data_fetch_error(monkeypatch):
+    import requests
+
+    def failed_get(*args, **kwargs):
+        raise requests.Timeout("timed out")
+
+    monkeypatch.setattr("data_provider.sina_research_fetcher.requests.get", failed_get)
+    with pytest.raises(DataFetchError, match="Sina request failed"):
+        SinaResearchFetcher().get_price("600000")
