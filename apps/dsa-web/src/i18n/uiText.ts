@@ -55,6 +55,8 @@ const zh = {
   'layout.mainNav': '主导航',
   'layout.nav.alerts': '告警',
   'layout.nav.backtest': '回测',
+  'layout.nav.researchValidation': 'Research Lab',
+  'layout.nav.researchValidation': '研究验证',
   'layout.nav.chat': '问股',
   'layout.nav.decisionSignals': 'AI 建议',
   'layout.nav.home': '首页',
