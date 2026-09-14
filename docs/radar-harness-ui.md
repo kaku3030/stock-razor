@@ -29,3 +29,12 @@
 ## 安全边界
 
 页面不会把研究结果直接升级为生产规则。PIT/anti-leak、Holdout 污染、实验预算和 Control Tower Promotion Gate 仍由后端与 CI 控制。不要把生产凭据放入浏览器或前端配置。
+
+## 后端自动读取与受控提交
+
+后端提供两个研究专用接口：
+
+- GET /api/v1/research-validation/artifact：服务端读取最新成功的 GitHub Artifact，并返回 JSON 证据。需要在部署环境设置 RADAR_GITHUB_TOKEN（令牌永不下发给浏览器），可选覆盖 RADAR_GITHUB_REPOSITORY、RADAR_GITHUB_BRANCH、RADAR_GITHUB_WORKFLOW。
+- POST /api/v1/research-validation/submit：只校验并登记研究参数，返回 202 accepted_for_research；research_only 必须为 true，不会触发交易或生产 Promotion。
+
+未配置令牌时 Artifact 接口明确返回 503，不会回退到前端直连 GitHub。
