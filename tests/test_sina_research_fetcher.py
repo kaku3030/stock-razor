@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from data_provider.base import DataFetchError
+from data_provider.base import DataFetchError, RateLimitError
 from data_provider.sina_research_fetcher import SinaResearchFetcher
 
 
@@ -93,4 +93,18 @@ def test_sina_transport_failure_is_data_fetch_error(monkeypatch):
 
     monkeypatch.setattr("data_provider.sina_research_fetcher.requests.get", failed_get)
     with pytest.raises(DataFetchError, match="Sina request failed"):
+        SinaResearchFetcher().get_price("600000")
+
+
+def test_sina_429_is_rate_limit_error(monkeypatch):
+    import requests
+
+    response = _Response([])
+    response.status_code = 429
+
+    def limited_get(*args, **kwargs):
+        raise requests.HTTPError("429", response=response)
+
+    monkeypatch.setattr("data_provider.sina_research_fetcher.requests.get", limited_get)
+    with pytest.raises(RateLimitError):
         SinaResearchFetcher().get_price("600000")
