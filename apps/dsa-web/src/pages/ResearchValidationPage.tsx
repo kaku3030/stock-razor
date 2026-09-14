@@ -10,6 +10,12 @@ const ResearchValidationPage: React.FC = () => {
   const [counterfactual, setCounterfactual] = useState<Counterfactual | null>(null);
   const [error, setError] = useState('');
 
+  const exportConfig = () => {
+    const payload = { schema: 'radar-rule-validation-experiment-v0.1', rule_version: 'RS / baseline counterfactual v0.1', universe: 'frozen-research-universe-v0.1', symbols: 17, cost_bps: 10, slippage_bps: 5, splits: ['development', 'validation', 'never_seen_holdout'], production_promotion: 'LOCKED' };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'radar-experiment-config.json'; anchor.click(); URL.revokeObjectURL(url);
+  };
+
   const loadJson = (file: File, kind: 'summary' | 'counterfactual') => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -36,7 +42,7 @@ const ResearchValidationPage: React.FC = () => {
           <label className="block text-sm">研究股票池<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value="Frozen universe · 17 symbols" readOnly /></label>
           <label className="block text-sm">加载 RS summary<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'summary')} /></label>
           <label className="block text-sm">加载 counterfactual<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'counterfactual')} /></label>
-          <button className="btn-primary w-full" type="button" disabled>提交研究实验（即将开放）</button>
+          <button className="btn-primary w-full" type="button" onClick={exportConfig}>导出实验配置 JSON</button>\n          <button className="btn-secondary w-full" type="button" disabled>提交研究实验（即将开放）</button>
           <p className="text-xs text-muted-text">参数提交会经过 PIT、预算和 Holdout 门禁。</p>
           {error && <p className="text-xs text-danger">{error}</p>}
         </div>
