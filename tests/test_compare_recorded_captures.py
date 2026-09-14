@@ -32,6 +32,17 @@ def test_cross_source_price_divergence_is_rejected(tmp_path):
     assert result["status"] == "DIVERGENT"
 
 
+def test_stable_volume_unit_scale_is_reported_and_accepted(tmp_path):
+    left, left_manifest = _capture(tmp_path, "left", "baostock")
+    right, right_manifest = _capture(tmp_path, "right", "akshare")
+    text = right.read_text(encoding="utf-8").replace(",100\n", ",10000\n").replace(",101\n", ",10100\n")
+    right.write_text(text, encoding="utf-8")
+    right_manifest.write_text(json.dumps({"source_id": "akshare", "market": "cn", "adjustment": "unadjusted", "status": "CAPTURED_NOT_APPROVED", "raw_sha256": hashlib.sha256(right.read_bytes()).hexdigest()}), encoding="utf-8")
+    result = compare(left, left_manifest, right, right_manifest, minimum_overlap=1.0, maximum_price_rel_diff=0.02, maximum_volume_rel_diff=0.20)
+    assert result["status"] == "VALIDATED"
+    assert result["volume_scale_factor_right_over_left"] == 100.0
+
+
 def test_cross_source_overlap_is_unknown(tmp_path):
     left, left_manifest = _capture(tmp_path, "left", "baostock")
     right, right_manifest = _capture(tmp_path, "right", "akshare", dates=("2026-02-02", "2026-02-03"))
