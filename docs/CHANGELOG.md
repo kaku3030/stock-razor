@@ -1,3 +1,12 @@
+# 变更记录
+
+## 2026-09-14 — 免费行情回退层验收
+
+- 新增独立 `SinaResearchFetcher`，支持 A 股多周期研究行情。
+- 加固 `TencentFetcher` 与 `BaostockFetcher` 的错误和会话生命周期处理。
+- 新增双源只读诊断脚本、离线测试和 CI 快速门禁。
+- PR #120 专用研究 CI 与全仓 CI 均通过；保持未合并、未生产授权。
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
