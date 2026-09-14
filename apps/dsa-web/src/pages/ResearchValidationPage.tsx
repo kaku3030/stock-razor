@@ -9,6 +9,9 @@ const ResearchValidationPage: React.FC = () => {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [counterfactual, setCounterfactual] = useState<Counterfactual | null>(null);
   const [error, setError] = useState('');
+  const [ruleId, setRuleId] = useState('rs-baseline');
+  const [symbol, setSymbol] = useState('universe');
+  const [holdoutId, setHoldoutId] = useState('never-seen-v0.1');
 
   const loadLatestArtifact = async () => {
     try {
@@ -26,7 +29,7 @@ const ResearchValidationPage: React.FC = () => {
 
   const submitResearch = async () => {
     try {
-      const response = await fetch('/api/v1/research-validation/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rule_id: 'rs-baseline', symbol: 'universe', development_end: '2024-12-31', validation_end: '2025-12-31', holdout_id: 'never-seen-v0.1', research_only: true }) });
+      const response = await fetch('/api/v1/research-validation/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rule_id: ruleId, symbol, development_end: '2024-12-31', validation_end: '2025-12-31', holdout_id: holdoutId, research_only: true }) });
       if (!response.ok) throw new Error('submit failed');
       const payload = await response.json();
       setError(`已登记研究任务：${payload.task_id}`);
@@ -61,8 +64,8 @@ const ResearchValidationPage: React.FC = () => {
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="card-surface space-y-4 rounded-2xl p-5">
           <h2 className="font-medium">实验参数</h2>
-          <label className="block text-sm">规则版本<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value="RS / baseline counterfactual v0.1" readOnly /></label>
-          <label className="block text-sm">研究股票池<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value="Frozen universe · 17 symbols" readOnly /></label>
+          <label className="block text-sm">规则 ID<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value={ruleId} onChange={(e) => setRuleId(e.target.value)} /></label>
+          <label className="block text-sm">研究股票池<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value={symbol} onChange={(e) => setSymbol(e.target.value)} /></label>\n          <label className="block text-sm">Holdout ID<input className="input-surface mt-2 h-10 w-full rounded-xl border px-3" value={holdoutId} onChange={(e) => setHoldoutId(e.target.value)} /></label>
           <label className="block text-sm">加载 RS summary<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'summary')} /></label>
           <label className="block text-sm">加载 counterfactual<input className="mt-2 block w-full text-xs" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && loadJson(e.target.files[0], 'counterfactual')} /></label>
           <button className="btn-primary w-full" type="button" onClick={exportConfig}>导出实验配置 JSON</button>\n          <button className="btn-secondary w-full" type="button" onClick={loadLatestArtifact}>读取最新 CI Artifact</button>\n          <button className="btn-secondary w-full" type="button" onClick={submitResearch}>登记研究实验（仅研究）</button>
