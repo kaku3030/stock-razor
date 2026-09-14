@@ -45,6 +45,9 @@ on:
       - "tests/test_research_priority_notifications.py"
       - "tests/test_stock_radar_v2_*.py"
       - "tests/test_strategy_lab_*.py"
+      - "api/v1/endpoints/research_validation.py"
+      - "api/v1/router.py"
+      - "tests/api/test_research_validation_endpoint.py"
       - ".github/workflows/research-radar-tests.yml"
   workflow_dispatch:
 
@@ -110,6 +113,7 @@ jobs:
             tests/test_oos_consumption_ledger_repo.py \
             tests/test_experiment_registry_repo.py \
             tests/test_rule_validation_harness_synthetic_e2e.py \
+            tests/api/test_research_validation_endpoint.py \
             tests/test_strategy_lab_parameter_drift.py \
             tests/test_strategy_lab_rule_validation_contract.py \
             tests/test_run_stock_radar_qa.py \
