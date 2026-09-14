@@ -76,3 +76,10 @@ def test_sina_raw_data_applies_date_window(monkeypatch):
     monkeypatch.setattr("data_provider.sina_research_fetcher.requests.get", fake_get)
     frame = SinaResearchFetcher()._fetch_raw_data("600000", "2024-01-02", "2024-01-02")
     assert list(frame["date"]) == [pd.Timestamp("2024-01-02")]
+
+
+def test_sina_is_registered_for_cn_daily_market():
+    from data_provider.base import DataFetcherManager
+
+    support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
+    assert support["SinaResearchFetcher"] == {"cn"}
