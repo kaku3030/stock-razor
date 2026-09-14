@@ -34,36 +34,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Download approved-by-operator artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.run_id }}
-          ARTIFACT_NAME: ${{ inputs.artifact_name }}
-        run: |
-          mkdir -p artifacts/pit
-          python - <<'PY'
-          import json, os, pathlib, urllib.request
-          token = os.environ["GH_TOKEN"]
-          run_id = os.environ["RUN_ID"]
-          wanted = os.environ["ARTIFACT_NAME"]
-          req = urllib.request.Request(
-              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}/artifacts",
-              headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-          )
-          with urllib.request.urlopen(req) as response:
-              items = json.load(response)["artifacts"]
-          matches = [item for item in items if item["name"] == wanted and not item["expired"]]
-          if len(matches) != 1:
-              raise SystemExit(f"expected exactly one unexpired artifact named {wanted}")
-          item = matches[0]
-          download = urllib.request.Request(
-              item["archive_download_url"],
-              headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
-          )
-          with urllib.request.urlopen(download) as response:
-              pathlib.Path("artifacts/pit/artifact.zip").write_bytes(response.read())
-          print(json.dumps({"artifact": item["name"], "size": item["size_in_bytes"], "digest": item.get("digest")}))
-          PY
-          unzip -q artifacts/pit/artifact.zip -d artifacts/pit/data
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.run_id }}
+          path: artifacts/pit/data
       - name: Approve captures after operator confirmation
         env:
           APPROVER: ${{ inputs.approver }}
