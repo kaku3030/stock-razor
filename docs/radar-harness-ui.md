@@ -82,3 +82,13 @@ python scripts/check_direct_market_sources.py --symbol 600000 --days 5
 
 
 CI 快速门禁还会先编译新浪、腾讯、Baostock 和诊断脚本，语法错误会在联网测试前直接失败。
+
+
+### 当前交付状态（2026-09-14）
+
+- 新浪：IMPLEMENTED / TEST_COVERED
+- 腾讯：IMPLEMENTED / TEST_COVERED
+- Baostock：IMPLEMENTED / SESSION_TEST_COVERED
+- yfinance：既有适配器 / 错误归一化已覆盖
+- CI：快速编译门禁 + 双直连源测试 + 完整研究测试
+- 生产交易：NOT_AUTHORIZED；仍需通过 PIT、回放和 Never-Seen Holdout 验收
