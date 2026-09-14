@@ -95,7 +95,11 @@ class SinaResearchFetcher(BaseFetcher):
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
         frame = frame.dropna(subset=["date", "close", "volume"]).sort_values("date")
         if end_date:
-            frame = frame[frame["date"] <= pd.Timestamp(end_date)]
+            try:
+                cutoff = pd.Timestamp(end_date)
+            except (TypeError, ValueError) as exc:
+                raise DataFetchError(f"invalid end_date: {end_date}") from exc
+            frame = frame[frame["date"] <= cutoff]
         return frame.reset_index(drop=True)
 
     def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
