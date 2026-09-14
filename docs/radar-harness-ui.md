@@ -38,3 +38,10 @@
 - POST /api/v1/research-validation/submit：只校验并登记研究参数，返回 202 accepted_for_research；research_only 必须为 true，不会触发交易或生产 Promotion。
 
 未配置令牌时 Artifact 接口明确返回 503，不会回退到前端直连 GitHub。
+
+
+## Ashare 思路的新浪研究回退
+
+Harness 的 A 股日线管理器已接入 `SinaResearchFetcher`（Priority 6），实现独立的新浪 K 线适配，不复制第三方仓库文件。适配器支持日/周/月及 1/5/15/30/60 分钟频率，统一输出标准 OHLCV 列，并固定请求超时、代码校验、日期窗口过滤和空结果处理。
+
+参考了 [mpquant/Ashare](https://github.com/mpquant/Ashare) 的公开接口思路；该仓库未提供明确许可证，因此本项目仅采用公开接口行为并保留本地实现。新浪接口属于免费公共行情入口，可能限流或变更，仅用于研究回测与故障回退，不作为生产授权或实时交易依据。
