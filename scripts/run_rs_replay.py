@@ -8,6 +8,8 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument('--input-dir',type=Path,required=True); p.add_argument('--output',type=Path,required=True); p.add_argument('--lookback',type=int,default=20); p.add_argument('--top-k',type=int,default=3); p.add_argument('--forward-bars',type=int,default=5); a=p.parse_args()
     series={}
     for f in a.input_dir.glob('*.csv'):
+        if f.stem.endswith('_akshare'):
+            continue
         with f.open(encoding='utf-8') as h: series[f.stem]=[(r['date'],float(r['close'])) for r in csv.DictReader(h)]
     dates=set.intersection(*(set(d for d,_ in v) for v in series.values())) if series else set(); dates=sorted(dates)
     rows=[]
