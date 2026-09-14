@@ -17,7 +17,7 @@ const ResearchValidationPage: React.FC = () => {
   const [proxyReady, setProxyReady] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/research-validation/status').then((response) => response.ok ? response.json() : null).then((payload) => setProxyReady(payload?.artifact_proxy_configured ?? false)).catch(() => setProxyReady(false));
+    fetch('/api/v1/research-validation/status').then((response) => response.ok ? response.json() : null).then((payload) => { const ready = payload?.artifact_proxy_configured ?? false; setProxyReady(ready); if (ready) loadLatestArtifact(); }).catch(() => setProxyReady(false));
   }, []);
 
   const loadLatestArtifact = async () => {
