@@ -64,12 +64,10 @@ python -m pytest -q tests/test_sina_research_fetcher.py tests/test_tencent_fetch
 需要实际检查公共接口时，可在研究环境中执行：
 
 ```bash
-python - <<'PY'
-from data_provider import SinaResearchFetcher, TencentFetcher
-for fetcher in (TencentFetcher(), SinaResearchFetcher()):
-    frame = fetcher.get_daily_data("600000", days=5)
-    print(fetcher.name, len(frame), list(frame.columns))
-PY
+python scripts/check_direct_market_sources.py --symbol 600000 --days 5
 ```
 
 真实联网检查只用于数据源可用性诊断；结果不得直接作为生产交易授权或策略结论。
+
+
+脚本位置：`scripts/check_direct_market_sources.py`。退出码为 0 表示两个源均成功，非 0 仅表示本次诊断有源失败，不代表市场状态或策略结论。
