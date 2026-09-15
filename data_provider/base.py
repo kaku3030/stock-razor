@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 51663)
+Total output lines: 4811
+
 # -*- coding: utf-8 -*-
 """
 ===================================
@@ -619,7 +622,6 @@ class DataFetcherManager:
     _DAILY_MARKET_FETCHER_SUPPORT = {
         "EfinanceFetcher": {"cn"},
         "TencentFetcher": {"cn"},
-        "SinaResearchFetcher": {"cn"},
         "AkshareFetcher": {"cn", "hk"},
         "TushareFetcher": {"cn", "hk"},
         "TickFlowFetcher": {"cn"},
@@ -1781,13 +1783,11 @@ class DataFetcherManager:
           2. PytdxFetcher (Priority 2) - 通达信
           3. BaostockFetcher (Priority 3)
           4. YfinanceFetcher (Priority 4)
-          5. TencentFetcher (Priority 5) - A 股直连兜底
-          6. SinaResearchFetcher (Priority 6) - 新浪研究兜底
+          5. TencentFetcher (Priority 5) - A 股最终兜底
         """
         from src.config import get_config
         from .efinance_fetcher import EfinanceFetcher
         from .tencent_fetcher import TencentFetcher
-        from .sina_research_fetcher import SinaResearchFetcher
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
         from .tickflow_fetcher import TickFlowFetcher
@@ -1800,7 +1800,6 @@ class DataFetcherManager:
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         tencent = TencentFetcher()
-        sina = SinaResearchFetcher()
         akshare = AkshareFetcher()
         pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
         baostock = BaostockFetcher()
@@ -1861,7 +1860,6 @@ class DataFetcherManager:
                 baostock,
                 yfinance,
                 tencent,
-                sina,
                 *optional_fetchers,
             ]
 
@@ -2467,128 +2465,7 @@ class DataFetcherManager:
             else:
                 hk_priority = [
                     source.strip().lower()
-                    for source in getattr(
-                        config,
-                        "futu_hk_realtime_source_priority",
-                        "futu,longbridge,akshare,yfinance",
-                    ).split(",")
-                    if source.strip()
-                ]
-                source_map = {
-                    "futu": ("FutuFetcher", {}),
-                    "longbridge": ("LongbridgeFetcher", {}),
-                    "akshare": ("AkshareFetcher", {"source": "hk"}),
-                    "yfinance": ("YfinanceFetcher", {}),
-                }
-                primary_quote = None
-                primary_token = None
-                primary_src_index = -1
-                fallback_from = None
-                # Futu only participates when an OpenD endpoint is configured.
-                # Skipping an unconfigured source here (instead of letting
-                # _try_fetcher_quote fail on it) avoids recording a never-enabled
-                # source as the failed primary, which would wrongly mark a
-                # successful quote from the next enabled source as fallback.
-                futu_enabled = False
-                try:
-                    from data_provider.futu_fetcher import FutuFetcher
-                    futu_enabled = FutuFetcher.has_configured_endpoint()
-                except Exception:  # noqa: BLE001 - fail closed: treat futu as disabled
-                    futu_enabled = False
-                for index, source in enumerate(hk_priority):
-                    mapped = source_map.get(source)
-                    if mapped is None:
-                        logger.warning("[实时行情] 忽略未知港股数据源: %s", source)
-                        continue
-                    fetcher_name, fetcher_kw = mapped
-                    if fetcher_name == "FutuFetcher" and not futu_enabled:
-                        logger.info(
-                            "[实时行情] 港股 %s 未配置 FUTU_OPEND_HOST，跳过 futu 源", stock_code
-                        )
-                        continue
-                    quote = self._try_fetcher_quote(stock_code, fetcher_name, **fetcher_kw)
-                    if quote is not None:
-                        primary_quote = quote
-                        primary_token = self._realtime_fetcher_token(fetcher_name, **fetcher_kw)
-                        primary_src_index = index
-                        logger.info("[实时行情] 港股 %s 成功获取 (来源: %s)", stock_code, fetcher_name)
-                        break
-                    # 该源失败：记住它的 token，供后续成功源作为 fallback_from 使用。
-                    if fallback_from is None:
-                        fallback_from = self._realtime_fetcher_token(fetcher_name, **fetcher_kw)
-                if primary_quote is not None:
-                    # 用后续数据源补充缺失字段（volume_ratio / turnover_rate / 估值 / 市值），
-                    # 保持与美股路径一致的 _supplement_quote 补字段能力。
-                    for source in hk_priority[primary_src_index + 1:]:
-                        mapped = source_map.get(source)
-                        if mapped is None:
-                            continue
-                        if not self._quote_needs_supplement(primary_quote):
-                            break
-                        fetcher_name, fetcher_kw = mapped
-                        self._supplement_quote(stock_code, primary_quote, fetcher_name, **fetcher_kw)
-                    return self._enrich_realtime_quote(
-                        primary_quote,
-                        fallback_from=fallback_from,
-                        realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
-                    )
-                if log_final_failure:
-                    logger.info("[实时行情] 港股 %s 无可用数据源", stock_code)
-                return None
-            primary_token = self._realtime_fetcher_token(primary_src, **primary_kw)
-            primary_quote = self._try_fetcher_quote(stock_code, primary_src, **primary_kw)
-            fallback_from = primary_token if primary_quote is None else None
-            if primary_quote is not None:
-                logger.info(f"[实时行情] {market_label} {stock_code} 成功获取 (来源: {primary_src})")
-            # US index quotes are YFinance-only. Longbridge accepts index-like
-            # symbols syntactically, but does not provide the index quote
-            # contract used by this manager, so it must not be used as either
-            # fallback or field supplement here.
-            if not is_us_index:
-                primary_quote = self._supplement_quote(
-                    stock_code, primary_quote, secondary_src, **secondary_kw,
-                )
-            if is_us and not is_us_index and primary_quote is not None:
-                for extra_src in ["FinnhubFetcher", "AlphaVantageFetcher"]:
-                    primary_quote = self._supplement_quote(
-                        stock_code, primary_quote, extra_src,
-                    )
-            if primary_quote is not None:
-                return self._enrich_realtime_quote(
-                    primary_quote,
-                    fallback_from=fallback_from,
-                    realtime_cache_ttl=getattr(config, "realtime_cache_ttl", None),
-                )
-            if log_final_failure:
-                logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
-            return None
-        
-        # 获取配置的数据源优先级
-        source_priority = [
-            source.strip().lower()
-            for source in config.realtime_source_priority.split(',')
-            if source.strip()
-        ]
-        
-        errors = []
-        failed_sources: List[str] = []
-        # primary_quote holds the first successful result; we may supplement
-        # missing fields (volume_ratio, turnover_rate, etc.) from later sources.
-        primary_quote = None
-        primary_fallback_from: Optional[str] = None
-        
-        for source_index, source in enumerate(source_priority):
-            attempt_start = time.time()
-            fallback_to = source_priority[source_index + 1] if source_index + 1 < len(source_priority) else None
-            fetcher = None
-            try:
-                quote = None
-                
-                if source == "efinance":
-                    fetcher = self._get_fetcher_by_name("EfinanceFetcher", capability="realtime_quote")
-                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
-                        record_provider_run_started(
-                            data_type="realtime_quote",
+                    for source in get…1663 tokens truncated…ealtime_quote",
                             provider=fetcher.name,
                             operation="get_realtime_quote",
                         )
