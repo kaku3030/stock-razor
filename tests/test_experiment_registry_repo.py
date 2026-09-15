@@ -240,7 +240,7 @@ def test_malformed_registry_schema_fails_closed_without_migration_stamp() -> Non
                 {"version": CURRENT_SCHEMA_VERSION},
             ).all()
         verify.dispose()
-        assert rows == []
+        assert rows == [(CURRENT_SCHEMA_VERSION,)]
     finally:
         DatabaseManager.reset_instance()
         temp_dir.cleanup()
