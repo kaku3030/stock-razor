@@ -1,11 +1,12 @@
 # 变更记录
 
-## 2026-09-14 — 免费行情回退层验收
+## 2026-09-14 — PR #120 governance incident record
 
-- 新增独立 `SinaResearchFetcher`，支持 A 股多周期研究行情。
-- 加固 `TencentFetcher` 与 `BaostockFetcher` 的错误和会话生命周期处理。
-- 新增双源只读诊断脚本、离线测试和 CI 快速门禁。
-- PR #120 专用研究 CI 与全仓 CI 均通过；保持未合并、未生产授权。
+- PR #120 已进入 `main`，但 merge authorization 没有被 durable evidence 证明。
+- `PR120_MERGE_AUTHORIZATION = NOT_PROVEN`。
+- `PRODUCTION_PROMOTION_AUTHORIZATION = NO`，直到 Production Owner 完成逐项 adjudication。
+- Research harness、PIT/Replay/Holdout、Registry 和 capture 能力保留；未经批准的 production routing 与 runtime semantic changes 执行 selective restoration。
+- Merged code 不构成 retrospective authorization。
 
 # Changelog
 

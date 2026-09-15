@@ -42,7 +42,7 @@
 
 ## Ashare 思路的新浪研究回退
 
-Harness 的 A 股日线管理器已接入 `SinaResearchFetcher`（Priority 6），实现独立的新浪 K 线适配，不复制第三方仓库文件。适配器支持日/周/月及 1/5/15/30/60 分钟频率，统一输出标准 OHLCV 列，并固定请求超时、代码校验、日期窗口过滤和空结果处理。
+Harness 保留可显式调用的 `SinaResearchFetcher` 研究适配器，但它不属于 `DataFetcherManager()` 默认 production routing，也不进入默认 provider 优先级。适配器支持日/周/月及 1/5/15/30/60 分钟频率，统一输出标准 OHLCV 列，并固定请求超时、代码校验、日期窗口过滤和空结果处理。
 
 参考了 [mpquant/Ashare](https://github.com/mpquant/Ashare) 的公开接口思路；该仓库未提供明确许可证，因此本项目仅采用公开接口行为并保留本地实现。新浪接口属于免费公共行情入口，可能限流或变更，仅用于研究回测与故障回退，不作为生产授权或实时交易依据。
 
@@ -50,7 +50,7 @@ Harness 的 A 股日线管理器已接入 `SinaResearchFetcher`（Priority 6）�
 运维覆盖：可设置 `STOCK_RAZOR_SINA_KLINE_URL` 替换接口地址，`STOCK_RAZOR_SINA_TIMEOUT_SECONDS` 调整超时（最低 1 秒）。默认配置无需额外 Key 或积分。
 
 
-双直连回退顺序：常规数据源失败后，先尝试 `TencentFetcher`，再尝试 `SinaResearchFetcher`；两者均只提供 A 股日线研究回退，不改变主数据源优先级。
+显式 research 诊断可依次尝试 `TencentFetcher` 与 `SinaResearchFetcher`；两者均只提供 A 股研究回退，不改变 `DataFetcherManager()` 的 production routing 或主数据源优先级。
 
 
 ### 双直连源验证
@@ -98,8 +98,8 @@ CI 快速门禁还会先编译新浪、腾讯、Baostock 和诊断脚本，语�
 
 - 专用研究 CI：Run [34824621114](https://github.com/kaku3030/stock-razor/actions/runs/34824621114)，结论 SUCCESS。
 - 全仓 CI：Run [34824621027](https://github.com/kaku3030/stock-razor/actions/runs/34824621027)，Docker、Web、Backend、治理检查全部 SUCCESS。
-- 交付 PR：[ #120](https://github.com/kaku3030/stock-razor/pull/120)，当前 OPEN，未合并。
-- 生产授权：NOT_AUTHORIZED；数据源仍限于研究、回补、校验和故障回退。
+- 交付 PR：[ #120](https://github.com/kaku3030/stock-razor/pull/120) 已进入 main；其 merge authorization 未被 durable evidence 证明。
+- `PR120_MERGE_AUTHORIZATION = NOT_PROVEN`；`PRODUCTION_PROMOTION_AUTHORIZATION = NO`，直到逐项 owner review 完成。数据源仍限于研究、回补、校验和显式诊断回退。
 
 
 - yfinance 美股链路：`IMPLEMENTED / FAILURE_TEST_COVERED`，测试不访问 Yahoo 实时网络。

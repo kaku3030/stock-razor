@@ -78,11 +78,11 @@ def test_sina_raw_data_applies_date_window(monkeypatch):
     assert list(frame["date"]) == [pd.Timestamp("2024-01-02")]
 
 
-def test_sina_is_registered_for_cn_daily_market():
+def test_sina_is_not_registered_for_production_cn_daily_market():
     from data_provider.base import DataFetcherManager
 
     support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
-    assert support["SinaResearchFetcher"] == {"cn"}
+    assert "SinaResearchFetcher" not in support
 
 
 def test_sina_transport_failure_is_data_fetch_error(monkeypatch):
