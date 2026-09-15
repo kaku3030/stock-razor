@@ -105,7 +105,7 @@ def _load_captures(input_dir: Path) -> dict[str, dict[str, Bar]]:
                         raise ValidationError(f"non-finite bar at {csv_path}:{row_number}")
                     if open_price <= 0 or high <= 0 or close <= 0 or volume < 0:
                         raise ValidationError(f"invalid OHLCV at {csv_path}:{row_number}")
-                    if symbol in rows:
+                    if day in rows:
                         raise ValidationError(f"duplicate date/symbol at {csv_path}:{row_number}")
                     rows[day] = Bar(symbol, day, open_price, high, close, volume)
         except (OSError, KeyError, TypeError, ValueError) as exc:
