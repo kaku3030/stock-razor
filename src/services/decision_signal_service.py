@@ -161,7 +161,6 @@ class DecisionSignalService:
             )
             self._invalidate_history_bound_if_superseded(result.row.id)
 
-        self.repo.expire_due_signals()
         final_row = self.repo.get(result.row.id)
         if final_row is None:
             raise DecisionSignalStorageError(
