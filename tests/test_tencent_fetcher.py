@@ -466,18 +466,19 @@ def test_tencent_429_is_rate_limit_error(monkeypatch):
         TencentFetcher()._fetch_raw_data("600000", "2024-01-01", "2024-01-02")
 
 
-def test_direct_cn_fallback_sources_are_registered():
+def test_direct_cn_production_fallback_is_explicitly_bounded():
     from data_provider.base import DataFetcherManager
 
     support = DataFetcherManager._DAILY_MARKET_FETCHER_SUPPORT
     assert support["TencentFetcher"] == {"cn"}
-    assert support["SinaResearchFetcher"] == {"cn"}
+    assert "SinaResearchFetcher" not in support
 
 
-def test_manager_initializes_dual_direct_fallback_instances(monkeypatch):
+def test_manager_excludes_research_only_direct_fallback(monkeypatch):
     monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
     monkeypatch.delenv("TICKFLOW_API_KEY", raising=False)
     from data_provider.base import DataFetcherManager
 
     names = {fetcher.name for fetcher in DataFetcherManager()._get_fetchers_snapshot()}
-    assert {"TencentFetcher", "SinaResearchFetcher"} <= names
+    assert "TencentFetcher" in names
+    assert "SinaResearchFetcher" not in names
