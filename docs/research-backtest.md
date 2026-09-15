@@ -7,7 +7,7 @@
 - 输入只能是带 `.manifest.json` 的已记录 EOD OHLCV capture。
 - manifest 必须为 `CAPTURED_NOT_APPROVED`，且 `raw_sha256` 必须匹配；不满足即 fail-closed。
 - 规则合同必须保持 `RESEARCH_ONLY`，`production_authorized=false`。
-- 信号只使用决策 bar 及其之前的价格、成交量和横截面 RS；未来 bar 只用于计算 forward outcome。
+- 信号只使用决策 bar 及其之前的价格、成交量和横截面 RS；信号在决策日收盘形成，统一在下一交易日开盘入场；更远的未来 bar 只用于计算 forward outcome。
 - 不注册实验、不 claim/burn Never-Seen Holdout，不写生产数据库。
 
 ## 运行
