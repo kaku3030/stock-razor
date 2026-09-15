@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增独立 RS Breakout 研究回测入口：只读消费已记录 capture，校验 manifest hash/PIT 边界，输出五类反事实与 development/validation/Never-Seen Holdout 分段证据；不接入生产 routing，不消费 Holdout。
+
 - [测试] Radar Rule Validation Harness 完成 Day 3–7 合成 fixture 工程闭环：冻结 ResearchDatasetCapsule（source/adapter/event hash/causal timestamps）、匹配 reservation 才能进入既有 OOS Ledger、五类 counterfactual 计划确定性执行，并新增从 RS-breakout 合成 fixture 到 OOS BURNED 的端到端测试；明确无获批 EOD OHLCV CSV 时只能作为 synthetic-fixture validation，真实数据 OOS 与 Promotion 仍阻断。
 - [新功能] Radar Rule Validation Harness V0.1 增加持久化 Experiment Registry 与原子预算 reservation：按 rule family 冻结首见 budget policy，SQLite `BEGIN IMMEDIATE` 内重读已用量、执行 PIT/contract preflight、检查并写入不可变 reservation；operation_id 严格幂等、experiment_id 不可重复注册、超预算或 preflight 失败零持久化副作用，且该 Registry 不读取或修改 Never-Seen Holdout，OOS Consumption Ledger 继续是唯一权威。
 - [新功能] Radar Rule Validation Harness V0.1 新增研究专用合同与 fail-closed preflight：把规则、数据分割、PIT policy、实验预算和五类 counterfactual 计划冻结为可绑定 `ExperimentManifest` 的确定性指纹；PIT `UNKNOWN`/晚到、缺失/冲突绑定或任一预算维度超限均阻断 Never-Seen Holdout claim 资格；纯 preflight 的用量输入只是 snapshot，执行级原子 reservation 由持久化 Registry 提供。
