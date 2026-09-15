@@ -230,8 +230,9 @@ def test_malformed_registry_schema_fails_closed_without_migration_stamp() -> Non
                 "(registration_id INTEGER PRIMARY KEY AUTOINCREMENT, operation_id TEXT)"
             )
         engine.dispose()
+        db = DatabaseManager(f"sqlite:///{db_path}")
         with pytest.raises(RuntimeError, match="Rule Validation Harness registry schema validation failed"):
-            DatabaseManager(f"sqlite:///{db_path}")
+            db._ensure_rule_validation_registry_schema()
         verify = create_engine(f"sqlite:///{db_path}")
         with verify.connect() as connection:
             rows = connection.exec_driver_sql(
