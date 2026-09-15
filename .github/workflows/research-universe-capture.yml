@@ -30,6 +30,9 @@ jobs:
       - name: Validate captured universe evidence
         run: |
           python scripts/validate_research_universe_capture.py             --config config/research_universe_v0_1.json             --input-dir artifacts/universe
+      - name: Run independent RS Breakout validation
+        run: |
+          python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation.json
       - name: Capture AKShare cross-source sample
         continue-on-error: true
         run: |
