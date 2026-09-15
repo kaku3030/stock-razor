@@ -31,6 +31,7 @@ class ValidationError(ValueError):
 class Bar:
     symbol: str
     day: str
+    open: float
     high: float
     close: float
     volume: float
@@ -96,16 +97,17 @@ def _load_captures(input_dir: Path) -> dict[str, dict[str, Bar]]:
                 for row_number, row in enumerate(reader, start=2):
                     symbol = row["symbol"]
                     day = date.fromisoformat(row["date"]).isoformat()
+                    open_price = float(row["open"])
                     high = float(row["high"])
                     close = float(row["close"])
                     volume = float(row["volume"])
-                    if not all(math.isfinite(value) for value in (high, close, volume)):
+                    if not all(math.isfinite(value) for value in (open_price, high, close, volume)):
                         raise ValidationError(f"non-finite bar at {csv_path}:{row_number}")
-                    if high <= 0 or close <= 0 or volume < 0:
+                    if open_price <= 0 or high <= 0 or close <= 0 or volume < 0:
                         raise ValidationError(f"invalid OHLCV at {csv_path}:{row_number}")
                     if symbol in rows:
                         raise ValidationError(f"duplicate date/symbol at {csv_path}:{row_number}")
-                    rows[day] = Bar(symbol, day, high, close, volume)
+                    rows[day] = Bar(symbol, day, open_price, high, close, volume)
         except (OSError, KeyError, TypeError, ValueError) as exc:
             if isinstance(exc, ValidationError):
                 raise
@@ -150,11 +152,13 @@ def _build_observations(series: dict[str, dict[str, Bar]], params: dict[str, Any
     if not common_dates:
         return []
     first = max(lookback, 1)
-    last = len(common_dates) - hold_bars
+    # A close-based signal can only be executed at the next bar open.
+    last = len(common_dates) - hold_bars - 1
     observations: list[dict[str, Any]] = []
     for index in range(first, max(first, last)):
         day = common_dates[index]
-        future_day = common_dates[index + hold_bars]
+        entry_day = common_dates[index + 1]
+        exit_day = common_dates[index + 1 + hold_bars]
         rs_values = {
             symbol: series[symbol][day].close / series[symbol][common_dates[index - lookback]].close - 1.0
             for symbol in series
@@ -171,7 +175,7 @@ def _build_observations(series: dict[str, dict[str, Bar]], params: dict[str, Any
             observations.append({
                 "date": day,
                 "symbol": symbol,
-                "forward_return": rows[future_day].close / bar.close - 1.0,
+                "forward_return": rows[exit_day].close / rows[entry_day].open - 1.0,
                 "with_rule": selected,
                 "regime": "risk_on" if market_return >= 0 else "risk_off",
                 "rs_percentile": round(percentiles[symbol], 6),
@@ -239,6 +243,7 @@ def run_validation(input_dir: Path, contract_path: Path, output_path: Path, *, s
         },
         "guard": {
             "pit": "RECORDED_CAPTURE_ONLY",
+            "signal_execution": "NEXT_BAR_OPEN",
             "future_data_used_for_signal": False,
             "never_seen_holdout": "PROTECTED",
             "consumes_holdout": False,
