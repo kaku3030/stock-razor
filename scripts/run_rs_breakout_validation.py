@@ -128,18 +128,30 @@ def _rank_percentiles(values: dict[str, float]) -> dict[str, float]:
     return {symbol: 100.0 * index / denominator for index, (symbol, _) in enumerate(ordered)}
 
 
-def _aggregate(observations: list[dict[str, Any]], flags: list[bool]) -> dict[str, Any]:
+def _aggregate(
+    observations: list[dict[str, Any]],
+    flags: list[bool],
+    round_trip_cost_bps: float,
+) -> dict[str, Any]:
     selected = [item["forward_return"] for item, flag in zip(observations, flags) if flag]
-    equity = 1.0
-    for value in selected:
-        equity *= 1.0 + value
+    cost_factor = 1.0 - round_trip_cost_bps / 10000.0
+    net_selected = [(1.0 + value) * cost_factor - 1.0 for value in selected]
+    gross_equity = 1.0
+    net_equity = 1.0
+    for gross_value, net_value in zip(selected, net_selected):
+        gross_equity *= 1.0 + gross_value
+        net_equity *= 1.0 + net_value
     return {
         "observations": len(observations),
         "selected_count": len(selected),
         "coverage": len(selected) / len(observations) if observations else 0.0,
         "average_forward_return": sum(selected) / len(selected) if selected else None,
-        "cumulative_forward_return": equity - 1.0 if selected else None,
+        "average_net_forward_return": sum(net_selected) / len(net_selected) if net_selected else None,
+        "cumulative_forward_return": gross_equity - 1.0 if selected else None,
+        "cumulative_net_forward_return": net_equity - 1.0 if net_selected else None,
+        "round_trip_cost_bps": round_trip_cost_bps,
         "win_rate": sum(value > 0 for value in selected) / len(selected) if selected else None,
+        "net_win_rate": sum(value > 0 for value in net_selected) / len(net_selected) if net_selected else None,
     }
 
 
@@ -195,7 +207,16 @@ def _split_name(index: int, dates: list[str]) -> str:
     return "never_seen_holdout"
 
 
-def run_validation(input_dir: Path, contract_path: Path, output_path: Path, *, seed: int = 20260915) -> dict[str, Any]:
+def run_validation(
+    input_dir: Path,
+    contract_path: Path,
+    output_path: Path,
+    *,
+    seed: int = 20260915,
+    round_trip_cost_bps: float = 0.0,
+) -> dict[str, Any]:
+    if not math.isfinite(round_trip_cost_bps) or round_trip_cost_bps < 0 or round_trip_cost_bps > 10000:
+        raise ValidationError("round_trip_cost_bps must be finite and between 0 and 10000")
     contract = _validate_contract(contract_path)
     series = _load_captures(input_dir)
     observations = _build_observations(series, contract["parameters"])
@@ -224,12 +245,13 @@ def run_validation(input_dir: Path, contract_path: Path, output_path: Path, *, s
         splits.setdefault(_split_name(date_index[item["date"]], dates), {}).setdefault(item["date"], []).append(position)
     metrics: dict[str, Any] = {}
     for name, flags in variants.items():
-        metrics[name] = {"overall": _aggregate(observations, flags), "splits": {}}
+        metrics[name] = {"overall": _aggregate(observations, flags, round_trip_cost_bps), "splits": {}}
         for split, split_dates in splits.items():
             positions = [position for day in split_dates for position in range(len(observations)) if observations[position]["date"] == day]
             metrics[name]["splits"][split] = _aggregate(
                 [observations[position] for position in positions],
                 [flags[position] for position in positions],
+                round_trip_cost_bps,
             )
     result = {
         "schema": "radar-rs-breakout-validation-v0.1",
@@ -249,6 +271,7 @@ def run_validation(input_dir: Path, contract_path: Path, output_path: Path, *, s
             "consumes_holdout": False,
             "production_authorized": False,
             "overlapping_forward_windows": True,
+            "round_trip_cost_bps": round_trip_cost_bps,
         },
         "parameters": contract["parameters"],
         "seed": seed,
@@ -267,9 +290,16 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260915)
+    parser.add_argument("--round-trip-cost-bps", type=float, default=0.0)
     args = parser.parse_args()
     try:
-        result = run_validation(args.input_dir, args.config, args.output, seed=args.seed)
+        result = run_validation(
+            args.input_dir,
+            args.config,
+            args.output,
+            seed=args.seed,
+            round_trip_cost_bps=args.round_trip_cost_bps,
+        )
     except ValidationError as exc:
         print(json.dumps({"status": "INVALID", "error": str(exc)}, sort_keys=True))
         return 2
