@@ -8,6 +8,9 @@ from enum import StrEnum
 from typing import Any, Mapping
 
 
+OBSERVATION_SCHEMA_VERSION = "observation-ledger-v0.1"
+
+
 class SourceEventAtQuality(StrEnum):
     EXACT = "EXACT"
     DERIVED = "DERIVED"
@@ -114,6 +117,52 @@ class Observation:
 
     def serialize(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "Observation":
+        required = {"observation_id", "detector_status"}
+        missing = required - value.keys()
+        if missing:
+            raise ValueError(f"observation record missing fields: {sorted(missing)}")
+        latency = value.get("latency", {})
+        if not isinstance(latency, Mapping):
+            raise ValueError("observation latency must be an object")
+        quality = latency.get("source_event_at_quality", SourceEventAtQuality.UNKNOWN.value)
+        try:
+            trace = LatencyTrace(**{**latency, "source_event_at_quality": SourceEventAtQuality(quality)})
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid observation latency") from exc
+        return cls(
+            observation_id=str(value["observation_id"]), detector_status=str(value["detector_status"]),
+            evidence_ids=tuple(value.get("evidence_ids", ())), strategy_gate_results=dict(value.get("strategy_gate_results", {})),
+            strategy_eligible=value.get("strategy_eligible"), portfolio_admissible=value.get("portfolio_admissible"),
+            portfolio_block_reasons=tuple(value.get("portfolio_block_reasons", ())), execution_feasible=value.get("execution_feasible"),
+            execution_record_id=value.get("execution_record_id"), interrupted_reason=value.get("interrupted_reason"),
+            decision_available_at=value.get("decision_available_at"), confirmed_at=value.get("confirmed_at"),
+            earliest_executable_at=value.get("earliest_executable_at"), canonical_permission=str(value.get("canonical_permission", "UNKNOWN")),
+            later_outcome_label=value.get("later_outcome_label"), censored=bool(value.get("censored", False)),
+            mfe=value.get("mfe"), mae=value.get("mae"), universe_snapshot_id=value.get("universe_snapshot_id"),
+            latency=trace, opportunity_id=value.get("opportunity_id"),
+        )
+
+
+def serialize_observation_record(observation: Observation) -> str:
+    """Return one versioned, deterministic append-only JSONL record."""
+    return json.dumps({"record_type": "observation", "schema_version": OBSERVATION_SCHEMA_VERSION,
+                       "observation": observation.to_dict()}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def deserialize_observation_record(line: str) -> Observation:
+    try:
+        value = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError("invalid observation JSONL record") from exc
+    if value.get("schema_version") != OBSERVATION_SCHEMA_VERSION or value.get("record_type") != "observation":
+        raise ValueError("unsupported observation schema or record type")
+    payload = value.get("observation")
+    if not isinstance(payload, Mapping):
+        raise ValueError("observation record payload must be an object")
+    return Observation.from_dict(payload)
 
 
 class ObservationLedger:
