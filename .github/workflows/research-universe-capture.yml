@@ -21,26 +21,21 @@ jobs:
         run: python -m pip install --upgrade -r requirements.txt
       - name: Validate research universe contract
         run: python scripts/validate_research_universe.py --config config/research_universe_v0_1.json
+      - name: Validate RS Breakout research hypothesis contract
+        run: python scripts/validate_rs_breakout_hypothesis.py --config config/rs_breakout_hypothesis_v0_1.json
       - name: Capture frozen research universe
         continue-on-error: true
         run: |
-          python scripts/capture_research_universe.py \
-            --config config/research_universe_v0_1.json \
-            --output-dir artifacts/universe
+          python scripts/capture_research_universe.py             --config config/research_universe_v0_1.json             --output-dir artifacts/universe
       - name: Validate captured universe evidence
         run: |
-          python scripts/validate_research_universe_capture.py \
-            --config config/research_universe_v0_1.json \
-            --input-dir artifacts/universe
+          python scripts/validate_research_universe_capture.py             --config config/research_universe_v0_1.json             --input-dir artifacts/universe
       - name: Capture AKShare cross-source sample
         continue-on-error: true
         run: |
           for symbol in sh.600000 sh.600519 sh.601318; do
             safe_symbol=${symbol//./_}
-            python scripts/capture_research_eod.py \
-              --market cn --source akshare --symbol "$symbol" \
-              --start 2015-01-01 --end "$(date -u +%Y-%m-%d)" \
-              --output "artifacts/universe/cn_${safe_symbol}_akshare.csv" --retries 3 || true
+            python scripts/capture_research_eod.py               --market cn --source akshare --symbol "$symbol"               --start 2015-01-01 --end "$(date -u +%Y-%m-%d)"               --output "artifacts/universe/cn_${safe_symbol}_akshare.csv" --retries 3 || true
           done
       - name: Compare Baostock and AKShare sample
         run: |
@@ -48,37 +43,26 @@ jobs:
             safe_symbol=${symbol//./_}
             right="artifacts/universe/cn_${safe_symbol}_akshare.csv"
             if [ -f "$right" ] && [ -f "$right.manifest.json" ]; then
-              python scripts/compare_recorded_captures.py \
-                --left-csv "artifacts/universe/cn_${safe_symbol}.csv" \
-                --left-manifest "artifacts/universe/cn_${safe_symbol}.csv.manifest.json" \
-                --right-csv "$right" --right-manifest "$right.manifest.json"
+              python scripts/compare_recorded_captures.py                 --left-csv "artifacts/universe/cn_${safe_symbol}.csv"                 --left-manifest "artifacts/universe/cn_${safe_symbol}.csv.manifest.json"                 --right-csv "$right" --right-manifest "$right.manifest.json"
             else
               echo "{\"status\":\"UNKNOWN\",\"reason\":\"AKSHARE_CAPTURE_UNAVAILABLE\",\"symbol\":\"$symbol\"}"
             fi
           done
       - name: Compute cross-sectional RS
         run: |
-          python scripts/compute_cross_sectional_rs.py \
-            --input-dir artifacts/universe \
-            --output artifacts/universe/rs_rankings.json
+          python scripts/compute_cross_sectional_rs.py             --input-dir artifacts/universe             --output artifacts/universe/rs_rankings.json
       - name: Run historical RS replay
         run: |
-          python scripts/run_rs_replay.py --input-dir artifacts/universe \
-            --output artifacts/universe/rs_replay.json
+          python scripts/run_rs_replay.py --input-dir artifacts/universe             --output artifacts/universe/rs_replay.json
       - name: Summarize RS replay
         run: |
-          python scripts/summarize_rs_replay.py \
-            --input artifacts/universe/rs_replay.json \
-            --output artifacts/universe/rs_summary.json
+          python scripts/summarize_rs_replay.py             --input artifacts/universe/rs_replay.json             --output artifacts/universe/rs_summary.json
       - name: Run baseline counterfactual on captured sample
         run: |
           if [ -f artifacts/universe/cn_sh_600000.csv ]; then
-            python scripts/run_baseline_counterfactual.py \
-              --csv artifacts/universe/cn_sh_600000.csv \
-              > artifacts/universe/cn_sh_600000_counterfactual.json
+            python scripts/run_baseline_counterfactual.py               --csv artifacts/universe/cn_sh_600000.csv               > artifacts/universe/cn_sh_600000_counterfactual.json
           else
-            echo '{"status":"UNKNOWN","reason":"PRIMARY_CAPTURE_UNAVAILABLE"}' \
-              > artifacts/universe/cn_sh_600000_counterfactual.json
+            echo '{"status":"UNKNOWN","reason":"PRIMARY_CAPTURE_UNAVAILABLE"}'               > artifacts/universe/cn_sh_600000_counterfactual.json
           fi
       - name: Upload universe captures
         if: always()
