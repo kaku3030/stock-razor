@@ -67,7 +67,7 @@ def test_runner_emits_independent_research_report(tmp_path: Path) -> None:
     output = tmp_path / "out" / "validation.json"
     _write_contract(config)
 
-    result = run_validation(tmp_path, config, output, seed=7)
+    result = run_validation(tmp_path, config, output, seed=7, round_trip_cost_bps=100.0)
 
     assert result["schema"] == "radar-rs-breakout-validation-v0.1"
     assert result["status"] == "RESEARCH_ONLY"
@@ -76,6 +76,11 @@ def test_runner_emits_independent_research_report(tmp_path: Path) -> None:
     assert result["guard"]["future_data_used_for_signal"] is False
     assert result["guard"]["never_seen_holdout"] == "PROTECTED"
     assert result["guard"]["consumes_holdout"] is False
+    assert result["guard"]["round_trip_cost_bps"] == 100.0
+    overall = result["metrics"]["WITH_RULE"]["overall"]
+    assert overall["round_trip_cost_bps"] == 100.0
+    assert overall["average_net_forward_return"] < overall["average_forward_return"]
+    assert overall["net_win_rate"] <= overall["win_rate"]
     assert set(result["metrics"]) == {
         "WITH_RULE", "WITHOUT_RULE", "SHUFFLED_PLACEBO",
         "DELAYED_RULE", "REGIME_CONDITIONED",
@@ -97,4 +102,26 @@ def test_runner_fails_closed_on_unapproved_capture(tmp_path: Path) -> None:
     _write_contract(config)
 
     with pytest.raises(ValidationError, match="not recorded evidence"):
+        run_validation(tmp_path, config, tmp_path / "out.json")
+
+
+def test_runner_rejects_duplicate_capture_date(tmp_path: Path) -> None:
+    _write_capture(tmp_path, "us_aaa", "AAA")
+    _write_capture(tmp_path, "us_bbb", "BBB")
+    path = tmp_path / "us_aaa.csv"
+    rows = list(csv.reader(path.open(newline="", encoding="utf-8")))
+    rows[-1][1] = rows[1][1]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        csv.writer(handle).writerows(rows)
+    (tmp_path / "us_aaa.csv.manifest.json").write_text(
+        json.dumps({
+            "status": "CAPTURED_NOT_APPROVED",
+            "raw_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }),
+        encoding="utf-8",
+    )
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    with pytest.raises(ValidationError, match="duplicate date/symbol"):
         run_validation(tmp_path, config, tmp_path / "out.json")
