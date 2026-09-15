@@ -6,7 +6,7 @@
 | Baostock | A 股 | 日线 | 免费登录/登出 | 3 | 历史回补、交叉校验 |
 | Yfinance | A 股/美股/港股等 | 日线及既有能力 | 无 Key | 4 | 国际市场兜底 |
 | TencentFetcher | A 股 | 日线 | 无 Key | 5 | 国内直连回退 |
-| SinaResearchFetcher | A 股 | 日/周/月、1/5/15/30/60 分钟 | 无 Key | 6 | 研究回退、周期补充 |
+| SinaResearchFetcher | A 股 | 日/周/月、1/5/15/30/60 分钟 | 无 Key | 研究专用 | 显式研究回退、周期补充；不进入 `DataFetcherManager()` 默认 routing |
 
 ## 统一限制
 
