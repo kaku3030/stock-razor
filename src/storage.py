@@ -63,7 +63,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-CURRENT_SCHEMA_VERSION = "2026-09-13-rule-validation-registry-v0.1"
+CURRENT_SCHEMA_VERSION = "2026-09-07-oos-consumption-ledger-v0.1"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -1473,7 +1473,6 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # migration version is stamped: a malformed/partial Ledger table
             # must fail closed without recording the version as applied.
             self._ensure_oos_consumption_ledger_schema()
-            self._ensure_rule_validation_registry_schema()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
 
