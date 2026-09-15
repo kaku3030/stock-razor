@@ -16,7 +16,8 @@
 python scripts/run_rs_breakout_validation.py \
   --config config/rs_breakout_hypothesis_v0_1.json \
   --input-dir artifacts/universe \
-  --output artifacts/universe/rs_breakout_validation.json
+  --output artifacts/universe/rs_breakout_validation.json \
+  --round-trip-cost-bps 100
 ```
 
 输出 schema 为 `radar-rs-breakout-validation-v0.1`，包含：
