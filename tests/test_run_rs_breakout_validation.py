@@ -72,6 +72,7 @@ def test_runner_emits_independent_research_report(tmp_path: Path) -> None:
     assert result["schema"] == "radar-rs-breakout-validation-v0.1"
     assert result["status"] == "RESEARCH_ONLY"
     assert result["guard"]["pit"] == "RECORDED_CAPTURE_ONLY"
+    assert result["guard"]["signal_execution"] == "NEXT_BAR_OPEN"
     assert result["guard"]["future_data_used_for_signal"] is False
     assert result["guard"]["never_seen_holdout"] == "PROTECTED"
     assert result["guard"]["consumes_holdout"] is False
