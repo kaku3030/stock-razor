@@ -125,3 +125,35 @@ def test_runner_rejects_duplicate_capture_date(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="duplicate date/symbol"):
         run_validation(tmp_path, config, tmp_path / "out.json")
+
+
+def test_runner_rejects_mixed_symbols(tmp_path: Path) -> None:
+    _write_capture(tmp_path, "us_aaa", "AAA")
+    _write_capture(tmp_path, "us_bbb", "BBB")
+    path = tmp_path / "us_aaa.csv"
+    rows = list(csv.reader(path.open(newline="", encoding="utf-8")))
+    rows[2][0] = "OTHER"
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        csv.writer(handle).writerows(rows)
+    (tmp_path / "us_aaa.csv.manifest.json").write_text(
+        json.dumps({
+            "status": "CAPTURED_NOT_APPROVED",
+            "raw_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }),
+        encoding="utf-8",
+    )
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    with pytest.raises(ValidationError, match="mixed symbols in capture"):
+        run_validation(tmp_path, config, tmp_path / "out.json")
+
+
+def test_runner_rejects_empty_eligible_window(tmp_path: Path) -> None:
+    _write_capture(tmp_path, "us_aaa", "AAA", days=25)
+    _write_capture(tmp_path, "us_bbb", "BBB", days=25)
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    with pytest.raises(ValidationError, match="no eligible observations"):
+        run_validation(tmp_path, config, tmp_path / "out.json")
