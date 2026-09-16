@@ -16,6 +16,7 @@ from .watch_universe import WatchIdentity, WatchUniverseSnapshot
 
 
 AI_MONITOR_LIVE_FEED_CONSUMER_ID = "AI_MONITOR_ACTIVE_WATCH"
+LIVE_FEED_CONSUMER_OWNERSHIP_REQUIRED = True
 
 
 @dataclass(frozen=True)
