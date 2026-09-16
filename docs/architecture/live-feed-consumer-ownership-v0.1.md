@@ -24,4 +24,4 @@ This separation prevents consumer-only bookkeeping from making an in-flight prov
 
 This slice changes the existing LiveFeed registry only. It does not create a second subscription registry, Provider Worker, LiveFeed runtime, provider adapter, or AI Monitor bridge. It does not wire production bootstrap, alter provider routing/currentness semantics, grant Entry Permission, or touch broker/execution.
 
-The controller ingress API and AI Monitor runtime bridge remain separate follow-up slices. Production promotion remains frozen.
+The controller ingress API and AI Monitor runtime bridge remain separate follow-up slices. Until the controller exposes consumer-bound add/remove requests and their exact-head tests pass, AI Monitor runtime binding remains fail-closed. Production promotion remains frozen.
