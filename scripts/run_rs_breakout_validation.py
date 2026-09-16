@@ -33,6 +33,7 @@ class Bar:
     day: str
     open: float
     high: float
+    low: float
     close: float
     volume: float
 
@@ -96,7 +97,9 @@ def _load_captures(input_dir: Path) -> dict[str, dict[str, Bar]]:
                 rows: dict[str, Bar] = {}
                 capture_symbol: str | None = None
                 for row_number, row in enumerate(reader, start=2):
-                    symbol = row["symbol"]
+                    symbol = row["symbol"].strip()
+                    if not symbol:
+                        raise ValidationError(f"empty symbol in capture: {csv_path}:{row_number}")
                     if capture_symbol is None:
                         capture_symbol = symbol
                     elif symbol != capture_symbol:
@@ -104,15 +107,18 @@ def _load_captures(input_dir: Path) -> dict[str, dict[str, Bar]]:
                     day = date.fromisoformat(row["date"]).isoformat()
                     open_price = float(row["open"])
                     high = float(row["high"])
+                    low = float(row["low"])
                     close = float(row["close"])
                     volume = float(row["volume"])
-                    if not all(math.isfinite(value) for value in (open_price, high, close, volume)):
+                    if not all(math.isfinite(value) for value in (open_price, high, low, close, volume)):
                         raise ValidationError(f"non-finite bar at {csv_path}:{row_number}")
-                    if open_price <= 0 or high <= 0 or close <= 0 or volume < 0:
+                    if open_price <= 0 or high <= 0 or low <= 0 or close <= 0 or volume < 0:
                         raise ValidationError(f"invalid OHLCV at {csv_path}:{row_number}")
+                    if high < max(open_price, low, close) or low > min(open_price, close):
+                        raise ValidationError(f"inconsistent OHLC at {csv_path}:{row_number}")
                     if day in rows:
                         raise ValidationError(f"duplicate date/symbol at {csv_path}:{row_number}")
-                    rows[day] = Bar(symbol, day, open_price, high, close, volume)
+                    rows[day] = Bar(symbol, day, open_price, high, low, close, volume)
         except (OSError, KeyError, TypeError, ValueError) as exc:
             if isinstance(exc, ValidationError):
                 raise
