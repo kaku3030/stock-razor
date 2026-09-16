@@ -85,6 +85,8 @@ class JsonUserPinStore:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise WatchRuntimeError("cannot read durable user-pin truth") from exc
+        if not isinstance(payload, dict):
+            raise WatchRuntimeError("invalid user-pin store payload")
         if payload.get("version") != self.VERSION:
             raise WatchRuntimeError("unsupported user-pin store version")
         rows = payload.get("pins")
