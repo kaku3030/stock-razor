@@ -11,6 +11,7 @@ from src.services.ai_monitor.watch_universe import (
     ActiveWatchUniverse,
     RadarWatchContext,
     WatchIdentity,
+    WatchUniverseSnapshot,
 )
 
 
@@ -32,7 +33,7 @@ class FakeAdapter:
             raise RuntimeError("provider outcome uncertain")
 
 
-def _snapshot_with_us_and_cn() -> tuple[ActiveWatchUniverse, object]:
+def _snapshot_with_us_and_cn() -> tuple[ActiveWatchUniverse, WatchUniverseSnapshot]:
     universe = ActiveWatchUniverse()
     universe.pin(market="us", symbol="AAPL", activated_at=NOW)
     universe.replace_radar(
