@@ -14,6 +14,12 @@ from src.config import (
     AGENT_CONTEXT_COMPRESSION_PROFILES,
     AGENT_MAX_STEPS_DEFAULT,
 )
+from src.llm.local_cli_backend import (
+    DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES,
+    DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS,
+)
 from src.notification_noise import NOTIFICATION_SEVERITIES
 from src.notification_routing import ROUTABLE_NOTIFICATION_CHANNELS
 
@@ -209,7 +215,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "300",
+        "default_value": str(DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS),
         "options": [],
         "validation": {"min": 1, "max": 3600},
         "display_order": 1,
@@ -235,7 +241,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1048576",
+        "default_value": str(DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES),
         "options": [],
         "validation": {"min": 1, "max": 33554432},
         "display_order": 1,
@@ -258,7 +264,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1",
+        "default_value": str(DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY),
         "options": [],
         "validation": {"min": 1, "max": 16},
         "display_order": 1,
@@ -281,7 +287,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1",
+        "default_value": str(DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY),
         "options": [],
         "validation": {"min": 1, "max": 4},
         "display_order": 1,
