@@ -267,21 +267,6 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         self._stream.subscribe_bars(on_bar, *codes)
         self._stream.subscribe_updated_bars(on_updated_bar, *codes)
 
-    def unsubscribe(
-        self,
-        symbols: Sequence[str],
-        timeframe: str = "1m",
-    ) -> None:
-        if timeframe != "1m":
-            raise NotImplementedError("Alpaca V1 unsubscribes raw 1m bars only")
-        if self._stream is None:
-            raise RuntimeError("Alpaca stream client is not configured")
-        codes = tuple(symbol.strip().upper() for symbol in symbols)
-        if not codes:
-            return
-        self._stream.unsubscribe_bars(*codes)
-        self._stream.unsubscribe_updated_bars(*codes)
-
     def get_session_status(self, market: str) -> str:
         return _session_at(self._now()) if market == "us" else "unsupported"
 
