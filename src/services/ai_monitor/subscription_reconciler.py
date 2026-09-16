@@ -7,7 +7,7 @@ truth, grant Entry Permission, or create a second LiveFeed runtime.
 Provider mutations are deliberately fail-closed: if a subscribe/unsubscribe
 call has an uncertain outcome, the reconciler marks its local subscription
 state UNKNOWN and refuses further mutations until the caller establishes a new
-transport session and explicitly resets the reconciler.
+transport session with a new generation identifier.
 """
 
 from __future__ import annotations
@@ -40,13 +40,19 @@ class SubscriptionReconcileResult:
     knowledge: SubscriptionKnowledge = SubscriptionKnowledge.KNOWN
 
 
+def _transport_generation(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise ValueError("transport_generation must not be empty")
+    return normalized
+
+
 class WatchSubscriptionReconciler:
     """Reconcile one market's desired watch set against one stream transport.
 
-    The instance is scoped to one concrete stream session. After transport
-    restart, call ``reset_after_transport_restart`` only when the new session is
-    known to start with zero subscriptions; the next reconcile then subscribes
-    the full desired universe.
+    The instance is scoped to one concrete stream generation. Recovery from an
+    uncertain mutation requires a different, proven-empty transport generation;
+    the next reconcile then subscribes the full desired universe.
     """
 
     def __init__(
@@ -55,6 +61,7 @@ class WatchSubscriptionReconciler:
         *,
         market: str,
         callback: BarCallback,
+        transport_generation: str,
         timeframe: str = "1m",
     ) -> None:
         normalized_market = str(market or "").strip().lower()
@@ -65,6 +72,7 @@ class WatchSubscriptionReconciler:
         self._adapter = adapter
         self._market = normalized_market
         self._callback = callback
+        self._transport_generation = _transport_generation(transport_generation)
         self._timeframe = str(timeframe or "").strip()
         if not self._timeframe:
             raise ValueError("timeframe must not be empty")
@@ -76,19 +84,27 @@ class WatchSubscriptionReconciler:
         return self._knowledge
 
     @property
+    def transport_generation(self) -> str:
+        return self._transport_generation
+
+    @property
     def known_subscriptions(self) -> tuple[str, ...]:
         return tuple(sorted(self._known_subscriptions))
 
-    def reset_after_transport_restart(self) -> None:
-        """Bind to a proven-empty new stream session after restart/reconnect."""
+    def reset_after_transport_restart(self, *, transport_generation: str) -> None:
+        """Bind to a proven-empty new stream generation after restart/reconnect."""
 
+        new_generation = _transport_generation(transport_generation)
+        if new_generation == self._transport_generation:
+            raise ValueError("transport_generation must change after restart")
+        self._transport_generation = new_generation
         self._known_subscriptions.clear()
         self._knowledge = SubscriptionKnowledge.KNOWN
 
     def reconcile(self, snapshot: WatchUniverseSnapshot) -> SubscriptionReconcileResult:
         if self._knowledge is SubscriptionKnowledge.UNKNOWN:
             raise SubscriptionStateUnknownError(
-                "subscription state is UNKNOWN; restart transport before reconciling"
+                "subscription state is UNKNOWN; bind a new transport generation before reconciling"
             )
 
         desired = {
