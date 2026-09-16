@@ -34,6 +34,12 @@ class FakeStream:
     def subscribe_updated_bars(self, handler, *symbols):
         self.updated_subscription = (handler, symbols)
 
+    def unsubscribe_bars(self, *symbols):
+        self.bar_unsubscription = symbols
+
+    def unsubscribe_updated_bars(self, *symbols):
+        self.updated_unsubscription = symbols
+
 
 def test_alpaca_rest_history_requests_latest_page() -> None:
     client = AlpacaRestMarketDataClient("key", "secret")
@@ -96,6 +102,16 @@ def test_alpaca_subscribes_to_bars_and_updated_bars() -> None:
     assert "UPDATED_BAR" not in received[0].quality_flags
     assert "UPDATED_BAR" in received[1].quality_flags
     assert received[0].bar_start == received[1].bar_start
+
+
+def test_alpaca_unsubscribes_bars_and_updated_bars() -> None:
+    stream = FakeStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream, feed="iex", now=lambda: NOW)
+
+    adapter.unsubscribe(["nvda", "aapl"])
+
+    assert stream.bar_unsubscription == ("NVDA", "AAPL")
+    assert stream.updated_unsubscription == ("NVDA", "AAPL")
 
 
 def test_alpaca_rejects_unknown_feed_and_fake_higher_timeframe() -> None:
