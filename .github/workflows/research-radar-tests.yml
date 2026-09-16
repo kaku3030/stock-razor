@@ -132,6 +132,8 @@ jobs:
             tests/test_strategy_lab_walk_forward.py \
             tests/test_strategy_lab_oos_consumption.py \
             tests/test_oos_consumption_ledger_repo.py \
+            tests/test_strategy_lab_replay_a2.py \
+            tests/test_strategy_lab_replay_integrity_a2.py \
             tests/test_experiment_registry_repo.py \
             tests/test_rule_validation_harness_synthetic_e2e.py \
             tests/api/test_research_validation_endpoint.py \
