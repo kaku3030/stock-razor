@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [测试] Research Universe Capture 工作流新增 100/150/200 bps 往返成本压力场景，生成独立 JSON 证据文件，不改变默认 Research-only 与 Holdout 保护边界。
 
+- [修复] RS Breakout 验证器对 capture 内混合 symbol 与无可执行观察窗口执行 fail-closed，避免生成可误读的空结果。
+
 - [新功能] 新增独立 RS Breakout 研究回测入口：只读消费已记录 capture，校验 manifest hash/PIT 边界，输出五类反事实与 development/validation/Never-Seen Holdout 分段证据；不接入生产 routing，不消费 Holdout。
 
 - [测试] Radar Rule Validation Harness 完成 Day 3–7 合成 fixture 工程闭环：冻结 ResearchDatasetCapsule（source/adapter/event hash/causal timestamps）、匹配 reservation 才能进入既有 OOS Ledger、五类 counterfactual 计划确定性执行，并新增从 RS-breakout 合成 fixture 到 OOS BURNED 的端到端测试；明确无获批 EOD OHLCV CSV 时只能作为 synthetic-fixture validation，真实数据 OOS 与 Promotion 仍阻断。
