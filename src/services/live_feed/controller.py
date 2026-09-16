@@ -76,7 +76,7 @@ from data_provider.live_feed_types import (
 from .commands import ProviderCommand, ProviderCommandExecutor, ProviderCommandResult, ProviderCommandType
 from .health import LiveFeedHealth
 from .identity import ControllerGeneration, new_command_id
-from .registry import DesiredRegistrySnapshot, DesiredSubscriptionRegistry
+from .registry import LEGACY_DEFAULT_CONSUMER, DesiredRegistrySnapshot, DesiredSubscriptionRegistry
 
 
 class LivePromotionForbidden(RuntimeError):
@@ -158,6 +158,7 @@ class _ControlRequest:
     semantic_stream_key: SemanticStreamKey | None = None
     control_plane_state: ControlPlaneState | None = None
     binding_strength: BindingStrength | None = None
+    consumer_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -317,10 +318,40 @@ class LiveFeedController:
             return EnqueueResult(accepted=True, local_enqueue_seq=seq)
 
     def request_add_desired(self, key: SemanticStreamKey) -> EnqueueResult:
-        return self._submit_control_request(_ControlRequestKind.ADD_DESIRED, semantic_stream_key=key)
+        """Compatibility request isolated to the legacy consumer."""
+        return self.request_add_desired_for_consumer(key, LEGACY_DEFAULT_CONSUMER)
 
     def request_remove_desired(self, key: SemanticStreamKey) -> EnqueueResult:
-        return self._submit_control_request(_ControlRequestKind.REMOVE_DESIRED, semantic_stream_key=key)
+        """Compatibility request isolated to the legacy consumer."""
+        return self.request_remove_desired_for_consumer(key, LEGACY_DEFAULT_CONSUMER)
+
+    @staticmethod
+    def _validate_consumer_id(consumer_id: str) -> str:
+        if not isinstance(consumer_id, str) or not consumer_id.strip():
+            raise ValueError("consumer_id is required")
+        return consumer_id.strip()
+
+    def request_add_desired_for_consumer(
+        self, key: SemanticStreamKey, consumer_id: str
+    ) -> EnqueueResult:
+        """Enqueue an explicit consumer-owned desired-stream request."""
+        consumer = self._validate_consumer_id(consumer_id)
+        return self._submit_control_request(
+            _ControlRequestKind.ADD_DESIRED,
+            semantic_stream_key=key,
+            consumer_id=consumer,
+        )
+
+    def request_remove_desired_for_consumer(
+        self, key: SemanticStreamKey, consumer_id: str
+    ) -> EnqueueResult:
+        """Enqueue an explicit consumer-owned release request."""
+        consumer = self._validate_consumer_id(consumer_id)
+        return self._submit_control_request(
+            _ControlRequestKind.REMOVE_DESIRED,
+            semantic_stream_key=key,
+            consumer_id=consumer,
+        )
 
     def request_readd_incarnation(self, key: SemanticStreamKey) -> EnqueueResult:
         return self._submit_control_request(_ControlRequestKind.READD_INCARNATION, semantic_stream_key=key)
@@ -474,9 +505,9 @@ class LiveFeedController:
                 self._stop_requested = True
             return
         if request.kind is _ControlRequestKind.ADD_DESIRED:
-            self._registry.add_desired(request.semantic_stream_key)
+            self._registry.add_desired_for_consumer(request.semantic_stream_key, request.consumer_id)
         elif request.kind is _ControlRequestKind.REMOVE_DESIRED:
-            self._registry.remove_desired(request.semantic_stream_key)
+            self._registry.remove_desired_for_consumer(request.semantic_stream_key, request.consumer_id)
         elif request.kind is _ControlRequestKind.READD_INCARNATION:
             self._registry.readd_new_incarnation(request.semantic_stream_key)
         elif request.kind is _ControlRequestKind.SET_CONTROL_PLANE_STATE:
