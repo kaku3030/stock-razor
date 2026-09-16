@@ -240,7 +240,7 @@ class WatchUniverseLiveFeedBridge:
 
     @property
     def managed_keys(self) -> tuple[SemanticStreamKey, ...]:
-        return tuple(sorted(self._managed, key=lambda item: item.as_tuple()))
+        return tuple(sorted(self._managed, key=lambda item: item.tuple))
 
     def reset_after_runtime_restart(self) -> None:
         """Forget process-local ownership; a fresh runtime must re-add desired keys."""
@@ -248,14 +248,14 @@ class WatchUniverseLiveFeedBridge:
 
     def reconcile(self, snapshot: WatchUniverseSnapshot) -> SubscriptionDelta:
         desired = {self._key_for(identity) for identity in snapshot.active_identities}
-        added = tuple(sorted(desired - self._managed, key=lambda item: item.as_tuple()))
-        removed = tuple(sorted(self._managed - desired, key=lambda item: item.as_tuple()))
+        added = tuple(sorted(desired - self._managed, key=lambda item: item.tuple))
+        removed = tuple(sorted(self._managed - desired, key=lambda item: item.tuple))
 
         for key in removed:
             result = self._binding_for_key(key).controller.request_remove_desired(key)
             if not result.accepted:
                 raise SubscriptionReconciliationError(
-                    f"LiveFeed remove enqueue rejected for {key.as_tuple()}: {result.reason}"
+                    f"LiveFeed remove enqueue rejected for {key.tuple}: {result.reason}"
                 )
             self._managed.discard(key)
 
@@ -263,7 +263,7 @@ class WatchUniverseLiveFeedBridge:
             result = self._binding_for_key(key).controller.request_add_desired(key)
             if not result.accepted:
                 raise SubscriptionReconciliationError(
-                    f"LiveFeed add enqueue rejected for {key.as_tuple()}: {result.reason}"
+                    f"LiveFeed add enqueue rejected for {key.tuple}: {result.reason}"
                 )
             self._managed.add(key)
 
@@ -288,6 +288,6 @@ class WatchUniverseLiveFeedBridge:
         binding = self._bindings.get(key.market.lower())
         if binding is None or binding.spec.provider_id != key.provider_id:
             raise SubscriptionReconciliationError(
-                f"no matching LiveFeed binding for managed key {key.as_tuple()}"
+                f"no matching LiveFeed binding for managed key {key.tuple}"
             )
         return binding
