@@ -179,7 +179,7 @@ def _build_observations(
     if not common_dates:
         return []
     first = max(lookback, 1)
-    # A close-based signal can only be executed at the next bar open.
+    # A close-based signal can only be executed at or after the next bar open.
     last = len(common_dates) - hold_bars - execution_delay_bars
     observations: list[dict[str, Any]] = []
     for index in range(first, max(first, last)):
