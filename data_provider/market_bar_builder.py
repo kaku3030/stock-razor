@@ -136,8 +136,12 @@ def aggregate_bars(
         volume = sum(item.volume for item in ordered)
         amounts = [item.amount for item in ordered]
         amount = sum(value for value in amounts if value is not None) if any(value is not None for value in amounts) else None
+        # Historical and delayed facts retain their original availability
+        # classification: aggregating a complete grid does not create realtime
+        # currentness or entitlement evidence.
+        unverified_currentness = any(flag in flags for flag in ("STALE", "HISTORICAL_QUERY", "DELAYED_FEED"))
         health = evaluate_health(
-            freshness=0 if "STALE" in flags else 1,
+            freshness=0 if unverified_currentness else 1,
             completeness=min(len(ordered) / expected_count, 1) if complete else min(len(ordered) / expected_count, 0.5),
             timestamp=0 if "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1 if feed is not None else 0,
