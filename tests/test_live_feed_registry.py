@@ -145,3 +145,16 @@ def test_consumer_id_is_required() -> None:
         registry.add_desired_for_consumer(KEY, "  ")
     with pytest.raises(ValueError, match="consumer_id is required"):
         registry.remove_desired_for_consumer(KEY, "")
+
+
+def test_consumer_ids_are_canonical_independent_of_add_order() -> None:
+    first = DesiredSubscriptionRegistry()
+    first.add_desired_for_consumer(KEY, "PORTFOLIO")
+    first.add_desired_for_consumer(KEY, "AI_MONITOR")
+
+    second = DesiredSubscriptionRegistry()
+    second.add_desired_for_consumer(KEY, "AI_MONITOR")
+    second.add_desired_for_consumer(KEY, "PORTFOLIO")
+
+    assert first.snapshot().entries[0].consumer_ids == ("AI_MONITOR", "PORTFOLIO")
+    assert first.snapshot().entries[0].consumer_ids == second.snapshot().entries[0].consumer_ids
