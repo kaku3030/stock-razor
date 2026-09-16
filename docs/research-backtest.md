@@ -31,4 +31,4 @@ python scripts/run_rs_breakout_validation.py \
 每个变体同时提供 overall、development、validation 和 `never_seen_holdout` 指标。结果中的 `guard` 明确记录 PIT、Holdout 和生产授权状态；它是证据，不是 Promotion verdict。
 
 每日 `Research Universe Capture` 在 capture 验证通过后自动生成该 JSON，并将其与原始 capture 一起上传为 Actions artifact。真实数据结果仍需经过 Registry、OOS Ledger 和 Control Tower 的独立裁决，不能仅凭该文件升级规则。
-工作流还会自动生成 100、150、200 bps 三档成本压力文件（`rs_breakout_validation_cost_*bps.json`），对应 1×、1.5×、2× 的暂定基础成本场景；这些数字是研究假设，需按市场和执行约束重新校准。
+工作流还会自动生成 100、150、200 bps 三档成本压力文件（`rs_breakout_validation_cost_*bps.json`），对应 1×、1.5×、2× 的暂定基础成本场景；这些数字是研究假设，需按市场和执行约束重新校准。 同时对 +1 bar / +2 bar 入场延迟生成对应文件（`rs_breakout_validation_cost_*bps_delay_*bars.json`）。
