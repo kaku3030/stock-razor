@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from data_provider.market_data_adapter import BarCallback, MarketDataAdapter
 
