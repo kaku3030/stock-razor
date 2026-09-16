@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, "continuation/a4a-a4b-current-main-v0-1"]
     paths:
       - "src/repositories/candidate_pool_repo.py"
       - "src/repositories/oos_consumption_ledger_repo.py"
