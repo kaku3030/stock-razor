@@ -43,6 +43,21 @@ def _parse_utc_text(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _semantic_stream_sort_key(key: SemanticStreamKey) -> tuple[str, ...]:
+    """Return a deterministic total-order key without extending LiveFeed types."""
+
+    return (
+        key.provider_id,
+        key.market,
+        key.symbol,
+        key.stream_type,
+        key.timeframe or "",
+        key.session_mode or "",
+        key.adjustment_mode or "",
+        key.feed or "",
+    )
+
+
 @dataclass(frozen=True, order=True)
 class PersistedUserPin:
     identity: WatchIdentity
@@ -240,7 +255,7 @@ class WatchUniverseLiveFeedBridge:
 
     @property
     def managed_keys(self) -> tuple[SemanticStreamKey, ...]:
-        return tuple(sorted(self._managed, key=lambda item: item.tuple))
+        return tuple(sorted(self._managed, key=_semantic_stream_sort_key))
 
     def reset_after_runtime_restart(self) -> None:
         """Forget process-local ownership; a fresh runtime must re-add desired keys."""
@@ -248,14 +263,14 @@ class WatchUniverseLiveFeedBridge:
 
     def reconcile(self, snapshot: WatchUniverseSnapshot) -> SubscriptionDelta:
         desired = {self._key_for(identity) for identity in snapshot.active_identities}
-        added = tuple(sorted(desired - self._managed, key=lambda item: item.tuple))
-        removed = tuple(sorted(self._managed - desired, key=lambda item: item.tuple))
+        added = tuple(sorted(desired - self._managed, key=_semantic_stream_sort_key))
+        removed = tuple(sorted(self._managed - desired, key=_semantic_stream_sort_key))
 
         for key in removed:
             result = self._binding_for_key(key).controller.request_remove_desired(key)
             if not result.accepted:
                 raise SubscriptionReconciliationError(
-                    f"LiveFeed remove enqueue rejected for {key.tuple}: {result.reason}"
+                    f"LiveFeed remove enqueue rejected for {key!r}: {result.reason}"
                 )
             self._managed.discard(key)
 
@@ -263,7 +278,7 @@ class WatchUniverseLiveFeedBridge:
             result = self._binding_for_key(key).controller.request_add_desired(key)
             if not result.accepted:
                 raise SubscriptionReconciliationError(
-                    f"LiveFeed add enqueue rejected for {key.tuple}: {result.reason}"
+                    f"LiveFeed add enqueue rejected for {key!r}: {result.reason}"
                 )
             self._managed.add(key)
 
@@ -288,6 +303,6 @@ class WatchUniverseLiveFeedBridge:
         binding = self._bindings.get(key.market.lower())
         if binding is None or binding.spec.provider_id != key.provider_id:
             raise SubscriptionReconciliationError(
-                f"no matching LiveFeed binding for managed key {key.tuple}"
+                f"no matching LiveFeed binding for managed key {key!r}"
             )
         return binding
