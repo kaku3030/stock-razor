@@ -1,18 +1,32 @@
 """Desired subscription registry -- authoritative intent state only.
 
 Single writer owns mutation (enforced by an internal lock, not by trusting
-callers). This registry never calls any provider SDK and never
-reconciles against actual provider state -- it is bookkeeping for what the
-controller *wants*, per frozen contract §4/§12 (`desired_registry_revision`,
-`stream_subscription_epoch`).
+callers). This registry never calls any provider SDK and never reconciles
+against actual provider state. It also owns consumer/reference membership so
+one consumer cannot remove a semantic stream still required by another.
+
+`revision` tracks provider-facing desired/control-plane state. Consumer-only
+membership changes that leave the provider-facing desired set unchanged do
+not invalidate in-flight provider commands; those changes advance the
+separate `ownership_revision` instead.
 """
 
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from data_provider.live_feed_types import BindingStrength, ControlPlaneState, SemanticStreamKey
+
+
+LEGACY_DEFAULT_CONSUMER = "LEGACY_DEFAULT"
+
+
+def _normalize_consumer_id(consumer_id: str) -> str:
+    normalized = str(consumer_id).strip()
+    if not normalized:
+        raise ValueError("consumer_id is required")
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -21,12 +35,14 @@ class DesiredRegistryEntry:
     stream_subscription_epoch: int
     control_plane_state: ControlPlaneState
     binding_strength: BindingStrength
+    consumer_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class DesiredRegistrySnapshot:
     revision: int
     entries: tuple[DesiredRegistryEntry, ...]
+    ownership_revision: int = 0
 
 
 def _sort_key(entry: DesiredRegistryEntry) -> tuple:
@@ -44,41 +60,73 @@ def _sort_key(entry: DesiredRegistryEntry) -> tuple:
 
 
 class DesiredSubscriptionRegistry:
-    """Provider-neutral desired subscription registry. Single writer."""
+    """Provider-neutral desired subscription registry. Single writer.
+
+    Provider subscription lifetime is reference-counted by stable consumer ID:
+    the first consumer creates provider-facing desired intent and the last
+    consumer removal deletes it. Intermediate consumer add/remove operations
+    change ownership evidence only.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._revision = 0
+        self._ownership_revision = 0
         self._entries: dict[SemanticStreamKey, DesiredRegistryEntry] = {}
-        # Epoch memory persists across remove() so that a later
-        # readd_new_incarnation() for the same key keeps counting forward
-        # rather than resetting -- a remove+re-add cycle is exactly the
-        # "new incarnation" scenario the epoch exists to track (CASE 32).
         self._last_epoch_by_key: dict[SemanticStreamKey, int] = {}
 
     def add_desired(self, key: SemanticStreamKey) -> DesiredRegistrySnapshot:
-        """Add `key` as desired. No-op (no revision bump) if already desired."""
+        """Compatibility API for the pre-consumer-aware caller surface."""
+        return self.add_desired_for_consumer(key, LEGACY_DEFAULT_CONSUMER)
 
+    def add_desired_for_consumer(
+        self, key: SemanticStreamKey, consumer_id: str
+    ) -> DesiredRegistrySnapshot:
+        """Register one consumer's interest in `key`."""
+        consumer = _normalize_consumer_id(consumer_id)
         with self._lock:
-            if key in self._entries:
+            existing = self._entries.get(key)
+            if existing is not None:
+                if consumer in existing.consumer_ids:
+                    return self._snapshot_locked()
+                consumers = tuple(sorted((*existing.consumer_ids, consumer)))
+                self._entries[key] = replace(existing, consumer_ids=consumers)
+                self._ownership_revision += 1
                 return self._snapshot_locked()
+
             epoch = self._last_epoch_by_key.get(key, 1) or 1
             self._entries[key] = DesiredRegistryEntry(
                 semantic_stream_key=key,
                 stream_subscription_epoch=epoch,
                 control_plane_state=ControlPlaneState.DESIRED,
                 binding_strength=BindingStrength.UNVERIFIED,
+                consumer_ids=(consumer,),
             )
             self._last_epoch_by_key[key] = epoch
             self._revision += 1
+            self._ownership_revision += 1
             return self._snapshot_locked()
 
     def remove_desired(self, key: SemanticStreamKey) -> DesiredRegistrySnapshot:
-        """Remove `key` from desired. No-op (no revision bump) if absent."""
+        """Compatibility API: release only the legacy caller's reference."""
+        return self.remove_desired_for_consumer(key, LEGACY_DEFAULT_CONSUMER)
 
+    def remove_desired_for_consumer(
+        self, key: SemanticStreamKey, consumer_id: str
+    ) -> DesiredRegistrySnapshot:
+        """Release one consumer's interest without harming other consumers."""
+        consumer = _normalize_consumer_id(consumer_id)
         with self._lock:
-            if key not in self._entries:
+            existing = self._entries.get(key)
+            if existing is None or consumer not in existing.consumer_ids:
                 return self._snapshot_locked()
+
+            remaining = tuple(item for item in existing.consumer_ids if item != consumer)
+            self._ownership_revision += 1
+            if remaining:
+                self._entries[key] = replace(existing, consumer_ids=remaining)
+                return self._snapshot_locked()
+
             del self._entries[key]
             self._revision += 1
             return self._snapshot_locked()
@@ -86,41 +134,38 @@ class DesiredSubscriptionRegistry:
     def readd_new_incarnation(self, key: SemanticStreamKey) -> DesiredRegistrySnapshot:
         """Re-add `key` as a NEW controller intent incarnation.
 
-        Bumps `stream_subscription_epoch` regardless of whether `key` was
-        previously present -- this is the only registry operation that
-        advances the epoch, per frozen contract §4
-        (`stream_subscription_epoch`: "increment when controller intent
-        creates a new subscription incarnation"). This does not claim any
-        provider-side binding -- `binding_strength` resets to UNVERIFIED.
+        This compatibility operation belongs to the legacy/default consumer.
+        Existing consumer references are preserved so an incarnation reset
+        cannot silently discard another consumer's ownership.
         """
-
         with self._lock:
             prior_epoch = self._last_epoch_by_key.get(key, 0)
             new_epoch = prior_epoch + 1
+            existing = self._entries.get(key)
+            existing_consumers = existing.consumer_ids if existing is not None else ()
+            consumer_was_added = LEGACY_DEFAULT_CONSUMER not in existing_consumers
+            consumers = tuple(sorted((*existing_consumers, LEGACY_DEFAULT_CONSUMER)))
             self._entries[key] = DesiredRegistryEntry(
                 semantic_stream_key=key,
                 stream_subscription_epoch=new_epoch,
                 control_plane_state=ControlPlaneState.DESIRED,
                 binding_strength=BindingStrength.UNVERIFIED,
+                consumer_ids=consumers,
             )
             self._last_epoch_by_key[key] = new_epoch
             self._revision += 1
+            if consumer_was_added:
+                self._ownership_revision += 1
             return self._snapshot_locked()
 
     def set_control_plane_state(
         self, key: SemanticStreamKey, state: ControlPlaneState, *, binding_strength: BindingStrength | None = None
     ) -> DesiredRegistrySnapshot:
-        """Update the observed control-plane state for an existing entry.
-
-        Raises KeyError if `key` is not currently desired -- this only
-        annotates an existing intent, it does not create one.
-        """
-
+        """Update observed control-plane state for an existing entry."""
         with self._lock:
             entry = self._entries[key]
-            self._entries[key] = DesiredRegistryEntry(
-                semantic_stream_key=entry.semantic_stream_key,
-                stream_subscription_epoch=entry.stream_subscription_epoch,
+            self._entries[key] = replace(
+                entry,
                 control_plane_state=state,
                 binding_strength=binding_strength if binding_strength is not None else entry.binding_strength,
             )
@@ -133,4 +178,8 @@ class DesiredSubscriptionRegistry:
 
     def _snapshot_locked(self) -> DesiredRegistrySnapshot:
         entries = tuple(sorted(self._entries.values(), key=_sort_key))
-        return DesiredRegistrySnapshot(revision=self._revision, entries=entries)
+        return DesiredRegistrySnapshot(
+            revision=self._revision,
+            entries=entries,
+            ownership_revision=self._ownership_revision,
+        )
