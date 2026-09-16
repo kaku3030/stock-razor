@@ -201,3 +201,16 @@ def test_runner_rejects_empty_symbol(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="empty symbol"):
         run_validation(tmp_path, config, tmp_path / "out.json")
+
+
+def test_runner_supports_execution_delay_stress(tmp_path: Path) -> None:
+    for index, symbol in enumerate(("AAA", "BBB", "CCC")):
+        _write_capture(tmp_path, f"us_{symbol.lower()}", symbol, days=70 + index)
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    result = run_validation(tmp_path, config, tmp_path / "out.json", execution_delay_bars=2)
+
+    assert result["guard"]["execution_delay_bars"] == 2
+    assert result["guard"]["signal_execution"] == "DELAYED_OPEN_2_BARS"
+    assert result["observation_count"] < 132
