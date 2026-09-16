@@ -17,6 +17,13 @@ from src.services.ai_monitor.watch_universe import (
 NOW = datetime(2026, 9, 16, 2, 0, tzinfo=timezone.utc)
 
 
+def snapshot_item(snapshot, identity):
+    return next(
+        (item for item in snapshot.watches if item.identity == identity and item.is_active),
+        None,
+    )
+
+
 class TestDB:
     def __init__(self) -> None:
         self.engine = create_engine("sqlite:///:memory:")
@@ -73,10 +80,10 @@ def test_pins_hydrate_into_a_fresh_universe_after_restart(repository) -> None:
     restarted_service = PersistentUserPins(repository, restarted_universe, owner_id="user-a")
     snapshot = restarted_service.hydrate(generated_at=NOW)
 
-    item = snapshot.get(WatchIdentity("us", "AAPL"))
+    item = snapshot_item(snapshot, WatchIdentity("us", "AAPL"))
     assert item is not None
-    assert item.sources == frozenset({WatchSource.USER_PINNED})
-    assert item.activated_at == NOW
+    assert item.source_names == (WatchSource.USER_PINNED.value,)
+    assert item.sources[0].activated_at == NOW
 
 
 def test_hydrate_removes_only_stale_user_pin_reason(repository) -> None:
@@ -91,9 +98,9 @@ def test_hydrate_removes_only_stale_user_pin_reason(repository) -> None:
 
     snapshot = service.hydrate(generated_at=NOW)
 
-    item = snapshot.get(identity)
+    item = snapshot_item(snapshot, identity)
     assert item is not None
-    assert item.sources == frozenset({WatchSource.RADAR})
+    assert item.source_names == (WatchSource.RADAR.value,)
 
 
 def test_unpin_is_durable_and_preserves_other_watch_sources(repository) -> None:
@@ -108,12 +115,12 @@ def test_unpin_is_durable_and_preserves_other_watch_sources(repository) -> None:
 
     snapshot = service.unpin(market="us", symbol="NVDA")
 
-    item = snapshot.get(identity)
+    item = snapshot_item(snapshot, identity)
     assert item is not None
-    assert item.sources == frozenset({WatchSource.RADAR})
+    assert item.source_names == (WatchSource.RADAR.value,)
     assert repository.list_pins(owner_id="user-a") == ()
 
     restarted = ActiveWatchUniverse()
     restarted_service = PersistentUserPins(repository, restarted, owner_id="user-a")
     restarted_snapshot = restarted_service.hydrate(generated_at=NOW)
-    assert restarted_snapshot.get(identity) is None
+    assert snapshot_item(restarted_snapshot, identity) is None

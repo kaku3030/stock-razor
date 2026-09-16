@@ -37,8 +37,10 @@ class PersistentUserPins:
         durable = {WatchIdentity(pin.market, pin.symbol): pin for pin in pins}
 
         current = self._universe.snapshot(generated_at=generated_at or datetime.now(timezone.utc))
-        for item in current.active_items:
-            if WatchSource.USER_PINNED in item.sources and item.identity not in durable:
+        for item in current.watches:
+            if not item.is_active:
+                continue
+            if WatchSource.USER_PINNED.value in item.source_names and item.identity not in durable:
                 self._universe.unpin(
                     market=item.identity.market,
                     symbol=item.identity.symbol,
