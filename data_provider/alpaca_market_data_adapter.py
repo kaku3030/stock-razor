@@ -131,6 +131,8 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             flags.append("UPDATED_BAR")
         if not live:
             flags.append("HISTORICAL_QUERY")
+        if self._feed == "delayed_sip":
+            flags.append("DELAYED_FEED")
         bar_end = timestamp + timedelta(minutes=1)
         age = received_at - bar_end
         if age < -timedelta(minutes=1):
@@ -155,7 +157,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         if not closed:
             flags.append("PARTIAL_BAR")
         health = evaluate_health(
-            freshness=0 if "STALE" in flags else 1,
+            freshness=0 if (not live or "STALE" in flags or "DELAYED_FEED" in flags) else 1,
             completeness=1 if closed else 0.5,
             timestamp=0 if "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
@@ -229,7 +231,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             if quote_timestamp != source_timestamp:
                 flags.append("BBO_TIME_DIFFERS_FROM_PRICE")
         health = evaluate_health(
-            freshness=0 if "STALE" in flags else 1,
+            freshness=0 if "STALE" in flags or "DELAYED_FEED" in flags else 1,
             completeness=1 if price > 0 else 0,
             timestamp=0 if bar_timestamp is None or "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
