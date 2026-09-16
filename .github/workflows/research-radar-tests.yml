@@ -26,6 +26,9 @@ on:
       - "src/services/screening/research_priority_transition.py"
       - "src/services/screening/research_priority_notifications.py"
       - "src/services/stock_radar_v2/**"
+      - "src/services/a_share_intraday_semantics.py"
+      - "src/services/a_share_provider_lineage.py"
+      - "src/services/a_share_reconciliation_lineage.py"
       - "src/services/strategy_lab/**"
       - "src/storage.py"
       - "scripts/run_us_research_scan.py"
@@ -52,6 +55,9 @@ on:
       - "tests/test_research_priority_transition.py"
       - "tests/test_research_priority_notifications.py"
       - "tests/test_stock_radar_v2_*.py"
+      - "tests/test_a_share_intraday_semantics.py"
+      - "tests/test_a_share_provider_lineage.py"
+      - "tests/test_a_share_reconciliation_lineage.py"
       - "tests/test_strategy_lab_*.py"
       - "api/v1/endpoints/research_validation.py"
       - "api/v1/router.py"
@@ -127,6 +133,9 @@ jobs:
             tests/test_strategy_lab_validation_gate.py \
             tests/test_strategy_lab_experiment_governance.py \
             tests/test_strategy_lab_information_dependency.py \
+            tests/test_a_share_intraday_semantics.py \
+            tests/test_a_share_provider_lineage.py \
+            tests/test_a_share_reconciliation_lineage.py \
             tests/test_strategy_lab_temporal_contract.py \
             tests/test_strategy_lab_universe_integrity.py \
             tests/test_strategy_lab_walk_forward.py \
