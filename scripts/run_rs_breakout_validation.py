@@ -94,8 +94,13 @@ def _load_captures(input_dir: Path) -> dict[str, dict[str, Bar]]:
                 if tuple(reader.fieldnames or ()) != REQUIRED_COLUMNS:
                     raise ValidationError(f"unexpected capture columns: {csv_path}")
                 rows: dict[str, Bar] = {}
+                capture_symbol: str | None = None
                 for row_number, row in enumerate(reader, start=2):
                     symbol = row["symbol"]
+                    if capture_symbol is None:
+                        capture_symbol = symbol
+                    elif symbol != capture_symbol:
+                        raise ValidationError(f"mixed symbols in capture: {csv_path}:{row_number}")
                     day = date.fromisoformat(row["date"]).isoformat()
                     open_price = float(row["open"])
                     high = float(row["high"])
@@ -220,6 +225,8 @@ def run_validation(
     contract = _validate_contract(contract_path)
     series = _load_captures(input_dir)
     observations = _build_observations(series, contract["parameters"])
+    if not observations:
+        raise ValidationError("no eligible observations for the configured lookback/holding period")
     dates = sorted({item["date"] for item in observations})
     with_flags = [bool(item["with_rule"]) for item in observations]
     without_flags = [True] * len(observations)
