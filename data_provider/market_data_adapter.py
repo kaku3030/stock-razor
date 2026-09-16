@@ -178,6 +178,15 @@ class MarketDataAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def unsubscribe(
+        self,
+        symbols: Sequence[str],
+        timeframe: str = "1m",
+    ) -> None:
+        """Release streaming subscriptions for the supplied symbols."""
+        raise NotImplementedError
+
+    @abstractmethod
     def get_session_status(self, market: str) -> str:
         raise NotImplementedError
 
