@@ -1,8 +1,8 @@
-"""Durable USER_PINNED truth and AI Monitor -> LiveFeed watch reconciliation.
+"""Durable USER_PINNED truth for the AI Monitor Active Watch Universe.
 
-This module consumes Active Watch Universe snapshots. It does not discover or
-rank Radar candidates, interpret market structure, grant Entry Permission, or
-place orders.
+This module owns only persistence of user-pinned watch membership. It does not
+discover/rank Radar candidates, mutate LiveFeed desired subscriptions, interpret
+market structure, grant Entry Permission, or place orders.
 """
 
 from __future__ import annotations
@@ -13,21 +13,14 @@ import json
 import os
 from pathlib import Path
 import threading
-from typing import Mapping, Optional, Protocol, Sequence
+from typing import Optional, Protocol, Sequence
 from uuid import uuid4
 
-from data_provider.live_feed_types import SemanticStreamKey
-from src.services.live_feed.controller import LiveFeedController
-
-from .watch_universe import ActiveWatchUniverse, WatchIdentity, WatchUniverseSnapshot
+from .watch_universe import ActiveWatchUniverse, WatchIdentity
 
 
 class WatchRuntimeError(RuntimeError):
-    """Base error for durable-watch/runtime reconciliation failures."""
-
-
-class SubscriptionReconciliationError(WatchRuntimeError):
-    """Raised when desired watch membership cannot be enqueued exactly."""
+    """Base error for durable-watch persistence failures."""
 
 
 def _utc_text(value: datetime) -> str:
@@ -41,21 +34,6 @@ def _parse_utc_text(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise ValueError("persisted activation timestamp must be timezone-aware")
     return parsed.astimezone(timezone.utc)
-
-
-def _semantic_stream_sort_key(key: SemanticStreamKey) -> tuple[str, ...]:
-    """Return a deterministic total-order key without extending LiveFeed types."""
-
-    return (
-        key.provider_id,
-        key.market,
-        key.symbol,
-        key.stream_type,
-        key.timeframe or "",
-        key.session_mode or "",
-        key.adjustment_mode or "",
-        key.feed or "",
-    )
 
 
 @dataclass(frozen=True, order=True)
@@ -198,111 +176,3 @@ class DurableUserPins:
             existing.pop(identity, None)
             self.store.replace(tuple(existing.values()))
             universe.unpin(market=identity.market, symbol=identity.symbol)
-
-
-@dataclass(frozen=True)
-class WatchStreamSpec:
-    """How one market maps onto the existing LiveFeed semantic stream."""
-
-    provider_id: str
-    stream_type: str
-    timeframe: str = "1m"
-
-    def __post_init__(self) -> None:
-        if not self.provider_id.strip():
-            raise ValueError("provider_id is required")
-        if not self.stream_type.strip():
-            raise ValueError("stream_type is required")
-        if not self.timeframe.strip():
-            raise ValueError("timeframe is required")
-
-
-@dataclass(frozen=True)
-class WatchStreamBinding:
-    controller: LiveFeedController
-    spec: WatchStreamSpec
-
-
-@dataclass(frozen=True)
-class SubscriptionDelta:
-    added: tuple[SemanticStreamKey, ...] = ()
-    removed: tuple[SemanticStreamKey, ...] = ()
-
-    @property
-    def changed(self) -> bool:
-        return bool(self.added or self.removed)
-
-
-class WatchUniverseLiveFeedBridge:
-    """Reconcile Active Watch Universe into the existing LiveFeed desired registry.
-
-    The bridge owns only keys it has enqueued. It never removes unrelated
-    LiveFeed subscriptions. Remove is enqueued before add to avoid retaining an
-    expired watch merely because a later add cannot be accepted.
-    """
-
-    def __init__(self, bindings: Mapping[str, WatchStreamBinding]) -> None:
-        self._bindings = {str(market).strip().lower(): binding for market, binding in bindings.items()}
-        for market, binding in self._bindings.items():
-            if not market:
-                raise ValueError("market binding key is required")
-            if binding.controller.snapshot().provider_id != binding.spec.provider_id:
-                raise ValueError(
-                    f"LiveFeed controller/provider mismatch for {market}: "
-                    f"{binding.controller.snapshot().provider_id} != {binding.spec.provider_id}"
-                )
-        self._managed: set[SemanticStreamKey] = set()
-
-    @property
-    def managed_keys(self) -> tuple[SemanticStreamKey, ...]:
-        return tuple(sorted(self._managed, key=_semantic_stream_sort_key))
-
-    def reset_after_runtime_restart(self) -> None:
-        """Forget process-local ownership; a fresh runtime must re-add desired keys."""
-        self._managed.clear()
-
-    def reconcile(self, snapshot: WatchUniverseSnapshot) -> SubscriptionDelta:
-        desired = {self._key_for(identity) for identity in snapshot.active_identities}
-        added = tuple(sorted(desired - self._managed, key=_semantic_stream_sort_key))
-        removed = tuple(sorted(self._managed - desired, key=_semantic_stream_sort_key))
-
-        for key in removed:
-            result = self._binding_for_key(key).controller.request_remove_desired(key)
-            if not result.accepted:
-                raise SubscriptionReconciliationError(
-                    f"LiveFeed remove enqueue rejected for {key!r}: {result.reason}"
-                )
-            self._managed.discard(key)
-
-        for key in added:
-            result = self._binding_for_key(key).controller.request_add_desired(key)
-            if not result.accepted:
-                raise SubscriptionReconciliationError(
-                    f"LiveFeed add enqueue rejected for {key!r}: {result.reason}"
-                )
-            self._managed.add(key)
-
-        return SubscriptionDelta(added=added, removed=removed)
-
-    def _key_for(self, identity: WatchIdentity) -> SemanticStreamKey:
-        binding = self._bindings.get(identity.market)
-        if binding is None:
-            raise SubscriptionReconciliationError(
-                f"no LiveFeed binding configured for market {identity.market}"
-            )
-        spec = binding.spec
-        return SemanticStreamKey(
-            provider_id=spec.provider_id,
-            market=identity.market.upper(),
-            symbol=identity.symbol,
-            stream_type=spec.stream_type,
-            timeframe=spec.timeframe,
-        )
-
-    def _binding_for_key(self, key: SemanticStreamKey) -> WatchStreamBinding:
-        binding = self._bindings.get(key.market.lower())
-        if binding is None or binding.spec.provider_id != key.provider_id:
-            raise SubscriptionReconciliationError(
-                f"no matching LiveFeed binding for managed key {key!r}"
-            )
-        return binding
