@@ -129,6 +129,7 @@ jobs:
             tests/test_strategy_lab_experiment_governance.py \
             tests/test_strategy_lab_information_dependency.py \
             tests/test_strategy_lab_temporal_contract.py \
+            tests/test_strategy_lab_temporal_leakage.py \
             tests/test_strategy_lab_universe_integrity.py \
             tests/test_strategy_lab_walk_forward.py \
             tests/test_strategy_lab_oos_consumption.py \

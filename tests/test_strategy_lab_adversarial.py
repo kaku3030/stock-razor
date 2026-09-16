@@ -11,6 +11,11 @@ from src.services.strategy_lab.adversarial_checks import (
     assess_no_lookahead,
     assess_parameter_stability,
 )
+from src.services.strategy_lab.temporal_leakage import (
+    TemporalLeakageStatus,
+    audit_prefix_invariance,
+    temporal_leakage_gate_result,
+)
 
 
 PERMANENT_ADVERSARIAL_CASE_IDS = (
@@ -116,6 +121,26 @@ def test_control_case_can_proceed(case_id: str) -> None:
 
     assert result.gate == EXPECTED_GATES[case_id]
     assert result.passed is True, f"valid control was rejected: {case_id}"
+
+
+def test_permanent_lookahead_case_catches_implementation_future_access() -> None:
+    """Timestamp honesty alone must not let a future-dependent implementation pass."""
+
+    def uses_whole_future(rows: tuple[float, ...]):
+        mean = sum(rows) / len(rows)
+        return ({"feature": mean},) * len(rows)
+
+    report = audit_prefix_invariance(
+        history=(1.0, 2.0, 4.0, 8.0, 16.0),
+        evaluator=uses_whole_future,
+        cutoffs=(1, 2, 3),
+    )
+    result = temporal_leakage_gate_result(report)
+
+    assert report.status is TemporalLeakageStatus.LEAKAGE_DETECTED
+    assert result.gate == "lookahead"
+    assert result.passed is False
+    assert result.reason == "implementation_future_dependency_detected"
 
 
 @pytest.mark.parametrize(
