@@ -166,7 +166,11 @@ def _aggregate(
     }
 
 
-def _build_observations(series: dict[str, dict[str, Bar]], params: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_observations(
+    series: dict[str, dict[str, Bar]],
+    params: dict[str, Any],
+    execution_delay_bars: int,
+) -> list[dict[str, Any]]:
     lookback = params["breakout_window_bars"]
     hold_bars = params["holding_period_bars"]
     volume_multiple = float(params["volume_multiple"])
@@ -176,12 +180,12 @@ def _build_observations(series: dict[str, dict[str, Bar]], params: dict[str, Any
         return []
     first = max(lookback, 1)
     # A close-based signal can only be executed at the next bar open.
-    last = len(common_dates) - hold_bars - 1
+    last = len(common_dates) - hold_bars - execution_delay_bars
     observations: list[dict[str, Any]] = []
     for index in range(first, max(first, last)):
         day = common_dates[index]
-        entry_day = common_dates[index + 1]
-        exit_day = common_dates[index + 1 + hold_bars]
+        entry_day = common_dates[index + execution_delay_bars]
+        exit_day = common_dates[index + execution_delay_bars + hold_bars]
         rs_values = {
             symbol: series[symbol][day].close / series[symbol][common_dates[index - lookback]].close - 1.0
             for symbol in series
@@ -225,12 +229,15 @@ def run_validation(
     *,
     seed: int = 20260915,
     round_trip_cost_bps: float = 0.0,
+    execution_delay_bars: int = 1,
 ) -> dict[str, Any]:
     if not math.isfinite(round_trip_cost_bps) or round_trip_cost_bps < 0 or round_trip_cost_bps > 10000:
         raise ValidationError("round_trip_cost_bps must be finite and between 0 and 10000")
+    if isinstance(execution_delay_bars, bool) or not isinstance(execution_delay_bars, int) or execution_delay_bars < 1:
+        raise ValidationError("execution_delay_bars must be an integer >= 1")
     contract = _validate_contract(contract_path)
     series = _load_captures(input_dir)
-    observations = _build_observations(series, contract["parameters"])
+    observations = _build_observations(series, contract["parameters"], execution_delay_bars)
     if not observations:
         raise ValidationError("no eligible observations for the configured lookback/holding period")
     dates = sorted({item["date"] for item in observations})
@@ -278,7 +285,8 @@ def run_validation(
         },
         "guard": {
             "pit": "RECORDED_CAPTURE_ONLY",
-            "signal_execution": "NEXT_BAR_OPEN",
+            "signal_execution": "NEXT_BAR_OPEN" if execution_delay_bars == 1 else f"DELAYED_OPEN_{execution_delay_bars}_BARS",
+            "execution_delay_bars": execution_delay_bars,
             "future_data_used_for_signal": False,
             "never_seen_holdout": "PROTECTED",
             "consumes_holdout": False,
@@ -304,6 +312,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260915)
     parser.add_argument("--round-trip-cost-bps", type=float, default=0.0)
+    parser.add_argument("--execution-delay-bars", type=int, default=1)
     args = parser.parse_args()
     try:
         result = run_validation(
@@ -312,6 +321,7 @@ def main() -> int:
             args.output,
             seed=args.seed,
             round_trip_cost_bps=args.round_trip_cost_bps,
+            execution_delay_bars=args.execution_delay_bars,
         )
     except ValidationError as exc:
         print(json.dumps({"status": "INVALID", "error": str(exc)}, sort_keys=True))
