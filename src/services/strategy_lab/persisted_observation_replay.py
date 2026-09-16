@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.services.stock_radar_v2.observation_ledger import ObservationLedger, deserialize_observation_record
+from src.services.stock_radar_v2.observation_ledger import (
+    ObservationLedger,
+    deserialize_observation_record,
+    observation_from_capture_record,
+)
 from src.services.strategy_lab.opportunity_cost import OpportunityTruth, TruthStatus
 
 
@@ -15,7 +19,13 @@ def read_persisted_observations(path: Path):
     with path.open(encoding="utf-8") as stream:
         for line in stream:
             if line.strip():
-                ledger.append(deserialize_observation_record(line))
+                value = json.loads(line)
+                if value.get("record_type") == "observation_capture":
+                    ledger.append(observation_from_capture_record(value))
+                elif value.get("record_type") == "outcome_enrichment":
+                    continue
+                else:
+                    ledger.append(deserialize_observation_record(line))
     yield from (item for item in ledger.records() if item.opportunity_id is not None)
 
 
