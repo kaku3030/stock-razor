@@ -22,7 +22,7 @@ class FakeRest:
 
 
 def test_bar_close_price_uses_bar_end_not_newer_bbo_timestamp() -> None:
-    latest_bbo = {"t": "2026-09-17T14:31:00Z", "bp": 205, "ap": 206}
+    latest_bbo = {"t": "2026-09-17T14:31:05Z", "bp": 205, "ap": 206}
     adapter = AlpacaMarketDataAdapter(
         FakeRest(quote=latest_bbo), now=lambda: datetime(2026, 9, 17, 14, 32, tzinfo=timezone.utc)
     )
