@@ -36,6 +36,20 @@ Use these dimensions separately:
 - Research-only results never grant production authority.
 - Never-Seen Holdout remains protected and cannot be consumed by this ledger.
 
+## Cross-lane synchronized inventory
+
+This section records read-only evidence only; it does not select a new implementation owner or authorize merge.
+
+| Lane / Slice | Canonical PR | Exact Head | CI | Review | Main / Promotion | Decision |
+|---|---:|---|---|---|---|---|
+| AI Monitor Active Watch Universe | #129 | `cca7d93562d2b4d6386b6221639b2292e4b8723c` | CI + Radar PASS (35065694208 / 35065694195) | shucai30 APPROVED | NOT_MERGED / FROZEN | Exact-head evidence exists; base is older than current main, so rebase/sync required before landing |
+| AI Monitor consumer-intent delta | #130 | `06f3e0de9886ed2e2e19ce9e04f47cef532f954a` | CI + Radar PASS (35046368405 / 35046368412) | No independent approval recorded | NOT_MERGED / FROZEN | Stacked on #129; do not merge independently before dependency decision |
+| LiveFeed consumer ownership | #135 | `9b07d2f86e40b0ed7eb0394dc0097d484ebfd889` | CI + Radar PASS (35046983471 / 35046983445) | Commented audit; no approval recorded | NOT_MERGED / FROZEN | Prerequisite for runtime binding; #138 is the later ingress slice |
+| AI Monitor consumer-bound ingress | #138 | `8f8afa41aa262a16a9969a822e128cdff0293a25` | CI + Radar PASS (35059454868 / 35059454831) | shucai30 APPROVED | NOT_MERGED / FROZEN | Candidate implementation; exact-head merge/base review still required |
+| AI Monitor USER_PINNED persistence | #133 | `0e3970c842a936c36cd4e3e096f81000db5ed09f` | Radar PASS; CI FAIL (35046487146 / 35046487179) | None | NOT_MERGED / FROZEN | Blocked; separate from #131 until owner deduplication resolves |
+| Shadow observation assembly (research) | #144 | `f96b9eb7e048be80a6f8cc5557bfaef2cbb9b384` | CI + Radar PASS (35065176405 / 35065176407) | shucai30 APPROVED | NOT_MERGED / FROZEN | Research/Shadow seam only; never production runtime authority |
+| Provider Read R2-S1/R2-S2 | #104 / #112 | `e07107b4` / `cd973303` | Historical/stale relative to current main | Pending or stale | NOT_MERGED / FROZEN | Requires current-main integration owner decision; no direct promotion |
+
 ## Owner decisions
 
 - USER_PINNED implementation-owner decisions: UNKNOWN in the currently verifiable repository evidence; Main Control must record any explicit decision before changing ownership.
