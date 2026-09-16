@@ -213,13 +213,6 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
     ) -> None:
         raise NotImplementedError("existing provider bridge does not emulate streaming")
 
-    def unsubscribe(
-        self,
-        symbols: Sequence[str],
-        timeframe: str = "1m",
-    ) -> None:
-        raise NotImplementedError("existing provider bridge does not emulate streaming")
-
     def get_session_status(self, market: str) -> str:
         if self._session_resolver is None:
             return "unknown"
