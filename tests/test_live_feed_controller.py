@@ -103,6 +103,80 @@ def test_f1_noop_mutation_is_deterministic_through_writer() -> None:
     assert controller.desired_registry_snapshot().revision == 0
 
 
+def test_consumer_bound_ingress_shares_one_provider_intent() -> None:
+    controller = _controller()
+    controller.request_add_desired_for_consumer(KEY, "portfolio")
+    controller.request_add_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+
+    snap = controller.desired_registry_snapshot()
+    assert snap.revision == 1
+    assert snap.ownership_revision == 2
+    assert snap.entries[0].consumer_ids == ("ai_monitor", "portfolio")
+
+
+def test_consumer_bound_ingress_non_last_release_does_not_unsubscribe() -> None:
+    controller = _controller()
+    controller.request_add_desired_for_consumer(KEY, "portfolio")
+    controller.request_add_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+    controller.request_remove_desired_for_consumer(KEY, "portfolio")
+    controller.process_pending()
+
+    snap = controller.desired_registry_snapshot()
+    assert snap.revision == 1
+    assert snap.entries[0].consumer_ids == ("ai_monitor",)
+
+
+def test_consumer_bound_ingress_last_release_removes_provider_intent() -> None:
+    controller = _controller()
+    controller.request_add_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+    controller.request_remove_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+
+    snap = controller.desired_registry_snapshot()
+    assert snap.revision == 2
+    assert snap.entries == ()
+
+
+def test_legacy_ingress_isolated_from_named_consumer() -> None:
+    controller = _controller()
+    controller.request_add_desired(KEY)
+    controller.request_add_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+    controller.request_remove_desired(KEY)
+    controller.process_pending()
+
+    snap = controller.desired_registry_snapshot()
+    assert snap.revision == 1
+    assert snap.entries[0].consumer_ids == ("ai_monitor",)
+
+
+@pytest.mark.parametrize("consumer_id", ["", "   ", None, 123])
+def test_consumer_bound_ingress_rejects_invalid_consumer_id(consumer_id) -> None:
+    controller = _controller()
+    with pytest.raises(ValueError):
+        controller.request_add_desired_for_consumer(KEY, consumer_id)
+    assert controller.desired_registry_snapshot().entries == ()
+
+
+def test_ownership_only_change_does_not_invalidate_in_flight_command() -> None:
+    controller = _controller()
+    controller.request_add_desired_for_consumer(KEY, "portfolio")
+    controller.process_pending()
+    command = controller.submit_command(
+        ProviderCommandType.SUBSCRIBE,
+        semantic_stream_key=KEY,
+        stream_subscription_epoch=1,
+    )
+    controller.request_add_desired_for_consumer(KEY, "ai_monitor")
+    controller.process_pending()
+
+    assert command.desired_registry_revision == 1
+    assert controller.desired_registry_snapshot().revision == 1
+
+
 def test_f1_registry_snapshot_cannot_mutate_authoritative_state() -> None:
     controller = _controller()
     controller.request_add_desired(KEY)
