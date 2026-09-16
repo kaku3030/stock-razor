@@ -177,20 +177,6 @@ class MarketDataAdapter(ABC):
     ) -> None:
         raise NotImplementedError
 
-    def unsubscribe(
-        self,
-        symbols: Sequence[str],
-        timeframe: str = "1m",
-    ) -> None:
-        """Release subscriptions when supported; unsupported adapters fail closed.
-
-        This method is intentionally non-abstract for backward compatibility
-        with read-only/research adapters. A runtime reconciler that attempts to
-        release subscriptions through an unsupported adapter receives an
-        explicit NotImplementedError and must treat the outcome as UNKNOWN.
-        """
-        raise NotImplementedError("adapter does not support streaming unsubscribe")
-
     @abstractmethod
     def get_session_status(self, market: str) -> str:
         raise NotImplementedError
