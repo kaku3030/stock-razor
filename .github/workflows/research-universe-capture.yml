@@ -38,6 +38,13 @@ jobs:
           for cost_bps in 100 150 200; do
             python scripts/run_rs_breakout_validation.py               --config config/rs_breakout_hypothesis_v0_1.json               --input-dir artifacts/universe               --output "artifacts/universe/rs_breakout_validation_cost_${cost_bps}bps.json"               --round-trip-cost-bps "${cost_bps}"
           done
+      - name: Run RS Breakout execution-delay stress scenarios
+        run: |
+          for delay_bars in 2; do
+            for cost_bps in 100 150 200; do
+              python scripts/run_rs_breakout_validation.py                 --config config/rs_breakout_hypothesis_v0_1.json                 --input-dir artifacts/universe                 --output "artifacts/universe/rs_breakout_validation_cost_${cost_bps}bps_delay_${delay_bars}bars.json"                 --round-trip-cost-bps "${cost_bps}"                 --execution-delay-bars "${delay_bars}"
+            done
+          done
       - name: Capture AKShare cross-source sample
         continue-on-error: true
         run: |
