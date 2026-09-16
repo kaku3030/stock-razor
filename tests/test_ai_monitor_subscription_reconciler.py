@@ -46,15 +46,20 @@ def _snapshot_with_us_and_cn() -> tuple[ActiveWatchUniverse, WatchUniverseSnapsh
     return universe, universe.snapshot(generated_at=NOW)
 
 
+def _reconciler(adapter, *, callback=lambda bar: None) -> WatchSubscriptionReconciler:
+    return WatchSubscriptionReconciler(
+        adapter,
+        market="us",
+        callback=callback,
+        transport_generation="stream-1",
+    )
+
+
 def test_reconciler_subscribes_only_active_symbols_for_its_market() -> None:
     universe, snapshot = _snapshot_with_us_and_cn()
     adapter = FakeAdapter()
     callback = lambda bar: None
-    reconciler = WatchSubscriptionReconciler(
-        adapter,
-        market="US",
-        callback=callback,
-    )
+    reconciler = _reconciler(adapter, callback=callback)
 
     result = reconciler.reconcile(snapshot)
 
@@ -63,7 +68,7 @@ def test_reconciler_subscribes_only_active_symbols_for_its_market() -> None:
     assert result.unsubscribed == ()
     assert result.unchanged == ()
     assert reconciler.known_subscriptions == ("AAPL", "NVDA")
-    assert adapter.subscribe_calls == [(('AAPL', 'NVDA'), "1m", callback)]
+    assert adapter.subscribe_calls == [(("AAPL", "NVDA"), "1m", callback)]
     assert adapter.unsubscribe_calls == []
 
     universe.unpin(market="us", symbol="AAPL")
@@ -84,7 +89,7 @@ def test_reconciler_keeps_symbol_when_another_watch_source_remains() -> None:
         activated_at=NOW,
     )
     adapter = FakeAdapter()
-    reconciler = WatchSubscriptionReconciler(adapter, market="us", callback=lambda bar: None)
+    reconciler = _reconciler(adapter)
     reconciler.reconcile(universe.snapshot(generated_at=NOW))
 
     universe.replace_radar({}, activated_at=NOW)
@@ -95,11 +100,11 @@ def test_reconciler_keeps_symbol_when_another_watch_source_remains() -> None:
     assert result.unchanged == ("NVDA",)
 
 
-def test_uncertain_provider_mutation_blocks_blind_retry_until_transport_restart() -> None:
+def test_uncertain_provider_mutation_blocks_blind_retry_until_new_transport_generation() -> None:
     universe = ActiveWatchUniverse()
     universe.pin(market="us", symbol="NVDA", activated_at=NOW)
     adapter = FakeAdapter()
-    reconciler = WatchSubscriptionReconciler(adapter, market="us", callback=lambda bar: None)
+    reconciler = _reconciler(adapter)
     reconciler.reconcile(universe.snapshot(generated_at=NOW))
 
     adapter.fail_unsubscribe = True
@@ -110,26 +115,31 @@ def test_uncertain_provider_mutation_blocks_blind_retry_until_transport_restart(
     assert reconciler.knowledge is SubscriptionKnowledge.UNKNOWN
     assert len(adapter.unsubscribe_calls) == 1
 
-    with pytest.raises(SubscriptionStateUnknownError, match="restart transport"):
+    with pytest.raises(SubscriptionStateUnknownError, match="new transport generation"):
         reconciler.reconcile(universe.snapshot(generated_at=NOW))
     assert len(adapter.unsubscribe_calls) == 1
 
+    with pytest.raises(ValueError, match="must change"):
+        reconciler.reset_after_transport_restart(transport_generation="stream-1")
+    assert reconciler.knowledge is SubscriptionKnowledge.UNKNOWN
+
     adapter.fail_unsubscribe = False
-    reconciler.reset_after_transport_restart()
+    reconciler.reset_after_transport_restart(transport_generation="stream-2")
     result = reconciler.reconcile(universe.snapshot(generated_at=NOW))
 
     assert result.desired == ()
+    assert reconciler.transport_generation == "stream-2"
     assert reconciler.knowledge is SubscriptionKnowledge.KNOWN
 
 
 def test_restart_reconciliation_resubscribes_full_desired_universe() -> None:
     _, snapshot = _snapshot_with_us_and_cn()
     adapter = FakeAdapter()
-    reconciler = WatchSubscriptionReconciler(adapter, market="us", callback=lambda bar: None)
+    reconciler = _reconciler(adapter)
     reconciler.reconcile(snapshot)
     assert len(adapter.subscribe_calls) == 1
 
-    reconciler.reset_after_transport_restart()
+    reconciler.reset_after_transport_restart(transport_generation="stream-2")
     result = reconciler.reconcile(snapshot)
 
     assert result.subscribed == ("AAPL", "NVDA")
