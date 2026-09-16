@@ -1,6 +1,6 @@
 # AI Monitor Active Watch Runtime V0.1
 
-Status: implementation contract for the #129 follow-up slice.
+Status: durable USER_PINNED follow-up to the Active Watch Universe contract.
 
 ## Ownership
 
@@ -8,7 +8,7 @@ Status: implementation contract for the #129 follow-up slice.
 
 - Portfolio remains the position-truth owner.
 - Radar remains the candidate discovery/ranking owner.
-- AI Monitor owns active-watch membership/runtime reconciliation.
+- AI Monitor owns active-watch membership and USER_PINNED persistence.
 - Existing LiveFeed remains the only production subscription runtime.
 - This contract does not grant Entry Permission or trading/execution authority.
 
@@ -18,21 +18,14 @@ User pins survive AI Monitor restart. Persistence is applied before in-memory me
 
 V0.1 uses a dedicated atomic JSON file so this slice does not expand the shared production database schema. AI Monitor is the single writer for that file.
 
-## LiveFeed reconciliation
+## LiveFeed boundary: blocked until consumer ownership exists
 
-`WatchUniverseLiveFeedBridge` maps active watch identities to existing `SemanticStreamKey` values and enqueues desired-state changes through `LiveFeedController.request_add_desired` / `request_remove_desired`.
+The existing `DesiredSubscriptionRegistry` is keyed by `SemanticStreamKey` but is not consumer/source-aware. Therefore an AI Monitor caller cannot safely translate its own watch removal into `LiveFeedController.request_remove_desired()`: the same semantic stream may still be required by another consumer.
 
-Rules:
-
-1. Remove expired bridge-managed keys before adding new ones.
-2. Queue rejection must not be recorded as successful reconciliation.
-3. The bridge may remove only keys it owns; unrelated LiveFeed desired subscriptions are untouched.
-4. Missing market bindings and controller/provider mismatches fail closed.
-5. A fresh runtime re-adds the full desired watch universe.
-6. Radar candidates do not need to be portfolio positions to enter the LiveFeed desired set.
+This slice deliberately performs **no LiveFeed desired-subscription mutation**. Runtime binding remains fail-closed until the existing LiveFeed ownership boundary provides auditable consumer/reference semantics. That prerequisite must be implemented and tested in the existing LiveFeed runtime rather than by creating a second subscription reconciler.
 
 ## Explicit non-goals
 
 This slice does not create a second Provider Worker, LiveFeed runtime, market-data adapter, Radar, Entry Permission engine, broker path, or execution path. It does not change provider routing, currentness semantics, or production promotion state.
 
-Production bootstrap/startup wiring is a separate reviewable slice after exact-head CI and independent review.
+Production bootstrap/startup wiring is a separate reviewable slice after consumer ownership/reference semantics, exact-head CI, and independent review.
