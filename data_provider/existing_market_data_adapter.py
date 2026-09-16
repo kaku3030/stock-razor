@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Callable, Optional, Sequence
 
@@ -26,6 +27,32 @@ def _utc_datetime(value: object, *, fallback: Optional[datetime] = None) -> Opti
     except (TypeError, ValueError):
         return fallback
     return parsed.to_pydatetime()
+
+
+def _finite_float(value: object) -> tuple[Optional[float], bool]:
+    """Normalize one provider numeric without throwing on dirty evidence.
+
+    Returns ``(number, malformed)``. Genuine missing values stay missing and
+    are handled by the caller's completeness policy. Non-empty values that
+    cannot be represented as a finite float are explicit malformed evidence
+    and must be surfaced through the existing MarketDataHealth gate instead
+    of aborting the adapter call.
+    """
+
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, False
+    try:
+        if bool(pd.isna(value)):
+            return None, False
+    except (TypeError, ValueError):
+        pass
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None, True
+    if not math.isfinite(number):
+        return None, True
+    return number, False
 
 
 def _market_for(symbol: str, declared: Optional[str] = None) -> str:
@@ -94,8 +121,10 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
         if getattr(raw, "fallback_from", None):
             flags.append("FALLBACK_PROVIDER")
 
-        price = getattr(raw, "price", None)
-        if price is None or float(price) <= 0:
+        price, malformed_price = _finite_float(getattr(raw, "price", None))
+        if malformed_price:
+            flags.append("INVALID_NUMERIC")
+        if price is None or price <= 0:
             flags.append("NON_POSITIVE_PRICE")
         health = evaluate_health(
             freshness=0 if getattr(raw, "is_stale", False) else 1,
@@ -115,7 +144,7 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
             symbol=symbol,
             market=market,
             asset_type="stock",
-            price=float(price or 0),
+            price=price or 0.0,
             provider=str(provider),
             source_timestamp=source_timestamp,
             received_at=received_at,
@@ -155,19 +184,34 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
             timestamp = _utc_datetime(row.get("date"))
             if timestamp is None:
                 continue
-            values = {name: row.get(name) for name in ("open", "high", "low", "close", "volume")}
+
             flags: list[str] = ["NOT_CROSS_CHECKED"]
-            complete = all(pd.notna(value) for value in values.values())
+            numeric: dict[str, float] = {}
+            for name in ("open", "high", "low", "close", "volume"):
+                number, malformed = _finite_float(row.get(name))
+                if malformed:
+                    flags.append("INVALID_NUMERIC")
+                if number is not None:
+                    numeric[name] = number
+
+            complete = all(name in numeric for name in ("open", "high", "low", "close", "volume"))
             if not complete:
                 flags.append("PARTIAL_BAR")
-            numeric = {name: float(value) for name, value in values.items() if pd.notna(value)}
-            if complete and not (
+
+            if all(name in numeric for name in ("open", "high", "low", "close")) and not (
                 numeric["low"] <= numeric["open"] <= numeric["high"]
                 and numeric["low"] <= numeric["close"] <= numeric["high"]
             ):
                 flags.append("INVALID_OHLC")
             if numeric.get("volume", 0) < 0:
                 flags.append("NEGATIVE_VOLUME")
+
+            amount = None
+            if "amount" in row:
+                amount, malformed_amount = _finite_float(row.get("amount"))
+                if malformed_amount:
+                    flags.append("INVALID_NUMERIC")
+
             health = evaluate_health(
                 freshness=1,
                 completeness=1 if complete else 0.5,
@@ -185,12 +229,12 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
                     timeframe="1d",
                     bar_start=timestamp,
                     bar_end=timestamp,
-                    open=numeric.get("open", 0),
-                    high=numeric.get("high", 0),
-                    low=numeric.get("low", 0),
-                    close=numeric.get("close", 0),
-                    volume=numeric.get("volume", 0),
-                    amount=float(row["amount"]) if "amount" in row and pd.notna(row["amount"]) else None,
+                    open=numeric.get("open", 0.0),
+                    high=numeric.get("high", 0.0),
+                    low=numeric.get("low", 0.0),
+                    close=numeric.get("close", 0.0),
+                    volume=numeric.get("volume", 0.0),
+                    amount=amount,
                     provider=str(provider),
                     source_timestamp=timestamp,
                     received_at=received_at,

@@ -118,7 +118,13 @@ def evaluate_health(
             raise ValueError(f"{name} must be between 0 and 1")
 
     flags = tuple(dict.fromkeys(str(flag).strip().upper() for flag in quality_flags if str(flag).strip()))
-    severe_flags = {"INVALID_OHLC", "NON_POSITIVE_PRICE", "NEGATIVE_VOLUME", "TIMESTAMP_MISMATCH"}
+    severe_flags = {
+        "INVALID_NUMERIC",
+        "INVALID_OHLC",
+        "NON_POSITIVE_PRICE",
+        "NEGATIVE_VOLUME",
+        "TIMESTAMP_MISMATCH",
+    }
     degraded_flags = {"MISSING_BAR", "MISSING_SOURCE_TIMESTAMP", "PARTIAL_BAR", "STALE"}
     score = round(
         freshness * 25
