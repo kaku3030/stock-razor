@@ -119,7 +119,7 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
         if price is None or float(price) <= 0:
             flags.append("NON_POSITIVE_PRICE")
         health = evaluate_health(
-            freshness=0 if getattr(raw, "is_stale", False) else 1,
+            freshness=0 if raw_received_at is None or getattr(raw, "is_stale", False) else 1,
             completeness=1 if price is not None and not missing_fields else 0.5,
             timestamp=1 if has_source_timestamp else 0,
             provider=1,
