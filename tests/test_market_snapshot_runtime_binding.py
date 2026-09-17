@@ -56,6 +56,7 @@ class FakeProvider:
     def __init__(self):
         self.subscribe_calls = 0
         self.closed = 0
+        self.callback = None
 
     def get_latest_quote(self, symbol):
         raise AssertionError("owner lifecycle test must not request quotes")
@@ -65,6 +66,18 @@ class FakeProvider:
 
     def subscribe(self, symbols, timeframe="1m", callback=None):
         self.subscribe_calls += 1
+        self.callback = callback
+
+    def emit(self, *, price, start=START):
+        assert self.callback is not None
+        self.callback(Bar(
+            symbol="NVDA", market="us", asset_type="stock", timeframe="1m",
+            bar_start=start, bar_end=start + timedelta(minutes=1),
+            open=price, high=price, low=price, close=price, volume=100,
+            provider="alpaca", feed="iex", source_timestamp=start + timedelta(minutes=1),
+            received_at=NOW, session="regular", is_closed=True, is_complete=True,
+            health=HEALTH,
+        ))
 
     def get_session_status(self, market):
         return "closed"
@@ -206,3 +219,57 @@ def test_unverified_feed_is_not_silently_fabricated():
 def test_factory_rejects_non_snapshot_service(tmp_path):
     with pytest.raises(ValueError, match="read-only market snapshot view"):
         create_app(static_dir=tmp_path / "unbuilt", market_snapshot_service=object())
+
+
+def test_callback_to_authenticated_api_survives_restart_without_old_cache(monkeypatch, tmp_path):
+    monkeypatch.setenv("ADMIN_AUTH_ENABLED", "false")
+    monkeypatch.setenv("STOCK_RAZOR_SNAPSHOT_READ_TOKEN", TOKEN)
+    providers = []
+
+    def make_provider():
+        provider = FakeProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(
+        make_provider, ["NVDA"], service_kwargs={"now": lambda: NOW}
+    )
+    view = MarketSnapshotView(owner)
+    app = create_app(static_dir=tmp_path / "unbuilt", market_snapshot_service=view)
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+
+    assert client.get(URL).status_code == 401
+    assert client.get(URL, headers=headers).status_code == 503
+    assert providers == []
+    first = owner.start()
+    assert owner.start() is first
+    assert len(providers) == 1
+    assert providers[0].subscribe_calls == 1
+    assert client.get(URL, headers=headers).status_code == 503
+    providers[0].emit(price=200.5)
+    assert first.minute_bars("NVDA")[0].close == 200.5
+    initial = client.get(URL, headers=headers)
+    assert initial.status_code == 200
+    assert initial.json()["quote"]["price"] == 200.5
+    assert initial.json()["quote"]["source_timestamp"] == (START + timedelta(minutes=1)).isoformat()
+
+    owner.stop()
+    assert providers[0].closed == 1
+    assert client.get(URL, headers=headers).status_code == 503
+    second = owner.start()
+    assert second is not first
+    assert len(providers) == 2
+    assert providers[1].subscribe_calls == 1
+    assert client.get(URL, headers=headers).status_code == 503
+    providers[1].emit(price=211.0, start=START + timedelta(minutes=1))
+    updated = client.get(URL, headers=headers)
+    assert updated.status_code == 200
+    assert updated.json()["quote"]["price"] == 211.0
+    assert updated.json()["quote"]["source_timestamp"] == (START + timedelta(minutes=2)).isoformat()
+    assert first.minute_bars("NVDA")[0].close == 200.5
+    assert client.get(URL).status_code == 401
+    assert len(providers) == 2
+    owner.stop()
+    assert providers[1].closed == 1
+    assert client.get(URL, headers=headers).status_code == 503
