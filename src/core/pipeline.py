@@ -1513,6 +1513,7 @@ class StockAnalysisPipeline:
             initial_context = {
                 "stock_code": code,
                 "stock_name": stock_name,
+                "run_id": query_id,
                 "report_type": report_type.value,
                 "report_language": report_language,
                 "fundamental_context": fundamental_context,
