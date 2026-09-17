@@ -28,6 +28,23 @@ def _utc_datetime(value: object, *, fallback: Optional[datetime] = None) -> Opti
     return parsed.to_pydatetime()
 
 
+def _explicit_timezone_utc(value: object) -> Optional[datetime]:
+    """Quote evidence must carry an explicit offset; naive CN clock time is not UTC.
+
+    Historical daily dates use a separate date-only normalization path above.
+    No timezone is guessed from the symbol, provider or receiving machine.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        parsed = pd.to_datetime(value, utc=False)
+    except (TypeError, ValueError):
+        return None
+    if getattr(parsed, "tzinfo", None) is None:
+        return None
+    return parsed.tz_convert("UTC").to_pydatetime()
+
+
 def _market_for(symbol: str, declared: Optional[str] = None) -> str:
     if declared:
         return str(declared).strip().lower()
@@ -82,10 +99,14 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
             )
             raise LookupError(f"no realtime quote available for {symbol}")
 
-        received_at = _utc_datetime(getattr(raw, "fetched_at", None), fallback=self._now())
-        source_timestamp = _utc_datetime(getattr(raw, "provider_timestamp", None))
+        raw_received_at = _explicit_timezone_utc(getattr(raw, "fetched_at", None))
+        received_at = raw_received_at or self._now()
+        source_timestamp = _explicit_timezone_utc(getattr(raw, "provider_timestamp", None))
+        has_source_timestamp = source_timestamp is not None
         missing_fields = tuple(str(item).upper() for item in (getattr(raw, "missing_fields", None) or ()))
         flags = list(missing_fields)
+        if raw_received_at is None:
+            flags.append("RECEIPT_TIMESTAMP_UNVERIFIED")
         if source_timestamp is None:
             flags.append("MISSING_SOURCE_TIMESTAMP")
             source_timestamp = received_at
@@ -100,7 +121,7 @@ class ExistingMarketDataAdapter(MarketDataAdapter):
         health = evaluate_health(
             freshness=0 if getattr(raw, "is_stale", False) else 1,
             completeness=1 if price is not None and not missing_fields else 0.5,
-            timestamp=1 if getattr(raw, "provider_timestamp", None) else 0.5,
+            timestamp=1 if has_source_timestamp else 0,
             provider=1,
             continuity=1,
             cross_check=0.5,
