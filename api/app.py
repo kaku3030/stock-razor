@@ -310,23 +310,19 @@ async def app_lifespan(app: FastAPI):
             delattr(app.state, "runtime_scheduler_service")
 
 
-def create_app(static_dir: Optional[Path] = None) -> FastAPI:
+def create_app(
+    static_dir: Optional[Path] = None, *, market_snapshot_service: object | None = None,
+) -> FastAPI:
+    """Create the app; optionally attach an already-owned read-only snapshot view.
+
+    The default does not bootstrap a provider. An AI Monitor owner may pass an
+    existing view at composition time; without one the endpoint returns 503.
     """
-    创建并配置 FastAPI 应用实例
-    
-    Args:
-        static_dir: 静态文件目录路径（可选，默认为项目根目录下的 static）
-        
-    Returns:
-        配置完成的 FastAPI 应用实例
-    """
-    # 默认静态文件目录
     _register_frontend_asset_mime_types()
 
     if static_dir is None:
         static_dir = Path(__file__).parent.parent / "static"
-    
-    # 创建 FastAPI 实例
+
     app = FastAPI(
         title="Stock Razor API",
         description=(
@@ -342,30 +338,35 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         version="1.0.0",
         lifespan=app_lifespan,
     )
-    
+    if market_snapshot_service is not None:
+        if not callable(getattr(market_snapshot_service, "get_snapshot", None)):
+            raise ValueError("existing read-only market snapshot view required")
+        # Reference only: never initialize or close the AI Monitor owner here.
+        app.state.market_snapshot_service = market_snapshot_service
+
     # ============================================================
     # CORS 配置
     # ============================================================
-    
+
     allowed_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
-    
+
     # 从环境变量添加额外的允许来源
     extra_origins = os.environ.get("CORS_ORIGINS", "")
     if extra_origins:
         allowed_origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
-    
+
     # 允许所有来源（开发/演示用）
     allow_all_origins = os.environ.get("CORS_ALLOW_ALL", "").lower() == "true"
     allow_credentials = not allow_all_origins
     if allow_all_origins:
         _warn_if_open_cors_without_auth()
         allowed_origins = ["*"]
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -375,20 +376,20 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     )
 
     add_auth_middleware(app)
-    
+
     # ============================================================
     # 注册路由
     # ============================================================
-    
+
     app.include_router(api_v1_router, prefix="/api/v1")
     add_error_handlers(app)
-    
+
     # ============================================================
     # 根路由和健康检查
     # ============================================================
-    
+
     has_frontend = static_dir.exists() and (static_dir / "index.html").exists()
-    
+
     if has_frontend:
         # Surface bundle inconsistencies as soon as the app starts so that
         # blank-page reports (#1064 / #1065 / #1050) can be diagnosed from
@@ -407,14 +408,14 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
   *{margin:0;padding:0;box-sizing:border-box}
   body{min-height:100vh;display:flex;align-items:center;justify-content:center;
        background:#0a0e17;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,monospace}
-  .card{max-width:580px;padding:2.5rem;border:1px solid #1e293b;border-radius:12px;background:#111827}
+  .card{max-width:580px;padding:2.5rem;border:1px solid #1e293b;background:#111827}
   h1{font-size:1.25rem;color:#38bdf8;margin-bottom:.75rem}
   p{font-size:.9rem;line-height:1.7;color:#94a3b8;margin-bottom:.5rem}
   code{background:#1e293b;padding:2px 8px;border-radius:4px;font-size:.85rem;color:#67e8f9}
   .hint{margin-top:1.25rem;padding:.75rem 1rem;border-left:3px solid #f59e0b;background:#1c1917;border-radius:0 6px 6px 0}
   .hint p{color:#fbbf24;margin:0}
   a{color:#38bdf8;text-decoration:none}
-  a:hover{text-decoration:underline}
+  a:hover{color:#38bdf8;text-decoration:none}
   .status{margin-top:1rem;font-size:.8rem;color:#475569}
 </style></head><body><div class="card">
 <h1>&#9888;&#65039; Frontend Not Built</h1>
@@ -431,7 +432,7 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         async def root():
             """根路由 - 前端未构建时返回引导页面"""
             return HTMLResponse(content=_FRONTEND_NOT_BUILT_HTML)
-    
+
     @app.get(
         "/health",
         response_model=HealthResponse,
@@ -494,17 +495,16 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
             media_type="application/json",
             headers=_STOCK_INDEX_HEADERS,
         )
-    
+
     # ============================================================
     # 静态文件托管（前端 SPA）
     # ============================================================
-    
+
     if has_frontend:
         # Serve `/assets/*` explicitly so that misses return a plain-text
         # 404 with the correct Content-Type instead of the default JSON
         # error response. JSON for a JS/CSS request is what masked the
-        # blank-page root cause in #1064; here we make it obvious that the
-        # static file simply does not exist on disk.
+        # blank-page root cause (#1064 / #1065 / #1050).
         assets_dir = static_dir / "assets"
 
         assets_static_files = StaticFiles(directory=str(assets_dir), check_dir=False)
@@ -557,7 +557,7 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
                 return FileResponse(file_path, media_type=content_type)
 
             return _frontend_index_response(static_dir)
-    
+
     return app
 
 

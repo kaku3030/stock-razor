@@ -60,10 +60,12 @@ def aggregate_bars(
     timezone_name: str | None = None,
     include_forming: bool = True,
 ) -> list[Bar]:
-    """Aggregate 1m bars without spanning market session breaks.
+    """Aggregate 1m bars within one market/provider/feed, never across breaks.
 
     Duplicate source minutes use the latest ``received_at`` value, allowing a
-    provider correction to replace an earlier minute deterministically.
+    provider correction to replace an earlier minute deterministically. A
+    complete source-minute grid and confirmed source bars are both necessary
+    before the aggregate can be considered confirmed and complete.
     """
 
     if timeframe not in TIMEFRAME_MINUTES:
@@ -71,8 +73,12 @@ def aggregate_bars(
     if not bars:
         return []
     market = bars[0].market
+    provider = bars[0].provider
+    feed = bars[0].feed
     if any(bar.market != market or bar.timeframe != "1m" for bar in bars):
         raise ValueError("all source bars must be 1m bars from the same market")
+    if any(bar.provider != provider or bar.feed != feed for bar in bars):
+        raise ValueError("all source bars must have the same provider and feed")
 
     resolved_sessions = sessions or MARKET_SESSIONS.get(market)
     resolved_timezone = timezone_name or MARKET_TIMEZONES.get(market)
@@ -101,28 +107,46 @@ def aggregate_bars(
 
     result: list[Bar] = []
     for (symbol, bucket_start, bucket_end, session), source_bars in sorted(grouped.items()):
-        closed = as_of.astimezone(bucket_end.tzinfo) >= bucket_end
-        if not include_forming and not closed:
-            continue
         ordered = sorted(source_bars, key=lambda item: item.bar_start)
         expected_count = int((bucket_end - bucket_start).total_seconds() // 60)
-        complete = len(ordered) == expected_count and all(item.is_complete for item in ordered)
+        expected_starts = {
+            bucket_start + timedelta(minutes=offset) for offset in range(expected_count)
+        }
+        exact_minutes = (
+            {item.bar_start for item in ordered} == expected_starts
+            and all(item.bar_end == item.bar_start + timedelta(minutes=1) for item in ordered)
+        )
+        sources_closed = all(item.is_closed for item in ordered)
+        closed = as_of.astimezone(bucket_end.tzinfo) >= bucket_end and sources_closed
+        if not include_forming and not closed:
+            continue
+        complete = (
+            len(ordered) == expected_count
+            and exact_minutes
+            and all(item.is_complete for item in ordered)
+        )
         flags = list(dict.fromkeys(flag for item in ordered for flag in item.quality_flags))
         if not complete:
             flags.append("MISSING_BAR")
         if not closed:
             flags.append("PARTIAL_BAR")
+        if feed is None:
+            flags.append("FEED_UNVERIFIED")
 
         volume = sum(item.volume for item in ordered)
         amounts = [item.amount for item in ordered]
         amount = sum(value for value in amounts if value is not None) if any(value is not None for value in amounts) else None
+        # Historical and delayed facts retain their original availability
+        # classification: aggregating a complete grid does not create realtime
+        # currentness or entitlement evidence.
+        unverified_currentness = any(flag in flags for flag in ("STALE", "HISTORICAL_QUERY", "DELAYED_FEED"))
         health = evaluate_health(
-            freshness=1,
-            completeness=min(len(ordered) / expected_count, 1),
-            timestamp=1,
-            provider=1,
-            continuity=1 if complete else min(len(ordered) / expected_count, 1),
-            cross_check=0.5,
+            freshness=0 if unverified_currentness else 1,
+            completeness=min(len(ordered) / expected_count, 1) if complete else min(len(ordered) / expected_count, 0.5),
+            timestamp=0 if "TIMESTAMP_MISMATCH" in flags else 1,
+            provider=1 if feed is not None else 0,
+            continuity=1 if complete else min(len(ordered) / expected_count, 0.5),
+            cross_check=0.5 if feed is not None else 0,
             quality_flags=flags,
         )
         result.append(
@@ -140,8 +164,8 @@ def aggregate_bars(
                 volume=volume,
                 amount=amount,
                 vwap=(amount / volume) if amount is not None and volume > 0 else None,
-                provider=ordered[-1].provider,
-                feed=ordered[-1].feed,
+                provider=provider,
+                feed=feed,
                 session=session,
                 source_timestamp=max(item.source_timestamp for item in ordered),
                 received_at=max(item.received_at for item in ordered),

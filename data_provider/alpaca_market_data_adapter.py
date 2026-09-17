@@ -22,6 +22,10 @@ from .market_data_adapter import (
 
 NY_ZONE = ZoneInfo("America/New_York")
 ALPACA_DATA_URL = "https://data.alpaca.markets"
+# Snapshot prices sourced from one-minute bars are not tick quotes. An older
+# last bar must never receive a healthy/currentness claim from a newer BBO.
+MAX_LATEST_BAR_AGE = timedelta(minutes=3)
+MAX_BBO_BAR_TIME_SKEW = timedelta(minutes=1)
 
 
 def _value(raw: object, *names: str) -> object:
@@ -35,14 +39,15 @@ def _value(raw: object, *names: str) -> object:
 
 def _timestamp(value: object) -> Optional[datetime]:
     if isinstance(value, datetime):
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return value.astimezone(timezone.utc) if value.tzinfo is not None else None
     if not value:
         return None
     text = str(value).strip()
     if text.endswith("Z"):
         text = f"{text[:-1]}+00:00"
     try:
-        return datetime.fromisoformat(text).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(text)
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
     except ValueError:
         return None
 
@@ -115,7 +120,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             quality_flags=("NOT_OBSERVED",),
         )
 
-    def _normalize_bar(self, symbol: str, raw: object, *, updated: bool = False) -> Bar:
+    def _normalize_bar(self, symbol: str, raw: object, *, updated: bool = False, live: bool = False) -> Bar:
         received_at = self._now()
         timestamp = _timestamp(_value(raw, "t", "timestamp"))
         flags = ["NOT_CROSS_CHECKED"]
@@ -124,7 +129,16 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             timestamp = received_at
         if updated:
             flags.append("UPDATED_BAR")
+        if not live:
+            flags.append("HISTORICAL_QUERY")
+        if self._feed == "delayed_sip":
+            flags.append("DELAYED_FEED")
         bar_end = timestamp + timedelta(minutes=1)
+        age = received_at - bar_end
+        if age < -timedelta(minutes=1):
+            flags.append("TIMESTAMP_MISMATCH")
+        if live and age > MAX_LATEST_BAR_AGE:
+            flags.append("STALE")
         numeric = {
             "open": float(_value(raw, "o", "open") or 0),
             "high": float(_value(raw, "h", "high") or 0),
@@ -143,15 +157,16 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         if not closed:
             flags.append("PARTIAL_BAR")
         health = evaluate_health(
-            freshness=1,
-            completeness=1,
-            timestamp=1 if "TIMESTAMP_MISMATCH" not in flags else 0,
+            freshness=0 if (not live or "STALE" in flags or "DELAYED_FEED" in flags) else 1,
+            completeness=1 if closed else 0.5,
+            timestamp=0 if "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
-            continuity=1,
+            continuity=0 if live else 1,  # one bar cannot prove a stream's continuity
             cross_check=0.5,
             quality_flags=flags,
         )
         amount = _value(raw, "amount")
+        latency_ms = max(0, int(age.total_seconds() * 1000))
         return Bar(
             symbol=symbol.upper(),
             market="us",
@@ -172,9 +187,9 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             source_timestamp=bar_end,
             received_at=received_at,
             is_closed=closed,
-            is_complete=closed,
-            latency_ms=max(0, int((received_at - bar_end).total_seconds() * 1000)),
-            freshness_ms=max(0, int((received_at - bar_end).total_seconds() * 1000)),
+            is_complete=closed and "TIMESTAMP_MISMATCH" not in flags,
+            latency_ms=latency_ms,
+            freshness_ms=latency_ms,
             health=health,
             quality_flags=health.quality_flags,
         )
@@ -188,18 +203,39 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         received_at = self._now()
         bar_timestamp = _timestamp(_value(bar, "t", "timestamp"))
         quote_timestamp = _timestamp(_value(raw_quote, "t", "timestamp"))
-        timestamps = [value for value in (bar_timestamp, quote_timestamp) if value is not None]
-        source_timestamp = max(timestamps) if timestamps else received_at
+        # Quote.price comes from bar.c: its source time MUST be that bar's end,
+        # never max(bar_timestamp, quote_timestamp). Bid/ask have separate source
+        # semantics and are suppressed when their timestamp cannot be trusted.
+        flags: list[str] = []
+        if bar_timestamp is None:
+            flags.append("MISSING_SOURCE_TIMESTAMP")
+        source_timestamp = bar_timestamp + timedelta(minutes=1) if bar_timestamp else received_at
+        age = received_at - source_timestamp
+        if age < -timedelta(minutes=1):
+            flags.append("TIMESTAMP_MISMATCH")
+        if age > MAX_LATEST_BAR_AGE:
+            flags.append("STALE")
+        if self._feed == "delayed_sip":
+            flags.append("DELAYED_FEED")
         price = float(_value(bar, "c", "close") or 0)
-        flags = [] if timestamps else ["MISSING_SOURCE_TIMESTAMP"]
         if price <= 0:
             flags.append("NON_POSITIVE_PRICE")
+        bid = ask = None
+        if quote_timestamp is None:
+            flags.append("MISSING_QUOTE_TIMESTAMP")
+        elif bar_timestamp is None or abs(quote_timestamp - source_timestamp) > MAX_BBO_BAR_TIME_SKEW:
+            flags.append("BBO_TIME_NOT_COMPARABLE")
+        else:
+            bid = _value(raw_quote, "bp", "bid_price")
+            ask = _value(raw_quote, "ap", "ask_price")
+            if quote_timestamp != source_timestamp:
+                flags.append("BBO_TIME_DIFFERS_FROM_PRICE")
         health = evaluate_health(
-            freshness=1,
+            freshness=0 if "STALE" in flags or "DELAYED_FEED" in flags else 1,
             completeness=1 if price > 0 else 0,
-            timestamp=1 if timestamps else 0.5,
+            timestamp=0 if bar_timestamp is None or "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
-            continuity=1,
+            continuity=0,  # latest snapshot is not proof of continuous minute coverage
             cross_check=0.5,
             quality_flags=flags,
         )
@@ -214,8 +250,8 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             source_timestamp=source_timestamp,
             received_at=received_at,
             session=_session_at(source_timestamp),
-            bid=_value(raw_quote, "bp", "bid_price"),
-            ask=_value(raw_quote, "ap", "ask_price"),
+            bid=bid,
+            ask=ask,
             volume=_value(bar, "v", "volume"),
             health=health,
             quality_flags=health.quality_flags,
@@ -259,10 +295,10 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         codes = tuple(symbol.strip().upper() for symbol in symbols)
 
         async def on_bar(raw: object) -> None:
-            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw))
+            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, live=True))
 
         async def on_updated_bar(raw: object) -> None:
-            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True))
+            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True, live=True))
 
         self._stream.subscribe_bars(on_bar, *codes)
         self._stream.subscribe_updated_bars(on_updated_bar, *codes)
