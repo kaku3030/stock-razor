@@ -214,3 +214,16 @@ def test_runner_supports_execution_delay_stress(tmp_path: Path) -> None:
     assert result["guard"]["execution_delay_bars"] == 2
     assert result["guard"]["signal_execution"] == "DELAYED_OPEN_2_BARS"
     assert result["observation_count"] < 132
+
+
+def test_runner_supports_non_overlapping_forward_windows(tmp_path: Path) -> None:
+    for index, symbol in enumerate(("AAA", "BBB", "CCC")):
+        _write_capture(tmp_path, f"us_{symbol.lower()}", symbol, days=90 + index)
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    result = run_validation(tmp_path, config, tmp_path / "out.json", non_overlapping=True)
+
+    assert result["guard"]["overlapping_forward_windows"] is False
+    assert result["guard"]["window_policy"] == "NON_OVERLAPPING"
+    assert result["observation_count"] < 132
