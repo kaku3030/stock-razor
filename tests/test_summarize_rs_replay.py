@@ -31,7 +31,8 @@ def test_replay_summary_excludes_global_metrics_and_false_holdout_label():
 
     assert result['status'] == 'RESEARCH_ONLY'
     assert result['guard'] == {
-        'pit': 'RECORDED_CAPTURE_ONLY',
+        'pit': 'UNKNOWN',
+        'holdout_exposure': 'UNKNOWN',
         'holdout_mode': 'DIAGNOSTIC_THIRD_ONLY',
         'promotion_eligible': False,
         'cross_split_forward_windows_excluded': True,
