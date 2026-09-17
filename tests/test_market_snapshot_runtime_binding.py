@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from api.app import create_app
 from data_provider.market_data_adapter import Bar, evaluate_health
 from src.services.ai_monitor.market_snapshot_view import MarketSnapshotView
-from src.services.realtime_market_data import MarketDataSnapshot
+from src.services.realtime_market_data import MarketDataSnapshot, RealtimeMarketRuntimeOwner
 
 
 NOW = datetime(2026, 9, 17, 13, 31, 15, tzinfo=timezone.utc)
@@ -50,6 +50,105 @@ class AlreadyOwnedCache:
             feed=self.feed if bars else None, fallback_from=None,
             fallback_reason=None,
         )
+
+
+class FakeProvider:
+    def __init__(self):
+        self.subscribe_calls = 0
+        self.closed = 0
+
+    def get_latest_quote(self, symbol):
+        raise AssertionError("owner lifecycle test must not request quotes")
+
+    def get_bars(self, symbol, timeframe, start=None, end=None, limit=None):
+        raise AssertionError("owner lifecycle test must not seed provider history")
+
+    def subscribe(self, symbols, timeframe="1m", callback=None):
+        self.subscribe_calls += 1
+
+    def get_session_status(self, market):
+        return "closed"
+
+    def get_provider_health(self):
+        return HEALTH
+
+    def reconnect(self):
+        return True
+
+    def close(self):
+        self.closed += 1
+
+
+def test_runtime_owner_starts_one_service_and_ignores_duplicate_start():
+    providers = []
+
+    def make_provider():
+        provider = FakeProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA", "NVDA"])
+    first = owner.start()
+    second = owner.start()
+
+    assert first is second
+    assert owner.service is first
+    assert len(providers) == 1
+    assert providers[0].subscribe_calls == 1
+
+    owner.stop()
+    owner.stop()
+    assert owner.service is None
+    assert providers[0].closed == 1
+
+
+def test_runtime_owner_closes_before_restart_and_keeps_one_active_service():
+    providers = []
+
+    def make_provider():
+        provider = FakeProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"])
+    first = owner.start()
+    second = owner.restart()
+
+    assert second is not first
+    assert owner.service is second
+    assert len(providers) == 2
+    assert providers[0].closed == 1
+    assert providers[1].closed == 0
+    assert providers[1].subscribe_calls == 1
+
+    owner.stop()
+    assert providers[1].closed == 1
+
+
+def test_runtime_owner_fails_closed_without_provider():
+    owner = RealtimeMarketRuntimeOwner(lambda: None, ["NVDA"])
+
+    with pytest.raises(RuntimeError, match="provider is unavailable"):
+        owner.start()
+
+    assert owner.service is None
+
+
+def test_runtime_owner_closes_provider_when_startup_subscription_fails():
+    provider = FakeProvider()
+
+    def fail_subscribe(symbols, timeframe="1m", callback=None):
+        provider.subscribe_calls += 1
+        raise RuntimeError("subscription startup failed")
+
+    provider.subscribe = fail_subscribe
+    owner = RealtimeMarketRuntimeOwner(lambda: provider, ["NVDA"])
+
+    with pytest.raises(RuntimeError, match="subscription startup failed"):
+        owner.start()
+
+    assert owner.service is None
+    assert provider.closed == 1
 
 
 def test_default_factory_never_constructs_a_snapshot_owner_and_fails_closed(monkeypatch, tmp_path):

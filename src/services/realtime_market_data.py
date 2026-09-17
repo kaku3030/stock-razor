@@ -168,3 +168,73 @@ class RealtimeMarketDataService:
             fallback_from=latest.fallback_from,
             fallback_reason=latest.fallback_reason,
         )
+
+
+class RealtimeMarketRuntimeOwner:
+    """Own exactly one realtime service for one isolated runtime lifecycle.
+
+    The provider is deliberately supplied by the caller.  This owner never
+    discovers credentials, constructs a provider, or creates a replacement
+    runtime when ``start`` is called more than once.
+    """
+
+    def __init__(
+        self,
+        provider_factory: Callable[[], Optional[MarketDataAdapter]],
+        symbols: Sequence[str],
+        *,
+        service_kwargs: Optional[dict] = None,
+    ) -> None:
+        normalized_symbols = tuple(
+            dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip())
+        )
+        if not normalized_symbols:
+            raise ValueError("at least one runtime symbol is required")
+        self._provider_factory = provider_factory
+        self._symbols = normalized_symbols
+        self._service_kwargs = dict(service_kwargs or {})
+        self._provider: Optional[MarketDataAdapter] = None
+        self._service: Optional[RealtimeMarketDataService] = None
+        self._lock = RLock()
+
+    @property
+    def service(self) -> Optional[RealtimeMarketDataService]:
+        with self._lock:
+            return self._service
+
+    def start(self) -> RealtimeMarketDataService:
+        with self._lock:
+            if self._service is not None:
+                return self._service
+
+            provider = self._provider_factory()
+            if provider is None:
+                raise RuntimeError("realtime market-data provider is unavailable")
+
+            service = RealtimeMarketDataService(provider, **self._service_kwargs)
+            try:
+                service.subscribe(self._symbols)
+            except Exception:
+                self._close_provider(provider)
+                raise
+            self._provider = provider
+            self._service = service
+            return service
+
+    def stop(self) -> None:
+        with self._lock:
+            provider = self._provider
+            self._provider = None
+            self._service = None
+            if provider is not None:
+                self._close_provider(provider)
+
+    def restart(self) -> RealtimeMarketDataService:
+        self.stop()
+        return self.start()
+
+    @staticmethod
+    def _close_provider(provider: MarketDataAdapter) -> None:
+        close = getattr(provider, "close", None)
+        if callable(close):
+            close()
