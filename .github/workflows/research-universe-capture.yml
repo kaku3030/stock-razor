@@ -33,7 +33,10 @@ jobs:
       - name: Run independent RS Breakout validation
         run: |
           python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation.json
-      - name: Run RS Breakout non-overlapping window validation\n        run: |\n          python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation_nonoverlap.json             --non-overlapping-forward-windows\n      - name: Run RS Breakout cost stress scenarios
+      - name: Run RS Breakout non-overlapping window validation
+        run: |
+          python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation_nonoverlap.json             --non-overlapping-forward-windows
+      - name: Run RS Breakout cost stress scenarios
         run: |
           for cost_bps in 100 150 200; do
             python scripts/run_rs_breakout_validation.py               --config config/rs_breakout_hypothesis_v0_1.json               --input-dir artifacts/universe               --output "artifacts/universe/rs_breakout_validation_cost_${cost_bps}bps.json"               --round-trip-cost-bps "${cost_bps}"
