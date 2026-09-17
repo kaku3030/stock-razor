@@ -19,6 +19,7 @@ def _write_capture(root: Path, *, status: str = "CAPTURED_NOT_APPROVED", tamper:
     (root / "cn_sh_600000.csv.manifest.json").write_text(json.dumps({
         "source_id": "baostock", "market": "cn", "endpoint_id": "history_eod",
         "raw_sha256": digest, "status": status,
+        "retrieved_at": "2026-09-16T22:52:46+00:00",
     }), encoding="utf-8")
 
 
@@ -44,6 +45,29 @@ def test_capture_validator_rejects_hash_mismatch(tmp_path, monkeypatch):
 
 def test_capture_validator_rejects_blocked_manifest(tmp_path, monkeypatch):
     _write_capture(tmp_path, status="CAPTURE_BLOCKED")
+    config = _write_config(tmp_path)
+    monkeypatch.setattr("sys.argv", ["validate", "--config", str(config), "--input-dir", str(tmp_path)])
+    assert main() == 2
+
+
+def test_capture_validator_writes_evidence_report(tmp_path, monkeypatch):
+    _write_capture(tmp_path)
+    config = _write_config(tmp_path)
+    report = tmp_path / "evidence.json"
+    monkeypatch.setattr("sys.argv", ["validate", "--config", str(config), "--input-dir", str(tmp_path), "--evidence-report", str(report)])
+    assert main() == 0
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["schema"] == "radar-research-universe-evidence-v0.1"
+    assert payload["pit_status"] == "RECORDED_CAPTURE_ONLY"
+    assert payload["approval_required"] is True
+
+
+def test_capture_validator_rejects_timestamp_without_timezone(tmp_path, monkeypatch):
+    _write_capture(tmp_path)
+    manifest = tmp_path / "cn_sh_600000.csv.manifest.json"
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["retrieved_at"] = "2026-09-16T22:52:46"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
     config = _write_config(tmp_path)
     monkeypatch.setattr("sys.argv", ["validate", "--config", str(config), "--input-dir", str(tmp_path)])
     assert main() == 2
