@@ -252,7 +252,7 @@ def test_callback_to_authenticated_api_survives_restart_without_old_cache(monkey
     initial = client.get(URL, headers=headers)
     assert initial.status_code == 200
     assert initial.json()["quote"]["price"] == 200.5
-    assert initial.json()["quote"]["source_timestamp"] == (START + timedelta(minutes=1)).isoformat()
+    assert datetime.fromisoformat(initial.json()["quote"]["source_timestamp"]) == START + timedelta(minutes=1)
 
     owner.stop()
     assert providers[0].closed == 1
@@ -266,7 +266,7 @@ def test_callback_to_authenticated_api_survives_restart_without_old_cache(monkey
     updated = client.get(URL, headers=headers)
     assert updated.status_code == 200
     assert updated.json()["quote"]["price"] == 211.0
-    assert updated.json()["quote"]["source_timestamp"] == (START + timedelta(minutes=2)).isoformat()
+    assert datetime.fromisoformat(updated.json()["quote"]["source_timestamp"]) == START + timedelta(minutes=2)
     assert first.minute_bars("NVDA")[0].close == 200.5
     assert client.get(URL).status_code == 401
     assert len(providers) == 2
