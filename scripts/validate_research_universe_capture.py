@@ -12,7 +12,7 @@ import csv
 import hashlib
 import json
 import math
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -39,6 +39,15 @@ def _validate_file(csv_path: Path, manifest_path: Path, *, market: str, symbol: 
         raise ValueError(f"capture is not recorded evidence ({csv_path}): {manifest.get('status')!r}")
     if manifest.get("market") != market or manifest.get("source_id") != source_id:
         raise ValueError(f"manifest source mismatch: {manifest_path}")
+    retrieved_at = manifest.get("retrieved_at")
+    if not isinstance(retrieved_at, str):
+        raise ValueError(f"manifest retrieved_at missing: {manifest_path}")
+    try:
+        parsed_retrieved_at = datetime.fromisoformat(retrieved_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"manifest retrieved_at invalid: {manifest_path}") from exc
+    if parsed_retrieved_at.tzinfo is None:
+        raise ValueError(f"manifest retrieved_at must include timezone: {manifest_path}")
     digest = hashlib.sha256(csv_path.read_bytes()).hexdigest()
     if manifest.get("raw_sha256") != digest:
         raise ValueError(f"raw_sha256 mismatch: {csv_path}")
@@ -78,6 +87,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--input-dir", type=Path, required=True)
+    parser.add_argument("--evidence-report", type=Path)
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
     errors: list[str] = []
@@ -93,10 +103,14 @@ def main() -> int:
                 validated.append({"market": market, "symbol": symbol, "rows": count})
             except ValueError as exc:
                 errors.append(str(exc))
+    report = {"schema": "radar-research-universe-evidence-v0.1", "status": "INVALID" if errors else "VALIDATED", "pit_status": "RECORDED_CAPTURE_ONLY", "approval_required": True, "symbol_count": len(validated), "captures": validated, "errors": errors}
+    if args.evidence_report:
+        args.evidence_report.parent.mkdir(parents=True, exist_ok=True)
+        args.evidence_report.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     if errors:
-        print(json.dumps({"status": "INVALID", "errors": errors, "validated": validated}, sort_keys=True))
+        print(json.dumps(report, sort_keys=True))
         return 2
-    print(json.dumps({"status": "VALIDATED", "symbol_count": len(validated), "captures": validated}, sort_keys=True))
+    print(json.dumps(report, sort_keys=True))
     return 0
 
 
