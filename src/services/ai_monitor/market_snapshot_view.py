@@ -2,7 +2,8 @@
 
 This view cannot construct an adapter, start a provider, seed history, subscribe,
 or infer market-data entitlement. The application owner must inject an already
-running RealtimeMarketDataService; absent evidence remains unavailable/UNKNOWN.
+running RealtimeMarketDataService or its authoritative lifecycle owner;
+absent evidence remains unavailable/UNKNOWN.
 """
 
 from __future__ import annotations
@@ -11,16 +12,24 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.services.realtime_market_data import RealtimeMarketDataService
+    from src.services.realtime_market_data import RealtimeMarketDataService, RealtimeMarketRuntimeOwner
 
 
 class MarketSnapshotView:
-    """Expose one existing owner's snapshots to the authenticated read API."""
+    """Expose the current existing owner's snapshots to the authenticated read API."""
 
-    def __init__(self, owner: RealtimeMarketDataService) -> None:
-        if owner is None or not callable(getattr(owner, "snapshot", None)):
+    def __init__(self, owner: RealtimeMarketDataService | RealtimeMarketRuntimeOwner) -> None:
+        if owner is None or not (
+            callable(getattr(owner, "snapshot", None))
+            or isinstance(owner, self._runtime_owner_type())
+        ):
             raise ValueError("existing normalized snapshot owner required")
         self._owner = owner
+
+    @staticmethod
+    def _runtime_owner_type():
+        from src.services.realtime_market_data import RealtimeMarketRuntimeOwner
+        return RealtimeMarketRuntimeOwner
 
     @staticmethod
     def _age_ms(source: datetime, received: datetime) -> int | None:
@@ -52,11 +61,18 @@ class MarketSnapshotView:
         }
 
     def get_snapshot(self, symbol: str) -> dict | None:
-        """Read once; never call owner.seed/subscribe or a provider SDK."""
+        """Read once from the current generation; never seed or subscribe."""
         normalized = str(symbol).strip().upper()
         if not normalized:
             return None
-        snapshot = self._owner.snapshot(normalized)
+        lifecycle = self._owner if isinstance(self._owner, self._runtime_owner_type()) else None
+        service = lifecycle.service if lifecycle is not None else self._owner
+        if service is None:
+            return None
+        snapshot = service.snapshot(normalized)
+        # A stop/restart can retire the service while its snapshot is being read.
+        if lifecycle is not None and lifecycle.service is not service:
+            return None
         if not snapshot.minute_bars or not snapshot.provider or not snapshot.feed:
             return None
         latest = snapshot.minute_bars[-1]
@@ -86,7 +102,7 @@ class MarketSnapshotView:
         # A price derived from a minute bar uses that minute's timestamp. Never
         # pretend it is an independently observed BBO or a live trade quote.
         quote_flags = tuple(dict.fromkeys((*latest.quality_flags, "BAR_DERIVED_PRICE")))
-        return {
+        result = {
             "symbol": normalized,
             "market": latest.market,
             "provider": snapshot.provider,
@@ -105,3 +121,4 @@ class MarketSnapshotView:
             },
             "bars": tuple(self._bar(bar) for bar in selected),
         }
+        return None if lifecycle is not None and lifecycle.service is not service else result
