@@ -26,7 +26,8 @@ def summarize_replay(data, source):
         'source': str(source),
         'status': 'RESEARCH_ONLY',
         'guard': {
-            'pit': 'RECORDED_CAPTURE_ONLY',
+            'pit': 'UNKNOWN',
+            'holdout_exposure': 'UNKNOWN',
             'holdout_mode': 'DIAGNOSTIC_THIRD_ONLY',
             'promotion_eligible': False,
             'cross_split_forward_windows_excluded': True,
