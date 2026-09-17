@@ -170,6 +170,7 @@ def _build_observations(
     series: dict[str, dict[str, Bar]],
     params: dict[str, Any],
     execution_delay_bars: int,
+    non_overlapping: bool = False,
 ) -> list[dict[str, Any]]:
     lookback = params["breakout_window_bars"]
     hold_bars = params["holding_period_bars"]
@@ -182,7 +183,8 @@ def _build_observations(
     # A close-based signal can only be executed at or after the next bar open.
     last = len(common_dates) - hold_bars - execution_delay_bars
     observations: list[dict[str, Any]] = []
-    for index in range(first, max(first, last)):
+    step = max(1, execution_delay_bars + hold_bars) if non_overlapping else 1
+    for index in range(first, max(first, last), step):
         day = common_dates[index]
         entry_day = common_dates[index + execution_delay_bars]
         exit_day = common_dates[index + execution_delay_bars + hold_bars]
@@ -230,6 +232,7 @@ def run_validation(
     seed: int = 20260915,
     round_trip_cost_bps: float = 0.0,
     execution_delay_bars: int = 1,
+    non_overlapping: bool = False,
 ) -> dict[str, Any]:
     if not math.isfinite(round_trip_cost_bps) or round_trip_cost_bps < 0 or round_trip_cost_bps > 10000:
         raise ValidationError("round_trip_cost_bps must be finite and between 0 and 10000")
@@ -237,7 +240,7 @@ def run_validation(
         raise ValidationError("execution_delay_bars must be an integer >= 1")
     contract = _validate_contract(contract_path)
     series = _load_captures(input_dir)
-    observations = _build_observations(series, contract["parameters"], execution_delay_bars)
+    observations = _build_observations(series, contract["parameters"], execution_delay_bars, non_overlapping=non_overlapping)
     if not observations:
         raise ValidationError("no eligible observations for the configured lookback/holding period")
     dates = sorted({item["date"] for item in observations})
@@ -291,7 +294,8 @@ def run_validation(
             "never_seen_holdout": "PROTECTED",
             "consumes_holdout": False,
             "production_authorized": False,
-            "overlapping_forward_windows": True,
+            "overlapping_forward_windows": not non_overlapping,
+            "window_policy": "NON_OVERLAPPING" if non_overlapping else "OVERLAPPING_DEFAULT",
             "round_trip_cost_bps": round_trip_cost_bps,
         },
         "parameters": contract["parameters"],
@@ -313,6 +317,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20260915)
     parser.add_argument("--round-trip-cost-bps", type=float, default=0.0)
     parser.add_argument("--execution-delay-bars", type=int, default=1)
+    parser.add_argument("--non-overlapping-forward-windows", action="store_true")
     args = parser.parse_args()
     try:
         result = run_validation(
@@ -322,6 +327,7 @@ def main() -> int:
             seed=args.seed,
             round_trip_cost_bps=args.round_trip_cost_bps,
             execution_delay_bars=args.execution_delay_bars,
+            non_overlapping=args.non_overlapping_forward_windows,
         )
     except ValidationError as exc:
         print(json.dumps({"status": "INVALID", "error": str(exc)}, sort_keys=True))
