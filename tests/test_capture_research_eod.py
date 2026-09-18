@@ -72,4 +72,3 @@ def test_main_blocks_capture_and_removes_csv_on_invalid_row(tmp_path, monkeypatc
     manifest = output.with_suffix(output.suffix + ".manifest.json")
     assert manifest.exists()
     assert '"status": "CAPTURE_BLOCKED"' in manifest.read_text(encoding="utf-8")
-
