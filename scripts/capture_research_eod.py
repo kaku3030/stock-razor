@@ -6,6 +6,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,9 +97,27 @@ def capture_yfinance(symbol: str, start: str, end: str):
             return value.iloc[0]
         return value
 
+    def finite_float(value, field: str, date: str) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"non-finite {field} for {symbol} at {date}") from exc
+        if not math.isfinite(numeric):
+            raise ValueError(f"non-finite {field} for {symbol} at {date}")
+        return numeric
+
     rows = []
     for index, row in frame.iterrows():
-        rows.append({"symbol": symbol, "date": index.strftime("%Y-%m-%d"), "open": float(scalar(row["Open"])), "high": float(scalar(row["High"])), "low": float(scalar(row["Low"])), "close": float(scalar(row["Close"])), "volume": float(scalar(row["Volume"]))})
+        date = index.strftime("%Y-%m-%d")
+        rows.append({
+            "symbol": symbol,
+            "date": date,
+            "open": finite_float(scalar(row["Open"]), "open", date),
+            "high": finite_float(scalar(row["High"]), "high", date),
+            "low": finite_float(scalar(row["Low"]), "low", date),
+            "close": finite_float(scalar(row["Close"]), "close", date),
+            "volume": finite_float(scalar(row["Volume"]), "volume", date),
+        })
     return rows
 
 
@@ -136,6 +155,8 @@ def main() -> int:
         else:
             raise last_error
     except Exception as exc:
+        # Never leave a prior/staged CSV that could look valid beside a blocked manifest.
+        args.output.unlink(missing_ok=True)
         manifest = args.output.with_suffix(args.output.suffix + ".manifest.json")
         manifest.write_text(json.dumps({"source_id": source_id, "market": args.market, "endpoint_id": "history_eod", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "CAPTURE_BLOCKED", "error_type": type(exc).__name__, "error": str(exc)}, indent=2), encoding="utf-8")
         print(json.dumps({"status": "CAPTURE_BLOCKED", "source_id": source_id, "market": args.market, "symbol": args.symbol, "error_type": type(exc).__name__, "error": str(exc)}, sort_keys=True))
@@ -152,3 +173,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
