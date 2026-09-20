@@ -3,26 +3,6 @@ import math
 
 PRICE_STRUCTURE_SCHEMA_VERSION = 1
 
-def clean_json_value(value):
-    """Convert NaN/Inf values to None so MCP output is strict JSON-safe."""
-    if isinstance(value, float):
-        if math.isnan(value) or math.isinf(value):
-            return None
-
-    if isinstance(value, dict):
-        return {
-            key: clean_json_value(item)
-            for key, item in value.items()
-        }
-
-    if isinstance(value, list):
-        return [
-            clean_json_value(item)
-            for item in value
-        ]
-
-    return value
-
 
 def _dedupe_bars_by_time(rows, fields=("close",)):
     """Deterministic dedupe of bars by time_key (shared duplicate policy).
@@ -80,10 +60,12 @@ def _structure_swings(bars, n=2):
         low = bars[i]["low"]
         if (high > max(bar["high"] for bar in bars[i - n:i])
                 and high > max(bar["high"] for bar in bars[i + 1:i + n + 1])):
-            swings.append({"index": i, "price": high, "type": "HIGH"})
+            swings.append({"index": i, "price": high, "type": "HIGH",
+                           "time_key": bars[i].get("time_key")})
         if (low < min(bar["low"] for bar in bars[i - n:i])
                 and low < min(bar["low"] for bar in bars[i + 1:i + n + 1])):
-            swings.append({"index": i, "price": low, "type": "LOW"})
+            swings.append({"index": i, "price": low, "type": "LOW",
+                           "time_key": bars[i].get("time_key")})
     swings.sort(key=lambda swing: swing["index"])
     return swings
 
@@ -203,6 +185,9 @@ def _structure_timeframe(bars, health, timeframe_name, n=2, window=120,
         "bar_count": len(bars) if isinstance(bars, list) else 0,
         "support": [],
         "resistance": [],
+        "reference_level": None,
+        "reference_basis": None,
+        "reference_time": None,
         "reason_codes": [],
     }
     if not isinstance(bars, list):
@@ -398,10 +383,16 @@ def _structure_timeframe(bars, health, timeframe_name, n=2, window=120,
     state = trend
     if fresh_breakout:
         result["reason_codes"].append("BREAKOUT_ABOVE_RESISTANCE")
+        result["reference_level"] = prior_high
+        result["reference_basis"] = "LATEST_CONFIRMED_SWING_HIGH"
+        result["reference_time"] = highs[-1].get("time_key")
         if state != "STRUCTURE_DAMAGED":
             state = "BREAKOUT"
     elif fresh_breakdown:
         result["reason_codes"].append("BREAKDOWN_BELOW_SUPPORT")
+        result["reference_level"] = prior_low
+        result["reference_basis"] = "LATEST_CONFIRMED_SWING_LOW"
+        result["reference_time"] = lows[-1].get("time_key")
         if state != "STRUCTURE_DAMAGED":
             state = "BREAKDOWN"
     elif (any(row["close"] > prev_high * (1.0 + pen)
@@ -409,11 +400,17 @@ def _structure_timeframe(bars, health, timeframe_name, n=2, window=120,
           and prev_high * (1.0 - pen) <= close <= prev_high * (1.0 + pen)):
         # price came back to the broken level without closing back through it
         state = "RETEST"
+        result["reference_level"] = prev_high
+        result["reference_basis"] = "PREVIOUS_CONFIRMED_SWING_HIGH"
+        result["reference_time"] = highs[-2].get("time_key")
         result["reason_codes"].append("RETESTING_BREAKOUT_LEVEL")
     elif (any(row["close"] < prev_low * (1.0 - pen)
               for row in rows[-retest_window:])
           and prev_low * (1.0 - pen) <= close <= prev_low * (1.0 + pen)):
         state = "RETEST"
+        result["reference_level"] = prev_low
+        result["reference_basis"] = "PREVIOUS_CONFIRMED_SWING_LOW"
+        result["reference_time"] = lows[-2].get("time_key")
         result["reason_codes"].append("RETESTING_BREAKDOWN_LEVEL")
     elif (trend == "UPTREND"
           and close < prior_high * (1.0 - pen)
@@ -450,7 +447,7 @@ def build_price_structure_state(structure_input):
                distance_to_support_pct=None, distance_to_resistance_pct=None,
                timeframes=None, levels=None, data_health=None,
                confidence="LOW", reason_codes=None):
-        return clean_json_value({
+        return {
             "schema_version": PRICE_STRUCTURE_SCHEMA_VERSION,
             "generated_at": generated_at,
             "symbol": symbol,
@@ -468,7 +465,7 @@ def build_price_structure_state(structure_input):
             "data_health": data_health if data_health is not None else {},
             "confidence": confidence,
             "reason_codes": sorted(set(reason_codes or [])),
-        })
+        }
 
     if not isinstance(structure_input, dict):
         symbol = None
@@ -642,4 +639,3 @@ def build_price_structure_state(structure_input):
         confidence=confidence,
         reason_codes=reasons,
     )
-

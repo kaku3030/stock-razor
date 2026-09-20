@@ -7,7 +7,6 @@ import os
 import re
 import tempfile
 from src.technical.price_structure import (
-    clean_json_value,
     _dedupe_bars_by_time,
     _structure_swings,
     _cluster_levels,
@@ -100,6 +99,27 @@ def require_primary_us_account_id():
 
 def get_quote_ctx():
     return OpenQuoteContext(host=HOST, port=PORT)
+
+
+def clean_json_value(value):
+    """Convert NaN/Inf values to None so MCP output is strict JSON-safe."""
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+
+    if isinstance(value, dict):
+        return {
+            key: clean_json_value(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, list):
+        return [
+            clean_json_value(item)
+            for item in value
+        ]
+
+    return value
 
 
 
@@ -3224,12 +3244,18 @@ def get_price_structure_snapshot(symbol: str, count: int = 300):
             health.get("status") if isinstance(health, dict)
             else "DATA_UNAVAILABLE"
         )
-    return build_price_structure_state({
+    snapshot = build_price_structure_state({
         "generated_at": datetime.now().isoformat(),
         "symbol": symbol,
         "bars": bars,
         "data_health": data_health,
     })
+    # V0.1 legacy facade is shape-frozen; neutral reference facts belong only
+    # to build_price_structure_state(), not existing snapshot consumers.
+    for frame in snapshot["timeframes"].values():
+        for field in ("reference_level", "reference_basis", "reference_time"):
+            frame.pop(field, None)
+    return clean_json_value(snapshot)
 
 VWAP_SCHEMA_VERSION = 1
 VWAP_AT_THRESHOLD_PCT = 0.20
