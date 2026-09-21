@@ -98,7 +98,11 @@ def main() -> int:
     validated: list[dict[str, object]] = []
     results: list[dict[str, object]] = []
     result_counts = {key: 0 for key in RESULT_KEYS}
-    for market, definition in config.get("markets", {}).items():
+    markets = config.get("markets")
+    if not isinstance(markets, dict) or not markets:
+        errors.append("config.markets must define at least one market and symbol")
+        markets = {}
+    for market, definition in markets.items():
         source_id = definition.get("source_id")
         for symbol in definition.get("symbols", []):
             safe_symbol = symbol.replace(".", "_")
@@ -160,6 +164,8 @@ def main() -> int:
                 entry["errors"] = result_errors
                 errors.extend(f"{symbol}: {item}" for item in result_errors)
             results.append(entry)
+    if not results and not errors:
+        errors.append("config.markets must define at least one market and symbol")
     report = {
         "schema": "radar-research-universe-evidence-v0.1",
         "status": "INVALID" if errors or result_counts[CAPTURED_NOT_APPROVED] != len(results) else "VALIDATED",

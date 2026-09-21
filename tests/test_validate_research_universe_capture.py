@@ -38,6 +38,17 @@ def _write_config(root: Path) -> Path:
     return config
 
 
+def test_capture_validator_rejects_empty_universe(tmp_path, monkeypatch):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"markets": {}}), encoding="utf-8")
+    report = tmp_path / "evidence.json"
+    monkeypatch.setattr("sys.argv", ["validate", "--config", str(config), "--input-dir", str(tmp_path), "--evidence-report", str(report)])
+    assert main() == 2
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    assert payload["status"] == "INVALID"
+    assert payload["errors"] == ["config.markets must define at least one market and symbol"]
+
+
 def test_capture_validator_accepts_complete_pair(tmp_path, monkeypatch):
     _write_capture(tmp_path)
     config = _write_config(tmp_path)
