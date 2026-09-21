@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import json
-import time
+import time as stdlib_time
 import threading
 import urllib.parse
 import urllib.request
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from typing import Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
@@ -56,11 +56,11 @@ def _timestamp(value: object) -> Optional[datetime]:
 
 def _session_at(timestamp: datetime) -> str:
     local_time = timestamp.astimezone(NY_ZONE).time()
-    if time(4) <= local_time < time(9, 30):
+    if datetime_time(4) <= local_time < datetime_time(9, 30):
         return "premarket"
-    if time(9, 30) <= local_time < time(16):
+    if datetime_time(9, 30) <= local_time < datetime_time(16):
         return "regular"
-    if time(16) <= local_time < time(20):
+    if datetime_time(16) <= local_time < datetime_time(20):
         return "afterhours"
     return "overnight"
 
@@ -356,9 +356,9 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             # alpaca-py 0.44.0 initializes _loop inside run(); stop() raises
             # AttributeError if called before that loop exists.
             if hasattr(stream, "_loop"):
-                deadline = time.monotonic() + 2
-                while getattr(stream, "_loop", None) is None and thread.is_alive() and time.monotonic() < deadline:
-                    time.sleep(0.01)
+                deadline = stdlib_time.monotonic() + 2
+                while getattr(stream, "_loop", None) is None and thread.is_alive() and stdlib_time.monotonic() < deadline:
+                    stdlib_time.sleep(0.01)
                 if getattr(stream, "_loop", None) is None and thread.is_alive():
                     raise RuntimeError("Alpaca stream loop did not initialize for safe shutdown")
             if thread.is_alive():

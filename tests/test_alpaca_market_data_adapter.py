@@ -51,6 +51,32 @@ class FakeStream:
         self.updated_subscription = (handler, symbols)
 
 
+class LoopInitializingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = None
+        self.loop_ready = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.loop_ready.wait(1)
+        self._loop = object()
+        self.stop_event.wait(3)
+
+
+class FailingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self.failure_ready = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.failure_ready.wait(1)
+        raise RuntimeError("stream startup failed")
+
+
 def test_alpaca_rest_history_requests_latest_page() -> None:
     client = AlpacaRestMarketDataClient("key", "secret")
     captured = {}
@@ -152,3 +178,32 @@ def test_alpaca_partial_subscription_failure_closes_stream() -> None:
     with pytest.raises(RuntimeError, match="subscription failed"):
         adapter.subscribe(["NVDA"], callback=lambda bar: None)
     assert adapter._closed
+
+
+def test_alpaca_close_waits_for_sdk_loop_before_stopping() -> None:
+    stream = LoopInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    threading.Timer(0.05, stream.loop_ready.set).start()
+
+    adapter.close()
+
+    assert stream.stop_calls == 1
+    assert not adapter._stream_thread.is_alive()
+
+
+def test_alpaca_stream_thread_failure_remains_fail_closed() -> None:
+    stream = FailingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    stream.failure_ready.set()
+    adapter._stream_thread.join(timeout=1)
+
+    assert isinstance(adapter._stream_error, RuntimeError)
+    with pytest.raises(RuntimeError, match="already subscribed"):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    adapter.close()
