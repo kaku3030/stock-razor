@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import datetime, timezone
 
 import pytest
@@ -28,6 +29,21 @@ class FakeRest:
 
 
 class FakeStream:
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.running = threading.Event()
+        self.run_calls = 0
+        self.stop_calls = 0
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.stop_event.wait(3)
+
+    def stop(self):
+        self.stop_calls += 1
+        self.stop_event.set()
+
     def subscribe_bars(self, handler, *symbols):
         self.bar_subscription = (handler, symbols)
 
@@ -96,6 +112,7 @@ def test_alpaca_subscribes_to_bars_and_updated_bars() -> None:
     assert "UPDATED_BAR" not in received[0].quality_flags
     assert "UPDATED_BAR" in received[1].quality_flags
     assert received[0].bar_start == received[1].bar_start
+    adapter.close()
 
 
 def test_alpaca_rejects_unknown_feed_and_fake_higher_timeframe() -> None:
@@ -104,3 +121,34 @@ def test_alpaca_rejects_unknown_feed_and_fake_higher_timeframe() -> None:
     adapter = AlpacaMarketDataAdapter(FakeRest(), feed="iex", now=lambda: NOW)
     with pytest.raises(NotImplementedError, match="raw 1m"):
         adapter.get_bars("NVDA", "15m")
+
+
+def test_alpaca_stream_single_start_close_and_old_callback_isolation() -> None:
+    stream = FakeStream()
+    received = []
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream, feed="iex", now=lambda: NOW)
+    adapter.subscribe(["nvda", "NVDA"], callback=received.append)
+    assert stream.running.wait(1)
+    assert stream.run_calls == 1
+    assert stream.bar_subscription[1] == ("NVDA",)
+    with pytest.raises(RuntimeError, match="already subscribed"):
+        adapter.subscribe(["NVDA"], callback=received.append)
+    old_callback = stream.bar_subscription[0]
+    adapter.close()
+    adapter.close()
+    assert stream.stop_calls == 1
+    asyncio.run(old_callback({"T": "b", "S": "NVDA", **BAR}))
+    assert received == []
+    with pytest.raises(RuntimeError, match="closed"):
+        adapter.subscribe(["NVDA"], callback=received.append)
+
+
+def test_alpaca_partial_subscription_failure_closes_stream() -> None:
+    stream = FakeStream()
+    def fail_updated(*args):
+        raise RuntimeError("subscription failed")
+    stream.subscribe_updated_bars = fail_updated
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+    with pytest.raises(RuntimeError, match="subscription failed"):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert adapter._closed

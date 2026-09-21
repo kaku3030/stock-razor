@@ -273,3 +273,91 @@ def test_callback_to_authenticated_api_survives_restart_without_old_cache(monkey
     owner.stop()
     assert providers[1].closed == 1
     assert client.get(URL, headers=headers).status_code == 503
+
+
+def test_main_server_composes_one_owner_and_releases_on_shutdown(monkeypatch):
+    import sys
+    import threading
+    import types
+    import asyncio
+    import main
+    import uvicorn
+
+    monkeypatch.setenv("STOCK_RAZOR_ALPACA_STREAM_SYMBOLS", "NVDA,NVDA")
+    monkeypatch.setenv("APCA_API_KEY_ID", "unit-key")
+    monkeypatch.setenv("APCA_API_SECRET_KEY", "unit-secret")
+    monkeypatch.setenv("STOCK_RAZOR_ALPACA_STREAM_FEED", "iex")
+    monkeypatch.setenv("ADMIN_AUTH_ENABLED", "false")
+    monkeypatch.setenv("STOCK_RAZOR_SNAPSHOT_READ_TOKEN", TOKEN)
+    streams = []
+
+    class OfflineStream:
+        def __init__(self, *args, **kwargs):
+            self.stop_event = threading.Event()
+            self.started = threading.Event()
+            self.subscriptions = []
+            self.closed = 0
+            streams.append(self)
+
+        def subscribe_bars(self, handler, *symbols):
+            self.subscriptions.append((handler, symbols))
+
+        def subscribe_updated_bars(self, handler, *symbols):
+            self.subscriptions.append((handler, symbols))
+
+        def run(self):
+            self.started.set()
+            self.stop_event.wait(5)
+
+        def stop(self):
+            self.closed += 1
+            self.stop_event.set()
+
+    class OfflineServer:
+        def __init__(self, config):
+            self.app = config.app
+            self.started = False
+            self.done = threading.Event()
+            servers.append(self)
+
+        def run(self):
+            self.started = True
+            self.done.wait(5)
+
+    servers = []
+    class OfflineConfig:
+        def __init__(self, app, **kwargs):
+            self.app = app
+
+    monkeypatch.setitem(sys.modules, "alpaca", types.ModuleType("alpaca"))
+    monkeypatch.setitem(sys.modules, "alpaca.data", types.ModuleType("alpaca.data"))
+    enums = types.ModuleType("alpaca.data.enums")
+    enums.DataFeed = lambda feed: feed
+    monkeypatch.setitem(sys.modules, "alpaca.data.enums", enums)
+    monkeypatch.setitem(sys.modules, "alpaca.data.live", types.ModuleType("alpaca.data.live"))
+    stock = types.ModuleType("alpaca.data.live.stock")
+    stock.StockDataStream = OfflineStream
+    monkeypatch.setitem(sys.modules, "alpaca.data.live.stock", stock)
+    monkeypatch.setattr(uvicorn, "Config", OfflineConfig)
+    monkeypatch.setattr(uvicorn, "Server", OfflineServer)
+    main.start_api_server("127.0.0.1", 0, types.SimpleNamespace(log_level="INFO"))
+    assert len(streams) == 1
+    assert streams[0].started.wait(1)
+    assert len(streams[0].subscriptions) == 2
+    assert streams[0].subscriptions[0][1] == ("NVDA",)
+    client = TestClient(servers[0].app)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    assert client.get(URL).status_code == 401
+    assert client.get(URL, headers=headers).status_code == 503
+    asyncio.run(streams[0].subscriptions[0][0]({"T": "b", "S": "NVDA", **{
+        "t": START.isoformat(), "o": 200, "h": 201, "l": 199,
+        "c": 200.5, "v": 100,
+    }}))
+    assert client.get(URL, headers=headers).status_code == 200
+    servers[0].done.set()
+    for _ in range(100):
+        if streams[0].closed:
+            break
+        threading.Event().wait(0.01)
+    assert streams[0].closed == 1
+    assert client.get(URL, headers=headers).status_code == 503
