@@ -195,15 +195,20 @@ class RealtimeMarketRuntimeOwner:
         self._service_kwargs = dict(service_kwargs or {})
         self._provider: Optional[MarketDataAdapter] = None
         self._service: Optional[RealtimeMarketDataService] = None
+        self._shutdown_failed = False
         self._lock = RLock()
 
     @property
     def service(self) -> Optional[RealtimeMarketDataService]:
         with self._lock:
+            if self._shutdown_failed:
+                return None
             return self._service
 
     def start(self) -> RealtimeMarketDataService:
         with self._lock:
+            if self._shutdown_failed:
+                raise RuntimeError("realtime market-data shutdown is unresolved")
             if self._service is not None:
                 return self._service
 
@@ -225,9 +230,14 @@ class RealtimeMarketRuntimeOwner:
         with self._lock:
             provider = self._provider
             if provider is not None:
-                self._close_provider(provider)
+                try:
+                    self._close_provider(provider)
+                except Exception:
+                    self._shutdown_failed = True
+                    raise
             self._provider = None
             self._service = None
+            self._shutdown_failed = False
 
     def restart(self) -> RealtimeMarketDataService:
         self.stop()

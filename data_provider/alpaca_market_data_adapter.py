@@ -114,6 +114,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         self._stream_lock = threading.RLock()
         self._subscribed = False
         self._closed = False
+        self._close_requested = False
         self._generation = 0
         self._stream_error: BaseException | None = None
         self._feed = normalized_feed
@@ -304,7 +305,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         if not codes:
             raise ValueError("at least one Alpaca symbol is required")
         with self._stream_lock:
-            if self._closed:
+            if self._closed or self._close_requested:
                 raise RuntimeError("Alpaca adapter is closed")
             if self._subscribed:
                 raise RuntimeError("Alpaca adapter already subscribed")
@@ -312,11 +313,11 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             generation = self._generation
 
         async def on_bar(raw: object) -> None:
-            if not self._closed and self._generation == generation:
+            if not self._closed and not self._close_requested and self._generation == generation:
                 callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, live=True))
 
         async def on_updated_bar(raw: object) -> None:
-            if not self._closed and self._generation == generation:
+            if not self._closed and not self._close_requested and self._generation == generation:
                 callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True, live=True))
 
         try:
@@ -345,11 +346,12 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         with self._stream_lock:
             if self._closed:
                 return
-            self._closed = True
-            self._generation += 1
+            if not self._close_requested:
+                self._close_requested = True
+                self._generation += 1
             stream = self._stream
             thread = self._stream_thread
-        if stream is not None and thread is not None:
+        if stream is not None and thread is not None and thread.is_alive():
             stop = getattr(stream, "stop", None)
             if not callable(stop):
                 raise RuntimeError("Alpaca stream has no stop() lifecycle")
@@ -367,6 +369,8 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
                 thread.join(timeout=8)
                 if thread.is_alive():
                     raise RuntimeError("Alpaca stream did not terminate after stop()")
+        with self._stream_lock:
+            self._closed = True
 
     def get_session_status(self, market: str) -> str:
         return _session_at(self._now()) if market == "us" else "unsupported"

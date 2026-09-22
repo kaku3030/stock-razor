@@ -225,11 +225,14 @@ def test_alpaca_close_fails_closed_when_sdk_loop_never_initializes() -> None:
     with pytest.raises(RuntimeError, match="loop did not initialize"):
         adapter.close()
 
-    assert adapter._closed
+    assert not adapter._closed
+    assert adapter._close_requested
     assert adapter._stream_thread.is_alive()
     stream.stop_event.set()
     adapter._stream_thread.join(timeout=1)
     assert not adapter._stream_thread.is_alive()
+    adapter.close()
+    assert adapter._closed
 
 
 def test_alpaca_close_fails_closed_when_sdk_thread_does_not_exit() -> None:
@@ -242,12 +245,16 @@ def test_alpaca_close_fails_closed_when_sdk_thread_does_not_exit() -> None:
     with pytest.raises(RuntimeError, match="did not terminate"):
         adapter.close()
 
-    assert adapter._closed
+    assert not adapter._closed
+    assert adapter._close_requested
     assert stream.stop_calls == 1
     assert adapter._stream_thread.is_alive()
     stream.release.set()
     adapter._stream_thread.join(timeout=1)
     assert not adapter._stream_thread.is_alive()
+    adapter.close()
+    assert adapter._closed
+    assert adapter._closed
 
 
 def test_alpaca_stream_thread_failure_remains_fail_closed() -> None:

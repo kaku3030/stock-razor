@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from data_provider.alpaca_market_data_adapter import AlpacaMarketDataAdapter
 from data_provider.market_data_adapter import Bar, evaluate_health
 from src.services.ai_monitor.market_snapshot_view import MarketSnapshotView
 from src.services.realtime_market_data import MarketDataSnapshot, RealtimeMarketRuntimeOwner
@@ -98,6 +99,18 @@ class CloseFailingProvider(FakeProvider):
         raise RuntimeError("provider close failed")
 
 
+class RetryableCloseProvider(FakeProvider):
+    def __init__(self):
+        super().__init__()
+        self.failures = 1
+
+    def close(self):
+        self.closed += 1
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("provider close failed")
+
+
 def test_runtime_owner_starts_one_service_and_ignores_duplicate_start():
     providers = []
 
@@ -184,12 +197,107 @@ def test_runtime_owner_retains_failed_provider_and_blocks_restart():
     with pytest.raises(RuntimeError, match="provider close failed"):
         owner.stop()
 
-    assert owner.service is first
+    assert owner.service is None
     assert len(providers) == 1
+
+
+def test_runtime_owner_retries_close_before_releasing_provider():
+    providers = []
+
+    def make_provider():
+        provider = RetryableCloseProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"])
+    first = owner.start()
+
     with pytest.raises(RuntimeError, match="provider close failed"):
-        owner.restart()
-    assert owner.service is first
+        owner.stop()
+    assert owner.service is None
     assert len(providers) == 1
+
+    with pytest.raises(RuntimeError, match="unresolved"):
+        owner.start()
+    assert len(providers) == 1
+
+    owner.stop()
+    assert owner.service is None
+    assert providers[0].closed == 2
+    second = owner.start()
+    assert second is not first
+    assert len(providers) == 2
+
+
+def test_real_alpaca_adapter_failed_shutdown_is_fail_closed_across_api_and_owner(tmp_path, monkeypatch):
+    import threading
+
+    class NonTerminatingStream:
+        def __init__(self):
+            self._loop = object()
+            self.running = threading.Event()
+            self.release = threading.Event()
+            self.stop_calls = 0
+
+        def subscribe_bars(self, handler, *symbols):
+            self.bar_handler = handler
+
+        def subscribe_updated_bars(self, handler, *symbols):
+            self.updated_handler = handler
+
+        def run(self):
+            self.running.set()
+            self.release.wait(30)
+
+        def stop(self):
+            self.stop_calls += 1
+
+    class Rest:
+        pass
+
+    streams = []
+    providers = []
+
+    def make_provider():
+        stream = NonTerminatingStream()
+        provider = AlpacaMarketDataAdapter(Rest(), stream_client=stream)
+        streams.append(stream)
+        providers.append(provider)
+        return provider
+
+    monkeypatch.setenv("ADMIN_AUTH_ENABLED", "false")
+    monkeypatch.setenv("STOCK_RAZOR_SNAPSHOT_READ_TOKEN", TOKEN)
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"], service_kwargs={"now": lambda: NOW})
+    view = MarketSnapshotView(owner)
+    app = create_app(static_dir=tmp_path / "unbuilt", market_snapshot_service=view)
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+
+    first = owner.start()
+    assert streams[0].running.wait(1)
+    with pytest.raises(RuntimeError, match="did not terminate"):
+        owner.stop()
+    assert owner.service is None
+    assert client.get(URL, headers=headers).status_code == 503
+    with pytest.raises(RuntimeError, match="did not terminate"):
+        owner.stop()
+    with pytest.raises(RuntimeError, match="unresolved"):
+        owner.start()
+    with pytest.raises(RuntimeError, match="did not terminate"):
+        owner.restart()
+    assert len(providers) == 1
+    assert streams[0].stop_calls >= 2
+
+    streams[0].release.set()
+    providers[0]._stream_thread.join(timeout=1)
+    owner.stop()
+    assert owner.service is None
+    second = owner.start()
+    assert second is not first
+    assert len(providers) == 2
+    streams[1].release.set()
+    providers[1]._stream_thread.join(timeout=1)
+    owner.stop()
 
 
 def test_default_factory_never_constructs_a_snapshot_owner_and_fails_closed(monkeypatch, tmp_path):
