@@ -224,10 +224,10 @@ class RealtimeMarketRuntimeOwner:
     def stop(self) -> None:
         with self._lock:
             provider = self._provider
-            self._provider = None
-            self._service = None
             if provider is not None:
                 self._close_provider(provider)
+            self._provider = None
+            self._service = None
 
     def restart(self) -> RealtimeMarketDataService:
         self.stop()

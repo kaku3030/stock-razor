@@ -65,6 +65,27 @@ class LoopInitializingStream(FakeStream):
         self.stop_event.wait(3)
 
 
+class NeverInitializingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = None
+
+
+class NonTerminatingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = object()
+        self.release = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.release.wait(10)
+
+    def stop(self):
+        self.stop_calls += 1
+
+
 class FailingStream(FakeStream):
     def __init__(self):
         super().__init__()
@@ -191,6 +212,41 @@ def test_alpaca_close_waits_for_sdk_loop_before_stopping() -> None:
     adapter.close()
 
     assert stream.stop_calls == 1
+    assert not adapter._stream_thread.is_alive()
+
+
+def test_alpaca_close_fails_closed_when_sdk_loop_never_initializes() -> None:
+    stream = NeverInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+
+    with pytest.raises(RuntimeError, match="loop did not initialize"):
+        adapter.close()
+
+    assert adapter._closed
+    assert adapter._stream_thread.is_alive()
+    stream.stop_event.set()
+    adapter._stream_thread.join(timeout=1)
+    assert not adapter._stream_thread.is_alive()
+
+
+def test_alpaca_close_fails_closed_when_sdk_thread_does_not_exit() -> None:
+    stream = NonTerminatingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+
+    with pytest.raises(RuntimeError, match="did not terminate"):
+        adapter.close()
+
+    assert adapter._closed
+    assert stream.stop_calls == 1
+    assert adapter._stream_thread.is_alive()
+    stream.release.set()
+    adapter._stream_thread.join(timeout=1)
     assert not adapter._stream_thread.is_alive()
 
 

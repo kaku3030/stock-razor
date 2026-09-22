@@ -92,6 +92,12 @@ class FakeProvider:
         self.closed += 1
 
 
+class CloseFailingProvider(FakeProvider):
+    def close(self):
+        self.closed += 1
+        raise RuntimeError("provider close failed")
+
+
 def test_runtime_owner_starts_one_service_and_ignores_duplicate_start():
     providers = []
 
@@ -162,6 +168,28 @@ def test_runtime_owner_closes_provider_when_startup_subscription_fails():
 
     assert owner.service is None
     assert provider.closed == 1
+
+
+def test_runtime_owner_retains_failed_provider_and_blocks_restart():
+    providers = []
+
+    def make_provider():
+        provider = CloseFailingProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"])
+    first = owner.start()
+
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        owner.stop()
+
+    assert owner.service is first
+    assert len(providers) == 1
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        owner.restart()
+    assert owner.service is first
+    assert len(providers) == 1
 
 
 def test_default_factory_never_constructs_a_snapshot_owner_and_fails_closed(monkeypatch, tmp_path):
