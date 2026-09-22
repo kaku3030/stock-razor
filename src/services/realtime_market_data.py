@@ -217,13 +217,19 @@ class RealtimeMarketRuntimeOwner:
                 raise RuntimeError("realtime market-data provider is unavailable")
 
             service = RealtimeMarketDataService(provider, **self._service_kwargs)
+            self._provider = provider
+            self._service = service
             try:
                 service.subscribe(self._symbols)
             except Exception:
-                self._close_provider(provider)
+                try:
+                    self._close_provider(provider)
+                except Exception:
+                    self._shutdown_failed = True
+                    raise
+                self._provider = None
+                self._service = None
                 raise
-            self._provider = provider
-            self._service = service
             return service
 
     def stop(self) -> None:

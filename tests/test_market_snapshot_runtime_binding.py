@@ -111,6 +111,52 @@ class RetryableCloseProvider(FakeProvider):
             raise RuntimeError("provider close failed")
 
 
+def test_runtime_owner_retains_failed_start_provider_and_blocks_second_factory_call():
+    providers = []
+
+    class SubscribeAndCloseFailingProvider(FakeProvider):
+        def subscribe(self, symbols, timeframe="1m", callback=None):
+            self.subscribe_calls += 1
+            raise RuntimeError("subscription startup failed")
+
+        def close(self):
+            self.closed += 1
+            if self.close_failures:
+                self.close_failures -= 1
+                raise RuntimeError("provider close failed")
+
+    def make_provider():
+        if providers:
+            provider = FakeProvider()
+        else:
+            provider = SubscribeAndCloseFailingProvider()
+            provider.close_failures = 3
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"])
+
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        owner.start()
+    assert owner.service is None
+    assert len(providers) == 1
+
+    with pytest.raises(RuntimeError, match="unresolved"):
+        owner.start()
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        owner.stop()
+    with pytest.raises(RuntimeError, match="provider close failed"):
+        owner.restart()
+    assert len(providers) == 1
+    assert providers[0].subscribe_calls == 1
+
+    providers[0].close_failures = 0
+    owner.stop()
+    second = owner.start()
+    assert second is owner.service
+    assert len(providers) == 2
+
+
 def test_runtime_owner_starts_one_service_and_ignores_duplicate_start():
     providers = []
 
