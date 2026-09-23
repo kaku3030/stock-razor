@@ -8,6 +8,7 @@ import time as stdlib_time
 import threading
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, time as datetime_time, timedelta, timezone
 from typing import Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
@@ -104,6 +105,7 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         stream_client: object | None = None,
         feed: str = "iex",
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        evidence_sink: Callable[[dict], None] | None = None,
     ) -> None:
         normalized_feed = str(feed).strip().lower()
         if normalized_feed not in {"iex", "sip", "delayed_sip", "boats", "overnight", "otc"}:
@@ -117,6 +119,9 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         self._close_requested = False
         self._generation = 0
         self._stream_error: BaseException | None = None
+        self._owner_identity = f"alpaca-{uuid.uuid4().hex}"
+        self._evidence_sink = evidence_sink
+        self._evidence: list[dict] = []
         self._feed = normalized_feed
         self._now = now
         self._last_health = evaluate_health(
@@ -128,6 +133,40 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             cross_check=0,
             quality_flags=("NOT_OBSERVED",),
         )
+
+    @staticmethod
+    def _error_type(error: BaseException) -> str:
+        return type(error).__name__
+
+    def _record_evidence(self, event_type: str, **values: object) -> None:
+        event = {
+            "event_type": event_type,
+            "event_at": self._now().isoformat(),
+            "owner_identity": self._owner_identity,
+            "runtime_generation": self._generation,
+            "provider_type": "alpaca",
+            "feed": self._feed,
+            "ack_status": "UNKNOWN",
+            "ack_evidence": "SDK_registration_return_only",
+            "entitlement_status": "UNKNOWN",
+            "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
+            **values,
+        }
+        self._evidence.append(event)
+        if self._evidence_sink is not None:
+            self._evidence_sink(dict(event))
+
+    @property
+    def owner_identity(self) -> str:
+        return self._owner_identity
+
+    @property
+    def runtime_generation(self) -> int:
+        return self._generation
+
+    @property
+    def evidence_events(self) -> tuple[dict, ...]:
+        return tuple(dict(event) for event in self._evidence)
 
     def _normalize_bar(self, symbol: str, raw: object, *, updated: bool = False, live: bool = False) -> Bar:
         received_at = self._now()
@@ -321,18 +360,49 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
                 callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True, live=True))
 
         try:
-            self._stream.subscribe_bars(on_bar, *codes)
-            self._stream.subscribe_updated_bars(on_updated_bar, *codes)
+            try:
+                self._stream.subscribe_bars(on_bar, *codes)
+                self._stream.subscribe_updated_bars(on_updated_bar, *codes)
+            except BaseException as exc:
+                self._record_evidence(
+                    "subscription_error",
+                    symbols=codes,
+                    stream_error_type=self._error_type(exc),
+                    worker_status="NOT_STARTED",
+                )
+                raise
+            self._record_evidence(
+                "subscription_registered",
+                symbols=codes,
+                worker_status="NOT_STARTED",
+            )
             # alpaca-py 0.44.0 run() owns asyncio.run(); never call it on
             # the API event loop. A running thread is NOT proof of auth/readiness.
             run = getattr(self._stream, "run", None)
             if not callable(run):
                 raise RuntimeError("Alpaca stream has no run() lifecycle")
             def worker() -> None:
+                self._record_evidence(
+                    "stream_worker_started",
+                    symbols=codes,
+                    worker_status="RUNNING",
+                )
                 try:
                     run()
                 except BaseException as exc:
                     self._stream_error = exc
+                    self._record_evidence(
+                        "stream_worker_error",
+                        symbols=codes,
+                        stream_error_type=self._error_type(exc),
+                        worker_status="FAILED",
+                    )
+                finally:
+                    self._record_evidence(
+                        "worker_terminated",
+                        symbols=codes,
+                        worker_status="TERMINATED",
+                    )
             thread = threading.Thread(target=worker, name="alpaca-market-stream", daemon=True)
             self._stream_thread = thread
             thread.start()
@@ -349,11 +419,14 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             if not self._close_requested:
                 self._close_requested = True
                 self._generation += 1
+                self._record_evidence("stop_requested", shutdown_status="REQUESTED", owner_status="RETAINED")
             stream = self._stream
             thread = self._stream_thread
         if stream is not None and thread is not None and thread.is_alive():
             stop = getattr(stream, "stop", None)
             if not callable(stop):
+                self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
                 raise RuntimeError("Alpaca stream has no stop() lifecycle")
             # alpaca-py 0.44.0 initializes _loop inside run(); stop() raises
             # AttributeError if called before that loop exists.
@@ -362,15 +435,32 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
                 while getattr(stream, "_loop", None) is None and thread.is_alive() and stdlib_time.monotonic() < deadline:
                     stdlib_time.sleep(0.01)
                 if getattr(stream, "_loop", None) is None and thread.is_alive():
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
                     raise RuntimeError("Alpaca stream loop did not initialize for safe shutdown")
             if thread.is_alive():
+                self._record_evidence(
+                    "stream_stop_requested",
+                    shutdown_status="REQUESTED",
+                    unsubscribe_status="UNKNOWN",
+                    owner_status="RETAINED",
+                )
                 stop()
             if thread is not threading.current_thread():
                 thread.join(timeout=8)
                 if thread.is_alive():
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
                     raise RuntimeError("Alpaca stream did not terminate after stop()")
         with self._stream_lock:
             self._closed = True
+        self._record_evidence(
+            "shutdown_completed",
+            shutdown_status="SUCCEEDED",
+            unsubscribe_status="UNKNOWN",
+            owner_status="CLEARED",
+        )
+        self._record_evidence("owner_cleared", shutdown_status="SUCCEEDED", owner_status="CLEARED")
 
     def get_session_status(self, market: str) -> str:
         return _session_at(self._now()) if market == "us" else "unsupported"

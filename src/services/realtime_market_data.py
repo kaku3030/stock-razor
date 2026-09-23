@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from threading import RLock
 from typing import Callable, Optional, Sequence
+import uuid
 
 from data_provider.market_bar_builder import aggregate_bars
 from data_provider.market_data_adapter import (
@@ -32,6 +33,8 @@ class MarketDataSnapshot:
     feed: Optional[str]
     fallback_from: Optional[str]
     fallback_reason: Optional[str]
+    owner_identity: Optional[str] = None
+    runtime_generation: Optional[int] = None
 
 
 def _stale_health(health: MarketDataHealth) -> MarketDataHealth:
@@ -136,6 +139,8 @@ class RealtimeMarketDataService:
                 feed=None,
                 fallback_from=None,
                 fallback_reason=None,
+                owner_identity=getattr(self, "_owner_identity", None),
+                runtime_generation=getattr(self, "_runtime_generation", None),
             )
 
         latest = minute_bars[-1]
@@ -167,6 +172,8 @@ class RealtimeMarketDataService:
             feed=latest.feed,
             fallback_from=latest.fallback_from,
             fallback_reason=latest.fallback_reason,
+            owner_identity=getattr(self, "_owner_identity", None),
+            runtime_generation=getattr(self, "_runtime_generation", None),
         )
 
 
@@ -196,7 +203,36 @@ class RealtimeMarketRuntimeOwner:
         self._provider: Optional[MarketDataAdapter] = None
         self._service: Optional[RealtimeMarketDataService] = None
         self._shutdown_failed = False
+        self._owner_identity = f"runtime-{uuid.uuid4().hex}"
+        self._runtime_generation = 0
+        self._evidence: list[dict] = []
         self._lock = RLock()
+
+    def _record_evidence(self, event_type: str, **values: object) -> None:
+        self._evidence.append({
+            "event_type": event_type,
+            "event_at": datetime.now(timezone.utc).isoformat(),
+            "owner_identity": self._owner_identity,
+            "runtime_generation": self._runtime_generation,
+            "provider_type": "alpaca",
+            "ack_status": "UNKNOWN",
+            "ack_evidence": "SDK_registration_return_only",
+            "entitlement_status": "UNKNOWN",
+            "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
+            **values,
+        })
+
+    @property
+    def owner_identity(self) -> str:
+        return self._owner_identity
+
+    @property
+    def runtime_generation(self) -> int:
+        return self._runtime_generation
+
+    @property
+    def evidence_events(self) -> tuple[dict, ...]:
+        return tuple(dict(event) for event in self._evidence)
 
     @property
     def service(self) -> Optional[RealtimeMarketDataService]:
@@ -217,6 +253,9 @@ class RealtimeMarketRuntimeOwner:
                 raise RuntimeError("realtime market-data provider is unavailable")
 
             service = RealtimeMarketDataService(provider, **self._service_kwargs)
+            self._runtime_generation += 1
+            service._owner_identity = self._owner_identity
+            service._runtime_generation = self._runtime_generation
             self._provider = provider
             self._service = service
             try:
@@ -226,6 +265,8 @@ class RealtimeMarketRuntimeOwner:
                     self._close_provider(provider)
                 except Exception:
                     self._shutdown_failed = True
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
                     raise
                 self._provider = None
                 self._service = None
@@ -235,15 +276,19 @@ class RealtimeMarketRuntimeOwner:
     def stop(self) -> None:
         with self._lock:
             provider = self._provider
+            self._record_evidence("stop_requested", shutdown_status="REQUESTED", owner_status="RETAINED")
             if provider is not None:
                 try:
                     self._close_provider(provider)
                 except Exception:
                     self._shutdown_failed = True
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
                     raise
             self._provider = None
             self._service = None
             self._shutdown_failed = False
+            self._record_evidence("owner_cleared", shutdown_status="SUCCEEDED", owner_status="CLEARED")
 
     def restart(self) -> RealtimeMarketDataService:
         self.stop()

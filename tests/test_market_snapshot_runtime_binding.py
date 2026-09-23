@@ -1,6 +1,7 @@
 """Isolated HTTP smoke for non-owning snapshot view; no provider/network/trades."""
 
 from datetime import datetime, timedelta, timezone
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -178,6 +179,38 @@ def test_runtime_owner_starts_one_service_and_ignores_duplicate_start():
     owner.stop()
     assert owner.service is None
     assert providers[0].closed == 1
+
+
+def test_runtime_owner_evidence_binds_snapshot_to_owner_generation_without_secrets():
+    providers = []
+
+    def make_provider():
+        provider = FakeProvider()
+        providers.append(provider)
+        return provider
+
+    owner = RealtimeMarketRuntimeOwner(make_provider, ["NVDA"])
+    first = owner.start()
+    snapshot = first.snapshot("NVDA")
+    assert snapshot.owner_identity == owner.owner_identity
+    assert snapshot.runtime_generation == owner.runtime_generation
+    assert owner.evidence_events == ()
+    owner.stop()
+    assert owner.evidence_events[-1]["event_type"] == "owner_cleared"
+    assert "secret" not in json.dumps(owner.evidence_events).lower()
+
+
+def test_failed_shutdown_evidence_retains_owner_and_blocks_replacement():
+    provider = CloseFailingProvider()
+    owner = RealtimeMarketRuntimeOwner(lambda: provider, ["NVDA"])
+    owner.start()
+
+    with pytest.raises(RuntimeError):
+        owner.stop()
+    with pytest.raises(RuntimeError, match="shutdown is unresolved"):
+        owner.start()
+
+    assert owner.evidence_events[-1]["owner_status"] == "RETAINED"
 
 
 def test_runtime_owner_closes_before_restart_and_keeps_one_active_service():

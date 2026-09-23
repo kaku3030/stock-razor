@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 from datetime import datetime, timezone
 
@@ -270,3 +271,51 @@ def test_alpaca_stream_thread_failure_remains_fail_closed() -> None:
     with pytest.raises(RuntimeError, match="already subscribed"):
         adapter.subscribe(["NVDA"], callback=lambda bar: None)
     adapter.close()
+
+
+def test_alpaca_evidence_keeps_registration_and_entitlement_unknown() -> None:
+    stream = FakeStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    events = adapter.evidence_events
+    registered = next(event for event in events if event["event_type"] == "subscription_registered")
+
+    assert registered["ack_status"] == "UNKNOWN"
+    assert registered["ack_evidence"] == "SDK_registration_return_only"
+    assert registered["entitlement_status"] == "UNKNOWN"
+    assert registered["entitlement_source"] == "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED"
+    json.dumps(events)
+    adapter.close()
+
+
+def test_alpaca_evidence_sanitizes_subscription_exception() -> None:
+    stream = FakeStream()
+    stream.subscribe_updated_bars = lambda *args: (_ for _ in ()).throw(
+        RuntimeError("Bearer secret must not be recorded")
+    )
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    with pytest.raises(RuntimeError):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+
+    payload = json.dumps(adapter.evidence_events)
+    assert "Bearer" not in payload
+    assert "secret" not in payload
+    error = next(event for event in adapter.evidence_events if event["event_type"] == "subscription_error")
+    assert error["stream_error_type"] == "RuntimeError"
+
+
+def test_alpaca_shutdown_evidence_is_fail_closed_and_ordered() -> None:
+    stream = LoopInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    stream.loop_ready.set()
+    adapter.close()
+
+    event_types = [event["event_type"] for event in adapter.evidence_events]
+    assert event_types.index("stop_requested") < event_types.index("stream_stop_requested")
+    assert event_types[-2] == "shutdown_completed"
+    assert event_types[-1] == "owner_cleared"
+    assert adapter.evidence_events[-1]["owner_status"] == "CLEARED"

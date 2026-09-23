@@ -90,6 +90,15 @@ def test_snapshot_endpoint_reads_once_and_preserves_incomplete_bar_flags(monkeyp
     assert result.quote.source_timestamp == datetime(2026, 9, 17, 14, 30, tzinfo=timezone.utc)
     assert result.bars[0].is_closed is True
     assert result.bars[0].is_complete is False
+
+
+def test_snapshot_read_evidence_is_unknown_and_does_not_authorize_runtime(monkeypatch) -> None:
+    monkeypatch.setenv("STOCK_RAZOR_SNAPSHOT_READ_TOKEN", "example-test-token")
+    service = FakeSnapshotService()
+    result = get_market_snapshot("NVDA", request(service), authorization="Bearer example-test-token")
+
+    assert result.entitlement == "UNKNOWN"
+    assert service.calls == ["NVDA"]
     assert "MISSING_BAR" in result.bars[0].quality_flags
 
 

@@ -110,6 +110,7 @@ class MarketSnapshotView:
             "queried_at": snapshot.as_of,
             "delivery_mode": delivery_mode,
             "entitlement": "UNKNOWN",
+            "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
             "health_grade": snapshot.health.grade.value,
             "quality_flags": flags,
             "quote": {
@@ -120,5 +121,21 @@ class MarketSnapshotView:
                 "quality_flags": quote_flags,
             },
             "bars": tuple(self._bar(bar) for bar in selected),
+            "evidence": {
+                "owner_identity": snapshot.owner_identity,
+                "runtime_generation": snapshot.runtime_generation,
+                "service_status": "ACTIVE",
+                "entitlement_status": "UNKNOWN",
+                "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
+                "ack_status": "UNKNOWN",
+                "ack_evidence": "SDK_registration_return_only",
+                "latest_bar": {
+                    "source_timestamp": latest.source_timestamp.isoformat(),
+                    "received_at": latest.received_at.isoformat(),
+                    "is_closed": latest.is_closed,
+                    "is_complete": latest.is_complete,
+                    "quality_flags": tuple(latest.quality_flags),
+                },
+            },
         }
         return None if lifecycle is not None and lifecycle.service is not service else result
