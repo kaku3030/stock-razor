@@ -894,6 +894,7 @@ class Config:
     longbridge_access_token: Optional[str] = None
     longbridge_oauth_client_id: Optional[str] = None
     stock_index_remote_update_enabled: bool = True
+    akshare_name_cache_warmup_enabled: bool = True
 
     # === Built-in stock screening ===
     screening_enabled: bool = False
@@ -1808,6 +1809,10 @@ class Config:
             longbridge_oauth_client_id=os.getenv('LONGBRIDGE_OAUTH_CLIENT_ID') or None,
             stock_index_remote_update_enabled=parse_env_bool(
                 os.getenv('STOCK_INDEX_REMOTE_UPDATE_ENABLED'),
+                default=True,
+            ),
+            akshare_name_cache_warmup_enabled=parse_env_bool(
+                os.getenv('AKSHARE_NAME_CACHE_WARMUP_ENABLED'),
                 default=True,
             ),
             generation_backend=generation_backend,
