@@ -26,6 +26,26 @@ class MarketExecutionConstraint(StrEnum):
     BORROW = "BORROW"
 
 
+class DivergenceStatus(StrEnum):
+    UNKNOWN = "UNKNOWN"
+    MATCH = "MATCH"
+    DIVERGENT = "DIVERGENT"
+
+
+@dataclass(frozen=True)
+class ShadowDivergenceRecord:
+    preview_identity: str
+    observed_outcome: str | None = None
+    data_source: DivergenceStatus = DivergenceStatus.UNKNOWN
+    account_truth: DivergenceStatus = DivergenceStatus.UNKNOWN
+    decision: DivergenceStatus = DivergenceStatus.UNKNOWN
+    latency: DivergenceStatus = DivergenceStatus.UNKNOWN
+
+    def compare_observed(self, observed_outcome: str) -> "ShadowDivergenceRecord":
+        return ShadowDivergenceRecord(self.preview_identity, observed_outcome, self.data_source,
+                                      self.account_truth, self.decision, self.latency)
+
+
 @dataclass(frozen=True)
 class ShadowExecutionRecord:
     execution_id: str
