@@ -1,7 +1,7 @@
 # EXECUTION_ENGINE_V0.1_CHANGESET_SPEC
 
 Status: implementation candidate, paper/offline only. Base: `origin/main`
-at `76526b3c3ca24dacfacf03506b6ac9cc911004ea`.
+at `b1ff33ffa52624dd63f7d48269f0e04107de068c`.
 
 ## Owner and boundary
 
@@ -12,9 +12,10 @@ read/analysis semantics.
 
 The engine owns validation, fail-closed risk checks, intent identity, order
 state transitions, paper adapter calls, and an append-only SQLite journal with
-unique broker-order/fill identities. The journal is idempotent and recoverable;
-it does not claim exactly-once delivery. An ambiguous submission blocks until
-an external reconciliation proves its outcome.
+unique broker-order/fill identities. The journal is immutable at the SQLite
+trigger boundary and recoverable; it does not claim exactly-once delivery.
+Submission, cancel, and replace crash windows are durably marked and block
+restart until an external reconciliation proves the outcome.
 It does not own strategy decisions, market-data collection, real accounts, or
 broker credentials. Strategy, QQQ Gate, Entry Gate, SRVP, VWAP, and model
 outputs are inputs only; none can call an adapter directly.
@@ -26,7 +27,7 @@ outputs are inputs only; none can call an adapter directly.
 - Startup reconciliation is mandatory. Missing, stale, or incomplete account
   state and stale/unknown market-data time block submission.
 - The only enabled adapter capability is a factory-issued `PAPER` capability;
-  a protocol-shaped or forged adapter is rejected at construction. No Alpaca,
+  a protocol-shaped, mode-shaped, or forged adapter is rejected at construction. No Alpaca,
   Moomoo, OpenD, SDK, socket, HTTP, credential, or trade-unlock path exists in
   this changeset.
 - Duplicate `intent_id`, terminal cancel/replace, invalid fills, whitelist,

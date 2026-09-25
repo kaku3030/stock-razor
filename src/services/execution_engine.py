@@ -111,6 +111,10 @@ class ExecutionStore:
         CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, intent_id TEXT NOT NULL, state TEXT, evidence_ids TEXT NOT NULL, at TEXT NOT NULL, details TEXT NOT NULL, UNIQUE(intent_id,kind,details));
         CREATE UNIQUE INDEX IF NOT EXISTS event_broker_order ON events(json_extract(details,'$.broker_order_id')) WHERE kind='ACCEPTED' AND json_extract(details,'$.broker_order_id') IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS event_fill ON events(json_extract(details,'$.fill_id')) WHERE kind IN ('PARTIAL','FILLED') AND json_extract(details,'$.fill_id') IS NOT NULL;
+        CREATE TRIGGER IF NOT EXISTS events_immutable_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS events_immutable_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS intents_immutable_update BEFORE UPDATE ON intents BEGIN SELECT RAISE(ABORT, 'intents are immutable'); END;
+        CREATE TRIGGER IF NOT EXISTS intents_immutable_delete BEFORE DELETE ON intents BEGIN SELECT RAISE(ABORT, 'intents are immutable'); END;
         """); self.connection.commit()
     def save_intent(self, intent: OrderIntent) -> None:
         payload = {"intent_id": intent.intent_id, "symbol": intent.symbol, "side": intent.side.value, "order_type": intent.order_type.value, "qty": str(intent.qty), "limit_price": str(intent.limit_price) if intent.limit_price is not None else None, "max_slippage": str(intent.max_slippage) if intent.max_slippage is not None else None, "strategy_id": intent.strategy_id, "evidence_snapshot_id": intent.evidence_snapshot_id, "account_target": intent.account_target, "broker_target": intent.broker_target, "allowed_session": intent.allowed_session}
@@ -128,12 +132,24 @@ class ExecutionStore:
         rows = self.connection.execute("SELECT sequence,kind,intent_id,state,evidence_ids,at,details FROM events ORDER BY sequence").fetchall()
         return [JournalEvent(r[0],r[1],r[2],OrderState(r[3]) if r[3] else None,tuple(json.loads(r[4])),datetime.fromisoformat(r[5]),tuple(sorted(json.loads(r[6]).items()))) for r in rows]
     def has_ambiguous_submission(self) -> bool:
-        return bool(self.connection.execute("SELECT 1 FROM events WHERE state='SUBMITTING' AND intent_id NOT IN (SELECT intent_id FROM events WHERE state IN ('ACCEPTED','REJECTED')) LIMIT 1").fetchone())
+        return bool(self.connection.execute("SELECT 1 FROM events WHERE state='SUBMITTING' AND intent_id NOT IN (SELECT intent_id FROM events WHERE state IN ('ACCEPTED','REJECTED')) LIMIT 1").fetchone()) or self.has_pending_mutation()
+    def has_pending_mutation(self) -> bool:
+        return bool(self.connection.execute("""SELECT 1 FROM events requested
+            WHERE requested.kind IN ('CANCEL_REQUESTED','REPLACE_REQUESTED')
+            AND NOT EXISTS (SELECT 1 FROM events completed
+                WHERE completed.intent_id=requested.intent_id
+                AND completed.kind IN ('CANCELLED','SUPERSEDED')
+                AND completed.sequence > requested.sequence) LIMIT 1""").fetchone())
+    def fill_exists(self, fill_id: str) -> bool:
+        return bool(self.connection.execute("SELECT 1 FROM events WHERE json_extract(details,'$.fill_id')=?", (fill_id,)).fetchone())
 
+_PAPER_CAPABILITY_TOKEN = object()
 class _PaperCapability:
-    def __init__(self, adapter: "PaperBrokerAdapter") -> None: self.adapter = adapter
+    def __init__(self, adapter: "PaperBrokerAdapter", token: object) -> None:
+        if token is not _PAPER_CAPABILITY_TOKEN: raise ExecutionBlocked("paper capability must come from factory")
+        self.adapter = adapter
 def create_paper_adapter(*, fills: dict[str, tuple[tuple[str, Decimal, Decimal], ...]] | None = None, rejects: frozenset[str] = frozenset()) -> _PaperCapability:
-    return _PaperCapability(PaperBrokerAdapter(fills, rejects))
+    return _PaperCapability(PaperBrokerAdapter(fills, rejects), _PAPER_CAPABILITY_TOKEN)
 
 class PaperBrokerAdapter:
     def __init__(self, fills: dict[str, tuple[tuple[str, Decimal, Decimal], ...]] | None = None, rejects: frozenset[str] = frozenset()) -> None: self._fills=fills or {}; self._rejects=rejects; self.calls=[]; self._next=0
@@ -142,7 +158,8 @@ class PaperBrokerAdapter:
         if intent.intent_id in self._rejects: raise PaperOrderRejected("paper rejection")
         self._next += 1; return f"paper-order-{self._next}", self._fills.get(intent.intent_id, ())
     def cancel(self, broker_order_id: str) -> None: self.calls.append(("cancel",broker_order_id))
-    def replace(self, broker_order_id: str, intent: OrderIntent) -> None: self.calls.append(("replace",broker_order_id))
+    def replace(self, broker_order_id: str, intent: OrderIntent) -> str:
+        self.calls.append(("replace",broker_order_id)); self._next += 1; return f"paper-order-{self._next}"
     def reconcile(self) -> ReconciliationSnapshot:
         now=datetime.now(timezone.utc); return ReconciliationSnapshot(AccountSnapshot("paper",Decimal("100000"),Decimal("100000"),now,"paper"),as_of=now)
 
@@ -157,9 +174,10 @@ class RiskGuard:
         if intent.symbol not in {s.upper() for s in self.limits.allowed_symbols}: raise ExecutionBlocked("symbol is not whitelisted")
         if intent.account_target != recon.account.account_id or intent.broker_target != recon.account.source: raise ExecutionBlocked("account or broker identity mismatch")
         if intent.valid_until is not None and now > intent.valid_until: raise ExecutionBlocked("intent is expired")
+        if recon.as_of is None or _age_seconds(now,recon.as_of) is None or _age_seconds(now,recon.as_of)<0 or _age_seconds(now,recon.as_of)>self.limits.account_ttl_seconds: raise ExecutionBlocked("reconciliation is incomplete or stale")
         for resource in recon.resources():
-            if not recon.complete or not resource.complete or not resource.fresh or _age_seconds(now,resource.as_of) is None or _age_seconds(now,resource.as_of)>self.limits.account_ttl_seconds: raise ExecutionBlocked("reconciliation is incomplete or stale")
-        if _age_seconds(now,context.data_as_of) is None or _age_seconds(now,context.data_as_of)>self.limits.data_ttl_seconds: raise ExecutionBlocked("market data is stale or unknown")
+            if (resource.identity != recon.account.account_id or resource.source != recon.account.source or not recon.complete or not resource.complete or not resource.fresh or _age_seconds(now,resource.as_of) is None or _age_seconds(now,resource.as_of)<0 or _age_seconds(now,resource.as_of)>self.limits.account_ttl_seconds): raise ExecutionBlocked("reconciliation is incomplete or stale")
+        if _age_seconds(now,context.data_as_of) is None or _age_seconds(now,context.data_as_of)<0 or _age_seconds(now,context.data_as_of)>self.limits.data_ttl_seconds: raise ExecutionBlocked("market data is stale or unknown")
         if len(recon.open_order_ids)>=self.limits.max_open_orders: raise ExecutionBlocked("outstanding-order cap reached")
         if intent.qty>self.limits.max_order_qty: raise ExecutionBlocked("order quantity exceeds limit")
         if intent.limit_price is None: raise ExecutionBlocked("paper V0.1 requires a limit reference price")
@@ -168,7 +186,7 @@ class RiskGuard:
         if intent.side is Side.BUY and notional>recon.account.buying_power: raise ExecutionBlocked("insufficient buying power")
         if intent.max_slippage is None or intent.max_slippage>self.limits.max_slippage: raise ExecutionBlocked("slippage budget is missing or exceeds limit")
         if self.limits.daily_max_loss>0 and _decimal(context.daily_loss,"daily_loss")>=self.limits.daily_max_loss: raise ExecutionBlocked("daily loss limit reached")
-        symbol=next((p.market_value for p in recon.positions if p.symbol==intent.symbol),Decimal("0")); portfolio=sum((p.market_value for p in recon.positions),Decimal("0"))
+        symbol=sum((p.market_value for p in recon.positions if p.symbol==intent.symbol),Decimal("0")); portfolio=sum((p.market_value for p in recon.positions),Decimal("0"))
         if symbol+notional>self.limits.max_symbol_exposure: raise ExecutionBlocked("symbol exposure exceeds limit")
         if portfolio+notional>self.limits.max_portfolio_exposure: raise ExecutionBlocked("portfolio exposure exceeds limit")
 
@@ -187,14 +205,18 @@ class ExecutionEngine:
         if self.store.has_ambiguous_submission(): raise ExecutionBlocked("ambiguous submission requires resync; automatic resubmit is blocked")
         self.reconciliation=None
     def _append(self, kind: str, record: OrderRecord, at: datetime, **details: object) -> None:
-        event=JournalEvent(len(self.journal)+1,kind,record.intent.intent_id,record.state,(record.intent.evidence_snapshot_id,*record.fill_ids),_utc(at),tuple(sorted((str(k),str(v)) for k,v in details.items())))
+        event=JournalEvent(len(self.journal)+1,kind,record.intent.intent_id,details.pop("_state",record.state),(record.intent.evidence_snapshot_id,*record.fill_ids),_utc(at),tuple(sorted((str(k),str(v)) for k,v in details.items())))
         self.store.append(event); self.journal+=(event,)
     def _transition(self, record: OrderRecord, state: OrderState, at: datetime, **details: object) -> None:
         if state not in ALLOWED_TRANSITIONS[record.state]: raise ExecutionBlocked(f"invalid transition {record.state}->{state}")
-        record.state=state; self._append(state.value,record,at,**details)
+        self._append(state.value,record,at,_state=state,**details); record.state=state
+    def _mutation_gate(self, intent: OrderIntent, context: RiskContext) -> None:
+        if self.reconciliation is None: raise ExecutionBlocked("reconciliation is required")
+        self.risk_guard.check(intent,self.reconciliation,context)
+        if self.store.has_ambiguous_submission(): raise ExecutionBlocked("pending mutation requires resync")
     def reconcile(self) -> ReconciliationSnapshot:
         snapshot=self.adapter.reconcile(); self.reconciliation=snapshot
-        if not snapshot.complete or any(not r.complete or not r.fresh for r in snapshot.resources()): raise ExecutionBlocked("reconciliation is incomplete or stale")
+        if snapshot.as_of is None or not snapshot.complete or any(r.identity != snapshot.account.account_id or r.source != snapshot.account.source or not r.complete or not r.fresh for r in snapshot.resources()): raise ExecutionBlocked("reconciliation is incomplete or stale")
         return snapshot
     def submit(self, intent: OrderIntent, context: RiskContext) -> OrderRecord:
         if intent.intent_id in self.records or any(e.intent_id==intent.intent_id for e in self.journal): raise ExecutionBlocked("duplicate intent_id")
@@ -203,21 +225,24 @@ class ExecutionEngine:
         self._transition(record,OrderState.VALIDATED,context.now); self._transition(record,OrderState.SUBMITTING,context.now)
         try: broker_order_id,fills=self.adapter.place(intent)
         except PaperOrderRejected: self._transition(record,OrderState.REJECTED,context.now); return record
-        record.broker_order_id=broker_order_id; self._transition(record,OrderState.ACCEPTED,context.now,broker_order_id=broker_order_id)
+        if not broker_order_id: raise ExecutionBlocked("paper broker order identity is missing")
+        fills=tuple(fills); seen=set(); validated=[]; total=Decimal("0")
         for fill_id,quantity,price in fills:
             quantity=_decimal(quantity,"fill quantity"); price=_decimal(price,"fill price")
-            if not fill_id or price<=0 or quantity<=0 or record.filled_qty+quantity>intent.qty: raise ExecutionBlocked("invalid paper fill")
-            if fill_id in record.fill_ids or any(dict(e.details).get("fill_id")==fill_id for e in self.journal): raise ExecutionBlocked("duplicate fill identity")
+            if not fill_id or fill_id in seen or self.store.fill_exists(fill_id) or price<=0 or quantity<=0 or total+quantity>intent.qty: raise ExecutionBlocked("invalid or duplicate paper fill")
+            seen.add(fill_id); total+=quantity; validated.append((fill_id,quantity,price))
+        record.broker_order_id=broker_order_id; self._transition(record,OrderState.ACCEPTED,context.now,broker_order_id=broker_order_id)
+        for fill_id,quantity,price in validated:
             record.fill_ids.append(fill_id); record.filled_qty+=quantity; self._transition(record,OrderState.FILLED if record.filled_qty==intent.qty else OrderState.PARTIAL,context.now,fill_id=fill_id,quantity=quantity,price=price,broker_order_id=broker_order_id)
         return record
     def cancel(self, intent_id: str, at: datetime) -> OrderRecord:
         record=self.records.get(intent_id)
         if record is None or record.broker_order_id is None or record.state not in {OrderState.ACCEPTED,OrderState.PARTIAL}: raise ExecutionBlocked("order cannot be cancelled")
-        self.adapter.cancel(record.broker_order_id); self._transition(record,OrderState.CANCELLED,at,broker_order_id=record.broker_order_id); return record
+        self._mutation_gate(record.intent, RiskContext(at, at, record.intent.allowed_session)); self._append("CANCEL_REQUESTED",record,at,broker_order_id=record.broker_order_id); self.adapter.cancel(record.broker_order_id); self._transition(record,OrderState.CANCELLED,at,broker_order_id=record.broker_order_id); return record
     def replace(self, intent_id: str, replacement: OrderIntent, context: RiskContext) -> OrderRecord:
         record=self.records.get(intent_id)
         if record is None or record.broker_order_id is None or record.state not in {OrderState.ACCEPTED,OrderState.PARTIAL}: raise ExecutionBlocked("order cannot be replaced")
         if replacement.intent_id in self.records or self.reconciliation is None: raise ExecutionBlocked("replacement intent_id already exists or reconciliation is missing")
-        self.risk_guard.check(replacement,self.reconciliation,context); self.adapter.replace(record.broker_order_id,replacement); self._transition(record,OrderState.SUPERSEDED,context.now,replaced_by=replacement.intent_id)
-        new_record=OrderRecord(replacement,OrderState.INTENT,record.broker_order_id); self.records[replacement.intent_id]=new_record; self._transition(new_record,OrderState.VALIDATED,context.now,replaces=intent_id); self._transition(new_record,OrderState.SUBMITTING,context.now)
+        self._mutation_gate(replacement,context); self.store.save_intent(replacement); self._append("REPLACE_REQUESTED",record,context.now,replaced_by=replacement.intent_id); new_broker_order_id=self.adapter.replace(record.broker_order_id,replacement); self._transition(record,OrderState.SUPERSEDED,context.now,replaced_by=replacement.intent_id)
+        new_record=OrderRecord(replacement,OrderState.ACCEPTED,new_broker_order_id); self.records[replacement.intent_id]=new_record; self._append("ACCEPTED",new_record,context.now,_state=OrderState.ACCEPTED,broker_order_id=new_broker_order_id,replaces=intent_id)
         return new_record
