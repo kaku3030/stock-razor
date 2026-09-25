@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Iterable
@@ -142,6 +143,13 @@ class ExecutionStore:
                 AND completed.sequence > requested.sequence) LIMIT 1""").fetchone())
     def fill_exists(self, fill_id: str) -> bool:
         return bool(self.connection.execute("SELECT 1 FROM events WHERE json_extract(details,'$.fill_id')=?", (fill_id,)).fetchone())
+    def broker_order_ids(self) -> tuple[str, ...]:
+        rows = self.connection.execute(
+            "SELECT json_extract(details,'$.broker_order_id') FROM events "
+            "WHERE kind='ACCEPTED' AND json_extract(details,'$.broker_order_id') IS NOT NULL "
+            "ORDER BY sequence"
+        ).fetchall()
+        return tuple(row[0] for row in rows)
 
 _PAPER_CAPABILITY_TOKEN = object()
 class _PaperCapability:
@@ -153,6 +161,14 @@ def create_paper_adapter(*, fills: dict[str, tuple[tuple[str, Decimal, Decimal],
 
 class PaperBrokerAdapter:
     def __init__(self, fills: dict[str, tuple[tuple[str, Decimal, Decimal], ...]] | None = None, rejects: frozenset[str] = frozenset()) -> None: self._fills=fills or {}; self._rejects=rejects; self.calls=[]; self._next=0
+    def resume_order_sequence(self, broker_order_ids: Iterable[str]) -> None:
+        highest = self._next
+        for broker_order_id in broker_order_ids:
+            match = re.fullmatch(r"paper-order-(\d+)", broker_order_id)
+            if match is None:
+                raise ExecutionBlocked("paper broker order identity namespace is unknown")
+            highest = max(highest, int(match.group(1)))
+        self._next = highest
     def place(self, intent: OrderIntent) -> tuple[str, Iterable[tuple[str, Decimal, Decimal]]]:
         self.calls.append(("place",intent.intent_id))
         if intent.intent_id in self._rejects: raise PaperOrderRejected("paper rejection")
@@ -193,7 +209,7 @@ class RiskGuard:
 class ExecutionEngine:
     def __init__(self, capability: _PaperCapability, risk_guard: RiskGuard, store: ExecutionStore | None = None) -> None:
         if not isinstance(capability,_PaperCapability): raise ExecutionBlocked("only factory-issued paper capability is enabled")
-        self.adapter=capability.adapter; self.risk_guard=risk_guard; self.store=store or ExecutionStore(); self.journal=tuple(self.store.events()); self.records={intent.intent_id: OrderRecord(intent) for intent in self.store.intents()}
+        self.adapter=capability.adapter; self.risk_guard=risk_guard; self.store=store or ExecutionStore(); self.journal=tuple(self.store.events()); self.adapter.resume_order_sequence(self.store.broker_order_ids()); self.records={intent.intent_id: OrderRecord(intent) for intent in self.store.intents()}
         for event in self.journal:
             record = self.records.get(event.intent_id)
             if record is not None and event.state is not None: record.state = event.state

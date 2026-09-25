@@ -148,6 +148,155 @@ def test_persistent_store_replays_and_blocks_duplicate_after_restart(tmp_path):
         reopened.submit(intent(), context())
 
 
+def test_restart_resumes_paper_order_identity_without_collision(tmp_path):
+    path = tmp_path / "restart.sqlite"
+    first_store = ExecutionStore(path)
+    first, _ = engine()
+    first = ExecutionEngine(create_paper_adapter(), first.risk_guard, first_store)
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+
+    reopened = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    reopened.reconciliation = first.reconciliation
+    second = reopened.submit(intent("i-2"), context())
+
+    assert second.broker_order_id == "paper-order-2"
+    assert second.broker_order_id != reopened.records["i-1"].broker_order_id
+
+
+def test_multiple_restarts_never_rewind_paper_order_identity(tmp_path):
+    path = tmp_path / "multi-restart.sqlite"
+    limits = engine()[0].risk_guard
+    previous_ids = []
+    for index in range(1, 5):
+        restarted = ExecutionEngine(create_paper_adapter(), limits, ExecutionStore(path))
+        restarted.reconciliation = ReconciliationSnapshot(
+            AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+        )
+        record = restarted.submit(intent(f"i-{index}"), context())
+        previous_ids.append(record.broker_order_id)
+    assert previous_ids == [f"paper-order-{index}" for index in range(1, 5)]
+
+
+def test_restart_duplicate_intent_does_not_place_again(tmp_path):
+    path = tmp_path / "duplicate-restart.sqlite"
+    first, _ = engine()
+    first_store = ExecutionStore(path)
+    first = ExecutionEngine(create_paper_adapter(), first.risk_guard, first_store)
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+    reopened_capability = create_paper_adapter()
+    reopened = ExecutionEngine(reopened_capability, first.risk_guard, ExecutionStore(path))
+    reopened.reconciliation = first.reconciliation
+    with pytest.raises(ExecutionBlocked, match="duplicate"):
+        reopened.submit(intent("i-1"), context())
+    assert reopened_capability.adapter.calls == []
+
+
+def test_partial_fill_replays_state_and_identity_after_restart(tmp_path):
+    path = tmp_path / "partial-restart.sqlite"
+    first, _ = engine({"i-1": (("f-1", Decimal("4"), Decimal("100")),)})
+    first = ExecutionEngine(create_paper_adapter(fills={"i-1": (("f-1", Decimal("4"), Decimal("100")),)}), first.risk_guard, ExecutionStore(path))
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+    reopened = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    assert reopened.records["i-1"].state is OrderState.PARTIAL
+    assert reopened.records["i-1"].filled_qty == Decimal("4")
+    assert reopened.records["i-1"].broker_order_id == "paper-order-1"
+
+
+def test_replace_lineage_survives_restart_and_new_identity(tmp_path):
+    path = tmp_path / "replace-restart.sqlite"
+    first, _ = engine()
+    first = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+    first.replace("i-1", intent("i-2"), context())
+    reopened = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    assert reopened.records["i-1"].state is OrderState.SUPERSEDED
+    assert reopened.records["i-1"].broker_order_id == "paper-order-1"
+    assert reopened.records["i-2"].broker_order_id == "paper-order-2"
+    assert dict(reopened.journal[-1].details)["replaces"] == "i-1"
+
+
+def test_restart_then_replace_uses_next_durable_identity(tmp_path):
+    path = tmp_path / "replace-after-restart.sqlite"
+    first, _ = engine()
+    first = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+    reopened = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    reopened.reconciliation = first.reconciliation
+    result = reopened.replace("i-1", intent("i-2"), context())
+    assert result.broker_order_id == "paper-order-2"
+    assert reopened.records["i-1"].state is OrderState.SUPERSEDED
+
+
+def test_forced_adapter_identity_collision_is_still_fail_closed(tmp_path):
+    path = tmp_path / "forced-collision.sqlite"
+    first, _ = engine()
+    first = ExecutionEngine(create_paper_adapter(), first.risk_guard, ExecutionStore(path))
+    first.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    first.submit(intent("i-1"), context())
+    capability = create_paper_adapter()
+    reopened = ExecutionEngine(capability, first.risk_guard, ExecutionStore(path))
+    reopened.reconciliation = first.reconciliation
+    capability.adapter._next = 0
+    with pytest.raises(ExecutionBlocked, match="duplicate broker"):
+        reopened.submit(intent("i-2"), context())
+    assert [event.kind for event in reopened.journal] == [
+        "VALIDATED", "SUBMITTING", "ACCEPTED", "VALIDATED", "SUBMITTING"
+    ]
+
+
+def test_ambiguous_restart_does_not_auto_resubmit_even_with_resumed_identity(tmp_path):
+    path = tmp_path / "ambiguous-restart.sqlite"
+    store = ExecutionStore(path)
+    candidate = intent()
+    store.save_intent(candidate)
+    store.append(JournalEvent(1, "SUBMITTING", candidate.intent_id, OrderState.SUBMITTING, ("evidence",), NOW))
+    capability = create_paper_adapter()
+    with pytest.raises(ExecutionBlocked, match="ambiguous"):
+        ExecutionEngine(capability, engine()[0].risk_guard, ExecutionStore(path))
+    assert capability.adapter.calls == []
+
+
+def test_historical_order_ids_are_not_allowed_to_rewind_generator(tmp_path):
+    path = tmp_path / "historical-id.sqlite"
+    store = ExecutionStore(path)
+    candidate = intent()
+    store.save_intent(candidate)
+    store.append(JournalEvent(1, "ACCEPTED", candidate.intent_id, OrderState.ACCEPTED, ("evidence",), NOW, (("broker_order_id", "paper-order-41"),)))
+    reopened = ExecutionEngine(create_paper_adapter(), engine()[0].risk_guard, ExecutionStore(path))
+    reopened.reconciliation = ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW
+    )
+    record = reopened.submit(intent("i-2"), context())
+    assert record.broker_order_id == "paper-order-42"
+
+
+def test_unknown_historical_order_namespace_fails_closed(tmp_path):
+    path = tmp_path / "unknown-id.sqlite"
+    store = ExecutionStore(path)
+    candidate = intent()
+    store.save_intent(candidate)
+    store.append(JournalEvent(1, "ACCEPTED", candidate.intent_id, OrderState.ACCEPTED, ("evidence",), NOW, (("broker_order_id", "external-order-1"),)))
+    with pytest.raises(ExecutionBlocked, match="namespace"):
+        ExecutionEngine(create_paper_adapter(), engine()[0].risk_guard, ExecutionStore(path))
+
+
 def test_resource_freshness_and_identity_are_all_fail_closed():
     e, adapter = engine()
     stale = ResourceSnapshot("paper", "paper", NOW - timedelta(seconds=61), fresh=False)
