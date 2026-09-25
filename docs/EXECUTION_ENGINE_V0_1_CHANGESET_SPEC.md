@@ -11,7 +11,10 @@ line and does not modify PR #148, LiveFeed, Radar, or existing portfolio
 read/analysis semantics.
 
 The engine owns validation, fail-closed risk checks, intent identity, order
-state transitions, paper adapter calls, and an append-only in-memory journal.
+state transitions, paper adapter calls, and an append-only SQLite journal with
+unique broker-order/fill identities. The journal is idempotent and recoverable;
+it does not claim exactly-once delivery. An ambiguous submission blocks until
+an external reconciliation proves its outcome.
 It does not own strategy decisions, market-data collection, real accounts, or
 broker credentials. Strategy, QQQ Gate, Entry Gate, SRVP, VWAP, and model
 outputs are inputs only; none can call an adapter directly.
@@ -22,9 +25,10 @@ outputs are inputs only; none can call an adapter directly.
   rejects free-form broker payloads.
 - Startup reconciliation is mandatory. Missing, stale, or incomplete account
   state and stale/unknown market-data time block submission.
-- The only enabled adapter mode is `PAPER`; a non-paper adapter is rejected at
-  construction. No Alpaca, Moomoo, OpenD, SDK, socket, HTTP, credential, or
-  trade-unlock path exists in this changeset.
+- The only enabled adapter capability is a factory-issued `PAPER` capability;
+  a protocol-shaped or forged adapter is rejected at construction. No Alpaca,
+  Moomoo, OpenD, SDK, socket, HTTP, credential, or trade-unlock path exists in
+  this changeset.
 - Duplicate `intent_id`, terminal cancel/replace, invalid fills, whitelist,
   session, TTL, kill switch, daily loss, order size/notional, exposure,
   slippage, and outstanding-order limits fail closed.
@@ -47,9 +51,9 @@ credentials, deployment, and production configuration.
 
 ## Promotion gates
 
-`PAPER_AUTO_READY` is conditional on the targeted offline suite passing and a
-future expanded P1 suite covering reject, cancel, replace, partial, fill race,
-restart/reconnect, stale account/data, risk breach, kill switch, and crash
-recovery. `LIVE_SHADOW_READY=NO` until a separate shadow harness and human
-comparison evidence exist. `TINY_LIVE_AUTO_READY=NO`: this slice contains no
-live switch or live adapter and cannot unlock or mutate a real broker.
+`PAPER_AUTO_READY` remains blocked pending independent acceptance of the
+expanded restart/reconnect and reconciliation evidence, even though the
+offline suite passes. `LIVE_SHADOW_READY=NO` until a separate shadow harness
+and human comparison evidence exist. `TINY_LIVE_AUTO_READY=NO`: this slice
+contains no live switch or live adapter and cannot unlock or mutate a real
+broker.

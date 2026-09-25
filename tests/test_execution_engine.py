@@ -11,9 +11,11 @@ from src.services.execution_engine import (
     OrderIntent,
     OrderState,
     OrderType,
-    PaperBrokerAdapter,
+    create_paper_adapter,
     PositionSnapshot,
     ReconciliationSnapshot,
+    ExecutionStore,
+    ResourceSnapshot,
     RiskContext,
     RiskGuard,
     RiskLimits,
@@ -32,10 +34,11 @@ def intent(intent_id="i-1", symbol="AMD", qty="10"):
 
 
 def engine(fills=None, positions=(), open_orders=()):
-    adapter = PaperBrokerAdapter(fills)
+    capability = create_paper_adapter(fills=fills)
+    adapter = capability.adapter
     limits = RiskLimits(frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
                         Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60)
-    result = ExecutionEngine(adapter, RiskGuard(limits))
+    result = ExecutionEngine(capability, RiskGuard(limits))
     result.reconciliation = ReconciliationSnapshot(
         AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"),
         tuple(positions), tuple(open_orders), NOW)
@@ -47,12 +50,12 @@ def context(data_as_of=NOW, kill_switch=False):
 
 
 def test_normal_partial_fill_and_completion_are_auditable():
-    e, adapter = engine({"i-1": (("f-1", Decimal("4")), ("f-2", Decimal("6")))})
+    e, adapter = engine({"i-1": (("f-1", Decimal("4"), Decimal("100")), ("f-2", Decimal("6"), Decimal("100")))})
     record = e.submit(intent(), context())
     assert record.state is OrderState.FILLED
     assert record.broker_order_id == "paper-order-1"
     assert record.fill_ids == ["f-1", "f-2"]
-    assert [event.kind for event in e.journal] == ["VALIDATED", "SUBMITTING", "ACCEPTED", "FILL", "FILL"]
+    assert [event.kind for event in e.journal] == ["VALIDATED", "SUBMITTING", "ACCEPTED", "PARTIAL", "FILLED"]
     assert adapter.calls == [("place", "i-1")]
 
 
@@ -115,7 +118,7 @@ def test_non_paper_adapter_is_hard_blocked():
     class LiveLike:
         mode = "LIVE"
 
-    with pytest.raises(ExecutionBlocked, match="non-paper"):
+    with pytest.raises(ExecutionBlocked, match="factory-issued"):
         ExecutionEngine(LiveLike(), RiskGuard(RiskLimits(frozenset(), Decimal("1"), Decimal("1"), Decimal("1"), Decimal("1"), Decimal("0"), 1, 1, 1)))
 
 
@@ -125,3 +128,46 @@ def test_intent_requires_lineage_and_timezone():
     with pytest.raises(ValueError):
         intent(). __class__("i", "AMD", Side.BUY, OrderType.LIMIT, Decimal("1"), limit_price=Decimal("1"),
                             valid_until=datetime(2026, 9, 25), strategy_id="s", evidence_snapshot_id="e", account_target="a", broker_target="b")
+
+
+def test_persistent_store_replays_and_blocks_duplicate_after_restart(tmp_path):
+    path = tmp_path / "execution.sqlite"
+    e, _ = engine()
+    store = ExecutionStore(path)
+    capability = create_paper_adapter()
+    limits = e.risk_guard
+    first = ExecutionEngine(capability, limits, store)
+    first.reconciliation = e.reconciliation
+    first.submit(intent(), context())
+    reopened = ExecutionEngine(create_paper_adapter(), limits, ExecutionStore(path))
+    assert [event.kind for event in reopened.journal] == ["VALIDATED", "SUBMITTING", "ACCEPTED"]
+    reopened.reconciliation = e.reconciliation
+    with pytest.raises(ExecutionBlocked, match="duplicate"):
+        reopened.submit(intent(), context())
+
+
+def test_resource_freshness_and_identity_are_all_fail_closed():
+    e, adapter = engine()
+    stale = ResourceSnapshot("paper", "paper", NOW - timedelta(seconds=61), fresh=False)
+    e.reconciliation = ReconciliationSnapshot(e.reconciliation.account, as_of=NOW,
+                                               funds=stale)
+    with pytest.raises(ExecutionBlocked, match="reconciliation"):
+        e.submit(intent(), context())
+    e.reconciliation = ReconciliationSnapshot(AccountSnapshot("other", Decimal("100000"), Decimal("100000"), NOW, "paper"), as_of=NOW)
+    with pytest.raises(ExecutionBlocked, match="identity"):
+        e.submit(intent(), context())
+    assert adapter.calls == []
+
+
+def test_insufficient_buying_power_and_duplicate_fill_are_blocked():
+    e, adapter = engine({"i-1": (("f-1", Decimal("10"), Decimal("100")),)})
+    e.reconciliation = ReconciliationSnapshot(AccountSnapshot("paper", Decimal("1"), Decimal("1"), NOW, "paper"), as_of=NOW)
+    with pytest.raises(ExecutionBlocked, match="buying power"):
+        e.submit(intent(), context())
+    assert adapter.calls == []
+
+
+def test_invalid_fill_price_is_blocked_after_acceptance():
+    e, _ = engine({"i-1": (("f-1", Decimal("1"), Decimal("0")),)})
+    with pytest.raises(ExecutionBlocked, match="invalid paper fill"):
+        e.submit(intent(), context())
