@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import json
 
 import pytest
 
 from src.services.execution_engine import AccountSnapshot, OrderIntent, OrderType, ReconciliationSnapshot, RiskContext, RiskGuard, RiskLimits, Side
-from src.services.live_shadow import ShadowExecutionCapability
-from src.services.execution_engine import ExecutionStore
-from src.services.stock_radar_v2.execution_reality import DivergenceStatus, ShadowDivergenceRecord
+from src.services.live_shadow import ShadowDecision, ShadowExecutionCapability
+from src.services.execution_engine import ExecutionStore, JournalEvent
+from src.services.stock_radar_v2.execution_reality import DataSourceObservation, DivergenceStatus, ShadowDivergenceRecord
 
 
 NOW = datetime(2026, 9, 25, 1, 0, tzinfo=timezone.utc)
@@ -103,3 +104,53 @@ def test_divergence_unknown_does_not_auto_upgrade():
     assert compared.decision is DivergenceStatus.UNKNOWN
     assert compared.observed_outcome == "manual-observation"
     assert compared.account_truth is DivergenceStatus.UNKNOWN
+
+
+def test_malformed_shadow_event_is_rejected_before_persistence():
+    capability, recon = setup()
+    malformed = {"decision_id": "d", "intent_id": "i-1", "decision_at": "not-a-time",
+                 "risk_result": "PASS", "gate_result": "QUALIFIED", "reason": None, "preview": None}
+    with pytest.raises(RuntimeError):
+        capability._append_shadow_decision(
+            make_intent(),
+            JournalEvent(0, "SHADOW_DECISION", "i-1", None, ("evidence",), NOW,
+                         (("decision_id", "d"), ("payload", json.dumps(malformed)))),
+            ShadowDecision("d", "i-1", NOW, "BLOCKED", "NOT_QUALIFIED", "bad", None),
+        )
+    assert capability._store.events() == []
+    assert capability._store.intents() == []
+
+
+@pytest.mark.parametrize("change", [
+    {"risk_result": "MAYBE"},
+    {"gate_result": "QUALIFIED", "risk_result": "BLOCKED"},
+    {"preview": {"intent_id": "wrong"}},
+    {"preview": {"mutation_allowed": True}},
+])
+def test_malformed_decision_payload_is_rejected_without_state_change(change):
+    capability, recon = setup()
+    valid = capability.preview(make_intent(), RiskContext(NOW, NOW, "RTH"), recon, "account-gen-1")
+    before = tuple(capability._store.events())
+    payload = valid.to_payload()
+    payload.update(change)
+    with pytest.raises(RuntimeError):
+        type(valid).from_payload(payload)
+    assert tuple(capability._store.events()) == before
+
+
+def test_divergence_comparison_is_explicit_and_round_trips():
+    observations = (
+        DataSourceObservation("source-a", "gen-a", NOW, "100.0", "ev-a"),
+        DataSourceObservation("source-b", "gen-b", NOW, "100.0", "ev-b"),
+    )
+    same = ShadowDivergenceRecord("decision-1").compare_sources(observations)
+    assert same.data_source is DivergenceStatus.OBSERVED
+    assert ShadowDivergenceRecord.from_dict(json.loads(same.serialize())) == same
+    different = same.compare_sources((observations[0], DataSourceObservation("source-c", "gen-c", NOW, "101.0", "ev-c")))
+    assert different.data_source is DivergenceStatus.DIVERGED
+
+
+def test_divergence_insufficient_evidence_stays_unknown():
+    observation = DataSourceObservation("source-a", "gen-a", NOW, "100.0", "ev-a")
+    result = ShadowDivergenceRecord("decision-1").compare_sources((observation,))
+    assert result.data_source is DivergenceStatus.UNKNOWN

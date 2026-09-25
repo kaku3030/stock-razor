@@ -71,6 +71,7 @@ class ShadowDecision:
 
     @classmethod
     def from_payload(cls, payload: dict[str, object]) -> "ShadowDecision":
+        _validate_shadow_payload(payload)
         raw = payload.get("preview")
         preview = None
         if isinstance(raw, dict):
@@ -84,6 +85,89 @@ class ShadowDecision:
                                     bool(raw["mutation_allowed"]))
         return cls(payload["decision_id"], payload["intent_id"], datetime.fromisoformat(payload["decision_at"]),
                    payload["risk_result"], payload["gate_result"], payload.get("reason"), preview)
+
+
+def _required_text(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ExecutionBlocked(f"shadow event field {field} is required")
+    return value
+
+
+def _validate_shadow_payload(payload: object) -> None:
+    if not isinstance(payload, dict):
+        raise ExecutionBlocked("shadow decision payload must be an object")
+    for field in ("decision_id", "intent_id", "decision_at", "risk_result", "gate_result"):
+        _required_text(payload.get(field), field)
+    try:
+        decision_at = datetime.fromisoformat(payload["decision_at"])
+    except (TypeError, ValueError) as exc:
+        raise ExecutionBlocked("shadow decision timestamp is invalid") from exc
+    if decision_at.tzinfo is None:
+        raise ExecutionBlocked("shadow decision timestamp must be timezone-aware")
+    if payload["risk_result"] not in {"PASS", "BLOCKED"} or payload["gate_result"] not in {"QUALIFIED", "NOT_QUALIFIED"}:
+        raise ExecutionBlocked("shadow decision status is invalid")
+    if payload["risk_result"] == "PASS" and payload["gate_result"] != "QUALIFIED":
+        raise ExecutionBlocked("shadow decision status is inconsistent")
+    if payload["risk_result"] == "BLOCKED" and payload["gate_result"] != "NOT_QUALIFIED":
+        raise ExecutionBlocked("shadow decision status is inconsistent")
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        raise ExecutionBlocked("shadow decision reason is invalid")
+    if payload["risk_result"] == "BLOCKED" and (not isinstance(reason, str) or not reason.strip()):
+        raise ExecutionBlocked("blocked shadow decision requires a reason")
+    raw = payload.get("preview")
+    if raw is None:
+        if payload["risk_result"] == "PASS":
+            raise ExecutionBlocked("qualified shadow decision requires a preview")
+        return
+    if payload["risk_result"] != "PASS" or not isinstance(raw, dict):
+        raise ExecutionBlocked("shadow preview relationship is invalid")
+    for field in ("intent_id", "symbol", "side", "order_type", "session", "account_target", "broker_target", "evidence_snapshot_id", "account_snapshot_generation"):
+        _required_text(raw.get(field), f"preview.{field}")
+    if raw["intent_id"] != payload["intent_id"] or raw["side"] not in {"BUY", "SELL"} or raw["order_type"] not in {"MARKET", "LIMIT"}:
+        raise ExecutionBlocked("shadow preview identity or enum is invalid")
+    if raw.get("mutation_allowed") is not False:
+        raise ExecutionBlocked("shadow preview cannot allow mutation")
+    for field, positive in (("qty", True), ("limit_price", False), ("stop_price", False), ("max_slippage", False)):
+        value = raw.get(field)
+        if value is None:
+            continue
+        try:
+            number = Decimal(value)
+        except Exception as exc:
+            raise ExecutionBlocked(f"shadow preview numeric field {field} is invalid") from exc
+        if not number.is_finite() or (positive and number <= 0) or (not positive and number < 0):
+            raise ExecutionBlocked(f"shadow preview numeric field {field} is invalid")
+    for field in ("valid_until",):
+        if raw.get(field) is not None:
+            try:
+                timestamp = datetime.fromisoformat(raw[field])
+            except (TypeError, ValueError) as exc:
+                raise ExecutionBlocked(f"shadow preview timestamp {field} is invalid") from exc
+            if timestamp.tzinfo is None:
+                raise ExecutionBlocked(f"shadow preview timestamp {field} must be timezone-aware")
+            if timestamp < decision_at:
+                raise ExecutionBlocked("shadow preview timestamp is causally invalid")
+
+
+def _validate_shadow_event(event: JournalEvent, decision: ShadowDecision) -> None:
+    if event.kind != "SHADOW_DECISION" or event.intent_id != decision.intent_id or event.state is not None:
+        raise ExecutionBlocked("shadow event discriminator or state is invalid")
+    if event.at.tzinfo is None or event.at != decision.decision_at or not event.evidence_ids or any(not isinstance(value, str) or not value.strip() for value in event.evidence_ids):
+        raise ExecutionBlocked("shadow event metadata is invalid")
+    details = dict(event.details)
+    if set(details) != {"decision_id", "payload"} or details["decision_id"] != decision.decision_id:
+        raise ExecutionBlocked("shadow event details are invalid")
+    try:
+        payload = json.loads(details["payload"])
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ExecutionBlocked("shadow event payload is malformed") from exc
+    _validate_shadow_payload(payload)
+    if payload != decision.to_payload():
+        raise ExecutionBlocked("shadow event payload does not match decision")
+    expected_evidence = decision.preview.evidence_snapshot_id if decision.preview is not None else event.evidence_ids[0]
+    if event.evidence_ids != (expected_evidence,):
+        raise ExecutionBlocked("shadow event evidence lineage is invalid")
 
 
 def _qualification_identity(intent: OrderIntent, context: RiskContext, account_generation: str) -> str:
@@ -111,6 +195,10 @@ class ShadowExecutionCapability:
                 return ShadowDecision.from_payload(json.loads(details["payload"]))
         return None
 
+    def _append_shadow_decision(self, intent: OrderIntent, event: JournalEvent, decision: ShadowDecision) -> None:
+        _validate_shadow_event(event, decision)
+        self._store.save_intent_and_append(intent, event)
+
     def preview(self, intent: OrderIntent, context: RiskContext, reconciliation: ReconciliationSnapshot,
                 account_snapshot_generation: str) -> ShadowDecision:
         if not account_snapshot_generation.strip():
@@ -119,7 +207,6 @@ class ShadowExecutionCapability:
         existing = self._existing(decision_id)
         if existing is not None:
             return existing
-        self._store.save_intent(intent)
         try:
             self._risk_guard.check(intent, reconciliation, context)
         except ExecutionBlocked as exc:
@@ -132,5 +219,5 @@ class ShadowExecutionCapability:
             decision = ShadowDecision(decision_id, intent.intent_id, context.now, "PASS", "QUALIFIED", None, preview)
         event = JournalEvent(0, "SHADOW_DECISION", intent.intent_id, None, (intent.evidence_snapshot_id,), context.now,
                              (("decision_id", decision_id), ("payload", json.dumps(decision.to_payload(), sort_keys=True))))
-        self._store.append(event)
+        self._append_shadow_decision(intent, event, decision)
         return decision
