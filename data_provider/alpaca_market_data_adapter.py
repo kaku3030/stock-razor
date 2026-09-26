@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import json
+import time as stdlib_time
+import threading
 import urllib.parse
 import urllib.request
-from datetime import datetime, time, timedelta, timezone
+import uuid
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from typing import Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
@@ -22,6 +25,10 @@ from .market_data_adapter import (
 
 NY_ZONE = ZoneInfo("America/New_York")
 ALPACA_DATA_URL = "https://data.alpaca.markets"
+# Snapshot prices sourced from one-minute bars are not tick quotes. An older
+# last bar must never receive a healthy/currentness claim from a newer BBO.
+MAX_LATEST_BAR_AGE = timedelta(minutes=3)
+MAX_BBO_BAR_TIME_SKEW = timedelta(minutes=1)
 
 
 def _value(raw: object, *names: str) -> object:
@@ -35,25 +42,26 @@ def _value(raw: object, *names: str) -> object:
 
 def _timestamp(value: object) -> Optional[datetime]:
     if isinstance(value, datetime):
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return value.astimezone(timezone.utc) if value.tzinfo is not None else None
     if not value:
         return None
     text = str(value).strip()
     if text.endswith("Z"):
         text = f"{text[:-1]}+00:00"
     try:
-        return datetime.fromisoformat(text).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(text)
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
     except ValueError:
         return None
 
 
 def _session_at(timestamp: datetime) -> str:
     local_time = timestamp.astimezone(NY_ZONE).time()
-    if time(4) <= local_time < time(9, 30):
+    if datetime_time(4) <= local_time < datetime_time(9, 30):
         return "premarket"
-    if time(9, 30) <= local_time < time(16):
+    if datetime_time(9, 30) <= local_time < datetime_time(16):
         return "regular"
-    if time(16) <= local_time < time(20):
+    if datetime_time(16) <= local_time < datetime_time(20):
         return "afterhours"
     return "overnight"
 
@@ -97,12 +105,23 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         stream_client: object | None = None,
         feed: str = "iex",
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        evidence_sink: Callable[[dict], None] | None = None,
     ) -> None:
         normalized_feed = str(feed).strip().lower()
         if normalized_feed not in {"iex", "sip", "delayed_sip", "boats", "overnight", "otc"}:
             raise ValueError(f"unsupported Alpaca feed: {feed}")
         self._rest = rest_client
         self._stream = stream_client
+        self._stream_thread: threading.Thread | None = None
+        self._stream_lock = threading.RLock()
+        self._subscribed = False
+        self._closed = False
+        self._close_requested = False
+        self._generation = 0
+        self._stream_error: BaseException | None = None
+        self._owner_identity = f"alpaca-{uuid.uuid4().hex}"
+        self._evidence_sink = evidence_sink
+        self._evidence: list[dict] = []
         self._feed = normalized_feed
         self._now = now
         self._last_health = evaluate_health(
@@ -115,7 +134,41 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             quality_flags=("NOT_OBSERVED",),
         )
 
-    def _normalize_bar(self, symbol: str, raw: object, *, updated: bool = False) -> Bar:
+    @staticmethod
+    def _error_type(error: BaseException) -> str:
+        return type(error).__name__
+
+    def _record_evidence(self, event_type: str, **values: object) -> None:
+        event = {
+            "event_type": event_type,
+            "event_at": self._now().isoformat(),
+            "owner_identity": self._owner_identity,
+            "runtime_generation": self._generation,
+            "provider_type": "alpaca",
+            "feed": self._feed,
+            "ack_status": "UNKNOWN",
+            "ack_evidence": "SDK_registration_return_only",
+            "entitlement_status": "UNKNOWN",
+            "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
+            **values,
+        }
+        self._evidence.append(event)
+        if self._evidence_sink is not None:
+            self._evidence_sink(dict(event))
+
+    @property
+    def owner_identity(self) -> str:
+        return self._owner_identity
+
+    @property
+    def runtime_generation(self) -> int:
+        return self._generation
+
+    @property
+    def evidence_events(self) -> tuple[dict, ...]:
+        return tuple(dict(event) for event in self._evidence)
+
+    def _normalize_bar(self, symbol: str, raw: object, *, updated: bool = False, live: bool = False) -> Bar:
         received_at = self._now()
         timestamp = _timestamp(_value(raw, "t", "timestamp"))
         flags = ["NOT_CROSS_CHECKED"]
@@ -124,7 +177,16 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             timestamp = received_at
         if updated:
             flags.append("UPDATED_BAR")
+        if not live:
+            flags.append("HISTORICAL_QUERY")
+        if self._feed == "delayed_sip":
+            flags.append("DELAYED_FEED")
         bar_end = timestamp + timedelta(minutes=1)
+        age = received_at - bar_end
+        if age < -timedelta(minutes=1):
+            flags.append("TIMESTAMP_MISMATCH")
+        if live and age > MAX_LATEST_BAR_AGE:
+            flags.append("STALE")
         numeric = {
             "open": float(_value(raw, "o", "open") or 0),
             "high": float(_value(raw, "h", "high") or 0),
@@ -143,15 +205,16 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         if not closed:
             flags.append("PARTIAL_BAR")
         health = evaluate_health(
-            freshness=1,
-            completeness=1,
-            timestamp=1 if "TIMESTAMP_MISMATCH" not in flags else 0,
+            freshness=0 if (not live or "STALE" in flags or "DELAYED_FEED" in flags) else 1,
+            completeness=1 if closed else 0.5,
+            timestamp=0 if "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
-            continuity=1,
+            continuity=0 if live else 1,  # one bar cannot prove a stream's continuity
             cross_check=0.5,
             quality_flags=flags,
         )
         amount = _value(raw, "amount")
+        latency_ms = max(0, int(age.total_seconds() * 1000))
         return Bar(
             symbol=symbol.upper(),
             market="us",
@@ -172,9 +235,9 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             source_timestamp=bar_end,
             received_at=received_at,
             is_closed=closed,
-            is_complete=closed,
-            latency_ms=max(0, int((received_at - bar_end).total_seconds() * 1000)),
-            freshness_ms=max(0, int((received_at - bar_end).total_seconds() * 1000)),
+            is_complete=closed and "TIMESTAMP_MISMATCH" not in flags,
+            latency_ms=latency_ms,
+            freshness_ms=latency_ms,
             health=health,
             quality_flags=health.quality_flags,
         )
@@ -188,18 +251,39 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
         received_at = self._now()
         bar_timestamp = _timestamp(_value(bar, "t", "timestamp"))
         quote_timestamp = _timestamp(_value(raw_quote, "t", "timestamp"))
-        timestamps = [value for value in (bar_timestamp, quote_timestamp) if value is not None]
-        source_timestamp = max(timestamps) if timestamps else received_at
+        # Quote.price comes from bar.c: its source time MUST be that bar's end,
+        # never max(bar_timestamp, quote_timestamp). Bid/ask have separate source
+        # semantics and are suppressed when their timestamp cannot be trusted.
+        flags: list[str] = []
+        if bar_timestamp is None:
+            flags.append("MISSING_SOURCE_TIMESTAMP")
+        source_timestamp = bar_timestamp + timedelta(minutes=1) if bar_timestamp else received_at
+        age = received_at - source_timestamp
+        if age < -timedelta(minutes=1):
+            flags.append("TIMESTAMP_MISMATCH")
+        if age > MAX_LATEST_BAR_AGE:
+            flags.append("STALE")
+        if self._feed == "delayed_sip":
+            flags.append("DELAYED_FEED")
         price = float(_value(bar, "c", "close") or 0)
-        flags = [] if timestamps else ["MISSING_SOURCE_TIMESTAMP"]
         if price <= 0:
             flags.append("NON_POSITIVE_PRICE")
+        bid = ask = None
+        if quote_timestamp is None:
+            flags.append("MISSING_QUOTE_TIMESTAMP")
+        elif bar_timestamp is None or abs(quote_timestamp - source_timestamp) > MAX_BBO_BAR_TIME_SKEW:
+            flags.append("BBO_TIME_NOT_COMPARABLE")
+        else:
+            bid = _value(raw_quote, "bp", "bid_price")
+            ask = _value(raw_quote, "ap", "ask_price")
+            if quote_timestamp != source_timestamp:
+                flags.append("BBO_TIME_DIFFERS_FROM_PRICE")
         health = evaluate_health(
-            freshness=1,
+            freshness=0 if "STALE" in flags or "DELAYED_FEED" in flags else 1,
             completeness=1 if price > 0 else 0,
-            timestamp=1 if timestamps else 0.5,
+            timestamp=0 if bar_timestamp is None or "TIMESTAMP_MISMATCH" in flags else 1,
             provider=1,
-            continuity=1,
+            continuity=0,  # latest snapshot is not proof of continuous minute coverage
             cross_check=0.5,
             quality_flags=flags,
         )
@@ -214,8 +298,8 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             source_timestamp=source_timestamp,
             received_at=received_at,
             session=_session_at(source_timestamp),
-            bid=_value(raw_quote, "bp", "bid_price"),
-            ask=_value(raw_quote, "ap", "ask_price"),
+            bid=bid,
+            ask=ask,
             volume=_value(bar, "v", "volume"),
             health=health,
             quality_flags=health.quality_flags,
@@ -256,16 +340,127 @@ class AlpacaMarketDataAdapter(MarketDataAdapter):
             raise RuntimeError("Alpaca stream client is not configured")
         if callback is None:
             raise ValueError("callback is required for Alpaca subscriptions")
-        codes = tuple(symbol.strip().upper() for symbol in symbols)
+        codes = tuple(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+        if not codes:
+            raise ValueError("at least one Alpaca symbol is required")
+        with self._stream_lock:
+            if self._closed or self._close_requested:
+                raise RuntimeError("Alpaca adapter is closed")
+            if self._subscribed:
+                raise RuntimeError("Alpaca adapter already subscribed")
+            self._subscribed = True
+            generation = self._generation
 
         async def on_bar(raw: object) -> None:
-            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw))
+            if not self._closed and not self._close_requested and self._generation == generation:
+                callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, live=True))
 
         async def on_updated_bar(raw: object) -> None:
-            callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True))
+            if not self._closed and not self._close_requested and self._generation == generation:
+                callback(self._normalize_bar(str(_value(raw, "S", "symbol")), raw, updated=True, live=True))
 
-        self._stream.subscribe_bars(on_bar, *codes)
-        self._stream.subscribe_updated_bars(on_updated_bar, *codes)
+        try:
+            try:
+                self._stream.subscribe_bars(on_bar, *codes)
+                self._stream.subscribe_updated_bars(on_updated_bar, *codes)
+            except BaseException as exc:
+                self._record_evidence(
+                    "subscription_error",
+                    symbols=codes,
+                    stream_error_type=self._error_type(exc),
+                    worker_status="NOT_STARTED",
+                )
+                raise
+            self._record_evidence(
+                "subscription_registered",
+                symbols=codes,
+                worker_status="NOT_STARTED",
+            )
+            # alpaca-py 0.44.0 run() owns asyncio.run(); never call it on
+            # the API event loop. A running thread is NOT proof of auth/readiness.
+            run = getattr(self._stream, "run", None)
+            if not callable(run):
+                raise RuntimeError("Alpaca stream has no run() lifecycle")
+            def worker() -> None:
+                self._record_evidence(
+                    "stream_worker_started",
+                    symbols=codes,
+                    worker_status="RUNNING",
+                )
+                try:
+                    run()
+                except BaseException as exc:
+                    self._stream_error = exc
+                    self._record_evidence(
+                        "stream_worker_error",
+                        symbols=codes,
+                        stream_error_type=self._error_type(exc),
+                        worker_status="FAILED",
+                    )
+                finally:
+                    self._record_evidence(
+                        "worker_terminated",
+                        symbols=codes,
+                        worker_status="TERMINATED",
+                    )
+            thread = threading.Thread(target=worker, name="alpaca-market-stream", daemon=True)
+            self._stream_thread = thread
+            thread.start()
+            if not thread.is_alive():
+                raise RuntimeError("Alpaca stream terminated during startup")
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        with self._stream_lock:
+            if self._closed:
+                return
+            if not self._close_requested:
+                self._close_requested = True
+                self._generation += 1
+                self._record_evidence("stop_requested", shutdown_status="REQUESTED", owner_status="RETAINED")
+            stream = self._stream
+            thread = self._stream_thread
+        if stream is not None and thread is not None and thread.is_alive():
+            stop = getattr(stream, "stop", None)
+            if not callable(stop):
+                self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
+                raise RuntimeError("Alpaca stream has no stop() lifecycle")
+            # alpaca-py 0.44.0 initializes _loop inside run(); stop() raises
+            # AttributeError if called before that loop exists.
+            if hasattr(stream, "_loop"):
+                deadline = stdlib_time.monotonic() + 2
+                while getattr(stream, "_loop", None) is None and thread.is_alive() and stdlib_time.monotonic() < deadline:
+                    stdlib_time.sleep(0.01)
+                if getattr(stream, "_loop", None) is None and thread.is_alive():
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
+                    raise RuntimeError("Alpaca stream loop did not initialize for safe shutdown")
+            if thread.is_alive():
+                self._record_evidence(
+                    "stream_stop_requested",
+                    shutdown_status="REQUESTED",
+                    unsubscribe_status="UNKNOWN",
+                    owner_status="RETAINED",
+                )
+                stop()
+            if thread is not threading.current_thread():
+                thread.join(timeout=8)
+                if thread.is_alive():
+                    self._record_evidence("shutdown_failed", shutdown_status="FAILED", owner_status="RETAINED")
+                    self._record_evidence("owner_retained", shutdown_status="FAILED", owner_status="RETAINED")
+                    raise RuntimeError("Alpaca stream did not terminate after stop()")
+        with self._stream_lock:
+            self._closed = True
+        self._record_evidence(
+            "shutdown_completed",
+            shutdown_status="SUCCEEDED",
+            unsubscribe_status="UNKNOWN",
+            owner_status="CLEARED",
+        )
+        self._record_evidence("owner_cleared", shutdown_status="SUCCEEDED", owner_status="CLEARED")
 
     def get_session_status(self, market: str) -> str:
         return _session_at(self._now()) if market == "us" else "unsupported"

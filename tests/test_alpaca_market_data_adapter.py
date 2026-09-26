@@ -1,4 +1,6 @@
 import asyncio
+import json
+import threading
 from datetime import datetime, timezone
 
 import pytest
@@ -28,11 +30,73 @@ class FakeRest:
 
 
 class FakeStream:
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.running = threading.Event()
+        self.run_calls = 0
+        self.stop_calls = 0
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.stop_event.wait(3)
+
+    def stop(self):
+        self.stop_calls += 1
+        self.stop_event.set()
+
     def subscribe_bars(self, handler, *symbols):
         self.bar_subscription = (handler, symbols)
 
     def subscribe_updated_bars(self, handler, *symbols):
         self.updated_subscription = (handler, symbols)
+
+
+class LoopInitializingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = None
+        self.loop_ready = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.loop_ready.wait(1)
+        self._loop = object()
+        self.stop_event.wait(3)
+
+
+class NeverInitializingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = None
+
+
+class NonTerminatingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self._loop = object()
+        self.release = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.release.wait(10)
+
+    def stop(self):
+        self.stop_calls += 1
+
+
+class FailingStream(FakeStream):
+    def __init__(self):
+        super().__init__()
+        self.failure_ready = threading.Event()
+
+    def run(self):
+        self.run_calls += 1
+        self.running.set()
+        self.failure_ready.wait(1)
+        raise RuntimeError("stream startup failed")
 
 
 def test_alpaca_rest_history_requests_latest_page() -> None:
@@ -96,6 +160,7 @@ def test_alpaca_subscribes_to_bars_and_updated_bars() -> None:
     assert "UPDATED_BAR" not in received[0].quality_flags
     assert "UPDATED_BAR" in received[1].quality_flags
     assert received[0].bar_start == received[1].bar_start
+    adapter.close()
 
 
 def test_alpaca_rejects_unknown_feed_and_fake_higher_timeframe() -> None:
@@ -104,3 +169,153 @@ def test_alpaca_rejects_unknown_feed_and_fake_higher_timeframe() -> None:
     adapter = AlpacaMarketDataAdapter(FakeRest(), feed="iex", now=lambda: NOW)
     with pytest.raises(NotImplementedError, match="raw 1m"):
         adapter.get_bars("NVDA", "15m")
+
+
+def test_alpaca_stream_single_start_close_and_old_callback_isolation() -> None:
+    stream = FakeStream()
+    received = []
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream, feed="iex", now=lambda: NOW)
+    adapter.subscribe(["nvda", "NVDA"], callback=received.append)
+    assert stream.running.wait(1)
+    assert stream.run_calls == 1
+    assert stream.bar_subscription[1] == ("NVDA",)
+    with pytest.raises(RuntimeError, match="already subscribed"):
+        adapter.subscribe(["NVDA"], callback=received.append)
+    old_callback = stream.bar_subscription[0]
+    adapter.close()
+    adapter.close()
+    assert stream.stop_calls == 1
+    asyncio.run(old_callback({"T": "b", "S": "NVDA", **BAR}))
+    assert received == []
+    with pytest.raises(RuntimeError, match="closed"):
+        adapter.subscribe(["NVDA"], callback=received.append)
+
+
+def test_alpaca_partial_subscription_failure_closes_stream() -> None:
+    stream = FakeStream()
+    def fail_updated(*args):
+        raise RuntimeError("subscription failed")
+    stream.subscribe_updated_bars = fail_updated
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+    with pytest.raises(RuntimeError, match="subscription failed"):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert adapter._closed
+
+
+def test_alpaca_close_waits_for_sdk_loop_before_stopping() -> None:
+    stream = LoopInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    threading.Timer(0.05, stream.loop_ready.set).start()
+
+    adapter.close()
+
+    assert stream.stop_calls == 1
+    assert not adapter._stream_thread.is_alive()
+
+
+def test_alpaca_close_fails_closed_when_sdk_loop_never_initializes() -> None:
+    stream = NeverInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+
+    with pytest.raises(RuntimeError, match="loop did not initialize"):
+        adapter.close()
+
+    assert not adapter._closed
+    assert adapter._close_requested
+    assert adapter._stream_thread.is_alive()
+    stream.stop_event.set()
+    adapter._stream_thread.join(timeout=1)
+    assert not adapter._stream_thread.is_alive()
+    adapter.close()
+    assert adapter._closed
+
+
+def test_alpaca_close_fails_closed_when_sdk_thread_does_not_exit() -> None:
+    stream = NonTerminatingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+
+    with pytest.raises(RuntimeError, match="did not terminate"):
+        adapter.close()
+
+    assert not adapter._closed
+    assert adapter._close_requested
+    assert stream.stop_calls == 1
+    assert adapter._stream_thread.is_alive()
+    stream.release.set()
+    adapter._stream_thread.join(timeout=1)
+    assert not adapter._stream_thread.is_alive()
+    adapter.close()
+    assert adapter._closed
+    assert adapter._closed
+
+
+def test_alpaca_stream_thread_failure_remains_fail_closed() -> None:
+    stream = FailingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    stream.failure_ready.set()
+    adapter._stream_thread.join(timeout=1)
+
+    assert isinstance(adapter._stream_error, RuntimeError)
+    with pytest.raises(RuntimeError, match="already subscribed"):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    adapter.close()
+
+
+def test_alpaca_evidence_keeps_registration_and_entitlement_unknown() -> None:
+    stream = FakeStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    events = adapter.evidence_events
+    registered = next(event for event in events if event["event_type"] == "subscription_registered")
+
+    assert registered["ack_status"] == "UNKNOWN"
+    assert registered["ack_evidence"] == "SDK_registration_return_only"
+    assert registered["entitlement_status"] == "UNKNOWN"
+    assert registered["entitlement_source"] == "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED"
+    json.dumps(events)
+    adapter.close()
+
+
+def test_alpaca_evidence_sanitizes_subscription_exception() -> None:
+    stream = FakeStream()
+    stream.subscribe_updated_bars = lambda *args: (_ for _ in ()).throw(
+        RuntimeError("Bearer secret must not be recorded")
+    )
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+
+    with pytest.raises(RuntimeError):
+        adapter.subscribe(["NVDA"], callback=lambda bar: None)
+
+    payload = json.dumps(adapter.evidence_events)
+    assert "Bearer" not in payload
+    assert "secret" not in payload
+    error = next(event for event in adapter.evidence_events if event["event_type"] == "subscription_error")
+    assert error["stream_error_type"] == "RuntimeError"
+
+
+def test_alpaca_shutdown_evidence_is_fail_closed_and_ordered() -> None:
+    stream = LoopInitializingStream()
+    adapter = AlpacaMarketDataAdapter(FakeRest(), stream_client=stream)
+    adapter.subscribe(["NVDA"], callback=lambda bar: None)
+    assert stream.running.wait(1)
+    stream.loop_ready.set()
+    adapter.close()
+
+    event_types = [event["event_type"] for event in adapter.evidence_events]
+    assert event_types.index("stop_requested") < event_types.index("stream_stop_requested")
+    assert event_types[-2] == "shutdown_completed"
+    assert event_types[-1] == "owner_cleared"
+    assert adapter.evidence_events[-1]["owner_status"] == "CLEARED"

@@ -1257,6 +1257,32 @@ def start_api_server(host: str, port: int, config: Config) -> None:
     # machines. Importing first keeps the heavy work out of the probe window;
     # genuine import failures still surface immediately to the caller.
     from api.app import app as fastapi_app
+    snapshot_owner = None
+    symbols_setting = os.getenv("STOCK_RAZOR_ALPACA_STREAM_SYMBOLS", "").strip()
+    if symbols_setting:
+        from alpaca.data.enums import DataFeed
+        from alpaca.data.live.stock import StockDataStream
+        from api.app import create_app
+        from data_provider.alpaca_market_data_adapter import AlpacaMarketDataAdapter, AlpacaRestMarketDataClient
+        from src.services.ai_monitor.market_snapshot_view import MarketSnapshotView
+        from src.services.realtime_market_data import RealtimeMarketRuntimeOwner
+
+        symbols = tuple(dict.fromkeys(item.strip().upper() for item in symbols_setting.split(",") if item.strip()))
+        key = os.getenv("APCA_API_KEY_ID", "").strip()
+        secret = os.getenv("APCA_API_SECRET_KEY", "").strip()
+        feed = os.getenv("STOCK_RAZOR_ALPACA_STREAM_FEED", "iex").strip().lower()
+        if not symbols or not key or not secret or feed not in {"iex", "sip"}:
+            raise RuntimeError("Alpaca snapshot owner requires symbols, credentials and iex/sip feed")
+
+        def make_alpaca_provider():
+            return AlpacaMarketDataAdapter(
+                AlpacaRestMarketDataClient(key, secret),
+                stream_client=StockDataStream(key, secret, raw_data=True, feed=DataFeed(feed)),
+                feed=feed,
+            )
+
+        snapshot_owner = RealtimeMarketRuntimeOwner(make_alpaca_provider, symbols)
+        fastapi_app = create_app(market_snapshot_service=MarketSnapshotView(snapshot_owner))
 
     try:
         uvicorn_config = uvicorn.Config(
@@ -1283,9 +1309,17 @@ def start_api_server(host: str, port: int, config: Config) -> None:
 
     def run_server():
         try:
+            if snapshot_owner is not None:
+                snapshot_owner.start()
             uvicorn_server.run()
         except Exception as exc:  # noqa: BLE001 - surface startup issues to caller promptly
             startup_error.append(exc)
+        finally:
+            if snapshot_owner is not None:
+                try:
+                    snapshot_owner.stop()
+                except Exception as exc:
+                    startup_error.append(exc)
 
     thread = threading.Thread(target=run_server, daemon=True)
     thread.start()
