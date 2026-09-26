@@ -120,6 +120,15 @@ class ExecutionStore:
     def save_intent(self, intent: OrderIntent) -> None:
         payload = {"intent_id": intent.intent_id, "symbol": intent.symbol, "side": intent.side.value, "order_type": intent.order_type.value, "qty": str(intent.qty), "limit_price": str(intent.limit_price) if intent.limit_price is not None else None, "stop_price": str(intent.stop_price) if intent.stop_price is not None else None, "max_slippage": str(intent.max_slippage) if intent.max_slippage is not None else None, "invalidation": str(intent.invalidation) if intent.invalidation is not None else None, "risk_budget_r": str(intent.risk_budget_r) if intent.risk_budget_r is not None else None, "valid_until": intent.valid_until.isoformat() if intent.valid_until is not None else None, "strategy_id": intent.strategy_id, "evidence_snapshot_id": intent.evidence_snapshot_id, "account_target": intent.account_target, "broker_target": intent.broker_target, "allowed_session": intent.allowed_session}
         with self.connection: self.connection.execute("INSERT OR IGNORE INTO intents(intent_id,payload) VALUES(?,?)", (intent.intent_id, json.dumps(payload, sort_keys=True)))
+    def save_intent_and_append(self, intent: OrderIntent, event: JournalEvent) -> None:
+        """Atomically persist an intent and its first shadow event."""
+        payload = {"intent_id": intent.intent_id, "symbol": intent.symbol, "side": intent.side.value, "order_type": intent.order_type.value, "qty": str(intent.qty), "limit_price": str(intent.limit_price) if intent.limit_price is not None else None, "stop_price": str(intent.stop_price) if intent.stop_price is not None else None, "max_slippage": str(intent.max_slippage) if intent.max_slippage is not None else None, "invalidation": str(intent.invalidation) if intent.invalidation is not None else None, "risk_budget_r": str(intent.risk_budget_r) if intent.risk_budget_r is not None else None, "valid_until": intent.valid_until.isoformat() if intent.valid_until is not None else None, "strategy_id": intent.strategy_id, "evidence_snapshot_id": intent.evidence_snapshot_id, "account_target": intent.account_target, "broker_target": intent.broker_target, "allowed_session": intent.allowed_session}
+        try:
+            with self.connection:
+                self.connection.execute("INSERT OR IGNORE INTO intents(intent_id,payload) VALUES(?,?)", (intent.intent_id, json.dumps(payload, sort_keys=True)))
+                self.connection.execute("INSERT INTO events(kind,intent_id,state,evidence_ids,at,details) VALUES(?,?,?,?,?,?)", (event.kind,event.intent_id,event.state.value if event.state else None,json.dumps(event.evidence_ids),event.at.isoformat(),json.dumps(dict(event.details),sort_keys=True)))
+        except sqlite3.IntegrityError as exc:
+            raise ExecutionBlocked("duplicate shadow event identity") from exc
     def intents(self) -> list[OrderIntent]:
         result = []
         for (raw,) in self.connection.execute("SELECT payload FROM intents ORDER BY intent_id"):
