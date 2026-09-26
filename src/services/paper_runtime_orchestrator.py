@@ -45,6 +45,7 @@ class PaperRuntimeResult:
 @dataclass(frozen=True)
 class PaperRuntimeSnapshot:
     runtime_generation: str
+    account_generation: str
     state: PaperRuntimeState
     reconciliation_as_of: object | None
     journal_events: int
@@ -102,6 +103,24 @@ class PaperRuntimeOrchestrator:
             self._state = PaperRuntimeState.READY
             return self.snapshot()
 
+    def refresh_reconciliation(self, *, account_generation: str) -> PaperRuntimeSnapshot:
+        """Refresh paper account truth on the single-writer owner thread."""
+
+        with self._lock:
+            if self._state is not PaperRuntimeState.READY:
+                raise ExecutionBlocked("paper runtime is not READY")
+            if threading.get_ident() != self._owner_thread_id:
+                raise ExecutionBlocked("paper runtime requires the single-writer owner thread")
+            if not account_generation.strip():
+                raise ExecutionBlocked("account_generation is required")
+            try:
+                self._engine.reconcile()
+            except Exception:
+                self._state = PaperRuntimeState.FAILED
+                raise
+            self._account_generation = account_generation
+            return self.snapshot()
+
     def process(
         self,
         evidence: ExecutionAdmissionEvidence,
@@ -146,6 +165,76 @@ class PaperRuntimeOrchestrator:
                 filled_qty=record.filled_qty,
             )
 
+    def cancel(self, intent_id: str, *, at) -> PaperRuntimeResult:
+        """Cancel one admitted paper order through the existing Execution Engine."""
+
+        with self._lock:
+            if self._state is not PaperRuntimeState.READY:
+                raise ExecutionBlocked("paper runtime is not READY")
+            if threading.get_ident() != self._owner_thread_id:
+                raise ExecutionBlocked("paper runtime requires the single-writer owner thread")
+            try:
+                record = self._engine.cancel(intent_id, at)
+            except ExecutionBlocked:
+                raise
+            except Exception:
+                self._state = PaperRuntimeState.FAILED
+                raise
+            return PaperRuntimeResult(
+                runtime_generation=self._runtime_generation,
+                intent_id=record.intent.intent_id,
+                shadow_decision_id="",
+                order_state=record.state,
+                broker_order_id=record.broker_order_id,
+                fill_ids=tuple(record.fill_ids),
+                filled_qty=record.filled_qty,
+            )
+
+    def replace(
+        self,
+        intent_id: str,
+        evidence: ExecutionAdmissionEvidence,
+        spec: PaperOrderSpec,
+        context: RiskContext,
+    ) -> PaperRuntimeResult:
+        """Admit and replace one paper order without bypassing shadow/risk checks."""
+
+        with self._lock:
+            if self._state is not PaperRuntimeState.READY:
+                raise ExecutionBlocked("paper runtime is not READY")
+            if threading.get_ident() != self._owner_thread_id:
+                raise ExecutionBlocked("paper runtime requires the single-writer owner thread")
+            try:
+                replacement = build_paper_order_intent(evidence, spec, now=context.now)
+                reconciliation = self._engine.reconciliation
+                if reconciliation is None:
+                    raise ExecutionBlocked("startup reconciliation is required")
+                preview = self._shadow.preview(
+                    replacement,
+                    context,
+                    reconciliation,
+                    self._account_generation,
+                )
+                if not preview.eligible_for_execution:
+                    raise ExecutionBlocked(
+                        preview.reason or "shadow preview is not eligible for execution"
+                    )
+                record = self._engine.replace(intent_id, replacement, context)
+            except ExecutionBlocked:
+                raise
+            except Exception:
+                self._state = PaperRuntimeState.FAILED
+                raise
+            return PaperRuntimeResult(
+                runtime_generation=self._runtime_generation,
+                intent_id=replacement.intent_id,
+                shadow_decision_id=preview.decision_id,
+                order_state=record.state,
+                broker_order_id=record.broker_order_id,
+                fill_ids=tuple(record.fill_ids),
+                filled_qty=record.filled_qty,
+            )
+
     def stop(self) -> PaperRuntimeSnapshot:
         """Stop the coordinator without inventing broker-side shutdown semantics."""
 
@@ -160,6 +249,7 @@ class PaperRuntimeOrchestrator:
             reconciliation = self._engine.reconciliation
             return PaperRuntimeSnapshot(
                 runtime_generation=self._runtime_generation,
+                account_generation=self._account_generation,
                 state=self._state,
                 reconciliation_as_of=(
                     reconciliation.as_of if reconciliation is not None else None

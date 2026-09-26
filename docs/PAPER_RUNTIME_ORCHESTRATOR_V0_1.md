@@ -32,9 +32,17 @@ FAILED and it cannot be restarted in-place.
 
 `process()` is accepted only while READY.
 
-Unexpected non-domain exceptions during processing move the runtime to FAILED.
-Expected `ExecutionBlocked` outcomes are fail-closed rejections and do not
-poison an otherwise healthy paper runtime.
+`refresh_reconciliation()` refreshes the existing Execution Engine account truth
+and advances the explicit account-generation identity before later actions.
+Long-running sessions therefore do not depend on the startup snapshot forever.
+
+`cancel()` routes an existing paper order through the existing Execution Engine.
+`replace()` requires a new explicit permission/specification, runs the same
+admission + shadow checks, and then uses the existing replace lineage.
+
+Unexpected non-domain exceptions during processing/cancel/replace move the
+runtime to FAILED. Expected `ExecutionBlocked` outcomes are fail-closed
+rejections and do not poison an otherwise healthy paper runtime.
 
 `stop()` is idempotent and does not invent broker-side shutdown semantics.
 

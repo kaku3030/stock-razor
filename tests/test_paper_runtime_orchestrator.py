@@ -234,6 +234,80 @@ def test_unexpected_adapter_failure_marks_runtime_failed_and_blocks_future_work(
         owner.process(permission(5), spec(5), context())
 
 
+def test_refresh_reconciliation_updates_generation_and_allows_fresh_context(tmp_path):
+    owner, engine, adapter = runtime(tmp_path)
+    owner.start()
+    later = NOW + timedelta(seconds=30)
+    adapter.reconcile = lambda: ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), later, "paper"),
+        as_of=later,
+    )
+
+    snapshot = owner.refresh_reconciliation(account_generation="paper-account-generation-2")
+
+    assert snapshot.account_generation == "paper-account-generation-2"
+    assert snapshot.reconciliation_as_of == later
+    result = owner.process(
+        permission(8),
+        spec(8),
+        RiskContext(later, later, "RTH"),
+    )
+    assert result.order_state is OrderState.ACCEPTED
+
+
+def test_cancel_routes_through_existing_execution_engine(tmp_path):
+    owner, _, adapter = runtime(tmp_path)
+    owner.start()
+    opened = owner.process(permission(9), spec(9), context())
+
+    cancelled = owner.cancel(opened.intent_id, at=NOW)
+
+    assert cancelled.order_state is OrderState.CANCELLED
+    assert adapter.calls == [
+        ("place", opened.intent_id),
+        ("cancel", opened.broker_order_id),
+    ]
+
+
+def test_replace_requires_new_permission_and_preserves_execution_lineage(tmp_path):
+    owner, _, adapter = runtime(tmp_path)
+    owner.start()
+    opened = owner.process(permission(10), spec(10), context())
+
+    replaced = owner.replace(
+        opened.intent_id,
+        permission(11),
+        spec(11, qty=Decimal("5"), limit_price=Decimal("99")),
+        context(),
+    )
+
+    assert replaced.intent_id != opened.intent_id
+    assert replaced.order_state is OrderState.ACCEPTED
+    assert replaced.shadow_decision_id
+    assert adapter.calls == [
+        ("place", opened.intent_id),
+        ("replace", opened.broker_order_id),
+    ]
+
+
+def test_replace_unknown_permission_is_blocked_before_adapter_mutation(tmp_path):
+    owner, _, adapter = runtime(tmp_path)
+    owner.start()
+    opened = owner.process(permission(12), spec(12), context())
+    before = list(adapter.calls)
+
+    with pytest.raises(ExecutionBlocked, match="permission"):
+        owner.replace(
+            opened.intent_id,
+            permission(13, canonical_permission="UNKNOWN"),
+            spec(13),
+            context(),
+        )
+
+    assert adapter.calls == before
+    assert owner.state is PaperRuntimeState.READY
+
+
 def test_non_owner_thread_is_fail_closed_and_owner_thread_remains_single_writer(tmp_path):
     owner, _, adapter = runtime(tmp_path)
     owner.start()
