@@ -170,6 +170,37 @@ def test_duplicate_retry_same_action_is_blocked_without_second_place(tmp_path):
     assert owner.state is PaperRuntimeState.READY
 
 
+def test_restart_replays_without_auto_resubmit(tmp_path):
+    path = tmp_path / "runtime.sqlite"
+    owner, engine, _ = runtime(tmp_path)
+    owner.start()
+    first = owner.process(permission(), spec(), context())
+    owner.stop()
+
+    capability = create_paper_adapter()
+    capability.adapter.reconcile = lambda: ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"),
+        as_of=NOW,
+    )
+    reopened_engine = ExecutionEngine(
+        capability, risk_guard(), ExecutionStore(path)
+    )
+    reopened = PaperRuntimeOrchestrator(
+        reopened_engine,
+        runtime_generation="paper-runtime-generation-2",
+        account_generation="paper-account-generation-2",
+    )
+
+    replayed = reopened.start()
+
+    assert replayed.journal_events == len(engine.journal)
+    assert replayed.order_records == 1
+    assert reopened_engine.records[first.intent_id].broker_order_id == "paper-order-1"
+    with pytest.raises(ExecutionBlocked, match="duplicate"):
+        reopened.process(permission(), spec(), context())
+    assert capability.adapter.calls == []
+
+
 def test_stale_market_is_blocked_before_paper_adapter_and_runtime_stays_ready(tmp_path):
     owner, _, adapter = runtime(tmp_path)
     owner.start()
