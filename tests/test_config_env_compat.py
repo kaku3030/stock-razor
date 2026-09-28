@@ -16,6 +16,31 @@ class ConfigEnvCompatibilityTestCase(unittest.TestCase):
 
     @patch("src.config.setup_env")
     @patch.object(Config, "_parse_litellm_yaml", return_value=[])
+    def test_startup_network_switches_default_true_and_only_explicit_false_disables(
+        self, _mock_parse_litellm_yaml, _mock_setup_env
+    ):
+        cases = {
+            None: True,
+            "": True,
+            "invalid": True,
+            "false": False,
+            "0": False,
+            "no": False,
+            "off": False,
+            "true": True,
+        }
+        for raw_value, expected in cases.items():
+            env = {"STOCK_LIST": "600519"}
+            if raw_value is not None:
+                env["STOCK_INDEX_REMOTE_UPDATE_ENABLED"] = raw_value
+                env["AKSHARE_NAME_CACHE_WARMUP_ENABLED"] = raw_value
+            with self.subTest(raw_value=raw_value), patch.dict(os.environ, env, clear=True):
+                config = Config._load_from_env()
+            self.assertEqual(config.stock_index_remote_update_enabled, expected)
+            self.assertEqual(config.akshare_name_cache_warmup_enabled, expected)
+
+    @patch("src.config.setup_env")
+    @patch.object(Config, "_parse_litellm_yaml", return_value=[])
     @patch.object(Config, "_parse_stock_email_groups", return_value=[])
     def test_share_image_social_branding_is_optional_and_configurable(
         self, _mock_parse_stock_email_groups, _mock_parse_litellm_yaml, _mock_setup_env

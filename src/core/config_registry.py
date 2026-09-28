@@ -949,6 +949,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": [],
     },
+    "AKSHARE_NAME_CACHE_WARMUP_ENABLED": {
+        "title": "AkShare Name Cache Warmup",
+        "description": "Warm the AkShare stock-name cache during application startup; on-demand name resolution remains available when disabled.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 17,
+        "help_key": "settings.data_source.stock_index_remote",
+        "examples": [
+            "AKSHARE_NAME_CACHE_WARMUP_ENABLED=true",
+            "AKSHARE_NAME_CACHE_WARMUP_ENABLED=false",
+        ],
+        "docs": [
+            {
+                "label": "数据源配置指南",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#数据源配置",
+            },
+        ],
+        "warning_codes": [],
+    },
     "SCREENING_ENABLED": {
         "title": "Built-in Stock Screening",
         "description": "Enable DSA's built-in stock screening tab. The implementation is based on AlphaSift and maintained as part of DSA. Disabled by default.",
