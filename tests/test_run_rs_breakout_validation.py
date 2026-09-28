@@ -56,7 +56,6 @@ def _write_contract(path: Path) -> None:
             "DELAYED_RULE",
             "REGIME_CONDITIONED",
         ],
-        "holdout_policy": {"never_seen_holdout": "PROTECTED", "consumes_holdout": False},
     }), encoding="utf-8")
 
 
@@ -74,21 +73,29 @@ def test_runner_emits_independent_research_report(tmp_path: Path) -> None:
     assert result["guard"]["pit"] == "RECORDED_CAPTURE_ONLY"
     assert result["guard"]["signal_execution"] == "NEXT_BAR_OPEN"
     assert result["guard"]["future_data_used_for_signal"] is False
-    assert result["guard"]["never_seen_holdout"] == "PROTECTED"
-    assert result["guard"]["consumes_holdout"] is False
+    assert result["guard"]["holdout_mode"] == "DIAGNOSTIC_THIRD_ONLY"
+    assert "never_seen_holdout" not in result["guard"]
+    assert "consumes_holdout" not in result["guard"]
     assert result["guard"]["round_trip_cost_bps"] == 100.0
-    overall = result["metrics"]["WITH_RULE"]["overall"]
-    assert overall["round_trip_cost_bps"] == 100.0
-    assert overall["average_net_forward_return"] < overall["average_forward_return"]
-    assert overall["net_win_rate"] <= overall["win_rate"]
+    assert "overall" not in result["metrics"]["WITH_RULE"]
     assert set(result["metrics"]) == {
         "WITH_RULE", "WITHOUT_RULE", "SHUFFLED_PLACEBO",
         "DELAYED_RULE", "REGIME_CONDITIONED",
     }
     assert set(result["metrics"]["WITH_RULE"]["splits"]) == {
-        "development", "validation", "never_seen_holdout",
+        "development", "validation", "diagnostic_third",
     }
     assert output.is_file()
+
+
+def test_runner_blocks_governed_holdout_without_binding(tmp_path: Path) -> None:
+    for index, symbol in enumerate(("AAA", "BBB", "CCC")):
+        _write_capture(tmp_path, f"us_{symbol.lower()}", symbol, days=70 + index)
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    with pytest.raises(ValidationError, match="DatasetSplitContract, manifest binding, and OOS ledger claim"):
+        run_validation(tmp_path, config, tmp_path / "out.json", governed_holdout=True)
 
 
 def test_runner_fails_closed_on_unapproved_capture(tmp_path: Path) -> None:
@@ -213,4 +220,17 @@ def test_runner_supports_execution_delay_stress(tmp_path: Path) -> None:
 
     assert result["guard"]["execution_delay_bars"] == 2
     assert result["guard"]["signal_execution"] == "DELAYED_OPEN_2_BARS"
+    assert result["observation_count"] < 132
+
+
+def test_runner_supports_non_overlapping_forward_windows(tmp_path: Path) -> None:
+    for index, symbol in enumerate(("AAA", "BBB", "CCC")):
+        _write_capture(tmp_path, f"us_{symbol.lower()}", symbol, days=90 + index)
+    config = tmp_path / "contract.json"
+    _write_contract(config)
+
+    result = run_validation(tmp_path, config, tmp_path / "out.json", non_overlapping=True)
+
+    assert result["guard"]["overlapping_forward_windows"] is False
+    assert result["guard"]["window_policy"] == "NON_OVERLAPPING"
     assert result["observation_count"] < 132

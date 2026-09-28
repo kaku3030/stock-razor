@@ -29,10 +29,30 @@ jobs:
           python scripts/capture_research_universe.py             --config config/research_universe_v0_1.json             --output-dir artifacts/universe
       - name: Validate captured universe evidence
         run: |
-          python scripts/validate_research_universe_capture.py             --config config/research_universe_v0_1.json             --input-dir artifacts/universe
+          python scripts/validate_research_universe_capture.py             --config config/research_universe_v0_1.json             --input-dir artifacts/universe             --evidence-report artifacts/universe/capture_evidence.json
+      - name: Record capture result states
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report_path = Path("artifacts/universe/capture_evidence.json")
+          if report_path.is_file():
+              report = json.loads(report_path.read_text(encoding="utf-8"))
+              print("capture_result_counts=" + json.dumps(report.get("result_counts", {}), sort_keys=True))
+              for item in report.get("results", []):
+                  print("capture_result=" + json.dumps(item, sort_keys=True))
+          else:
+              print("capture_result_counts={}")
+              print("capture_result={\"result\":\"MISSING_UNAVAILABLE\",\"reason\":\"EVIDENCE_REPORT_MISSING\"}")
+          PY
       - name: Run independent RS Breakout validation
         run: |
           python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation.json
+      - name: Run RS Breakout non-overlapping window validation
+        run: |
+          python scripts/run_rs_breakout_validation.py             --config config/rs_breakout_hypothesis_v0_1.json             --input-dir artifacts/universe             --output artifacts/universe/rs_breakout_validation_nonoverlap.json             --non-overlapping-forward-windows
       - name: Run RS Breakout cost stress scenarios
         run: |
           for cost_bps in 100 150 200; do
