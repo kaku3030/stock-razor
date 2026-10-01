@@ -125,7 +125,7 @@ jobs:
           echo '=== LOCAL HTTP PROBE ==='
           echo 'SKIPPED_UNLESS_HTTP_ENDPOINT_IS_EXPLICITLY_EVIDENT_IN_UNIT_OR_LISTENER_OUTPUT'
           REMOTE
-              jq -n --arg script "$diagnostic_script" '[ $script ]' > commands.json
+              jq -c -n --arg script "$diagnostic_script" '[ $script ]' > commands.json
               ;;
             *)
               echo "Unsupported action" >&2
