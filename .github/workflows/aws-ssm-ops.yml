@@ -10,6 +10,7 @@ on:
         options:
           - health_check
           - mcp_status
+          - mcp_diagnose
 
 concurrency:
   group: aws-ssm-ops-${{ github.ref }}
@@ -62,6 +63,69 @@ jobs:
               ;;
             mcp_status)
               printf '%s\n' '["ss -ltnp | grep -E '\''(:(11111|22222))\\b'\'' || true","systemctl is-active stock-razor-mcp.service 2>/dev/null || true"]' > commands.json
+              ;;
+            mcp_diagnose)
+              read -r -d '' diagnostic_script <<'REMOTE' || true
+          set -u
+          unit='stock-razor-mcp.service'
+          expected='d7622c6a0c549282d6da5be0cb32aa6701fb8f59'
+          redact() {
+            sed -E 's/((AWS|ALPACA|MCP|API|ACCESS|SECRET|TOKEN|PASSWORD|PASS|KEY)[_-]?[A-Z0-9]*[[:space:]]*=[[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig; s/(Bearer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/Ig; s/(https?:\/\/[^[:space:]]*([?&](token|key|secret|password)=[^&[:space:]]+)[^[:space:]]*)/\1[REDACTED]/Ig; s/((--?)(api[_-]?key|token|secret|password|access[_-]?key)[=[:space:]]+)[^[:space:]]+/\1[REDACTED]/Ig'
+          }
+          unit_load="$(systemctl show "$unit" -p LoadState --value 2>/dev/null || true)"
+          echo '=== UNIT ==='
+          if [ "$unit_load" = loaded ]; then echo 'UNIT_EXISTS=YES'; else echo 'UNIT_EXISTS=NO_OR_UNREADABLE'; fi
+          systemctl cat "$unit" 2>&1 | redact || true
+          echo '--- systemctl status ---'
+          systemctl status "$unit" --no-pager 2>&1 | redact || true
+          echo '--- unit state ---'
+          systemctl is-active "$unit" 2>&1 | redact || true
+          systemctl is-enabled "$unit" 2>&1 | redact || true
+          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p UnitFileState -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 | redact || true
+          echo '=== JOURNAL (last 150, redacted) ==='
+          journalctl -u "$unit" -n 150 --no-pager 2>&1 | redact || true
+          echo '=== RELEVANT PROCESSES ==='
+          pattern='stock-razor|mcp|realtime_monitor|gunicorn|uvicorn|python'
+          ps -eo pid=,user=,lstart=,args= | grep -Ei "$pattern" | grep -v -E 'grep -E|grep -Ei' | redact || true
+          declare -a candidates=()
+          working_dir="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
+          if [ -n "$working_dir" ] && [ "$working_dir" != "-" ]; then candidates+=("$working_dir"); fi
+          for pid in $(pgrep -f "$pattern" 2>/dev/null || true); do
+            [ -d "/proc/$pid" ] || continue
+            proc_line="$(ps -p "$pid" -o pid=,user=,lstart=,args= 2>/dev/null || true)"
+            [ -n "$proc_line" ] || continue
+            echo "PID_DETAIL=$(printf '%s' "$proc_line" | redact)"
+            cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+            exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+            echo "PID_PATHS pid=$pid cwd=${cwd:-UNKNOWN} exe=${exe:-UNKNOWN}"
+            [ -n "$cwd" ] && candidates+=("$cwd")
+          done
+          echo '=== LISTENING SOCKETS ==='
+          ss -lntp 2>&1 | redact || true
+          echo '=== OPEND (read-only) ==='
+          for pid in $(pgrep -x opend 2>/dev/null || true); do
+            ps -p "$pid" -o pid=,user=,lstart=,args= 2>/dev/null | redact || true
+          done
+          ss -lntp 2>/dev/null | grep -E ':(11111|22222)\b' | redact || true
+          echo '=== IDENTIFIED CHECKOUTS ==='
+          for candidate in "${candidates[@]}"; do
+            [ -d "$candidate" ] || continue
+            top="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null || true)"
+            [ -n "$top" ] || continue
+            head="$(git -C "$top" rev-parse HEAD 2>/dev/null || true)"
+            echo "CHECKOUT=$top"
+            echo "DEPLOYED_COMMIT=${head:-UNKNOWN}"
+            if [ "$head" = "$expected" ]; then echo 'EXPECTED_d7622c6_MATCH=PASS'; else echo 'EXPECTED_d7622c6_MATCH=FAIL_OR_UNKNOWN'; fi
+            if [ -n "$(git -C "$top" status --porcelain 2>/dev/null || true)" ]; then echo 'CHECKOUT_DIRTY=YES'; else echo 'CHECKOUT_DIRTY=NO'; fi
+          done
+          echo '=== BOUNDED IDENTIFIED PATH STATS ==='
+          for candidate in "${candidates[@]}"; do
+            [ -e "$candidate" ] && stat -c 'PATH=%n TYPE=%F MODE=%a OWNER=%U SIZE=%s MTIME=%y' "$candidate" 2>/dev/null || true
+          done
+          echo '=== LOCAL HTTP PROBE ==='
+          echo 'SKIPPED_UNLESS_HTTP_ENDPOINT_IS_EXPLICITLY_EVIDENT_IN_UNIT_OR_LISTENER_OUTPUT'
+          REMOTE
+              jq -n --arg script "$diagnostic_script" '[ $script ]' > commands.json
               ;;
             *)
               echo "Unsupported action" >&2
