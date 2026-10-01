@@ -87,9 +87,9 @@ jobs:
           echo '=== RELEVANT PROCESSES ==='
           pattern='stock-razor|mcp|realtime_monitor|gunicorn|uvicorn|python'
           ps -eo pid=,user=,lstart=,args= | grep -Ei "$pattern" | grep -v -E 'grep -E|grep -Ei' | redact || true
-          declare -a candidates=()
+          candidates=""
           working_dir="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
-          if [ -n "$working_dir" ] && [ "$working_dir" != "-" ]; then candidates+=("$working_dir"); fi
+          if [ -n "$working_dir" ] && [ "$working_dir" != "-" ]; then candidates="$candidates $working_dir"; fi
           for pid in $(pgrep -f "$pattern" 2>/dev/null || true); do
             [ -d "/proc/$pid" ] || continue
             proc_line="$(ps -p "$pid" -o pid=,user=,lstart=,args= 2>/dev/null || true)"
@@ -98,7 +98,7 @@ jobs:
             cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
             exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
             echo "PID_PATHS pid=$pid cwd=${cwd:-UNKNOWN} exe=${exe:-UNKNOWN}"
-            [ -n "$cwd" ] && candidates+=("$cwd")
+            [ -n "$cwd" ] && candidates="$candidates $cwd"
           done
           echo '=== LISTENING SOCKETS ==='
           ss -lntp 2>&1 | redact || true
@@ -108,7 +108,7 @@ jobs:
           done
           ss -lntp 2>/dev/null | grep -E ':(11111|22222)\b' | redact || true
           echo '=== IDENTIFIED CHECKOUTS ==='
-          for candidate in "${candidates[@]}"; do
+          for candidate in $candidates; do
             [ -d "$candidate" ] || continue
             top="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null || true)"
             [ -n "$top" ] || continue
@@ -119,7 +119,7 @@ jobs:
             if [ -n "$(git -C "$top" status --porcelain 2>/dev/null || true)" ]; then echo 'CHECKOUT_DIRTY=YES'; else echo 'CHECKOUT_DIRTY=NO'; fi
           done
           echo '=== BOUNDED IDENTIFIED PATH STATS ==='
-          for candidate in "${candidates[@]}"; do
+          for candidate in $candidates; do
             [ -e "$candidate" ] && stat -c 'PATH=%n TYPE=%F MODE=%a OWNER=%U SIZE=%s MTIME=%y' "$candidate" 2>/dev/null || true
           done
           echo '=== LOCAL HTTP PROBE ==='
