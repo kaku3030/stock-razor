@@ -134,29 +134,52 @@ jobs:
           pid=8607
           cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
           source="$cwd/realtime_monitor/readonly_mcp_server.py"
+          expected='d7622c6a0c549282d6da5be0cb32aa6701fb8f59'
+          redact() { sed -E 's/((AWS|ALPACA|MCP|API|ACCESS|SECRET|TOKEN|PASSWORD|PASS|KEY)[_-]?[A-Z0-9]*[[:space:]]*=[[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig; s/(Bearer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/Ig'; }
           echo "MCP_PROCESS_PID=$pid"
           echo "MCP_PROCESS_CWD=$cwd"
           echo "MCP_PROCESS_EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
-          echo "MCP_PROCESS_CMDLINE=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true)"
+          cmdline="$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true)"
+          echo "MCP_PROCESS_CMDLINE=$(printf '%s' "$cmdline" | redact)"
           echo "MCP_PROCESS_USER=$(ps -p "$pid" -o user= 2>/dev/null | awk '{print $1}')"
           echo "MCP_PROCESS_START=$(ps -p "$pid" -o lstart= 2>/dev/null || true)"
           socket_line="$(ss -lntp 2>/dev/null | grep "pid=$pid," | head -n 1 || true)"
           echo "MCP_LISTENER=$socket_line"
-          echo '=== DIRECT SOURCE ENDPOINT EVIDENCE ==='
+          if ! printf '%s' "$cmdline" | grep -q 'readonly_mcp_server\.py'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=readonly-mcp-process-not-evidenced'; exit 0; fi
+          echo '=== DEPLOYED PROVENANCE (BEFORE PROTOCOL) ==='
+          if [ -z "$cwd" ] || [ "$(git -C "$cwd" rev-parse --is-inside-work-tree 2>/dev/null || true)" != true ]; then
+            echo 'DEPLOYED_COMMIT=UNKNOWN'; echo 'EXPECTED_d7622c6_MATCH=UNKNOWN'; echo 'CHECKOUT_DIRTY=UNKNOWN'
+            echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=provenance-not-a-git-worktree'; exit 0
+          fi
+          echo "DEPLOYED_COMMIT=$(git -C "$cwd" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          echo "EXPECTED_d7622c6_MATCH=$([ "$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)" = "$expected" ] && echo PASS || echo FAIL)"
+          echo "CHECKOUT_DIRTY=$([ -n "$(git -C "$cwd" status --porcelain 2>/dev/null || true)" ] && echo YES || echo NO)"
+          echo "WORKTREE_BRANCH=$(git -C "$cwd" symbolic-ref --short -q HEAD 2>/dev/null || echo DETACHED)"
+          echo '=== DIRECT SOURCE AND SOCKET ENDPOINT EVIDENCE ==='
           if [ ! -r "$source" ]; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=source-not-readable'; exit 0; fi
           grep -nE 'streamable-http|/mcp|127\.0\.0\.1|8000|mcp.run' "$source" 2>/dev/null || true
-          if ! grep -q '/mcp' "$source" || ! printf '%s' "$socket_line" | grep -q '127.0.0.1:8000'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=endpoint-not-directly-evidenced'; exit 0; fi
+          if ! printf '%s' "$socket_line" | grep -q '127.0.0.1:8000'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=listener-not-owned-by-proven-pid'; exit 0; fi
+          if ! grep -q 'streamable-http' "$source"; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=streamable-http-transport-not-source-evidenced'; exit 0; fi
+          route_status="$(curl --silent --show-error --max-time 5 -o /dev/null -X OPTIONS -w '%{http_code}' http://127.0.0.1:8000/mcp 2>/dev/null || true)"
+          echo "MCP_ROUTE_OPTIONS_STATUS=$route_status"
+          case "$route_status" in 404|000|'') echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; 2*|3*|4*) : ;; *) echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; esac
           echo 'MCP_PROTOCOL_ENDPOINT=http://127.0.0.1:8000/mcp'
-          python3 - "$source" <<'PY'
+          python3 - "$source" "http://127.0.0.1:8000/mcp" <<'PY'
           import datetime as dt,http.client,json,sys
-          source=sys.argv[1]; allowed={'get_market_snapshots','get_market_bars','get_livefeed_health'}
+          from urllib.parse import urlsplit
+          source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
+          allowed={'get_market_snapshots','get_market_bars','get_livefeed_health'}
+          def safe(value):
+              if isinstance(value,dict): return {k:('[REDACTED]' if any(x in k.lower() for x in ('token','session','secret','password','api_key','access_key')) else safe(v)) for k,v in value.items()}
+              if isinstance(value,list): return [safe(v) for v in value]
+              return value
           def send(body,sid=None):
-              c=http.client.HTTPConnection('127.0.0.1',8000,15); h={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
+              c=http.client.HTTPConnection(host,port,15); h={'Content-Type':'application/json','Accept':'application/json, text/event-stream'}
               if sid:h['Mcp-Session-Id']=sid
-              c.request('POST','/mcp',json.dumps(body),h); r=c.getresponse(); raw=r.read().decode('utf-8','replace'); sid=r.getheader('Mcp-Session-Id') or sid
+              c.request('POST',path,json.dumps(body),h); r=c.getresponse(); raw=r.read().decode('utf-8','replace'); sid=r.getheader('Mcp-Session-Id') or sid
               if 'text/event-stream' in (r.getheader('Content-Type') or ''): raw=''.join(x[5:].strip() for x in raw.splitlines() if x.startswith('data:'))
               try:o=json.loads(raw)
-              except:o={'http_status':r.status,'body_prefix':raw[:500]}
+              except:o={'http_status':r.status,'body_prefix':'[REDACTED]'}
               return r.status,o,sid
           def ok(st,o):return st==200 and isinstance(o,dict) and 'error' not in o and 'result' in o
           def args(t,sym=None):
@@ -175,19 +198,18 @@ jobs:
               return out
           st,o,sid=send({'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2025-03-26','capabilities':{},'clientInfo':{'name':'ect-readonly-probe','version':'1'}}})
           print('MCP_INITIALIZE='+('PASS' if ok(st,o) else 'FAIL'))
-          if not ok(st,o):print('MCP_INITIALIZE_DETAIL='+json.dumps(o)[:500]);raise SystemExit
+          if not ok(st,o):print('MCP_INITIALIZE_DETAIL='+json.dumps(safe(o))[:500]);raise SystemExit
           send({'jsonrpc':'2.0','method':'notifications/initialized'},sid); st,o,sid=send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}},sid)
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
           print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_3_OF_3='+('PASS' if len(names)==3 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
           def call(n,a):
-              st,z,_=send({'jsonrpc':'2.0','id':100+len(n),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); print('MCP_CALL_'+n+('=PASS' if good else '=FAIL')); print('MCP_RESULT_'+n+'='+json.dumps(z.get('result',z),separators=(',',':'))[:3000])
+              st,z,_=send({'jsonrpc':'2.0','id':100+len(n),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); print('MCP_CALL_'+n+('=PASS' if good else '=FAIL')); print('MCP_RESULT_'+n+'='+json.dumps(safe(z.get('result',z)),separators=(',',':'))[:3000])
           if len(names)==3 and set(names)==allowed:
               call('get_livefeed_health',args(by['get_livefeed_health']))
               for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s))
               for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s))
           print('DIRECT_OPEND_OVERLAP_MATCH=NOT_RUN'); print('CURRENTNESS_METADATA=UNKNOWN'); print('ENTITLEMENT=UNKNOWN'); print('GENERATION=UNKNOWN'); print('AMD_1M_CURRENT=UNKNOWN'); print('QQQ_1M_CURRENT=UNKNOWN'); print('BAR_ADVANCEMENT=UNKNOWN'); print('STALE_TAIL_REGRESSION=UNKNOWN'); print('MCP_PUBLIC_EXPOSURE=NO'); print('AWS_PRIVATE_MCP_RUNTIME=PASS')
-          print('DEPLOYED_COMMIT='+('d7622c6a0c549282d6da5be0cb32aa6701fb8f59' if source.endswith('d7622c6a0c549282d6da5be0cb32aa6701fb8f59/realtime_monitor/readonly_mcp_server.py') else 'UNKNOWN')); print('EXPECTED_d7622c6_MATCH='+('PASS' if source.endswith('d7622c6a0c549282d6da5be0cb32aa6701fb8f59/realtime_monitor/readonly_mcp_server.py') else 'UNKNOWN')); print('CHECKOUT_DIRTY=UNKNOWN')
           PY
           REMOTE
               jq -c -n --arg script "$protocol_script" '[ $script ]' > commands.json
