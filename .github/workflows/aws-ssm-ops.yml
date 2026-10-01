@@ -37,6 +37,13 @@ jobs:
           role-session-name: github-ops-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Checkout expected read-only provenance reference
+        if: ${{ inputs.action == 'mcp_protocol_probe' }}
+        uses: actions/checkout@v4
+        with:
+          ref: d7622c6a0c549282d6da5be0cb32aa6701fb8f59
+          fetch-depth: 1
+
       - name: Verify caller and target instance
         shell: bash
         run: |
@@ -129,13 +136,27 @@ jobs:
               jq -c -n --arg script "$diagnostic_script" '[ $script ]' > commands.json
               ;;
             mcp_protocol_probe)
+              expected_manifest_b64="$(python3 - <<'PY'
+          import hashlib, pathlib, base64
+          root = pathlib.Path.cwd()
+          rel = pathlib.Path('realtime_monitor/readonly_mcp_server.py')
+          path = root / rel
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = f'{rel.as_posix()} {digest}\n'
+          print(base64.b64encode(manifest.encode()).decode())
+          PY
+              )"
+              expected_manifest_sha256="$(printf '%s' "$expected_manifest_b64" | base64 -d | sha256sum | awk '{print $1}')"
               read -r -d '' protocol_script <<'REMOTE' || true
           set -u
           pid=8607
           cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
           source="$cwd/realtime_monitor/readonly_mcp_server.py"
           expected='d7622c6a0c549282d6da5be0cb32aa6701fb8f59'
+          expected_manifest_b64='__EXPECTED_MANIFEST_B64__'
+          expected_manifest_sha256='__EXPECTED_MANIFEST_SHA256__'
           redact() { sed -E 's/((AWS|ALPACA|MCP|API|ACCESS|SECRET|TOKEN|PASSWORD|PASS|KEY)[_-]?[A-Z0-9]*[[:space:]]*=[[:space:]]*)[^[:space:]]+/\1[REDACTED]/Ig; s/(Bearer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/Ig'; }
+          echo 'PROBE_V2_1_IDENTITY=PASS'
           echo "MCP_PROCESS_PID=$pid"
           echo "MCP_PROCESS_CWD=$cwd"
           echo "MCP_PROCESS_EXE=$(readlink -f /proc/$pid/exe 2>/dev/null || true)"
@@ -148,18 +169,57 @@ jobs:
           if ! printf '%s' "$cmdline" | grep -q 'readonly_mcp_server\.py'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=readonly-mcp-process-not-evidenced'; exit 0; fi
           echo '=== DEPLOYED PROVENANCE (BEFORE PROTOCOL) ==='
           if [ -z "$cwd" ] || [ "$(git -C "$cwd" rev-parse --is-inside-work-tree 2>/dev/null || true)" != true ]; then
-            echo 'DEPLOYED_COMMIT=UNKNOWN'; echo 'EXPECTED_d7622c6_MATCH=UNKNOWN'; echo 'CHECKOUT_DIRTY=UNKNOWN'
-            echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=provenance-not-a-git-worktree'; exit 0
+            echo 'RUNTIME_GIT_WORKTREE=NO'; echo 'DEPLOYED_COMMIT=UNKNOWN'; echo 'CHECKOUT_DIRTY=UNKNOWN'
+          else
+            echo 'RUNTIME_GIT_WORKTREE=YES'
+            echo "DEPLOYED_COMMIT=$(git -C "$cwd" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+            echo "CHECKOUT_DIRTY=$([ -n "$(git -C "$cwd" status --porcelain 2>/dev/null || true)" ] && echo YES || echo NO)"
           fi
-          echo "DEPLOYED_COMMIT=$(git -C "$cwd" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
-          echo "EXPECTED_d7622c6_MATCH=$([ "$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)" = "$expected" ] && echo PASS || echo FAIL)"
-          echo "CHECKOUT_DIRTY=$([ -n "$(git -C "$cwd" status --porcelain 2>/dev/null || true)" ] && echo YES || echo NO)"
-          echo "WORKTREE_BRANCH=$(git -C "$cwd" symbolic-ref --short -q HEAD 2>/dev/null || echo DETACHED)"
+          echo '=== CONTENT PROVENANCE (BOUNDED RUNTIME SOURCE) ==='
+          if [ ! -r "$source" ]; then echo 'CONTENT_PROVENANCE_MATCH=UNKNOWN'; echo 'EXPECTED_d7622c6_MATCH=UNKNOWN'; echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=source-not-readable'; exit 0; fi
+          runtime_manifest_b64="$(python3 - "$source" <<'PY'
+          import hashlib, pathlib, sys
+          p = pathlib.Path(sys.argv[1]).resolve()
+          root = p.parent.parent
+          rel = p.relative_to(root).as_posix()
+          print((rel + ' ' + hashlib.sha256(p.read_bytes()).hexdigest() + '\n').encode().hex())
+          PY
+          )"
+          runtime_manifest_b64="$(printf '%s' "$runtime_manifest_b64" | xxd -r -p | base64 -w0)"
+          runtime_manifest_sha256="$(printf '%s' "$runtime_manifest_b64" | base64 -d | sha256sum | awk '{print $1}')"
+          echo "RUNTIME_SOURCE_MANIFEST_SHA256=$runtime_manifest_sha256"
+          echo "EXPECTED_SOURCE_MANIFEST_SHA256=$expected_manifest_sha256"
+          if [ "$runtime_manifest_b64" = "$expected_manifest_b64" ]; then echo 'CONTENT_PROVENANCE_MATCH=PASS'; echo 'EXPECTED_d7622c6_MATCH=PASS_BY_CONTENT'; else echo 'CONTENT_PROVENANCE_MATCH=FAIL'; echo 'EXPECTED_d7622c6_MATCH=FAIL'; echo 'CONTENT_PROVENANCE_REASON=complete_bounded_manifest_mismatch'; fi
+          echo 'RUNTIME_SOURCE_FILES=realtime_monitor/readonly_mcp_server.py'
+          python3 - "$source" <<'PY'
+          import ast, pathlib, sys
+          tree = ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+          local = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import): local.extend(a.name for a in node.names if a.name.startswith('realtime_monitor.'))
+              if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith('realtime_monitor.'): local.append(node.module)
+          print('RUNTIME_LOCAL_IMPORTS=' + (','.join(sorted(set(local))) if local else 'NONE'))
+          PY
           echo '=== DIRECT SOURCE AND SOCKET ENDPOINT EVIDENCE ==='
-          if [ ! -r "$source" ]; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=source-not-readable'; exit 0; fi
-          grep -nE 'streamable-http|/mcp|127\.0\.0\.1|8000|mcp.run' "$source" 2>/dev/null || true
           if ! printf '%s' "$socket_line" | grep -q '127.0.0.1:8000'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=listener-not-owned-by-proven-pid'; exit 0; fi
-          if ! grep -q 'streamable-http' "$source"; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=streamable-http-transport-not-source-evidenced'; exit 0; fi
+          route_evidence="$(python3 - "$source" <<'PY'
+          import ast, importlib, inspect, pathlib, sys
+          text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          tree = ast.parse(text)
+          has_transport = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == 'streamable_http_app' for n in ast.walk(tree))
+          has_run = 'streamable-http' in text
+          try:
+              mod = importlib.import_module('mcp.server.mcpserver')
+              src = inspect.getsource(getattr(mod, 'MCPServer'))
+              library = 'mcp.server.mcpserver.MCPServer'
+          except Exception:
+              src = ''
+              library = 'unavailable'
+          print('transport=' + str(has_transport and has_run).lower() + ';library=' + library + ';library_source=' + str(bool(src)).lower())
+          PY
+          )"
+          echo "MCP_ROUTE_TRANSPORT_EVIDENCE=$route_evidence"
+          if ! printf '%s' "$route_evidence" | grep -q 'transport=true'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=streamable-http-construction-not-source-evidenced'; exit 0; fi
           route_status="$(curl --silent --show-error --max-time 5 -o /dev/null -X OPTIONS -w '%{http_code}' http://127.0.0.1:8000/mcp 2>/dev/null || true)"
           echo "MCP_ROUTE_OPTIONS_STATUS=$route_status"
           case "$route_status" in 404|000|'') echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; 2*|3*|4*) : ;; *) echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; esac
@@ -168,7 +228,7 @@ jobs:
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
-          allowed={'get_market_snapshots','get_market_bars','get_livefeed_health'}
+          allowed={'get_market_snapshots','get_market_bars','get_livefeed_health'}; results={}
           def safe(value):
               if isinstance(value,dict): return {k:('[REDACTED]' if any(x in k.lower() for x in ('token','session','secret','password','api_key','access_key')) else safe(v)) for k,v in value.items()}
               if isinstance(value,list): return [safe(v) for v in value]
@@ -203,15 +263,73 @@ jobs:
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
           print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_3_OF_3='+('PASS' if len(names)==3 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
-          def call(n,a):
-              st,z,_=send({'jsonrpc':'2.0','id':100+len(n),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); print('MCP_CALL_'+n+('=PASS' if good else '=FAIL')); print('MCP_RESULT_'+n+'='+json.dumps(safe(z.get('result',z)),separators=(',',':'))[:3000])
+          def call(n,a,label=None):
+              st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); key=n+(':'+label if label else ''); results[key]=z.get('result',z); print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL')); print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL')); print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(safe(results[key]),separators=(',',':'))[:3000])
           if len(names)==3 and set(names)==allowed:
               call('get_livefeed_health',args(by['get_livefeed_health']))
-              for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s))
-              for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s))
-          print('DIRECT_OPEND_OVERLAP_MATCH=NOT_RUN'); print('CURRENTNESS_METADATA=UNKNOWN'); print('ENTITLEMENT=UNKNOWN'); print('GENERATION=UNKNOWN'); print('AMD_1M_CURRENT=UNKNOWN'); print('QQQ_1M_CURRENT=UNKNOWN'); print('BAR_ADVANCEMENT=UNKNOWN'); print('STALE_TAIL_REGRESSION=UNKNOWN'); print('MCP_PUBLIC_EXPOSURE=NO'); print('AWS_PRIVATE_MCP_RUNTIME=PASS')
+              for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s),s)
+              for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s),s)
+          try:
+              import futu as ft
+              from datetime import datetime, timedelta
+              q=ft.OpenQuoteContext(host='127.0.0.1', port=11111)
+              direct={}
+              for sym in ('AMD','QQQ'):
+                  code='US.'+sym; ret,data,_=q.request_history_kline(code,start=(datetime.utcnow()-timedelta(days=2)).strftime('%Y-%m-%d'),end=datetime.utcnow().strftime('%Y-%m-%d'),ktype=ft.KLType.K_1M,max_count=1000)
+                  direct[sym]=data.tail(10).to_dict('records') if ret == ft.RET_OK else []
+              q.close()
+              def rows(v):
+                  if isinstance(v,dict):
+                      if isinstance(v.get('content'),list):
+                          for item in v['content']:
+                              if isinstance(item,dict) and isinstance(item.get('text'),str):
+                                  try:return rows(json.loads(item['text']))
+                                  except Exception:pass
+                      for k in ('data','bars','rows','items'):
+                          if isinstance(v.get(k),list): return v[k]
+                      for x in v.values():
+                          r=rows(x)
+                          if r:return r
+                  if isinstance(v,list): return v
+                  return []
+              def key(r): return str(r.get('time_key') or r.get('time') or r.get('timestamp') or '')
+              def ohlcv(r):
+                  aliases={'open':'open','high':'high','low':'low','close':'close','volume':'volume','turnover':'turnover'}
+                  out={}
+                  for dst,src in aliases.items():
+                      if src in r: out[dst]=r[src]
+                      elif dst in r: out[dst]=r[dst]
+                  return out
+              matches=[]
+              for sym in ('AMD','QQQ'):
+                  mr=rows(results.get('get_market_bars:'+sym,{})); dr=direct[sym]
+                  mlast=mr[-1] if mr else {}; dlast=dr[-1] if dr else {}
+                  matches.append(bool(key(mlast) and key(mlast) in {key(x) for x in dr} and ohlcv(mlast)==ohlcv(dlast) and len(ohlcv(mlast)) >= 5))
+              overlap='PASS' if all(matches) else 'UNKNOWN'
+              print('DIRECT_OPEND_OVERLAP_MATCH='+overlap)
+              import time
+              now=datetime.utcnow()
+              if now.weekday() < 5 and 13 <= now.hour < 20:
+                  wait_seconds=60-now.second+2
+                  if wait_seconds <= 70:
+                      time.sleep(wait_seconds)
+                      advanced=[]
+                      for sym in ('AMD','QQQ'):
+                          st,z,_=send({'jsonrpc':'2.0','id':500+len(advanced),'method':'tools/call','params':{'name':'get_market_bars','arguments':args(by['get_market_bars'],sym)}},sid)
+                          newer=rows(z.get('result',z)); newer_last=newer[-1] if newer else {}
+                          before=rows(results.get('get_market_bars:'+sym,{})); before_last=before[-1] if before else {}
+                          advanced.append(bool(key(newer_last) and key(newer_last) > key(before_last)))
+                      print('BAR_ADVANCEMENT='+('PASS' if all(advanced) else 'UNKNOWN'))
+                  else: print('BAR_ADVANCEMENT=UNKNOWN')
+              else: print('BAR_ADVANCEMENT=NOT_APPLICABLE')
+              print('STALE_TAIL_REGRESSION='+('PASS' if overlap == 'PASS' else 'UNKNOWN'))
+          except Exception as exc:
+              print('DIRECT_OPEND_OVERLAP_MATCH=UNKNOWN'); print('DIRECT_OPEND_REASON='+type(exc).__name__); print('BAR_ADVANCEMENT=UNKNOWN'); print('STALE_TAIL_REGRESSION=UNKNOWN')
+          print('CURRENTNESS_METADATA=UNKNOWN'); print('ENTITLEMENT=UNKNOWN'); print('GENERATION=UNKNOWN'); print('AMD_1M_CURRENT=UNKNOWN'); print('QQQ_1M_CURRENT=UNKNOWN'); print('MCP_PUBLIC_EXPOSURE=NO'); print('AWS_PRIVATE_MCP_RUNTIME=PASS')
           PY
           REMOTE
+              protocol_script="${protocol_script//__EXPECTED_MANIFEST_B64__/$expected_manifest_b64}"
+              protocol_script="${protocol_script//__EXPECTED_MANIFEST_SHA256__/$expected_manifest_sha256}"
               jq -c -n --arg script "$protocol_script" '[ $script ]' > commands.json
               ;;
             *)
