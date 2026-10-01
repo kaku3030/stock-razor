@@ -1,0 +1,71 @@
+name: Research Data Capture
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/rule-validation-harness-v0-1
+  schedule:
+    - cron: "30 22 * * 1-5"
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install capture dependencies
+        run: python -m pip install --upgrade -r requirements.txt
+      - name: Validate research universe contract
+        run: python scripts/validate_research_universe.py --config config/research_universe_v0_1.json
+      - name: Capture frozen research universe
+        continue-on-error: true
+        run: |
+          python scripts/capture_research_universe.py \
+            --config config/research_universe_v0_1.json \
+            --output-dir artifacts/universe
+      - name: Capture A-share EOD
+        continue-on-error: true
+        run: |
+          END_DATE=$(date -u +%Y-%m-%d)
+          python scripts/capture_research_eod.py --market cn --symbol 600000 \
+            --start 2015-01-01 --end "$END_DATE" \
+            --output artifacts/cn_600000.csv --retries 3
+      - name: Capture US EOD
+        continue-on-error: true
+        run: |
+          END_DATE=$(date -u +%Y-%m-%d)
+          python scripts/capture_research_eod.py --market us --symbol SPY \
+            --start 2015-01-01 --end "$END_DATE" \
+            --output artifacts/us_SPY.csv --retries 3
+      - name: Validate recorded captures
+        run: |
+          for market in cn_600000 us_SPY; do
+            csv="artifacts/${market}.csv"
+            manifest="${csv}.manifest.json"
+            if [ -f "$csv" ] && [ -f "$manifest" ]; then
+              python scripts/validate_recorded_capture.py \
+                --csv "$csv" --manifest "$manifest" \
+                --dataset-id "$market-eod" --dataset-version "${GITHUB_SHA:0:12}"
+            else
+              echo "SKIPPED: $market capture unavailable (manifest likely CAPTURE_BLOCKED)"
+            fi
+          done
+      - name: Run baseline counterfactuals
+        run: |
+          for csv in artifacts/cn_600000.csv artifacts/us_SPY.csv; do
+            if [ -f "$csv" ]; then
+              python scripts/run_baseline_counterfactual.py --csv "$csv"
+            fi
+          done
+      - name: Upload recorded captures and manifests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-eod-capture-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14

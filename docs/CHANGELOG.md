@@ -1,3 +1,13 @@
+# 变更记录
+
+## 2026-09-14 — PR #120 governance incident record
+
+- PR #120 已进入 `main`，但 merge authorization 没有被 durable evidence 证明。
+- `PR120_MERGE_AUTHORIZATION = NOT_PROVEN`。
+- `PRODUCTION_PROMOTION_AUTHORIZATION = NO`，直到 Production Owner 完成逐项 adjudication。
+- Research harness、PIT/Replay/Holdout、Registry 和 capture 能力保留；未经批准的 production routing 与 runtime semantic changes 执行 selective restoration。
+- Merged code 不构成 retrospective authorization。
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -9,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 独立 RS Breakout 验证器改为下一交易日开盘执行决策日收盘信号，避免使用同一根 K 线收盘价造成执行时序高估。
+
+- [改进] 独立 RS Breakout 验证器支持 `--round-trip-cost-bps` 成本压力测试，同时输出 gross/net 收益与胜率指标，并在 guard 中记录成本假设。
+
+- [测试] Research Universe Capture 工作流新增 100/150/200 bps 往返成本压力场景，生成独立 JSON 证据文件，不改变默认 Research-only 与 Holdout 保护边界。
+
+- [修复] RS Breakout 验证器对 capture 内混合 symbol 与无可执行观察窗口执行 fail-closed，避免生成可误读的空结果。
+
+- [修复] capture 输入进一步校验完整 OHLC 几何关系与非空 symbol，异常行情在进入回测前直接拒绝。
+
+- [测试] 每日 Research Universe Capture 增加 +1 bar / +2 bar 执行延迟压力场景，与 100/150/200 bps 成本矩阵组合输出独立证据。
+
+- [新功能] 新增独立 RS Breakout 研究回测入口：只读消费已记录 capture，校验 manifest hash/PIT 边界，输出五类反事实与 development/validation/Never-Seen Holdout 分段证据；不接入生产 routing，不消费 Holdout。
+
+- [测试] Radar Rule Validation Harness 完成 Day 3–7 合成 fixture 工程闭环：冻结 ResearchDatasetCapsule（source/adapter/event hash/causal timestamps）、匹配 reservation 才能进入既有 OOS Ledger、五类 counterfactual 计划确定性执行，并新增从 RS-breakout 合成 fixture 到 OOS BURNED 的端到端测试；明确无获批 EOD OHLCV CSV 时只能作为 synthetic-fixture validation，真实数据 OOS 与 Promotion 仍阻断。
+- [新功能] Radar Rule Validation Harness V0.1 增加持久化 Experiment Registry 与原子预算 reservation：按 rule family 冻结首见 budget policy，SQLite `BEGIN IMMEDIATE` 内重读已用量、执行 PIT/contract preflight、检查并写入不可变 reservation；operation_id 严格幂等、experiment_id 不可重复注册、超预算或 preflight 失败零持久化副作用，且该 Registry 不读取或修改 Never-Seen Holdout，OOS Consumption Ledger 继续是唯一权威。
+- [新功能] Radar Rule Validation Harness V0.1 新增研究专用合同与 fail-closed preflight：把规则、数据分割、PIT policy、实验预算和五类 counterfactual 计划冻结为可绑定 `ExperimentManifest` 的确定性指纹；PIT `UNKNOWN`/晚到、缺失/冲突绑定或任一预算维度超限均阻断 Never-Seen Holdout claim 资格；纯 preflight 的用量输入只是 snapshot，执行级原子 reservation 由持久化 Registry 提供。
 - [新功能] 项目正式命名为 Stock Razor，并以兼容方式引入 Radar、Realtime Monitor、Shared、Strategy Lab 与 Infra 顶层边界；纳入已验证的 Moomoo MCP 盯盘候选，账户与运行状态改由本地环境管理。
 - [新功能] Strategy Lab V0.1 新增 Parameter Drift——正式概念名为 **Parameter Selection Identity Drift**（文件/模块名保持 `parameter_drift.py`）：度量跨 fold 的**所选参数集合身份**变化，仅消费不透明 `selected_parameter_hash` 证据。刻意不度量参数距离、数值 delta、方向、per-field 漂移、类别距离或归一化移动——仓库不存在参数 payload/schema/search-space 契约，任何数值距离都是伪精度。公开 API `evaluate_parameter_drift(walk_forward_report, fold_parameter_selection_evidence=(), fixed_parameter_evidence=None)`：`WalkForwardValidationReport` 不保留 hash，故证据必须单独供应，且模块**诚实声明**无法证明该证据就是原 `validate_walk_forward` 调用所用（仅按 fold_id 域 / 资格 / canonical 序绑定，swap 不可检测）。结构误用（报告内重复 fold_id、证据重复/未知 fold_id、模式不兼容证据）一律 `ValueError`，绝不折入 resolution。模式契约：`FIXED` → `NOT_APPLICABLE`，全部 drift 指标 `None`、observations/transitions 为空、仅暴露 `fixed_parameter_hash` 作上下文——绝不伪造 `unique=1/transition=0` 的零漂移测量；`TRAIN_ONLY`/`TRAIN_VALIDATION` 共用同一套身份漂移逻辑（不接受 fixed evidence）。冻结 gap 语义：仅 `VALID` fold 贡献身份；非 VALID fold 不破连续性但计入每条 transition 的 `skipped_non_valid_fold_count`；VALID 缺证据**打断**连续性（不生成跨 gap transition，stable-run 重置）。五个冻结指标：`transition_opportunity_count`/`transition_count`（恒 int）、`transition_rate`（opportunity=0 时为 None，绝不用 0.0）、`unique_parameter_hash_count`（跨 segment）、`longest_observed_stable_run`（0 observed=None，单观测=1）；**无** revisit_count/drift_score/severity label/归一化 unique。Resolution 优先级冻结：FIXED → NOT_APPLICABLE；any VALID missing → INCOMPLETE_EVIDENCE；observed<2 → INSUFFICIENT_DATA；否则 RESOLVED（missing 先于 insufficient——完整性缺口优先于观测不足）。四个 finding 码（`FIXED_MODE_NOT_APPLICABLE` 报告级、`VALID_FOLD_SELECTION_EVIDENCE_MISSING`/`NON_VALID_SELECTION_EVIDENCE_IGNORED` per-fold、`INSUFFICIENT_OBSERVED_SELECTIONS` 报告级）按 `(code.value, fold_id or "", message)` 确定性排序、无 severity。纯计算叶子节点：仅 stdlib + 封闭 Walk-Forward 类型，无 storage/repositories/SQLAlchemy/OOS ledger，无 `parameter_stability.py` 算法依赖（参数稳定性=标量邻域鲁棒性，是另一回事）。防御性 canonical 排序 `(oos.start, train.start, fold_id)`，证据按 fold_id 映射后迭代 canonical fold，与输入序无关。永久对抗测试 34 项覆盖 FIXED 全 None、结构误用、shuffle 不变性、分母不变量、gap/continuity 各形态、指标确定性、finding 排序、无 score/label/revisit 字段、无 persistence import（AST 级）、信任边界文档化与 swap-不可检测行为钉住。
 - [修复] OOS Consumption Ledger 聚焦修复第二轮（5 项冻结语义修订）：(1) **覆盖图校验先于任何写入**——任何 Ledger 写操作在 mutate 前必须构造"已持久化身份注册表 + target-reachable 候选定义"的暂态覆盖图并整体验证：不得引入 self-parent、谱系环、根不变量破坏或 child/root 不匹配；已知结构矛盾直接整体拒绝并回滚（无 identity、无 event、不预留 operation_id），两个各自 INDETERMINATE 的 burn 绝不因局部评估而合成永久环；INDETERMINATE burn 仅允许"缺失祖先"（有效但截断的 target→ancestor 链），不允许已知矛盾。(2) **写优先级冻结**：idempotency 定位（不裁决）→ 全量 supplied manifest 集对持久化注册表的 identity 冲突检查（硬 `OOSLedgerIdentityConflictError`，绝不被 self-parent/cycle/resolver 截断/幂等重放掩盖）→ 覆盖图结构校验 → 才裁决幂等重放/冲突 → lineage 审计 → claim 资格/暴露逻辑。(3) **幂等重放必须通过完整校验**——`IDEMPOTENT_REPLAY` 仅在入站命令通过 identity + 结构校验后且语义指纹精确匹配时返回；结构非法的变更重放按 identity/lineage 完整性错误失败，绝不返回 replay；指纹仍在校验后对合法 reachable 集合生成。(4) **迁移严格校验**——`_ensure_oos_consumption_ledger_schema()` 按精确冻结契约校验真实 SQLite 元数据：必填列 + 必填 NOT NULL、identity `id` INTEGER 主键、events `event_id INTEGER PRIMARY KEY AUTOINCREMENT`（查真实 DDL）、`experiment_id`/`operation_id` 必须各自有**专用单列且非 partial 的 UNIQUE**（复合 UNIQUE 或 `WHERE` 部分唯一索引不达标）、时间列 TEXT-affine；任一不达标 fail-closed 且**不**写入 `DatabaseSchemaMigration` 版本记录。(5) **确定性锁竞争回归测试**——独立连接持 `BEGIN IMMEDIATE`，两 worker 在进入 Ledger 写前置 started 事件，持锁期间断言两 done 均未置位（无竞争时毫秒级完成，未完成即证明阻塞于真实 SQLite 写锁），释放后恰一 CLAIMED、一 ALREADY_EXPOSED、一事件。新增图完整性回归套件：图可单调扩展且永不成环、持久化节点定义不可 mutation、晚注册不可引入环、无关节点不可毒化图、任何写不得把先前合法的持久化图变为已知非法。全程不改整体窗口重叠语义、半开相邻、BEGIN IMMEDIATE 架构、append-only 事件源、持久化图查询模型、canonical UTC TEXT、aware 边界、PRISTINE→BURNED 直跳、重复 claim 拒绝、被拒操作不预留 operation_id 与无 reset API。

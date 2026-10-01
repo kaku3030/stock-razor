@@ -1,0 +1,55 @@
+{
+  "schema_version": "recorded-market-fixture-v0.1",
+  "fixture_id": "getdata-aapl-12h-2026-05-13_2026-05-22-v1",
+  "symbol": "AAPL",
+  "interval_label": "12h",
+  "source_query": "github://getdata-finance/aapl-12h-ohlcv-stocks-historical-data/AAPL_12h.csv?ref=e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b#L2-L9",
+  "query_params": {
+    "repository": "getdata-finance/aapl-12h-ohlcv-stocks-historical-data",
+    "path": "AAPL_12h.csv",
+    "ref": "e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b",
+    "lines": "2-9"
+  },
+  "capture_provenance_ref": "GitHub immutable source slice AAPL_12h.csv lines 2-9 at commit e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b; source repository MIT license preserved",
+  "representation": "NORMALIZED_FROM_LICENSED_PUBLIC_CSV",
+  "available_at": "2026-09-10T09:35:33.000000Z",
+  "observed_at": "2026-09-10T09:35:33.000000Z",
+  "time_semantics": {
+    "bar_timestamp_semantic": "SOURCE_DECLARED_DATETIME_ONLY",
+    "availability_semantic": "CONSERVATIVE_CAPTURE_SEAL",
+    "session_semantics_claimed": false,
+    "source_commit_time": "2026-09-04T11:38:05.000000Z",
+    "raw_source_slice_lines": "2-9"
+  },
+  "authority": {
+    "schema_version": "recorded-authority-v0.1",
+    "authority_mode": "EMBEDDED",
+    "source_token": "getdata_finance_github",
+    "endpoint_id": "github.contents:AAPL_12h.csv",
+    "market": "us",
+    "adapter_id": "github_content",
+    "upstream_lineage_id": "getdata_finance",
+    "authority_ref": "github:getdata-finance/aapl-12h-ohlcv-stocks-historical-data@e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b:AAPL_12h.csv",
+    "capability_surface": "public_12h_ohlcv_sample",
+    "evidence_ref": "getdata-finance/aapl-12h-ohlcv-stocks-historical-data:AAPL_12h.csv@e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b",
+    "captured_at": "2026-09-10T09:35:33.000000Z",
+    "source_commit_sha": "e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b",
+    "source_blob_sha": "a1d9e2cbced456e2a15f091a389f7382e4f236ec",
+    "license_spdx": "MIT",
+    "license_ref": "getdata-finance/aapl-12h-ohlcv-stocks-historical-data:LICENSE@e9cebf45a7b68ca87e537c1f2d7f7ea312e79a1b",
+    "license_blob_sha": "bfeadbe2ed775c9afbba1b2a19f4e5301e5acf33",
+    "digest": "815f73e069da4a4c3a99dd09af3a75f6fd666a1dd10b5290e872ee6723f4c937"
+  },
+  "rows": [
+    {"datetime": "2026-05-13T12:00:00+00:00", "open": "295.81999999999994", "high": "301.7799999999999", "low": "294.19999999999993", "close": "299.8199999999999", "volume": "51840.60254300673"},
+    {"datetime": "2026-05-14T12:00:00+00:00", "open": "299.8199999999999", "high": "301.1299999999999", "low": "296.2599999999999", "close": "299.0299999999999", "volume": "47777"},
+    {"datetime": "2026-05-15T12:00:00+00:00", "open": "299.0299999999999", "high": "304.07999999999987", "low": "297.3799999999999", "close": "301.1199999999999", "volume": "54831"},
+    {"datetime": "2026-05-18T12:00:00+00:00", "open": "301.1199999999999", "high": "301.3999999999999", "low": "295.76999999999987", "close": "298.7899999999999", "volume": "95313"},
+    {"datetime": "2026-05-19T12:00:00+00:00", "open": "298.7899999999999", "high": "301.3199999999999", "low": "297.0699999999999", "close": "299.9599999999999", "volume": "68431"},
+    {"datetime": "2026-05-20T12:00:00+00:00", "open": "299.9599999999999", "high": "303.6899999999999", "low": "298.8999999999999", "close": "303.0999999999999", "volume": "69682.92139439507"},
+    {"datetime": "2026-05-21T12:00:00+00:00", "open": "303.0999999999999", "high": "306.4099999999999", "low": "301.1299999999999", "close": "305.9799999999999", "volume": "70365"},
+    {"datetime": "2026-05-22T12:00:00+00:00", "open": "305.9799999999999", "high": "312.2599999999999", "low": "305.9799999999999", "close": "309.83999999999986", "volume": "77097"}
+  ],
+  "rows_digest": "767111a5c9321aa1c3b6a127d1e25c445ae8f670ca76583d412d9b43ea65dfd4",
+  "fixture_digest": "e7257f91405a0122fdd1da2cb628350c9b0bcbf203aa655cea96b9abfa9654e1"
+}

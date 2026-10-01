@@ -222,3 +222,17 @@ def test_backend_filter_covers_mixed_changes_and_shared_web_assets() -> None:
     )
     assert outputs(["apps/dsa-web/public/stocks.index.json"])[0] is True
     assert outputs(["apps/dsa-web/public/runtime/new-asset.json"])[0] is True
+
+
+def test_research_capture_workflow_records_tri_state_and_keeps_downstream_blocked() -> None:
+    workflow = _workflow(".github/workflows/research-universe-capture.yml")
+    steps = workflow["jobs"]["capture-universe"]["steps"]
+    validate_index = next(i for i, step in enumerate(steps) if step.get("name") == "Validate captured universe evidence")
+    record_index = next(i for i, step in enumerate(steps) if step.get("name") == "Record capture result states")
+    rs_index = next(i for i, step in enumerate(steps) if step.get("name") == "Run independent RS Breakout validation")
+    record_step = steps[record_index]
+    assert validate_index < record_index < rs_index
+    assert record_step["if"] == "always()"
+    assert "capture_evidence.json" in record_step["run"]
+    assert "CAPTURED_NOT_APPROVED" not in record_step["run"]
+    assert all("if" not in steps[i] for i in range(rs_index, len(steps)) if steps[i].get("name") != "Upload universe captures")

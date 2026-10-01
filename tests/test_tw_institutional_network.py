@@ -69,6 +69,10 @@ class TestTwInstitutionalLiveNetwork(unittest.TestCase):
             resp = requests.get(url, params=params, headers=_HEADERS, timeout=20)
         except requests.exceptions.RequestException as exc:
             self.skipTest(f"endpoint unreachable: {exc}")
+        if resp.status_code == 429 or resp.status_code >= 500:
+            self.skipTest(f"endpoint transient HTTP {resp.status_code}")
+        if resp.status_code >= 400:
+            self.skipTest(f"endpoint unavailable HTTP {resp.status_code}")
         try:
             return resp.json()
         except ValueError as exc:  # non-JSON body is feed drift, not a transient blip

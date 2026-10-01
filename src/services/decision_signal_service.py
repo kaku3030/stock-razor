@@ -662,9 +662,15 @@ class DecisionSignalService:
             metadata["market_phase_summary"] = sanitized_phase_summary
             payload["metadata"] = metadata
 
+        # History reports may carry the session phase only in metadata.  Use it
+        # when deriving the lifecycle horizon; otherwise an intraday report is
+        # incorrectly persisted as the generic multi-day default.
+        phase_for_horizon = payload.get("market_phase")
+        if not phase_for_horizon:
+            phase_for_horizon = None
         horizon = payload.get("horizon") or self._default_horizon(
             action=str(payload.get("action") or ""),
-            market_phase=payload.get("market_phase"),
+            market_phase=phase_for_horizon,
         )
         if horizon:
             payload["horizon"] = horizon

@@ -4,16 +4,23 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, "continuation/a4a-a4b-current-main-v0-1"]
     paths:
       - "src/repositories/candidate_pool_repo.py"
       - "src/repositories/oos_consumption_ledger_repo.py"
+      - "src/repositories/experiment_registry_repo.py"
       - "src/repositories/financial_change_repo.py"
       - "src/repositories/research_event_repo.py"
       - "src/repositories/research_priority_repo.py"
       - "src/repositories/stock_radar_technical_state_repo.py"
       - "data_provider/alpaca_market_data_adapter.py"
+      - "data_provider/sina_research_fetcher.py"
+      - "data_provider/tencent_fetcher.py"
       - "src/schemas/research_financials.py"
+      - "src/services/a_share_provider_lineage.py"
+      - "src/services/a_share_reconciliation_lineage.py"
+      - "src/services/a_share_intraday_semantics.py"
+      - "src/services/data_capability_service.py"
       - "src/services/screening/industry_radar.py"
       - "src/services/screening/earnings_valuation_radar.py"
       - "src/services/screening/financial_change.py"
@@ -25,11 +32,24 @@ on:
       - "src/services/stock_radar_v2/**"
       - "src/services/strategy_lab/**"
       - "scripts/run_us_research_scan.py"
+      - "scripts/run_rs_breakout_validation.py"
+      - "scripts/check_direct_market_sources.py"
       - "scripts/run_stock_radar_qa.py"
       - "scripts/run_stock_radar_technical_state.py"
+      - "tests/test_a_share_provider_lineage.py"
+      - "tests/test_a_share_reconciliation_lineage.py"
+      - "tests/test_a_share_intraday_semantics.py"
+      - "tests/test_data_capability_service.py"
       - "tests/test_candidate_pool_repo.py"
       - "tests/test_oos_consumption_ledger_repo.py"
+      - "src/storage.py"
       - "tests/test_alpaca_market_data_adapter.py"
+      - "tests/test_sina_research_fetcher.py"
+      - "tests/test_tencent_fetcher.py"
+      - "tests/test_direct_market_sources.py"
+      - "tests/test_baostock_fetcher.py"
+      - "tests/test_yfinance_fetcher.py"
+      - "tests/test_run_rs_breakout_validation.py"
       - "tests/test_candidate_pool_industry_metrics.py"
       - "tests/test_candidate_pool_financials.py"
       - "tests/test_industry_radar.py"
@@ -43,6 +63,9 @@ on:
       - "tests/test_research_priority_notifications.py"
       - "tests/test_stock_radar_v2_*.py"
       - "tests/test_strategy_lab_*.py"
+      - "api/v1/endpoints/research_validation.py"
+      - "api/v1/router.py"
+      - "tests/api/test_research_validation_endpoint.py"
       - ".github/workflows/research-radar-tests.yml"
   workflow_dispatch:
 
@@ -69,6 +92,10 @@ jobs:
       - name: Run focused research radar tests
         run: |
           python -m pytest -q \
+            tests/test_a_share_provider_lineage.py \
+            tests/test_a_share_reconciliation_lineage.py \
+            tests/test_a_share_intraday_semantics.py \
+            tests/test_data_capability_service.py \
             tests/test_alpaca_market_data_adapter.py \
             tests/test_candidate_pool_repo.py \
             tests/test_candidate_pool_industry_metrics.py \
@@ -107,6 +134,13 @@ jobs:
             tests/test_strategy_lab_oos_consumption.py \
             tests/test_oos_consumption_ledger_repo.py \
             tests/test_strategy_lab_parameter_drift.py \
+            tests/test_strategy_lab_replay_a2.py \
+            tests/test_strategy_lab_replay_integrity_a2.py \
+            tests/test_strategy_lab_recorded_fixtures_a3.py \
+            tests/test_strategy_lab_recorded_fixtures_a3_provenance.py \
+            tests/test_strategy_lab_raw_capture_a4.py \
+            tests/test_strategy_lab_raw_capture_integrity_a4.py \
+            tests/test_strategy_lab_provider_recorded_fixture_a4b.py \
             tests/test_run_stock_radar_qa.py \
             tests/test_run_stock_radar_technical_state.py
 

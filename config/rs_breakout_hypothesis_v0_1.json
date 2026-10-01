@@ -1,0 +1,28 @@
+{
+  "schema": "radar-rs-breakout-hypothesis-v0.1",
+  "rule_id": "oliver-kell-rs-breakout",
+  "version": "v0.1-research",
+  "status": "RESEARCH_ONLY",
+  "provenance": {
+    "parameter_source": "research_hypothesis",
+    "canonical_oliver_kell_formula": "NOT_ESTABLISHED",
+    "production_authorized": false
+  },
+  "parameters": {
+    "breakout_window_bars": 20,
+    "volume_multiple": 1.5,
+    "relative_strength_percentile": 80,
+    "holding_period_bars": 20
+  },
+  "required_counterfactuals": [
+    "WITH_RULE",
+    "WITHOUT_RULE",
+    "SHUFFLED_PLACEBO",
+    "DELAYED_RULE",
+    "REGIME_CONDITIONED"
+  ],
+  "holdout_policy": {
+    "never_seen_holdout": "PROTECTED",
+    "consumes_holdout": false
+  }
+}

@@ -14,6 +14,12 @@ from src.config import (
     AGENT_CONTEXT_COMPRESSION_PROFILES,
     AGENT_MAX_STEPS_DEFAULT,
 )
+from src.llm.local_cli_backend import (
+    DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY,
+    DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES,
+    DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS,
+)
 from src.notification_noise import NOTIFICATION_SEVERITIES
 from src.notification_routing import ROUTABLE_NOTIFICATION_CHANNELS
 
@@ -209,7 +215,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "300",
+        "default_value": str(DEFAULT_LOCAL_CLI_TIMEOUT_SECONDS),
         "options": [],
         "validation": {"min": 1, "max": 3600},
         "display_order": 1,
@@ -235,7 +241,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1048576",
+        "default_value": str(DEFAULT_LOCAL_CLI_MAX_OUTPUT_BYTES),
         "options": [],
         "validation": {"min": 1, "max": 33554432},
         "display_order": 1,
@@ -258,7 +264,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1",
+        "default_value": str(DEFAULT_GENERATION_BACKEND_MAX_CONCURRENCY),
         "options": [],
         "validation": {"min": 1, "max": 16},
         "display_order": 1,
@@ -281,7 +287,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "is_sensitive": False,
         "is_required": False,
         "is_editable": True,
-        "default_value": "1",
+        "default_value": str(DEFAULT_LOCAL_CLI_BACKEND_MAX_CONCURRENCY),
         "options": [],
         "validation": {"min": 1, "max": 4},
         "display_order": 1,
@@ -939,6 +945,32 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             {
                 "label": "Tushare 股票列表指南",
                 "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/TUSHARE_STOCK_LIST_GUIDE.md",
+            },
+        ],
+        "warning_codes": [],
+    },
+    "AKSHARE_NAME_CACHE_WARMUP_ENABLED": {
+        "title": "AkShare Name Cache Warmup",
+        "description": "Warm the AkShare stock-name cache during application startup; on-demand name resolution remains available when disabled.",
+        "category": "data_source",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 17,
+        "help_key": "settings.data_source.stock_index_remote",
+        "examples": [
+            "AKSHARE_NAME_CACHE_WARMUP_ENABLED=true",
+            "AKSHARE_NAME_CACHE_WARMUP_ENABLED=false",
+        ],
+        "docs": [
+            {
+                "label": "数据源配置指南",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/full-guide.md#数据源配置",
             },
         ],
         "warning_codes": [],
