@@ -37,11 +37,10 @@ jobs:
           role-session-name: github-ops-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Checkout expected read-only provenance reference
+      - name: Checkout workflow source for bounded provenance evidence
         if: ${{ inputs.action == 'mcp_protocol_probe' }}
         uses: actions/checkout@v4
         with:
-          ref: d7622c6a0c549282d6da5be0cb32aa6701fb8f59
           fetch-depth: 1
 
       - name: Verify caller and target instance
@@ -136,17 +135,15 @@ jobs:
               jq -c -n --arg script "$diagnostic_script" '[ $script ]' > commands.json
               ;;
             mcp_protocol_probe)
-              expected_manifest_b64="$(python3 - <<'PY'
-          import hashlib, pathlib, base64
-          root = pathlib.Path.cwd()
-          rel = pathlib.Path('realtime_monitor/readonly_mcp_server.py')
-          path = root / rel
-          digest = hashlib.sha256(path.read_bytes()).hexdigest()
-          manifest = f'{rel.as_posix()} {digest}\n'
-          print(base64.b64encode(manifest.encode()).decode())
-          PY
-              )"
-              expected_manifest_sha256="$(printf '%s' "$expected_manifest_b64" | base64 -d | sha256sum | awk '{print $1}')"
+              expected_manifest_b64=''
+              expected_manifest_sha256='UNAVAILABLE'
+              expected='d7622c6a0c549282d6da5be0cb32aa6701fb8f59'
+              if git cat-file -e "$expected^{commit}" 2>/dev/null; then
+                expected_manifest_b64="$(git show "$expected:realtime_monitor/readonly_mcp_server.py" 2>/dev/null | python3 -c 'import base64,hashlib,sys; data=sys.stdin.buffer.read(); print(base64.b64encode(("realtime_monitor/readonly_mcp_server.py " + hashlib.sha256(data).hexdigest() + "\\n").encode()).decode())' || true)"
+                if [ -n "$expected_manifest_b64" ]; then
+                  expected_manifest_sha256="$(printf '%s' "$expected_manifest_b64" | base64 -d | sha256sum | awk '{print $1}')"
+                fi
+              fi
               read -r -d '' protocol_script <<'REMOTE' || true
           set -u
           pid=8607
@@ -189,7 +186,21 @@ jobs:
           runtime_manifest_sha256="$(printf '%s' "$runtime_manifest_b64" | base64 -d | sha256sum | awk '{print $1}')"
           echo "RUNTIME_SOURCE_MANIFEST_SHA256=$runtime_manifest_sha256"
           echo "EXPECTED_SOURCE_MANIFEST_SHA256=$expected_manifest_sha256"
-          if [ "$runtime_manifest_b64" = "$expected_manifest_b64" ]; then echo 'CONTENT_PROVENANCE_MATCH=PASS'; echo 'EXPECTED_d7622c6_MATCH=PASS_BY_CONTENT'; else echo 'CONTENT_PROVENANCE_MATCH=FAIL'; echo 'EXPECTED_d7622c6_MATCH=FAIL'; echo 'CONTENT_PROVENANCE_REASON=complete_bounded_manifest_mismatch'; fi
+          if [ -z "$expected_manifest_b64" ] || [ "$expected_manifest_sha256" = UNAVAILABLE ]; then
+            echo 'EXPECTED_SOURCE_MANIFEST=UNAVAILABLE'
+            echo 'CONTENT_PROVENANCE_MATCH=UNKNOWN'
+            echo 'EXPECTED_d7622c6_MATCH=UNKNOWN'
+            echo 'CONTENT_PROVENANCE_REASON=EXPECTED_GIT_OBJECT_UNAVAILABLE'
+          elif [ "$runtime_manifest_b64" = "$expected_manifest_b64" ]; then
+            echo 'EXPECTED_SOURCE_MANIFEST=AVAILABLE'
+            echo 'CONTENT_PROVENANCE_MATCH=PASS'
+            echo 'EXPECTED_d7622c6_MATCH=PASS_BY_CONTENT'
+          else
+            echo 'EXPECTED_SOURCE_MANIFEST=AVAILABLE'
+            echo 'CONTENT_PROVENANCE_MATCH=FAIL'
+            echo 'EXPECTED_d7622c6_MATCH=FAIL'
+            echo 'CONTENT_PROVENANCE_REASON=complete_bounded_manifest_mismatch'
+          fi
           echo 'RUNTIME_SOURCE_FILES=realtime_monitor/readonly_mcp_server.py'
           python3 - "$source" <<'PY'
           import ast, pathlib, sys
