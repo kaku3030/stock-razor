@@ -12,6 +12,7 @@ on:
           - mcp_status
           - mcp_diagnose
           - mcp_protocol_probe
+          - secure_mcp_remote_e2e
 
 concurrency:
   group: aws-ssm-ops-${{ github.ref }}
@@ -342,6 +343,84 @@ jobs:
               protocol_script="${protocol_script//__EXPECTED_MANIFEST_B64__/$expected_manifest_b64}"
               protocol_script="${protocol_script//__EXPECTED_MANIFEST_SHA256__/$expected_manifest_sha256}"
               jq -c -n --arg script "$protocol_script" '[ $script ]' > commands.json
+              ;;
+            secure_mcp_remote_e2e)
+              read -r -d '' e2e_script <<'REMOTE' || true
+          set -u
+          tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
+          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
+          if ! command -v python3 >/dev/null 2>&1; then echo 'SECURE_REMOTE_MCP=UNKNOWN'; echo 'E2E_REASON=python3-unavailable'; exit 0; fi
+          if ! python3 -c 'import boto3' >/dev/null 2>&1; then echo 'SECURE_REMOTE_MCP=UNKNOWN'; echo 'E2E_REASON=boto3-unavailable'; exit 0; fi
+          api_key="$(PARAMETER_NAME="$parameter_name" python3 -c 'import os,boto3; print(boto3.client("ssm", region_name="ap-northeast-1").get_parameter(Name=os.environ["PARAMETER_NAME"], WithDecryption=True)["Parameter"]["Value"], end="")')"
+          if [ -z "$api_key" ] || [ "$api_key" = None ]; then echo 'SECURE_REMOTE_MCP=UNKNOWN'; echo 'E2E_REASON=secret-unavailable'; unset api_key; exit 0; fi
+          export OPENAI_API_KEY="$api_key"
+          unset api_key
+          python3 - "$tunnel_id" <<'PY'
+          import json, os, sys, urllib.error, urllib.request
+
+          tunnel_id = sys.argv[1]
+          expected = {'get_livefeed_health', 'get_market_snapshots', 'get_market_bars'}
+          requests = [
+              ('get_livefeed_health', 'Call get_livefeed_health exactly once with valid read-only arguments.', expected),
+              ('get_market_snapshots', 'Call get_market_snapshots exactly once for AMD with valid read-only arguments.', {'get_market_snapshots'}),
+              ('get_market_bars', 'Call get_market_bars exactly once for AMD with valid read-only arguments.', {'get_market_bars'}),
+          ]
+
+          def response_for(instruction, allowed):
+              body = {
+                  'model': 'gpt-6-astra',
+                  'tools': [{
+                      'type': 'mcp',
+                      'server_label': 'stock-razor-private',
+                      'tunnel_id': tunnel_id,
+                      'allowed_tools': sorted(allowed),
+                      'require_approval': 'never',
+                  }],
+                  'input': instruction,
+              }
+              req = urllib.request.Request(
+                  'https://api.openai.com/v1/responses',
+                  data=json.dumps(body).encode(),
+                  headers={
+                      'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'],
+                      'Content-Type': 'application/json',
+                  },
+                  method='POST',
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=90) as res:
+                      return res.status, json.loads(res.read().decode('utf-8'))
+              except urllib.error.HTTPError as exc:
+                  return exc.code, None
+              except Exception:
+                  return 0, None
+
+          discovered = None
+          calls = []
+          http_ok = True
+          for name, instruction, allowed in requests:
+              status, payload = response_for(instruction, allowed)
+              http_ok = http_ok and status == 200 and isinstance(payload, dict)
+              if not isinstance(payload, dict):
+                  continue
+              for item in payload.get('output', []):
+                  if item.get('type') == 'mcp_list_tools' and discovered is None:
+                      discovered = [tool.get('name') for tool in item.get('tools', [])]
+                  if item.get('type') == 'mcp_call' and item.get('name') == name:
+                      calls.append((name, item.get('error') is None))
+
+          names_ok = isinstance(discovered, list) and set(discovered) == expected and len(discovered) == 3
+          print('RESPONSES_API_HTTP=' + ('PASS' if http_ok else 'FAIL_OR_UNKNOWN'))
+          print('DISCOVERED_TOOLS=' + (json.dumps(discovered, separators=(',', ':')) if discovered is not None else '[UNKNOWN]'))
+          print('MCP_LIST_TOOLS=' + ('PASS' if names_ok else 'FAIL_OR_UNKNOWN'))
+          for name, ok in calls:
+              print('MCP_CALL_' + name + '=' + ('PASS' if ok else 'FAIL_OR_UNKNOWN'))
+          calls_ok = len(calls) == 3 and all(ok for _, ok in calls) and [name for name, _ in calls] == [name for name, _, _ in requests]
+          print('SECURE_REMOTE_MCP=' + ('PASS' if http_ok and names_ok and calls_ok else 'FAIL_OR_UNKNOWN'))
+          PY
+          unset OPENAI_API_KEY
+          REMOTE
+              jq -c -n --arg script "$e2e_script" '[ $script ]' > commands.json
               ;;
             *)
               echo "Unsupported action" >&2
