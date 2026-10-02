@@ -111,6 +111,18 @@ def test_valid_discovery_and_allowed_single_tool_flow() -> None:
     assert failures == []
     assert discovered is not None and set(discovered) == EXPECTED
 
+    # Match the Responses API wire shape: MCP output is a string; our tools return JSON objects.
+    _, wire_failures = validate_response(
+        {
+            "status_code": 200,
+            "output": [_call("get_livefeed_health", output='{"ok":true}')],
+        },
+        "get_livefeed_health",
+        EXPECTED,
+        discovered,
+    )
+    assert wire_failures == []
+
     discovered, failures = validate_response(
         {
             "status_code": 200,
