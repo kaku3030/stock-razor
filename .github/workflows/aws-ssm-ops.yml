@@ -379,8 +379,9 @@ jobs:
           command -v python3 >/dev/null
           mkdir -p "$tmp_dir/extracted"
           python3 -m zipfile -e "$tmp_dir/$asset" "$tmp_dir/extracted"
-          client_path="$(find "$tmp_dir/extracted" -type f -name tunnel-client -perm -u+x -print -quit)"
+          client_path="$(find "$tmp_dir/extracted" -type f -name tunnel-client -print -quit)"
           test -n "$client_path"
+          echo "TUNNEL_CLIENT_BINARY_DISCOVERY=PASS"
           install -m 0755 "$client_path" "$install_dir/tunnel-client"
           "$install_dir/tunnel-client" --version >/dev/null
           echo "TUNNEL_CLIENT_RELEASE=$release_tag"
