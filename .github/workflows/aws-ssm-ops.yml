@@ -412,7 +412,7 @@ jobs:
               )
 
           def valid_call_output(item):
-              if not isinstance(item, dict) or item.get('status') != 'completed':
+              if not isinstance(item, dict):
                   return False
               if item.get('error') not in (None, '') or 'output' not in item:
                   return False
