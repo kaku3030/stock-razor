@@ -401,7 +401,16 @@ jobs:
             echo 'BOTO3_AVAILABLE=NO'
             exit 1
           fi
-          api_key="$(aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          api_key="$(PARAMETER_NAME="$parameter_name" python3 - <<'PY'
+import os
+import boto3
+value = boto3.client("ssm", region_name="ap-northeast-1").get_parameter(
+    Name=os.environ["PARAMETER_NAME"],
+    WithDecryption=True,
+)["Parameter"]["Value"]
+print(value, end="")
+PY
+)"
           test -n "$api_key" && test "$api_key" != None
           export CONTROL_PLANE_API_KEY="$api_key"
           unset api_key
@@ -415,7 +424,16 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
-          api_key="$(/usr/bin/aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          api_key="$(PARAMETER_NAME="$parameter_name" python3 - <<'PY'
+import os
+import boto3
+value = boto3.client("ssm", region_name="ap-northeast-1").get_parameter(
+    Name=os.environ["PARAMETER_NAME"],
+    WithDecryption=True,
+)["Parameter"]["Value"]
+print(value, end="")
+PY
+)"
           test -n "$api_key" && test "$api_key" != None
           export CONTROL_PLANE_API_KEY="$api_key"
           unset api_key
