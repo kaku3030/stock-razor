@@ -168,8 +168,8 @@ def test_call_rejects_wrong_name_status_and_output() -> None:
 
     for call in (
         _call("wrong_tool"),
-        _call("get_livefeed_health", status="failed"),
-        {"type": "mcp_call", "name": "get_livefeed_health", "output": {"ok": True}},
+        _call("get_livefeed_health", error={"type": "mcp_tool_error", "message": "failed"}),
+        _call("get_livefeed_health", error="failed"),
         _call("get_livefeed_health", output=""),
         _call("get_livefeed_health", output="{malformed}"),
         _call("get_livefeed_health", output=object()),
