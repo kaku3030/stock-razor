@@ -403,15 +403,18 @@ jobs:
                   return 0, None
 
           def valid_tool_schema(tool):
+              schema = tool.get('input_schema') if isinstance(tool, dict) else None
               return (
                   isinstance(tool, dict)
                   and isinstance(tool.get('name'), str)
-                  and isinstance(tool.get('inputSchema'), dict)
-                  and tool['inputSchema'].get('type') in (None, 'object')
+                  and isinstance(schema, dict)
+                  and schema.get('type') in (None, 'object')
               )
 
           def valid_call_output(item):
-              if not isinstance(item, dict) or 'output' not in item or item['output'] is None:
+              if not isinstance(item, dict) or item.get('status') != 'completed':
+                  return False
+              if item.get('error') not in (None, '') or 'output' not in item:
                   return False
               value = item['output']
               if isinstance(value, str):
@@ -420,7 +423,7 @@ jobs:
                   try:
                       value = json.loads(value)
                   except ValueError:
-                      return True
+                      return False
               if not isinstance(value, (dict, list)):
                   return False
               return not (isinstance(value, dict) and (value.get('error') is not None or value.get('isError') is True))
@@ -441,18 +444,21 @@ jobs:
               for item in listed:
                   tools = item.get('tools')
                   names = [tool.get('name') for tool in tools] if isinstance(tools, list) else None
-                  if not isinstance(tools, list) or len(tools) != 3 or set(names) != expected or not all(valid_tool_schema(tool) for tool in tools):
+                  if not isinstance(tools, list) or len(names) != len(set(names)) or not all(valid_tool_schema(tool) for tool in tools):
                       failures.append(expected_name + ':tool-discovery-schema')
                   elif discovered is None:
-                      discovered = names
-                  elif set(discovered) != set(names) or len(discovered) != len(names):
-                      failures.append(expected_name + ':tool-discovery-changed')
+                      if len(names) != 3 or set(names) != expected:
+                          failures.append(expected_name + ':tool-discovery-incomplete')
+                      else:
+                          discovered = names
+                  elif not set(names).issubset(allowed):
+                      failures.append(expected_name + ':allowed-tools-mismatch')
               mcp_calls = [item for item in output if isinstance(item, dict) and item.get('type') == 'mcp_call']
               if len(mcp_calls) != 1:
                   failures.append(expected_name + ':call-count')
                   continue
               call = mcp_calls[0]
-              if call.get('name') != expected_name or call.get('error') not in (None, '') or not valid_call_output(call):
+              if call.get('name') != expected_name or not valid_call_output(call):
                   failures.append(expected_name + ':call-name-or-output')
               calls.append(call.get('name'))
 
