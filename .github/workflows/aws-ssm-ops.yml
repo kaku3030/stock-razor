@@ -462,7 +462,11 @@ jobs:
           echo 'SECURE_REMOTE_MCP=NOT_VERIFIED'
           echo 'CHATGPT_NATIVE_MCP_READ=NOT_VERIFIED'
           REMOTE
-              jq -c -n --arg script "$deploy_script" '[ $script ]' > commands.json
+              # AWS-RunShellScript invokes commands through /bin/sh. The deploy
+              # payload requires bash semantics (notably pipefail), so enter bash
+              # explicitly without weakening the script's fail-closed flags.
+              bash_payload="$(printf '%s' "$deploy_script" | base64 -w0)"
+              jq -c -n --arg payload "$bash_payload" '[ "printf %s " + ($payload | @sh) + " | base64 -d | /usr/bin/env bash" ]' > commands.json
               ;;
             *)
               echo "Unsupported action" >&2
