@@ -28,7 +28,7 @@ def valid_tool_schema(tool: object) -> bool:
 
 
 def valid_call_output(item: object) -> bool:
-    if not isinstance(item, dict) or item.get("status") != "completed":
+    if not isinstance(item, dict):
         return False
     if item.get("error") not in (None, "") or "output" not in item:
         return False
@@ -84,8 +84,8 @@ def validate_response(
     return discovered, failures
 
 
-def _call(name: str, *, status: str = "completed", output: object = {"ok": True}) -> dict:
-    return {"type": "mcp_call", "name": name, "status": status, "output": output}
+def _call(name: str, *, error: object = None, output: object = {"ok": True}) -> dict:
+    return {"type": "mcp_call", "name": name, "error": error, "output": output}
 
 
 def _listed(names: list[str], *, missing_schema: bool = False) -> dict:
@@ -151,8 +151,8 @@ def test_discovery_rejects_wrong_missing_extra_and_missing_schema() -> None:
 def test_call_rejects_wrong_name_status_and_output() -> None:
     for call in (
         _call("wrong_tool"),
-        _call("get_livefeed_health", status="failed"),
-        {"type": "mcp_call", "name": "get_livefeed_health", "output": {"ok": True}},
+        _call("get_livefeed_health", error={"type": "mcp_tool_error", "message": "failed"}),
+        {"type": "mcp_call", "name": "get_livefeed_health", "error": None, "output": {"ok": True}},
         _call("get_livefeed_health", output=""),
         _call("get_livefeed_health", output="{malformed}"),
         _call("get_livefeed_health", output=object()),
@@ -205,6 +205,7 @@ def test_workflow_contains_fail_closed_contract() -> None:
     )[0]
     assert "input_schema" in source
     assert "inputSchema" not in source
-    assert "item.get('status') != 'completed'" in source
+    assert "item.get('status')" not in source
+    assert "item.get('error') not in (None, '')" in source
     assert "set(names).issubset(allowed)" in source
     assert "SECURE_REMOTE_MCP=PASS" in source
