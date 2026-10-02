@@ -395,6 +395,12 @@ jobs:
               --tunnel-id "$tunnel_id" \
               --mcp-server-url "$mcp_server_url"
           fi
+          if python3 -c 'import boto3' >/dev/null 2>&1; then
+            echo 'BOTO3_AVAILABLE=YES'
+          else
+            echo 'BOTO3_AVAILABLE=NO'
+            exit 1
+          fi
           api_key="$(aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
           test -n "$api_key" && test "$api_key" != None
           export CONTROL_PLANE_API_KEY="$api_key"
