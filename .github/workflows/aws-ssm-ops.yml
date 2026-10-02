@@ -12,6 +12,7 @@ on:
           - mcp_status
           - mcp_diagnose
           - mcp_protocol_probe
+          - secure_mcp_tunnel_deploy
 
 concurrency:
   group: aws-ssm-ops-${{ github.ref }}
@@ -342,6 +343,126 @@ jobs:
               protocol_script="${protocol_script//__EXPECTED_MANIFEST_B64__/$expected_manifest_b64}"
               protocol_script="${protocol_script//__EXPECTED_MANIFEST_SHA256__/$expected_manifest_sha256}"
               jq -c -n --arg script "$protocol_script" '[ $script ]' > commands.json
+              ;;
+            secure_mcp_tunnel_deploy)
+              read -r -d '' deploy_script <<'REMOTE' || true
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
+          mcp_server_url='http://127.0.0.1:8000/mcp'
+          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
+          install_dir='/opt/stock-razor/tunnel-client'
+          profile_dir='/etc/stock-razor/tunnel-client'
+          wrapper='/usr/local/sbin/stock-razor-tunnel-client'
+          unit='/etc/systemd/system/stock-razor-secure-mcp-tunnel.service'
+          mkdir -p "$install_dir" "$profile_dir" /usr/local/sbin
+          chmod 0755 "$install_dir" /usr/local/sbin
+
+          release_json="$(curl --fail --silent --show-error --location --max-time 20 \
+            -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/openai/tunnel-client/releases/latest)"
+          release_tag="$(printf '%s' "$release_json" | jq -r 'select(.prerelease == false) | .tag_name')"
+          case "$release_tag" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo 'TUNNEL_CLIENT_RELEASE=UNKNOWN' >&2; exit 1 ;;
+          esac
+          asset="tunnel-client-${release_tag}-linux-amd64.zip"
+          checksum_url="https://github.com/openai/tunnel-client/releases/download/${release_tag}/SHA256SUMS.txt"
+          asset_url="https://github.com/openai/tunnel-client/releases/download/${release_tag}/${asset}"
+          tmp_dir="$(mktemp -d /tmp/stock-razor-tunnel.XXXXXX)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          curl --fail --silent --show-error --location --max-time 60 "$checksum_url" -o "$tmp_dir/SHA256SUMS.txt"
+          curl --fail --silent --show-error --location --max-time 120 "$asset_url" -o "$tmp_dir/$asset"
+          expected_checksum="$(awk -v file="$asset" '$2 == file { print $1; exit }' "$tmp_dir/SHA256SUMS.txt")"
+          test "${#expected_checksum}" -eq 64
+          printf '%s  %s\n' "$expected_checksum" "$tmp_dir/$asset" | sha256sum --check --status
+          unzip -oq "$tmp_dir/$asset" -d "$tmp_dir/extracted"
+          client_path="$(find "$tmp_dir/extracted" -type f -name tunnel-client -perm -u+x -print -quit)"
+          test -n "$client_path"
+          install -m 0755 "$client_path" "$install_dir/tunnel-client"
+          "$install_dir/tunnel-client" --version >/dev/null
+          echo "TUNNEL_CLIENT_RELEASE=$release_tag"
+          echo "TUNNEL_CLIENT_CHECKSUM=PASS"
+
+          if [ ! -s "$profile_dir/stock-razor-secure-mcp.yaml" ]; then
+            "$install_dir/tunnel-client" init \
+              --sample sample_mcp_with_dcr \
+              --profile stock-razor-secure-mcp \
+              --profile-dir "$profile_dir" \
+              --tunnel-id "$tunnel_id" \
+              --mcp-server-url "$mcp_server_url"
+          fi
+          api_key="$(aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          test -n "$api_key" && test "$api_key" != None
+          export CONTROL_PLANE_API_KEY="$api_key"
+          unset api_key
+          "$install_dir/tunnel-client" doctor \
+            --profile-dir "$profile_dir" \
+            --profile stock-razor-secure-mcp \
+            --explain
+          echo 'TUNNEL_CLIENT_DOCTOR=PASS'
+
+          cat > "$wrapper" <<'WRAPPER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
+          api_key="$(/usr/bin/aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          test -n "$api_key" && test "$api_key" != None
+          export CONTROL_PLANE_API_KEY="$api_key"
+          unset api_key
+          exec /opt/stock-razor/tunnel-client/tunnel-client \
+            run --profile-dir /etc/stock-razor/tunnel-client \
+            --profile stock-razor-secure-mcp \
+            --health.listen-addr 127.0.0.1:18080 \
+            --log.level info --log.format struct-text
+          WRAPPER
+          chmod 0750 "$wrapper"
+          chown root:root "$wrapper"
+
+          cat > "$unit" <<'UNIT'
+          [Unit]
+          Description=Stock Razor Secure MCP Tunnel
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=root
+          ExecStart=/usr/local/sbin/stock-razor-tunnel-client
+          Restart=on-failure
+          RestartSec=5s
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectHome=true
+          RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          chmod 0644 "$unit"
+          systemctl daemon-reload
+          systemctl enable stock-razor-secure-mcp-tunnel.service >/dev/null
+          systemctl restart stock-razor-secure-mcp-tunnel.service
+
+          ready=1
+          for attempt in $(seq 1 24); do
+            if systemctl is-active --quiet stock-razor-secure-mcp-tunnel.service && \
+              curl --fail --silent --show-error --max-time 3 -o /dev/null http://127.0.0.1:18080/readyz; then
+              ready=0
+              break
+            fi
+            sleep 5
+          done
+          if [ "$ready" -ne 0 ]; then
+            echo 'TUNNEL_CLIENT_CONNECTED_READY=FAIL' >&2
+            systemctl is-active stock-razor-secure-mcp-tunnel.service >&2 || true
+            exit 1
+          fi
+          echo 'TUNNEL_CLIENT_CONNECTED_READY=PASS'
+          echo 'SECURE_REMOTE_MCP=NOT_VERIFIED'
+          echo 'CHATGPT_NATIVE_MCP_READ=NOT_VERIFIED'
+          REMOTE
+              jq -c -n --arg script "$deploy_script" '[ $script ]' > commands.json
               ;;
             *)
               echo "Unsupported action" >&2
