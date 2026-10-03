@@ -254,16 +254,22 @@ def test_secure_remote_e2e_selector_parses_and_writes_commands_json() -> None:
     assert syntax.returncode == 0, syntax.stderr
 
     with tempfile.TemporaryDirectory() as directory:
+        github_output = Path(directory) / "github_output"
         result = subprocess.run(
             [bash, "-c", source],
             cwd=directory,
-            env={"PATH": str(Path(jq).parent), "REQUESTED_ACTION": "secure_mcp_remote_e2e"},
+            env={
+                "PATH": str(Path(jq).parent),
+                "REQUESTED_ACTION": "secure_mcp_remote_e2e",
+                "GITHUB_OUTPUT": str(github_output),
+            },
             text=True,
             capture_output=True,
             check=False,
         )
         assert result.returncode == 0, result.stderr
         commands = json.loads((Path(directory) / "commands.json").read_text(encoding="utf-8"))
+        assert "commands=" in github_output.read_text(encoding="utf-8")
 
     assert isinstance(commands, list) and len(commands) == 1
     assert "SECURE_REMOTE_MCP=PASS" in commands[0]
