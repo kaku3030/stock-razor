@@ -28,6 +28,12 @@ def test_progress_does_not_use_ordinary_string_dictionary_order():
     assert compare_progress(first, later) == 1
 
 
+def test_opaque_tie_breaker_cannot_advance_same_timestamp_and_sequence():
+    first = CanonicalProgress(datetime(2026, 10, 3, 1, 0, tzinfo=timezone.utc), 7, "9")
+    candidate = CanonicalProgress(first.provider_timestamp_utc, 7, "10")
+    assert compare_progress(first, candidate) == 0
+
+
 def test_opend_normalization_preserves_unknown_entitlement_and_phase():
     event = normalize_opend_callback(
         raw={
