@@ -77,6 +77,16 @@ def test_stale_duplicate_disconnect_and_old_generation_cannot_restore_or_extend_
     assert h.snapshot(KEY_A).lifecycle_state is LifecycleState.DISCONNECTED
 
 
+def test_future_provider_timestamp_fails_closed():
+    h = SyntheticLiveFeedQualificationHarness(runtime_instance_id="r1", provider_id="synthetic")
+    h.apply(event(ProviderEventKind.CONNECTED))
+    h.apply(event(ProviderEventKind.DATA, KEY_A, progress="1", timestamp="2026-10-03T01:05:00+00:00"))
+    snap = h.snapshot(KEY_A)
+    assert snap.lifecycle_state is LifecycleState.CONNECTED
+    assert snap.currentness.status is QualificationStatus.BLOCKED
+    assert snap.continuity.status is QualificationStatus.BLOCKED
+
+
 def test_rollover_clears_old_timestamp_ack_and_live_trust():
     h = SyntheticLiveFeedQualificationHarness(runtime_instance_id="r1", provider_id="synthetic")
     h.apply(event(ProviderEventKind.CONNECTED))
