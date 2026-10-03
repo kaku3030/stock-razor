@@ -360,6 +360,7 @@ jobs:
           unset api_key
           python3 - "$tunnel_id" <<'PY'
           import json
+          import math
           import os
           import re
           import sys
@@ -408,7 +409,7 @@ jobs:
               value = exc.headers.get('Retry-After') if exc.headers else None
               try:
                   seconds = float(value)
-                  if seconds < 0:
+                  if seconds < 0 or not math.isfinite(seconds):
                       raise ValueError
               except (TypeError, ValueError):
                   seconds = RETRY_AFTER_FALLBACK_SECONDS

@@ -116,7 +116,7 @@ def test_429_valid_retry_after_sleeps_once_and_succeeds(
     assert sleeps == [20.0]
 
 
-@pytest.mark.parametrize("retry_after", [None, "invalid", "-1"])
+@pytest.mark.parametrize("retry_after", [None, "invalid", "-1", "nan"])
 def test_429_missing_or_invalid_retry_after_uses_fallback(
     monkeypatch: pytest.MonkeyPatch,
     retry_after: str | None,
@@ -173,6 +173,8 @@ def test_workflow_keeps_sensitive_request_data_out_of_diagnostics() -> None:
 
     assert "Retry-After" in source
     assert "Authorization" in source
+    assert "REQUEST_PACING_SECONDS = 25" in source
+    assert "time.sleep(REQUEST_PACING_SECONDS)" in source
     assert "print('RESPONSES_ERROR_'" in source
     assert "print(exc.headers" not in source
     assert "print(body" not in source
