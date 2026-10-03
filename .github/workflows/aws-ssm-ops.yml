@@ -475,7 +475,7 @@ jobs:
               raise SystemExit(1)
           print('SECURE_REMOTE_MCP=PASS')
           PY
-            REMOTE
+          REMOTE
               jq -c -n --arg script "$e2e_script" '[ $script ]' > commands.json
               ;;
             secure_mcp_tunnel_deploy)
