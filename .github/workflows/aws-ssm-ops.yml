@@ -363,6 +363,7 @@ jobs:
           import os
           import re
           import sys
+          import time
           import urllib.error
           import urllib.request
 
@@ -373,6 +374,9 @@ jobs:
               ('get_market_snapshots', 'Call get_market_snapshots exactly once for AMD with valid read-only arguments.', {'get_market_snapshots'}),
               ('get_market_bars', 'Call get_market_bars exactly once for AMD with valid read-only arguments.', {'get_market_bars'}),
           ]
+          RETRY_AFTER_FALLBACK_SECONDS = 25
+          RETRY_AFTER_MAX_SECONDS = 60
+          REQUEST_PACING_SECONDS = 25
 
           def clean_diagnostic(value, limit=400):
               if not isinstance(value, str):
@@ -400,6 +404,16 @@ jobs:
                       diagnostic[key] = value
               return diagnostic
 
+          def retry_after_seconds(exc):
+              value = exc.headers.get('Retry-After') if exc.headers else None
+              try:
+                  seconds = float(value)
+                  if seconds < 0:
+                      raise ValueError
+              except (TypeError, ValueError):
+                  seconds = RETRY_AFTER_FALLBACK_SECONDS
+              return min(seconds, RETRY_AFTER_MAX_SECONDS)
+
           def response_for(instruction, allowed):
               body = {
                   'model': 'gpt-6-astra',
@@ -421,15 +435,20 @@ jobs:
                   },
                   method='POST',
               )
-              try:
-                  with urllib.request.urlopen(req, timeout=90) as res:
-                      return res.status, json.loads(res.read().decode('utf-8')), None
-              except urllib.error.HTTPError as exc:
-                  return exc.code, None, http_error_diagnostic(exc)
-              except OSError:
-                  return 0, None, {'category': 'NETWORK_ERROR'}
-              except ValueError:
-                  return 0, None, {'category': 'RESPONSE_JSON_ERROR'}
+              for attempt in range(2):
+                  try:
+                      with urllib.request.urlopen(req, timeout=90) as res:
+                          return res.status, json.loads(res.read().decode('utf-8')), None
+                  except urllib.error.HTTPError as exc:
+                      diagnostic = http_error_diagnostic(exc)
+                      if exc.code != 429 or attempt:
+                          return exc.code, None, diagnostic
+                      time.sleep(retry_after_seconds(exc))
+                  except OSError:
+                      return 0, None, {'category': 'NETWORK_ERROR'}
+                  except ValueError:
+                      return 0, None, {'category': 'RESPONSE_JSON_ERROR'}
+              return 0, None, {'category': 'RETRY_EXHAUSTED'}
 
           def valid_tool_schema(tool):
               schema = tool.get('input_schema') if isinstance(tool, dict) else None
@@ -461,6 +480,8 @@ jobs:
           discovered = None
           calls = []
           for expected_name, instruction, allowed in requests:
+              if calls:
+                  time.sleep(REQUEST_PACING_SECONDS)
               status, payload, diagnostic = response_for(instruction, allowed)
               if status != 200 or not isinstance(payload, dict):
                   failures.append(expected_name + ':responses-http-or-json')
