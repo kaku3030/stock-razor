@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
+import textwrap
+import urllib.error
+import urllib.request
 
 import yaml
 
@@ -223,6 +227,9 @@ def test_workflow_contains_fail_closed_contract() -> None:
     assert "item.get('status')" not in source
     assert "item.get('error') not in (None, '')" in source
     assert "set(names).issubset(allowed)" in source
+    assert "RESPONSES_ERROR_" in source
+    assert "NETWORK_ERROR" in source
+    assert "RESPONSE_JSON_ERROR" in source
     assert "SECURE_REMOTE_MCP=PASS" in source
 
 
@@ -274,3 +281,135 @@ def test_secure_remote_e2e_selector_parses_and_writes_commands_json() -> None:
     assert isinstance(commands, list) and len(commands) == 1
     assert "SECURE_REMOTE_MCP=PASS" in commands[0]
     assert "Unsupported action" not in result.stdout
+
+
+def _response_for_source() -> str:
+    workflow = yaml.load(
+        (ROOT / ".github/workflows/aws-ssm-ops.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    command_set = next(
+        step for step in workflow["jobs"]["read-only-ssm"]["steps"]
+        if step.get("id") == "command-set"
+    )
+    source = str(command_set["run"])
+    return source.split("secure_mcp_remote_e2e)", 1)[1].split(
+        "secure_mcp_tunnel_deploy)", 1
+    )[0].split("python3 - \"$tunnel_id\" <<'PY'", 1)[1].split(
+        "\nPY\nREMOTE", 1
+    )[0]
+
+
+def _load_response_for():
+    full_source = textwrap.dedent(_response_for_source())
+    source = (
+        "import json\nimport os\nimport re\nimport urllib.error\nimport urllib.request\n"
+        "tunnel_id = 'test-tunnel'\n"
+        + full_source[full_source.index("def clean_diagnostic"):full_source.index("def valid_tool_schema")]
+    )
+    namespace = {
+        "json": json,
+        "os": __import__("os"),
+        "re": re,
+        "sys": __import__("sys"),
+        "urllib": __import__("urllib"),
+    }
+    exec(compile(source, "aws-ssm-ops.yml:secure_mcp_remote_e2e", "exec"), namespace)
+    return namespace["response_for"]
+
+
+class _FakeHTTPError(urllib.error.HTTPError):
+    def __init__(self, body: bytes):
+        super().__init__("https://api.openai.com/v1/responses", 401, "Unauthorized", {}, None)
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def test_response_for_extracts_redacted_http_error(monkeypatch) -> None:
+    secret = "sk-secret-value"
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    body = json.dumps(
+        {
+            "error": {
+                "type": "invalid_request_error",
+                "code": "model_not_found",
+                "message": "line one\nline two " + secret,
+                "param": secret,
+            },
+            "headers": {"Authorization": "Bearer " + secret},
+        }
+    ).encode()
+
+    def fail(*args, **kwargs):
+        raise _FakeHTTPError(body)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail)
+    response_for = _load_response_for()
+    status, payload, diagnostic = response_for("probe", {"get_livefeed_health"})
+
+    assert (status, payload) == (401, None)
+    assert diagnostic == {
+        "category": "HTTP_ERROR",
+        "type": "invalid_request_error",
+        "code": "model_not_found",
+        "message": "line one line two [REDACTED]",
+    }
+    output = json.dumps(diagnostic)
+    assert "Authorization" not in output
+    assert "param" not in output
+
+
+def test_response_for_non_json_and_safe_categories(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def non_json(*args, **kwargs):
+        raise _FakeHTTPError(b"secret body\nAuthorization: Bearer sk-secret")
+
+    monkeypatch.setattr(urllib.request, "urlopen", non_json)
+    response_for = _load_response_for()
+    assert response_for("probe", set())[2] == {"category": "HTTP_ERROR_NON_JSON"}
+
+    def network_failure(*args, **kwargs):
+        raise OSError("https://user:secret@example.test/?api_key=sk-secret")
+
+    monkeypatch.setattr(urllib.request, "urlopen", network_failure)
+    assert response_for("probe", set())[2] == {"category": "NETWORK_ERROR"}
+
+    def invalid_json(*args, **kwargs):
+        class Response:
+            status = 200
+
+            def read(self):
+                return b"not-json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        return Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", invalid_json)
+    assert response_for("probe", set())[2] == {"category": "RESPONSE_JSON_ERROR"}
+
+
+def test_response_for_truncates_and_cleans_message(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    message = "a\n\tb" + ("x" * 500)
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            _FakeHTTPError(
+                json.dumps({"error": {"message": message}}).encode()
+            )
+        ),
+    )
+    response_for = _load_response_for()
+    diagnostic = response_for("probe", set())[2]
+    assert len(diagnostic["message"]) == 400
+    assert "\n" not in diagnostic["message"]
+    assert "\t" not in diagnostic["message"]
