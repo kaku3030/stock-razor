@@ -38,3 +38,11 @@ def test_only_runtime_verified_live_current_continuous_snapshot_is_admitted():
     result = admit_livefeed_for_radar(snapshot())
     assert result.admitted is True
     assert result.reason == "QUALIFIED_LIVEFEED"
+
+
+def test_live_lifecycle_cannot_override_blocked_continuity():
+    result = admit_livefeed_for_radar(
+        snapshot(continuity=QualificationFact(QualificationStatus.BLOCKED))
+    )
+    assert result.admitted is False
+    assert result.reason == "CONTINUITY_NOT_PROVEN"
