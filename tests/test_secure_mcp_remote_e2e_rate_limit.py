@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import io
 import json
+import math
 import textwrap
 import urllib.error
 import urllib.request
@@ -32,6 +33,7 @@ def _probe_namespace(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     tree = ast.parse(_script_source())
     namespace: dict[str, object] = {
         "json": json,
+        "math": math,
         "os": SimpleNamespace(environ={"OPENAI_API_KEY": SECRET}),
         "re": __import__("re"),
         "time": SimpleNamespace(sleep=lambda _seconds: None),
