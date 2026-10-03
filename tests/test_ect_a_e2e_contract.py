@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 
 import yaml
 
@@ -221,3 +224,47 @@ def test_workflow_contains_fail_closed_contract() -> None:
     assert "item.get('error') not in (None, '')" in source
     assert "set(names).issubset(allowed)" in source
     assert "SECURE_REMOTE_MCP=PASS" in source
+
+
+def test_secure_remote_e2e_selector_parses_and_writes_commands_json() -> None:
+    workflow = yaml.load(
+        (ROOT / ".github/workflows/aws-ssm-ops.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    command_set = next(
+        step for step in workflow["jobs"]["read-only-ssm"]["steps"]
+        if step.get("id") == "command-set"
+    )
+    source = str(command_set["run"])
+
+    bash = shutil.which("bash")
+    jq = shutil.which("jq")
+    if not bash or not jq:
+        import pytest
+
+        pytest.skip("bash and jq are required to execute the workflow selector")
+
+    syntax = subprocess.run(
+        [bash, "-n"],
+        input=source,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+
+    with tempfile.TemporaryDirectory() as directory:
+        result = subprocess.run(
+            [bash, "-c", source],
+            cwd=directory,
+            env={"PATH": str(Path(jq).parent), "REQUESTED_ACTION": "secure_mcp_remote_e2e"},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        commands = json.loads((Path(directory) / "commands.json").read_text(encoding="utf-8"))
+
+    assert isinstance(commands, list) and len(commands) == 1
+    assert "SECURE_REMOTE_MCP=PASS" in commands[0]
+    assert "Unsupported action" not in result.stdout
