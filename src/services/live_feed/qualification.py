@@ -8,7 +8,7 @@ entitlement checks, or cloud runtime assumptions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping
@@ -23,6 +23,11 @@ from data_provider.live_feed_types import (
 from data_provider.provider_normalization import compare_progress, decode_progress
 from data_provider.market_data_adapter import MarketDataHealth
 from src.services.realtime_quote_currentness import evaluate_quote_currentness
+from data_provider.futures_qualification import (
+    FuturesCurrentnessDecision,
+    FuturesSessionPolicy,
+    evaluate_futures_currentness,
+)
 
 
 class QualificationStatus(str, Enum):
@@ -215,3 +220,53 @@ class SyntheticLiveFeedQualificationHarness:
             ),
             findings=tuple(state.findings),
         )
+
+
+class FuturesLiveFeedQualificationHarness:
+    """Feed futures events into the existing qualification semantics.
+
+    Yahoo futures evidence is deliberately forced to ``UNKNOWN`` delivery
+    mode at this boundary.  A fresh vendor timestamp, or a test that mutates
+    the event to claim ``REALTIME``, therefore cannot promote the stream.
+    """
+
+    def __init__(
+        self,
+        *,
+        runtime_instance_id: str,
+        provider_id: str = "yahoo_finance",
+        session_policy: FuturesSessionPolicy,
+        max_age_seconds: int = 900,
+    ) -> None:
+        self._qualification = SyntheticLiveFeedQualificationHarness(
+            runtime_instance_id=runtime_instance_id,
+            provider_id=provider_id,
+            max_age_seconds=max_age_seconds,
+        )
+        self._session_policy = session_policy
+        self._max_age_seconds = max_age_seconds
+        self._decisions: dict[SemanticStreamKey, FuturesCurrentnessDecision] = {}
+
+    def apply(self, event: ProviderEvent) -> None:
+        if event.event_kind is ProviderEventKind.DATA and event.semantic_stream_key is not None:
+            decision = evaluate_futures_currentness(
+                event,
+                now_utc=event.observed_at_utc,
+                session_policy=self._session_policy,
+                max_age_seconds=self._max_age_seconds,
+            )
+            self._decisions[event.semantic_stream_key] = decision
+            # Entitlement is an independent gate.  Do not trust the event's
+            # delivery label merely because it came from a test/provider row.
+            event = replace(event, delivery_mode=DeliveryMode.UNKNOWN)
+        self._qualification.apply(event)
+
+    def currentness_decision(self, key: SemanticStreamKey) -> FuturesCurrentnessDecision | None:
+        return self._decisions.get(key)
+
+    def rollover_generation(self, generation: int) -> None:
+        self._qualification.rollover_generation(generation)
+        self._decisions.clear()
+
+    def snapshot(self, key: SemanticStreamKey) -> StreamQualification:
+        return self._qualification.snapshot(key)
