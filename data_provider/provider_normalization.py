@@ -78,9 +78,9 @@ def compare_progress(previous: CanonicalProgress, current: CanonicalProgress) ->
         return 0
     if current.sequence != previous.sequence:
         return (current.sequence > previous.sequence) - (current.sequence < previous.sequence)
-    if previous.tie_breaker is None or current.tie_breaker is None:
-        return 0
-    return (current.tie_breaker > previous.tie_breaker) - (current.tie_breaker < previous.tie_breaker)
+    # tie_breaker is opaque evidence in V0.1, not an ordering primitive.
+    # A provider-specific ordering contract must be proven before it may advance continuity.
+    return 0
 
 
 def _delivery_mode(raw: Mapping[str, Any]) -> DeliveryMode:
