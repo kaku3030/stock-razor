@@ -48,6 +48,23 @@ the existing LiveFeed ingress. It does not open an order connection, subscribe
 to a live feed, promote freshness to REALTIME, or alter Radar/Main Control
 qualification.
 
+## Currentness and qualification boundary
+
+`data_provider/futures_qualification.py` is the small futures-specific gate
+before the existing two-phase LiveFeed qualification harness. It requires an
+independently verified exchange holiday calendar, an active session (including
+the daily break and weekend closure), a timezone-aware non-future timestamp,
+bounded age, positive progress evidence, volume, and unambiguous contract/feed
+metadata. Duplicate or non-progress events remain subject to the existing
+strict continuity comparator; disconnects and generation rollover clear prior
+trust. `UNKNOWN` or `DELAYED` delivery remains blocked, so Yahoo timestamps
+never establish REALTIME or LIVE.
+
+The session policy is intentionally conservative: an unverified holiday
+calendar is not treated as proof of currentness, and ambiguous roll state or
+missing actual-contract metadata fails closed. This is evidence qualification,
+not entitlement proof or production controller LIVE authority.
+
 External references used for this audit:
 
 - [Yahoo Finance commodity futures](https://finance.yahoo.com/markets/commodities/)
