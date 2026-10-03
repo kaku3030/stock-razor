@@ -7,6 +7,7 @@ from data_provider.live_feed_types import (
     ProviderEventKind,
     SemanticStreamKey,
 )
+from data_provider.provider_normalization import CanonicalProgress
 from src.services.live_feed.qualification import QualificationStatus, SyntheticLiveFeedQualificationHarness
 
 
@@ -18,6 +19,7 @@ KEY_B = SemanticStreamKey("synthetic", "US", "B", "BAR", timeframe="1m")
 def event(kind, key=None, *, generation=0, progress=None, timestamp="2026-10-03T01:00:00+00:00", phase=None):
     payload = {"provider_timestamp": timestamp, "data_quality": "ok"}
     if progress is not None:
+        progress = CanonicalProgress(datetime.fromisoformat(timestamp), int(progress)).encode()
         payload["progress_identity"] = progress
     if phase is not None:
         payload["phase"] = phase
