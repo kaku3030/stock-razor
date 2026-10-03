@@ -7,6 +7,7 @@ from data_provider.live_feed_types import (
     ProviderEventKind,
     SemanticStreamKey,
 )
+from data_provider.provider_normalization import CanonicalProgress
 from src.services.live_feed.qualification import QualificationStatus, SyntheticLiveFeedQualificationHarness
 
 
@@ -18,6 +19,7 @@ KEY_B = SemanticStreamKey("synthetic", "US", "B", "BAR", timeframe="1m")
 def event(kind, key=None, *, generation=0, progress=None, timestamp="2026-10-03T01:00:00+00:00", phase=None):
     payload = {"provider_timestamp": timestamp, "data_quality": "ok"}
     if progress is not None:
+        progress = CanonicalProgress(datetime.fromisoformat(timestamp), int(progress)).encode()
         payload["progress_identity"] = progress
     if phase is not None:
         payload["phase"] = phase
@@ -73,6 +75,16 @@ def test_stale_duplicate_disconnect_and_old_generation_cannot_restore_or_extend_
     assert h.snapshot(KEY_A).lifecycle_state is LifecycleState.DISCONNECTED
     h.apply(event(ProviderEventKind.DATA, KEY_A, generation=0, progress="3"))
     assert h.snapshot(KEY_A).lifecycle_state is LifecycleState.DISCONNECTED
+
+
+def test_future_provider_timestamp_fails_closed():
+    h = SyntheticLiveFeedQualificationHarness(runtime_instance_id="r1", provider_id="synthetic")
+    h.apply(event(ProviderEventKind.CONNECTED))
+    h.apply(event(ProviderEventKind.DATA, KEY_A, progress="1", timestamp="2026-10-03T01:05:00+00:00"))
+    snap = h.snapshot(KEY_A)
+    assert snap.lifecycle_state is LifecycleState.CONNECTED
+    assert snap.currentness.status is QualificationStatus.BLOCKED
+    assert snap.continuity.status is QualificationStatus.BLOCKED
 
 
 def test_rollover_clears_old_timestamp_ack_and_live_trust():

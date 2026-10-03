@@ -20,6 +20,7 @@ from data_provider.live_feed_types import (
     ProviderEventKind,
     SemanticStreamKey,
 )
+from data_provider.provider_normalization import compare_progress, decode_progress
 from data_provider.market_data_adapter import MarketDataHealth
 from src.services.realtime_quote_currentness import evaluate_quote_currentness
 
@@ -53,7 +54,7 @@ class StreamQualification:
 
 @dataclass
 class _StreamState:
-    last_progress: str | None = None
+    last_progress: Any = None
     last_bar_ts: datetime | None = None
     currentness: QualificationFact = field(
         default_factory=lambda: QualificationFact(QualificationStatus.UNKNOWN, reason="NO_CURRENTNESS_EVIDENCE")
@@ -159,7 +160,8 @@ class SyntheticLiveFeedQualificationHarness:
             state.currentness = QualificationFact(QualificationStatus.BLOCKED, reason=decision.reason)
             state.continuity = QualificationFact(QualificationStatus.BLOCKED, reason="CURRENTNESS_NOT_PROVEN")
             return
-        if not isinstance(progress, str) or not progress:
+        parsed_progress = decode_progress(progress) if isinstance(progress, str) else None
+        if parsed_progress is None:
             state.live = False
             state.currentness = QualificationFact(QualificationStatus.BLOCKED, reason="MISSING_PROGRESS_IDENTITY")
             state.continuity = QualificationFact(QualificationStatus.BLOCKED, reason="MISSING_PROGRESS_IDENTITY")
@@ -170,16 +172,16 @@ class SyntheticLiveFeedQualificationHarness:
             QualificationStatus.PROVEN, value=decision.provider_timestamp, reason="CURRENTNESS_PROVEN"
         )
         if state.last_progress is None:
-            state.last_progress = progress
+            state.last_progress = parsed_progress
             state.continuity = QualificationFact(QualificationStatus.UNKNOWN, reason="WAITING_FOR_LATER_PROGRESS")
             state.live = False
             return
-        if progress <= state.last_progress:
+        if compare_progress(state.last_progress, parsed_progress) <= 0:
             state.findings.append("NO_PROGRESS_DUPLICATE_OR_OLD")
             state.continuity = QualificationFact(QualificationStatus.BLOCKED, reason="NO_STRICTLY_LATER_PROGRESS")
             state.live = False
             return
-        state.last_progress = progress
+        state.last_progress = parsed_progress
         state.continuity = QualificationFact(QualificationStatus.PROVEN, reason="CONTINUITY_PROVEN")
         state.live = self._connected
 
