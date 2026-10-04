@@ -22,32 +22,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-
       - name: Bind deployment SHA
         id: source
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "main" || true
           sha="$(git rev-parse HEAD)"
           test -n "$sha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
           role-session-name: futures-runtime-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Verify fixed SSM target
         shell: bash
         run: |
           set -euo pipefail
           aws sts get-caller-identity >/dev/null
-          test "$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --query 'Reservations[0].Instances[0].InstanceId' --output text)" = "$TARGET_INSTANCE_ID"
+          aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].{InstanceId:InstanceId,PingStatus:PingStatus,AgentVersion:AgentVersion,PlatformName:PlatformName,PlatformVersion:PlatformVersion,LastPingDateTime:LastPingDateTime}' --output json
           test "$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].InstanceId' --output text)" = "$TARGET_INSTANCE_ID"
-
       - name: Deploy exact main SHA over SSM
         id: deploy
         shell: bash
@@ -69,14 +64,9 @@ jobs:
           encoded="$(printf '%s' "$remote_script" | base64 -w0)"
           wrapper="printf '%s' '$encoded' | base64 -d | bash"
           parameters="$(jq -cn --arg c "$wrapper" '{commands:[$c]}')"
-          command_id="$(aws ssm send-command \
-            --document-name AWS-RunShellScript \
-            --instance-ids "$TARGET_INSTANCE_ID" \
-            --parameters "$parameters" \
-            --query 'Command.CommandId' --output text)"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$parameters" --query 'Command.CommandId' --output text)"
           test -n "$command_id"
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
-
       - name: Wait and collect runtime evidence
         shell: bash
         env:
@@ -86,32 +76,21 @@ jobs:
           status=""
           for _ in $(seq 1 90); do
             status="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
-            case "$status" in
-              Success|Failed|Cancelled|TimedOut) break ;;
-            esac
+            case "$status" in Success|Failed|Cancelled|TimedOut) break ;; esac
             sleep 5
           done
-          invocation="$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$TARGET_INSTANCE_ID" \
-            --query '{Status:Status,ResponseCode:ResponseCode,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
-            --output json)"
+          invocation="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --query '{Status:Status,StatusDetails:StatusDetails,ResponseCode:ResponseCode,ExecutionStartDateTime:ExecutionStartDateTime,ExecutionElapsedTime:ExecutionElapsedTime,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' --output json)"
           printf '%s\n' "$invocation"
-          test "$status" = "Success"
+          if [ "$status" != "Success" ]; then
+            aws ssm list-command-invocations --command-id "$COMMAND_ID" --details --output json || true
+            exit 1
+          fi
           out="$(jq -r '.StandardOutputContent // ""' <<<"$invocation")"
-          require_evidence() {
-            local label="$1" pattern="$2"
-            if ! grep -q -- "$pattern" <<<"$out"; then
-              echo "FUTURES_RUNTIME_EVIDENCE_MISSING=$label" >&2
-              exit 1
-            fi
-          }
-          require_evidence SERVICE_ACTIVE '^active$'
-          require_evidence SERVICE_ENABLED '^enabled$'
-          require_evidence HEARTBEAT '"type":"futures_runtime_heartbeat"'
-          require_evidence LIVE_TRADE_FALSE '"live_trade":false'
+          grep -q '^active$' <<<"$out" || { echo "FUTURES_RUNTIME_EVIDENCE_MISSING=SERVICE_ACTIVE" >&2; exit 1; }
+          grep -q '^enabled$' <<<"$out" || { echo "FUTURES_RUNTIME_EVIDENCE_MISSING=SERVICE_ENABLED" >&2; exit 1; }
+          grep -q '"type":"futures_runtime_heartbeat"' <<<"$out" || { echo "FUTURES_RUNTIME_EVIDENCE_MISSING=HEARTBEAT" >&2; exit 1; }
+          grep -q '"live_trade":false' <<<"$out" || { echo "FUTURES_RUNTIME_EVIDENCE_MISSING=LIVE_TRADE_FALSE" >&2; exit 1; }
           echo "FUTURES_AWS_RUNTIME_DEPLOYMENT=PASS"
           echo "CLOUD_RUNTIME=NOT_VERIFIED"
           echo "PC_OFF_INDEPENDENCE=NOT_VERIFIED"
           echo "LIVE_TRADE=NO"
-
