@@ -5301,41 +5301,14 @@ def data_health_check(symbol: str = "US.NVDA", timeframe: str = "15m"):
 
 
 
-FUTURES_RUNTIME_STATUS_PATH = os.environ.get(
-    "STOCK_RAZOR_FUTURES_STATUS_PATH",
-    "/run/stock-razor-futures/latest-heartbeat.json",
-)
-FUTURES_RUNTIME_STATUS_MAX_AGE_SECONDS = 180
+from data_provider.futures_runtime_health import read_futures_runtime_health
+
 
 @mcp.tool()
 def get_futures_runtime_health():
-    """Read the latest Futures worker heartbeat; never infers realtime/trading permission."""
-    try:
-        with open(FUTURES_RUNTIME_STATUS_PATH, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, ValueError, TypeError) as exc:
-        return {"ok": False, "status": "UNAVAILABLE", "error": type(exc).__name__,
-                "realtime_verified": False, "live_trade": False}
-    required = ("runtime_instance_id", "generation", "host_id", "sequence", "emitted_at_utc")
-    if payload.get("type") != "futures_runtime_heartbeat" or any(k not in payload for k in required):
-        return {"ok": False, "status": "INVALID", "realtime_verified": False, "live_trade": False}
-    try:
-        emitted = datetime.fromisoformat(payload["emitted_at_utc"])
-        if emitted.tzinfo is None or emitted.utcoffset() is None:
-            raise ValueError("naive timestamp")
-        age = (datetime.now(timezone.utc) - emitted.astimezone(timezone.utc)).total_seconds()
-    except (TypeError, ValueError):
-        return {"ok": False, "status": "INVALID", "realtime_verified": False, "live_trade": False}
-    fresh = 0 <= age <= FUTURES_RUNTIME_STATUS_MAX_AGE_SECONDS
-    return clean_json_value({
-        "ok": fresh,
-        "status": "HEALTHY" if fresh else "STALE",
-        "age_seconds": age,
-        "heartbeat": payload,
-        "realtime_verified": False,
-        "radar_admission": "BLOCKED",
-        "live_trade": False,
-    })
+    """Read Futures worker heartbeat evidence without granting runtime permissions."""
+    return clean_json_value(read_futures_runtime_health())
+
 
 @mcp.tool()
 def health_check():
