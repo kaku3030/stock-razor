@@ -63,8 +63,8 @@ jobs:
           systemctl is-active stock-razor-futures.service
           systemctl is-enabled stock-razor-futures.service
           journalctl -u stock-razor-futures.service -n 20 --no-pager | tail -n 20"
-          commands="$(jq -cn --arg c "$remote" '[ $c ]')"
-          command_id="$(aws ssm send-command             --document-name AWS-RunShellScript             --instance-ids "$TARGET_INSTANCE_ID"             --parameters "commands=$commands"             --query 'Command.CommandId' --output text)"
+          commands="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command             --document-name AWS-RunShellScript             --instance-ids "$TARGET_INSTANCE_ID"             --parameters "$commands"             --query 'Command.CommandId' --output text)"
           test -n "$command_id"
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
 
@@ -102,7 +102,10 @@ jobs:
               exit 1
             fi
           }
-          require_evidence SERVICE_ACTIVE '^active
+          require_evidence SERVICE_ACTIVE '^active$'
+          require_evidence SERVICE_ENABLED '^enabled$'
+          require_evidence HEARTBEAT '"type":"futures_runtime_heartbeat"'
+          require_evidence LIVE_TRADE_FALSE '"live_trade":false'
           echo "FUTURES_AWS_RUNTIME_DEPLOYMENT=PASS"
           echo "CLOUD_RUNTIME=NOT_VERIFIED"
           echo "PC_OFF_INDEPENDENCE=NOT_VERIFIED"
