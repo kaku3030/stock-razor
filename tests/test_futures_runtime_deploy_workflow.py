@@ -7,6 +7,7 @@ def test_manual_oidc_ssm_deploy_is_fixed_and_read_only():
     assert "workflow_dispatch:" in WORKFLOW
     assert "id-token: write" in WORKFLOW
     assert "StockRazorGitHubOpsRole" in WORKFLOW
+    assert "environment:" not in WORKFLOW
     assert "ap-northeast-1" in WORKFLOW
     assert "i-01738342af3efac72" in WORKFLOW
     assert "AWS-RunShellScript" in WORKFLOW
