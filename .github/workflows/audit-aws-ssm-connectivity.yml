@@ -19,16 +19,45 @@ jobs:
           role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
           role-session-name: ssm-connectivity-audit-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Audit EC2 and SSM control-plane state
+      - name: Audit EC2, network and SSM control-plane state
         shell: bash
         run: |
-          set -euo pipefail
-          echo "=== CALLER ==="
-          aws sts get-caller-identity
+          set -uo pipefail
+          probe() {
+            local label="$1"; shift
+            echo "=== $label ==="
+            if ! "$@"; then
+              echo "AUDIT_PROBE_UNAVAILABLE=$label"
+            fi
+          }
+
+          probe CALLER aws sts get-caller-identity
+
           echo "=== EC2 ==="
-          aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --query 'Reservations[0].Instances[0].{InstanceId:InstanceId,State:State.Name,PrivateIp:PrivateIpAddress,PublicIp:PublicIpAddress,VpcId:VpcId,SubnetId:SubnetId,IamInstanceProfile:IamInstanceProfile.Arn,SecurityGroups:SecurityGroups[*].GroupId,LaunchTime:LaunchTime}' --output json
-          echo "=== INSTANCE STATUS ==="
-          aws ec2 describe-instance-status --instance-ids "$TARGET_INSTANCE_ID" --include-all-instances --query 'InstanceStatuses[0].{InstanceState:InstanceState.Name,SystemStatus:SystemStatus.Status,InstanceStatus:InstanceStatus.Status,Events:Events}' --output json
-          echo "=== SSM ==="
-          aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].{InstanceId:InstanceId,PingStatus:PingStatus,AgentVersion:AgentVersion,PlatformName:PlatformName,PlatformVersion:PlatformVersion,LastPingDateTime:LastPingDateTime,AssociationStatus:AssociationStatus}' --output json
+          ec2_json="$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --output json)"
+          jq '.Reservations[0].Instances[0] | {
+            InstanceId, State:.State.Name, PrivateIp:.PrivateIpAddress,
+            PublicIp:.PublicIpAddress, VpcId, SubnetId,
+            IamInstanceProfile:.IamInstanceProfile.Arn,
+            SecurityGroups:[.SecurityGroups[].GroupId], LaunchTime
+          }' <<<"$ec2_json"
+
+          VPC_ID="$(jq -r '.Reservations[0].Instances[0].VpcId' <<<"$ec2_json")"
+          SUBNET_ID="$(jq -r '.Reservations[0].Instances[0].SubnetId' <<<"$ec2_json")"
+          SG_IDS="$(jq -r '.Reservations[0].Instances[0].SecurityGroups[].GroupId' <<<"$ec2_json" | paste -sd, -)"
+
+          probe INSTANCE_STATUS aws ec2 describe-instance-status --instance-ids "$TARGET_INSTANCE_ID" --include-all-instances --output json
+          probe SUBNET aws ec2 describe-subnets --subnet-ids "$SUBNET_ID" --output json
+          probe ROUTE_TABLE aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --output json
+          probe MAIN_ROUTE_TABLE aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" --output json
+          probe INTERNET_GATEWAY aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --output json
+          if [[ -n "$SG_IDS" ]]; then
+            probe SECURITY_GROUPS aws ec2 describe-security-groups --group-ids ${SG_IDS//,/ } --output json
+          fi
+          probe VPC_ENDPOINTS aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$VPC_ID" --output json
+
+          probe SSM aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --output json
+
           echo "AWS_SSM_CONNECTIVITY_AUDIT=COMPLETE"
+          echo "AUDIT_MUTATIONS=NONE"
+          echo "LIVE_TRADE=NO"
