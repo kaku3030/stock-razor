@@ -1,81 +1,49 @@
 # -*- coding: utf-8 -*-
-"""
-===================================
-数据源策略层 - 包初始化
-===================================
+"""Provider package namespace with lazy compatibility exports.
 
-本包实现策略模式管理多个数据源，实现：
-1. 统一的数据获取接口
-2. 自动故障切换
-3. 防封禁流控策略
-
-数据源优先级（动态调整）：
-【配置了 TUSHARE_TOKEN 时】
-1. TushareFetcher (Priority 0) - 🔥 最高优先级（动态提升）
-2. EfinanceFetcher (Priority 0) - 同优先级
-3. AkshareFetcher (Priority 1) - 来自 akshare 库
-4. PytdxFetcher (Priority 2) - 来自 pytdx 库（通达信）
-5. BaostockFetcher (Priority 3) - 来自 baostock 库
-6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
-7. TencentFetcher (Priority 5) - 腾讯直连日 K 最终兜底
-
-【未配置 TUSHARE_TOKEN 时】
-1. EfinanceFetcher (Priority 0) - 最高优先级，来自 efinance 库
-2. AkshareFetcher (Priority 1) - 来自 akshare 库
-3. PytdxFetcher (Priority 2) - 来自 pytdx 库（通达信）
-4. TushareFetcher (Priority 2) - 来自 tushare 库（不可用）
-5. BaostockFetcher (Priority 3) - 来自 baostock 库
-6. YfinanceFetcher (Priority 4) - 来自 yfinance 库
-7. TencentFetcher (Priority 5) - 腾讯直连日 K 最终兜底
-8. LongbridgeFetcher (Priority 5) - 长桥 OpenAPI（美股/港股兜底，与 Tencent 市场不重叠）
-
-提示：优先级数字越小越优先，同优先级按初始化顺序排列
+Importing a provider submodule must not eagerly import every optional provider
+and its third-party dependencies. Legacy package-root imports remain available
+through PEP 562 lazy attribute resolution.
 """
 
-from .base import BaseFetcher, DataFetcherManager
-from .efinance_fetcher import EfinanceFetcher
-from .tencent_fetcher import TencentFetcher
-from .sina_research_fetcher import SinaResearchFetcher
-from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
-from .tushare_fetcher import TushareFetcher
-from .pytdx_fetcher import PytdxFetcher
-from .baostock_fetcher import BaostockFetcher
-from .yfinance_fetcher import YfinanceFetcher
-from .longbridge_fetcher import LongbridgeFetcher
-from .finnhub_fetcher import FinnhubFetcher
-from .alphavantage_fetcher import AlphaVantageFetcher
-from .futures_provider import (
-    ActualContinuousMapping,
-    FUTURES_INSTRUMENTS,
-    YahooFuturesHistoryProvider,
-    YahooFuturesProviderBinding,
-    should_roll,
-)
-from .us_index_mapping import is_us_index_code, is_us_stock_code, get_us_index_yf_symbol, US_INDEX_MAPPING
+from __future__ import annotations
 
-__all__ = [
-    'BaseFetcher',
-    'DataFetcherManager',
-    'EfinanceFetcher',
-    'TencentFetcher',
-    # Explicit research utility; not part of DataFetcherManager production routing.
-    'SinaResearchFetcher',
-    'AkshareFetcher',
-    'TushareFetcher',
-    'PytdxFetcher',
-    'BaostockFetcher',
-    'YfinanceFetcher',
-    'LongbridgeFetcher',
-    'FinnhubFetcher',
-    'AlphaVantageFetcher',
-    'ActualContinuousMapping',
-    'FUTURES_INSTRUMENTS',
-    'YahooFuturesHistoryProvider',
-    'YahooFuturesProviderBinding',
-    'should_roll',
-    'is_us_index_code',
-    'is_us_stock_code',
-    'is_hk_stock_code',
-    'get_us_index_yf_symbol',
-    'US_INDEX_MAPPING',
-]
+from importlib import import_module
+
+_LAZY_EXPORTS = {
+    "BaseFetcher": (".base", "BaseFetcher"),
+    "DataFetcherManager": (".base", "DataFetcherManager"),
+    "SinaResearchFetcher": (".sina_research_fetcher", "SinaResearchFetcher"),
+    "EfinanceFetcher": (".efinance_fetcher", "EfinanceFetcher"),
+    "TencentFetcher": (".tencent_fetcher", "TencentFetcher"),
+    "AkshareFetcher": (".akshare_fetcher", "AkshareFetcher"),
+    "TushareFetcher": (".tushare_fetcher", "TushareFetcher"),
+    "PytdxFetcher": (".pytdx_fetcher", "PytdxFetcher"),
+    "BaostockFetcher": (".baostock_fetcher", "BaostockFetcher"),
+    "YfinanceFetcher": (".yfinance_fetcher", "YfinanceFetcher"),
+    "LongbridgeFetcher": (".longbridge_fetcher", "LongbridgeFetcher"),
+    "FinnhubFetcher": (".finnhub_fetcher", "FinnhubFetcher"),
+    "AlphaVantageFetcher": (".alphavantage_fetcher", "AlphaVantageFetcher"),
+    "ActualContinuousMapping": (".futures_provider", "ActualContinuousMapping"),
+    "FUTURES_INSTRUMENTS": (".futures_provider", "FUTURES_INSTRUMENTS"),
+    "YahooFuturesHistoryProvider": (".futures_provider", "YahooFuturesHistoryProvider"),
+    "YahooFuturesProviderBinding": (".futures_provider", "YahooFuturesProviderBinding"),
+    "should_roll": (".futures_provider", "should_roll"),
+    "is_us_index_code": (".us_index_mapping", "is_us_index_code"),
+    "is_us_stock_code": (".us_index_mapping", "is_us_stock_code"),
+    "get_us_index_yf_symbol": (".us_index_mapping", "get_us_index_yf_symbol"),
+    "US_INDEX_MAPPING": (".us_index_mapping", "US_INDEX_MAPPING"),
+    "is_hk_stock_code": (".akshare_fetcher", "is_hk_stock_code"),
+}
+
+__all__ = sorted(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str):
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = target
+    value = getattr(import_module(module_name, __name__), attribute)
+    globals()[name] = value
+    return value

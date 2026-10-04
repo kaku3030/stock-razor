@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from data_provider import DataFetcherManager
+from data_provider.base import DataFetcherManager
 from data_provider.alpaca_market_data_adapter import AlpacaMarketDataAdapter, AlpacaRestMarketDataClient
 from data_provider.existing_market_data_adapter import ExistingMarketDataAdapter
 from data_provider.market_data_adapter import MarketDataAdapter
