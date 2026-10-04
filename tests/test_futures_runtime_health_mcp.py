@@ -1,30 +1,36 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-import realtime_monitor.server as server
+from data_provider.futures_runtime_health import read_futures_runtime_health
 
 
-def test_futures_runtime_health_missing_file_fails_closed(tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "FUTURES_RUNTIME_STATUS_PATH", str(tmp_path / "missing.json"))
-    result = server.get_futures_runtime_health()
-    assert result["ok"] is False
-    assert result["status"] == "UNAVAILABLE"
-    assert result["realtime_verified"] is False
-    assert result["live_trade"] is False
+NOW = datetime(2026, 10, 4, 14, 0, tzinfo=timezone.utc)
 
 
-def test_futures_runtime_health_fresh_is_observation_only(tmp_path, monkeypatch):
-    path = tmp_path / "heartbeat.json"
-    path.write_text(json.dumps({
+def heartbeat(emitted_at):
+    return {
         "type": "futures_runtime_heartbeat",
         "runtime_instance_id": "runtime-1", "generation": 1, "host_id": "host-1",
-        "sequence": 7, "emitted_at_utc": datetime.now(timezone.utc).isoformat(),
+        "sequence": 7, "emitted_at_utc": emitted_at,
         "attempted": ["GC", "CL", "SI", "HG"], "succeeded": ["GC", "CL", "SI", "HG"],
         "failed": [], "skipped_backoff": [], "cloud_runtime_verified": False,
         "pc_off_verified": False, "live_trade": False,
-    }), encoding="utf-8")
-    monkeypatch.setattr(server, "FUTURES_RUNTIME_STATUS_PATH", str(path))
-    result = server.get_futures_runtime_health()
+    }
+
+
+def test_missing_file_fails_closed(tmp_path):
+    result = read_futures_runtime_health(str(tmp_path / "missing.json"), now_utc=NOW)
+    assert result["ok"] is False
+    assert result["status"] == "UNAVAILABLE"
+    assert result["realtime_verified"] is False
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_fresh_heartbeat_is_observation_only(tmp_path):
+    path = tmp_path / "heartbeat.json"
+    path.write_text(json.dumps(heartbeat((NOW - timedelta(seconds=60)).isoformat())), encoding="utf-8")
+    result = read_futures_runtime_health(str(path), now_utc=NOW)
     assert result["ok"] is True
     assert result["status"] == "HEALTHY"
     assert result["realtime_verified"] is False
@@ -32,29 +38,32 @@ def test_futures_runtime_health_fresh_is_observation_only(tmp_path, monkeypatch)
     assert result["live_trade"] is False
 
 
-def test_futures_runtime_health_future_timestamp_fails_closed(tmp_path, monkeypatch):
+def test_future_timestamp_fails_closed(tmp_path):
     path = tmp_path / "heartbeat.json"
-    path.write_text(json.dumps({
-        "type": "futures_runtime_heartbeat",
-        "runtime_instance_id": "runtime-1", "generation": 1, "host_id": "host-1",
-        "sequence": 8, "emitted_at_utc": (datetime.now(timezone.utc)+timedelta(minutes=5)).isoformat(),
-    }), encoding="utf-8")
-    monkeypatch.setattr(server, "FUTURES_RUNTIME_STATUS_PATH", str(path))
-    result = server.get_futures_runtime_health()
+    path.write_text(json.dumps(heartbeat((NOW + timedelta(minutes=5)).isoformat())), encoding="utf-8")
+    result = read_futures_runtime_health(str(path), now_utc=NOW)
     assert result["ok"] is False
     assert result["status"] == "STALE"
     assert result["realtime_verified"] is False
+    assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
 
 
-def test_futures_runtime_health_naive_timestamp_is_invalid(tmp_path, monkeypatch):
+def test_naive_timestamp_is_invalid(tmp_path):
     path = tmp_path / "heartbeat.json"
-    path.write_text(json.dumps({
-        "type": "futures_runtime_heartbeat",
-        "runtime_instance_id": "runtime-1", "generation": 1, "host_id": "host-1",
-        "sequence": 9, "emitted_at_utc": "2026-10-04T12:00:00",
-    }), encoding="utf-8")
-    monkeypatch.setattr(server, "FUTURES_RUNTIME_STATUS_PATH", str(path))
-    result = server.get_futures_runtime_health()
+    path.write_text(json.dumps(heartbeat("2026-10-04T14:00:00")), encoding="utf-8")
+    result = read_futures_runtime_health(str(path), now_utc=NOW)
     assert result["ok"] is False
     assert result["status"] == "INVALID"
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_stale_timestamp_does_not_promote_permissions(tmp_path):
+    path = tmp_path / "heartbeat.json"
+    path.write_text(json.dumps(heartbeat((NOW - timedelta(minutes=10)).isoformat())), encoding="utf-8")
+    result = read_futures_runtime_health(str(path), now_utc=NOW)
+    assert result["ok"] is False
+    assert result["status"] == "STALE"
+    assert result["realtime_verified"] is False
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
