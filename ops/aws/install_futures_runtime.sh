@@ -33,6 +33,7 @@ import uuid
 from datetime import datetime, timezone
 
 from data_provider.futures_provider import YahooFuturesHistoryProvider
+from data_provider.futures_qualification import FuturesSessionPolicy
 from data_provider.futures_runtime_observation import FuturesRuntimeObserver
 from data_provider.futures_persistent_worker import FuturesPersistentWorker, WorkerPolicy
 
@@ -40,7 +41,11 @@ runtime_id = os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 generation = int(os.environ.get("STOCK_RAZOR_GENERATION", "1"))
 host_id = socket.gethostname()
 provider = YahooFuturesHistoryProvider(runtime_instance_id=runtime_id, controller_generation=generation)
-observer = FuturesRuntimeObserver(runtime_instance_id=runtime_id, controller_generation=generation)
+observer = FuturesRuntimeObserver(
+    runtime_instance_id=runtime_id,
+    session_policy=FuturesSessionPolicy(),
+)
+observer.rollover_generation(generation, observed_at_utc=datetime.now(timezone.utc))
 worker = FuturesPersistentWorker(
     observer=observer,
     fetch=provider.fetch,
