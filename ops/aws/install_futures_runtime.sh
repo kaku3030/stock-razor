@@ -63,12 +63,24 @@ worker = FuturesPersistentWorker(
     policy=WorkerPolicy(roots=("GC", "CL", "SI", "HG"), timeframe="5m"),
 )
 
+status_path = os.environ.get("STOCK_RAZOR_FUTURES_STATUS_PATH", "/run/stock-razor-futures/latest-heartbeat.json")
+
+def publish_status(payload):
+    directory = os.path.dirname(status_path)
+    os.makedirs(directory, exist_ok=True)
+    tmp = status_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, separators=(",", ":"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, status_path)
+
 seq = 0
 while True:
     now = datetime.now(timezone.utc)
     result = worker.run_cycle(observed_at_utc=now, monotonic_now=time.monotonic())
     seq += 1
-    print(json.dumps({
+    heartbeat = {
         "type": "futures_runtime_heartbeat",
         "runtime_instance_id": runtime_id,
         "generation": generation,
@@ -82,7 +94,9 @@ while True:
         "cloud_runtime_verified": False,
         "pc_off_verified": False,
         "live_trade": False,
-    }, separators=(",", ":")), flush=True)
+    }
+    publish_status(heartbeat)
+    print(json.dumps(heartbeat, separators=(",", ":")), flush=True)
     time.sleep(60)
 PY
 
@@ -97,6 +111,9 @@ Type=simple
 WorkingDirectory=$INSTALL_ROOT/repo
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$INSTALL_ROOT/repo
+Environment=STOCK_RAZOR_FUTURES_STATUS_PATH=/run/stock-razor-futures/latest-heartbeat.json
+RuntimeDirectory=stock-razor-futures
+RuntimeDirectoryMode=0755
 ExecStart=$INSTALL_ROOT/venv/bin/python $INSTALL_ROOT/run.py
 Restart=on-failure
 RestartSec=10

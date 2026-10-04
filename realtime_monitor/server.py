@@ -5299,6 +5299,17 @@ def data_health_check(symbol: str = "US.NVDA", timeframe: str = "15m"):
         q.close()
 
 
+
+
+from data_provider.futures_runtime_health import read_futures_runtime_health
+
+
+@mcp.tool()
+def get_futures_runtime_health():
+    """Read Futures worker heartbeat evidence without granting runtime permissions."""
+    return clean_json_value(read_futures_runtime_health())
+
+
 @mcp.tool()
 def health_check():
     """Check whether Moomoo OpenD is reachable."""
