@@ -13,6 +13,12 @@ from importlib import import_module
 _LAZY_EXPORTS = {
     "BaseFetcher": (".base", "BaseFetcher"),
     "DataFetcherManager": (".base", "DataFetcherManager"),
+    "SinaResearchFetcher": (".sina_research_fetcher", "SinaResearchFetcher"),
+    "is_us_index_code": (".us_index_mapping", "is_us_index_code"),
+    "is_us_stock_code": (".us_index_mapping", "is_us_stock_code"),
+    "get_us_index_yf_symbol": (".us_index_mapping", "get_us_index_yf_symbol"),
+    "US_INDEX_MAPPING": (".us_index_mapping", "US_INDEX_MAPPING"),
+    "is_hk_stock_code": (".akshare_fetcher", "is_hk_stock_code"),
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
