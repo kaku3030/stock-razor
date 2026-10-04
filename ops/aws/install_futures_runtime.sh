@@ -24,6 +24,17 @@ test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"
 python3 -m venv "$INSTALL_ROOT/venv"
 "$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input   yfinance exchange-calendars pandas
 
+# Fail before systemd installation if the isolated Futures runtime cannot import
+# its complete entry-point dependency chain. This catches missing runtime
+# dependencies without treating a restart loop as a successful deployment.
+PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
+from data_provider.futures_provider import YahooFuturesHistoryProvider
+from data_provider.futures_qualification import FuturesSessionPolicy
+from data_provider.futures_runtime_observation import FuturesRuntimeObserver
+from data_provider.futures_persistent_worker import FuturesPersistentWorker, WorkerPolicy
+print("FUTURES_RUNTIME_IMPORT_SMOKE=PASS")
+PY
+
 cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json
 import os
