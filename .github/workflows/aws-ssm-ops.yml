@@ -10,6 +10,7 @@ on:
         options:
           - health_check
           - mcp_status
+          - futures_status
           - mcp_diagnose
           - mcp_protocol_probe
           - secure_mcp_remote_e2e
@@ -72,6 +73,37 @@ jobs:
               ;;
             mcp_status)
               printf '%s\n' '["ss -ltnp | grep -E '\''(:(11111|22222))\\b'\'' || true","systemctl is-active stock-razor-mcp.service 2>/dev/null || true"]' > commands.json
+              ;;
+            futures_status)
+              read -r -d '' futures_status_script <<'REMOTE' || true
+          set -u
+          unit='stock-razor-futures.service'
+          echo '=== FUTURES UNIT STATE ==='
+          systemctl is-active "$unit" 2>&1 || true
+          systemctl is-enabled "$unit" 2>&1 || true
+          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
+          echo '=== FUTURES STATUS ==='
+          systemctl status "$unit" --no-pager 2>&1 || true
+          echo '=== FUTURES JOURNAL ==='
+          journalctl -u "$unit" -n 120 --no-pager 2>&1 || true
+          echo '=== FUTURES PROCESS ==='
+          pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+          if [ -n "$pid" ] && [ "$pid" != 0 ] && [ -d "/proc/$pid" ]; then
+            ps -p "$pid" -o pid=,user=,lstart=,etime=,stat=,args= 2>&1 || true
+            echo "PID_CWD=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+            echo "PID_EXE=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+          else
+            echo 'MAIN_PID=NONE'
+          fi
+          echo '=== FUTURES DEPLOYED PROVENANCE ==='
+          workdir="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
+          if [ -n "$workdir" ] && [ "$workdir" != "-" ] && [ -d "$workdir" ]; then
+            git -C "$workdir" rev-parse HEAD 2>/dev/null || true
+            git -C "$workdir" status --porcelain 2>/dev/null || true
+          fi
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
               ;;
             mcp_diagnose)
               read -r -d '' diagnostic_script <<'REMOTE' || true
