@@ -562,6 +562,81 @@ jobs:
           REMOTE
               jq -c -n --arg script "$e2e_script" '[ $script ]' > commands.json
               ;;
+            canonical_futures_mcp_remote_e2e)
+              read -r -d '' canonical_e2e_script <<'REMOTE' || true
+          set -eu
+          tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
+          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
+          cleanup() { unset OPENAI_API_KEY api_key; }
+          trap cleanup 0 1 2 3 15
+          command -v python3 >/dev/null 2>&1
+          python3 -c 'import boto3'
+          api_key="$(PARAMETER_NAME="$parameter_name" python3 -c 'import os,boto3; print(boto3.client("ssm", region_name="ap-northeast-1").get_parameter(Name=os.environ["PARAMETER_NAME"], WithDecryption=True)["Parameter"]["Value"], end="")')"
+          test -n "$api_key" && test "$api_key" != None
+          export OPENAI_API_KEY="$api_key"
+          unset api_key
+          python3 - "$tunnel_id" <<'PY'
+          import json, os, sys, urllib.error, urllib.request
+          tunnel_id = sys.argv[1]
+          expected = {'get_futures_runtime_health'}
+          body = {
+              'model': 'gpt-6-astra',
+              'tools': [{
+                  'type': 'mcp',
+                  'server_label': 'stock-razor-private',
+                  'tunnel_id': tunnel_id,
+                  'allowed_tools': sorted(expected),
+                  'require_approval': 'never',
+              }],
+              'input': 'Call get_futures_runtime_health exactly once. Return the tool result without changing it.',
+          }
+          req = urllib.request.Request(
+              'https://api.openai.com/v1/responses',
+              data=json.dumps(body).encode(),
+              headers={'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'},
+              method='POST',
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=90) as res:
+                  status = res.status
+                  payload = json.loads(res.read().decode('utf-8'))
+          except Exception as exc:
+              print('CANONICAL_FUTURES_MCP_RESPONSES=FAIL')
+              print('CANONICAL_FUTURES_MCP_REASON=' + type(exc).__name__)
+              raise SystemExit(1)
+          output = payload.get('output') if isinstance(payload, dict) else None
+          if status != 200 or not isinstance(output, list):
+              print('CANONICAL_FUTURES_MCP_RESPONSES=FAIL'); raise SystemExit(1)
+          listed = [x for x in output if isinstance(x, dict) and x.get('type') == 'mcp_list_tools']
+          discovered = None
+          for item in listed:
+              tools = item.get('tools')
+              if isinstance(tools, list):
+                  names = [t.get('name') for t in tools if isinstance(t, dict)]
+                  if set(names) == expected:
+                      discovered = names
+          calls = [x for x in output if isinstance(x, dict) and x.get('type') == 'mcp_call']
+          if discovered is None or len(calls) != 1 or calls[0].get('name') != 'get_futures_runtime_health' or calls[0].get('error') not in (None, ''):
+              print('CANONICAL_FUTURES_MCP_PROTOCOL=FAIL'); raise SystemExit(1)
+          value = calls[0].get('output')
+          if isinstance(value, str):
+              value = json.loads(value)
+          if not isinstance(value, dict):
+              print('CANONICAL_FUTURES_MCP_HEALTH=FAIL'); raise SystemExit(1)
+          if value.get('live_trade') is not False or value.get('radar_admission') != 'BLOCKED':
+              print('CANONICAL_FUTURES_MCP_FAIL_CLOSED=FAIL'); raise SystemExit(1)
+          print('RESPONSES_API_HTTP=PASS')
+          print('MCP_LIST_TOOLS=PASS')
+          print('DISCOVERED_TOOLS=' + json.dumps(discovered, separators=(',', ':')))
+          print('MCP_CALL_GET_FUTURES_RUNTIME_HEALTH=PASS')
+          print('CANONICAL_FUTURES_MCP_FAIL_CLOSED=PASS')
+          print('RADAR_ADMISSION=BLOCKED')
+          print('LIVE_TRADE=NO')
+          print('CANONICAL_FUTURES_MCP_E2E=PASS')
+          PY
+          REMOTE
+              jq -c -n --arg script "$canonical_e2e_script" '[ $script ]' > commands.json
+              ;;
             secure_mcp_tunnel_deploy)
               read -r -d '' deploy_script <<'REMOTE' || true
           set -euo pipefail
