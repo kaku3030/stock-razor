@@ -64,7 +64,9 @@ def test_k1m_push_is_evidence_only_and_unknown_delivery():
     assert event.progress_identity_candidate is None
     assert event.provider_timestamp_raw == "2026-10-05 10:01:00"
     assert event.semantic_stream_key == key()
-    assert event.diagnostic_fields["bar_closure"] == "UNKNOWN"
+    assert event.diagnostic_fields["bar_state"] == "FORMING_OR_UNKNOWN"
+    assert event.diagnostic_fields["bar_closure"] == "UNPROVEN"
+    assert event.diagnostic_fields["same_time_key_may_update"] is True
     assert ctx.calls == [("sub", ["US.AAPL"], ["K_1M"], True)]
 
 
@@ -88,3 +90,22 @@ def test_subscribe_failure_is_explicit():
     adapter.start()
     with pytest.raises(RuntimeError, match="permission denied"):
         adapter.subscribe_stream(key())
+
+
+def test_same_time_key_updates_remain_distinct_forming_bar_evidence():
+    ctx = Context()
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1
+    )
+    adapter.register_event_sink(events.append)
+    adapter.start()
+    ctx.handler.on_recv_rsp(Frame([
+        {"code":"US.NVDA","time_key":"2026-10-05 10:52:00","close":190.10,"volume":100},
+        {"code":"US.NVDA","time_key":"2026-10-05 10:52:00","close":190.20,"volume":120},
+    ]))
+    assert len(events) == 2
+    assert events[0].provider_timestamp_raw == events[1].provider_timestamp_raw
+    assert events[0].payload["close"] != events[1].payload["close"]
+    assert all(e.progress_identity_candidate is None for e in events)
+    assert all(e.diagnostic_fields["bar_closure"] == "UNPROVEN" for e in events)

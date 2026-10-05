@@ -142,7 +142,7 @@ class FutuK1MStreamingAdapter:
                 progress_identity_candidate=None,
                 provenance="PUSH",
                 diagnostic_fields=freeze_normalized_payload(
-                    {"semantic_scope": "US_K1M_UNQUALIFIED", "bar_closure": "UNKNOWN"}
+                    {"semantic_scope": "US_K1M_PUSH", "bar_state": "FORMING_OR_UNKNOWN", "bar_closure": "UNPROVEN", "same_time_key_may_update": True}
                 ),
             )
         )
