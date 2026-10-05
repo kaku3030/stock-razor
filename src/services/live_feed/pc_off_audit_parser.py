@@ -1,23 +1,32 @@
 """Parsing helpers for AWS SSM journal output used by PC-off audits."""
 
 import json
-import re
 from collections.abc import Iterable
 
-_HEARTBEAT = re.compile(r'(\{"type":"futures_runtime_heartbeat".*?\})(?=\\n|$)')
+_MARKER = '"type":"futures_runtime_heartbeat"'
 
 
 def extract_futures_heartbeat_payloads(lines: Iterable[str]) -> list[dict]:
-    """Extract heartbeat JSON from plain journal lines or AWS CLI text-escaped output."""
+    """Extract heartbeat objects without depending on journal line boundaries."""
+    text = "".join(lines)
+    text = text.replace(chr(92) + '"', '"').replace(chr(92) + "n", "\n")
+    decoder = json.JSONDecoder()
     payloads = []
-    for raw in lines:
-        candidates = (raw, raw.replace(r'\"', '"'))
-        for candidate in candidates:
-            match = _HEARTBEAT.search(candidate)
-            if not match:
-                continue
-            payload = json.loads(match.group(1))
-            if payload.get("type") == "futures_runtime_heartbeat":
-                payloads.append(payload)
+    cursor = 0
+    while True:
+        marker = text.find(_MARKER, cursor)
+        if marker < 0:
             break
+        start = text.rfind("{", 0, marker)
+        if start < 0:
+            cursor = marker + len(_MARKER)
+            continue
+        try:
+            payload, consumed = decoder.raw_decode(text[start:])
+        except json.JSONDecodeError:
+            cursor = marker + len(_MARKER)
+            continue
+        if isinstance(payload, dict) and payload.get("type") == "futures_runtime_heartbeat":
+            payloads.append(payload)
+        cursor = start + consumed
     return payloads
