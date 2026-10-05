@@ -28,3 +28,10 @@ def test_runtime_uses_fail_closed_session_policy_and_generation_rollover():
     assert "FuturesSessionPolicy()" in SCRIPT
     assert "observer.rollover_generation(generation" in SCRIPT
     assert "controller_generation=generation)" not in SCRIPT.split("observer = FuturesRuntimeObserver", 1)[1].split("worker =", 1)[0]
+
+
+def test_runtime_reports_peak_rss_without_extra_dependency():
+    assert "import resource" in SCRIPT
+    assert "resource.getrusage(resource.RUSAGE_SELF).ru_maxrss" in SCRIPT
+    assert '"rss_peak_kib": rss_peak_kib' in SCRIPT
+    assert "psutil" not in SCRIPT
