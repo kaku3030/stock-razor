@@ -78,7 +78,7 @@ jobs:
               RuntimeHeartbeat(
                   runtime_instance_id=p["runtime_instance_id"], generation=int(p["generation"]),
                   host_id=p["host_id"], sequence=int(p["sequence"]), emitted_at_utc=dt(p["emitted_at_utc"]),
-                  observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}")
+                  observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}"
               )
               for p in payloads
           ]
