@@ -8,8 +8,8 @@ on:
         required: true
         type: string
       pc_off_until_utc:
-        description: "Externally observed user-PC offline end/audit time (ISO-8601 UTC)"
-        required: true
+        description: "Optional externally observed user-PC offline end (ISO-8601 UTC); blank uses workflow start UTC"
+        required: false
         type: string
 
 permissions:
@@ -80,11 +80,15 @@ jobs:
                   runtime_instance_id=p["runtime_instance_id"], generation=int(p["generation"]),
                   host_id=p["host_id"], sequence=int(p["sequence"]), emitted_at_utc=dt(p["emitted_at_utc"]),
                   observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}"))
-          start,end=dt(os.environ["PC_OFF_FROM"]),dt(os.environ["PC_OFF_UNTIL"])
+          start=dt(os.environ["PC_OFF_FROM"])
+          raw_end=os.environ.get("PC_OFF_UNTIL", "").strip()
+          end=dt(raw_end) if raw_end else datetime.now().astimezone().astimezone(__import__("datetime").timezone.utc)
           inside=tuple(h for h in rows if start <= h.emitted_at_utc <= end)
           window=PcOffWindow(user_device_id=os.environ["USER_DEVICE_ID"], offline_from_utc=start, offline_until_utc=end,
               observer_id="chatgpt-remote-device-observation", observer_host_id="openai-remote-observer")
           decision=evaluate_cloud_pc_off_independence(inside, window)
+          print(f"PC_OFF_FROM_UTC={start.isoformat()}")
+          print(f"PC_OFF_UNTIL_UTC={end.isoformat()}")
           print(f"HEARTBEATS_IN_PC_OFF_WINDOW={len(inside)}")
           print(f"CLOUD_PC_OFF_VERIFIED={str(decision.verified).upper()}")
           print(f"CLOUD_PC_OFF_REASON={decision.reason}")
