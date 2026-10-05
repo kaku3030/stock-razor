@@ -12,6 +12,7 @@ on:
           - mcp_status
           - futures_status
           - futures_opend_probe
+          - futures_opend_env_probe
           - mcp_diagnose
           - mcp_protocol_probe
           - secure_mcp_remote_e2e
@@ -106,6 +107,43 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
+              ;;
+            futures_opend_env_probe)
+              read -r -d '' futures_opend_env_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND FUTU SDK ENVIRONMENT DISCOVERY ==='
+          echo 'LIVE_TRADE=NO'
+          for py in /usr/bin/python3 /opt/stock-razor-mcp/venv/bin/python /opt/stock-razor-futures/venv/bin/python; do
+            if [ ! -x "$py" ]; then
+              echo "PYTHON=$py EXISTS=NO FUTU_IMPORT=UNKNOWN"
+              continue
+            fi
+            "$py" - "$py" <<'PY'
+          import importlib.util, json, pathlib, sys
+          py = sys.argv[1]
+          spec = importlib.util.find_spec("futu")
+          out = {"python": py, "exists": True, "futu_import": bool(spec)}
+          if spec is not None:
+              out["futu_origin"] = str(pathlib.Path(spec.origin).resolve()) if spec.origin else "UNKNOWN"
+              try:
+                  import futu
+                  out["futu_version"] = getattr(futu, "__version__", "AVAILABLE")
+              except Exception as exc:
+                  out["futu_import_error"] = type(exc).__name__
+          print(json.dumps(out, separators=(",", ":")))
+          PY
+          done
+          echo '=== OPEND PROCESS/LISTENERS ==='
+          pgrep -x OpenD 2>/dev/null | head -n 3 | while read -r pid; do
+            echo "OPEND_PID=$pid"
+            echo "OPEND_EXE=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+            echo "OPEND_CWD=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+          done
+          ss -lntp 2>/dev/null | grep -E ':(11111|22222)\\b' || true
+          echo 'NO_PACKAGE_INSTALL=TRUE'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$futures_opend_env_probe_script" '[ $script ]' > commands.json
               ;;
             futures_opend_probe)
               read -r -d '' futures_opend_probe_script <<'REMOTE' || true
