@@ -120,3 +120,24 @@ def test_radar_admission_cannot_be_bypassed_by_forged_live_snapshot():
     decision = admit_futures_to_radar(_event(delivery=DeliveryMode.UNKNOWN), forged)
     assert decision.accepted is False
     assert decision.reason == "DELIVERY_MODE_NOT_REALTIME"
+
+
+def test_latest_by_root_exposes_only_latest_data_observation():
+    observer = FuturesRuntimeObserver(
+        runtime_instance_id="r1",
+        session_policy=FuturesSessionPolicy(holiday_calendar_verified=True),
+    )
+    first = observer.observe_event(_event(sequence=1, vendor_symbol="GC=F"))
+    second = observer.observe_event(
+        _event(
+            ts=datetime(2026, 10, 7, 14, 5, tzinfo=timezone.utc),
+            observed=datetime(2026, 10, 7, 14, 5, tzinfo=timezone.utc),
+            sequence=2,
+            vendor_symbol="GC=F",
+        )
+    )
+    latest = observer.latest_by_root()
+    assert latest["GC"] == second
+    assert latest["GC"] != first
+    assert latest["GC"].delivery_mode == "UNKNOWN"
+    assert latest["GC"].entitlement == "UNKNOWN"
