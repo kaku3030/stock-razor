@@ -23,3 +23,14 @@ def test_us_opend_continuity_probe_is_bounded_and_non_promoting():
     assert '"delivery_mode":"UNKNOWN"' in WORKFLOW
     assert '"radar_admission":"BLOCKED"' in WORKFLOW
     assert '"nondecreasing":all(a<=b for a,b in zip(seq,seq[1:]))' in WORKFLOW
+
+
+def test_us_opend_reconnect_probe_is_read_only_and_fail_closed():
+    assert "- us_opend_k1m_reconnect_probe" in WORKFLOW
+    assert 'out["before_close"]=attempt("before_close")' in WORKFLOW
+    assert 'out["after_reconnect"]=attempt("after_reconnect")' in WORKFLOW
+    assert 'ctx.close()' in WORKFLOW
+    assert '"delivery_mode":"UNKNOWN"' in WORKFLOW
+    assert '"radar_admission":"BLOCKED"' in WORKFLOW
+    assert "OpenUSTradeContext" not in WORKFLOW
+    assert "OpenSecTradeContext" not in WORKFLOW
