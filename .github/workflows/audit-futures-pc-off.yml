@@ -70,7 +70,7 @@ jobs:
           from src.services.live_feed.pc_off_audit_parser import extract_futures_heartbeat_payloads
 
           def dt(v):
-              return datetime.fromisoformat(v.replace("Z", "+00:00"))
+              return datetime.fromisoformat(v.strip().replace("Z", "+00:00"))
 
           evidence_text = open("/tmp/heartbeat.log", encoding="utf-8").read()
           print(f"EVIDENCE_RAW_CHARS={len(evidence_text)}")
