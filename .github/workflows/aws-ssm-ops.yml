@@ -16,6 +16,7 @@ on:
           - futures_opend_core_mapping
           - futures_opend_snapshot_probe
           - us_opend_k1m_probe
+          - us_opend_k1m_continuity_probe
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -167,6 +168,83 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            us_opend_k1m_continuity_probe)
+              read -r -d '' us_opend_k1m_continuity_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US K_1M CONTINUITY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json, threading, time
+          from collections import defaultdict
+          from datetime import datetime, timezone
+          import futu as ft
+
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]
+          lock=threading.Lock()
+          rows=defaultdict(list)
+          errors=[]
+          class Handler(ft.CurKlineHandlerBase):
+              def on_recv_rsp(self,rsp_pb):
+                  ret,data=super().on_recv_rsp(rsp_pb)
+                  if ret!=ft.RET_OK:
+                      with lock: errors.append(str(data)[:500])
+                      return ret,data
+                  if hasattr(data,"to_dict"):
+                      with lock:
+                          for r in data.to_dict("records"):
+                              code=str(r.get("code",""))
+                              if code in codes:
+                                  rows[code].append(str(r.get("time_key","")))
+                  return ret,data
+
+          out={"probe":"us_opend_k1m_continuity","codes":codes,"window_seconds":30,
+               "subscription":"UNKNOWN","delivery_mode":"UNKNOWN",
+               "radar_admission":"BLOCKED","live_trade":False}
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+              ctx.set_handler(Handler())
+              ret,data=ctx.subscribe(codes,[ft.SubType.K_1M],subscribe_push=True)
+              if ret!=ft.RET_OK:
+                  out["subscription"]="BLOCKED"; out["subscription_error"]=str(data)[:500]
+              else:
+                  out["subscription"]="PASS"
+                  start=time.monotonic()
+                  while time.monotonic()-start < 30:
+                      time.sleep(1)
+                  with lock:
+                      evidence={}
+                      for code in codes:
+                          seq=[x for x in rows.get(code,[]) if x]
+                          evidence[code]={
+                              "event_count":len(seq),
+                              "unique_time_keys":len(set(seq)),
+                              "nondecreasing":all(a<=b for a,b in zip(seq,seq[1:])),
+                              "first_time_key":seq[0] if seq else None,
+                              "last_time_key":seq[-1] if seq else None,
+                          }
+                      out["streams"]=evidence
+                      out["push_symbols"]=sum(1 for v in evidence.values() if v["event_count"]>0)
+                      out["errors"]=errors
+                      out["progression"]="PASS" if out["push_symbols"]>0 and all(
+                          v["nondecreasing"] for v in evidence.values() if v["event_count"]>0
+                      ) else ("NO_EVENT_OBSERVED" if out["push_symbols"]==0 else "FAIL")
+          except Exception as exc:
+              out["reason"]="OPEND_US_CONTINUITY_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.unsubscribe(codes,[ft.SubType.K_1M])
+                  except Exception: pass
+                  try: ctx.close()
+                  except Exception: pass
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_k1m_continuity_probe_script" '[ $script ]' > commands.json
               ;;
             us_opend_k1m_probe)
               read -r -d '' us_opend_k1m_probe_script <<'REMOTE' || true
