@@ -23,3 +23,9 @@ def test_pc_off_embedded_python_compiles():
 def test_pc_off_timestamp_parser_trims_dispatch_whitespace():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert 'v.strip().replace("Z", "+00:00")' in workflow
+
+
+def test_pc_off_workflow_reports_safe_heartbeat_time_range():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "EVIDENCE_HEARTBEAT_MIN_UTC=" in workflow
+    assert "EVIDENCE_HEARTBEAT_MAX_UTC=" in workflow

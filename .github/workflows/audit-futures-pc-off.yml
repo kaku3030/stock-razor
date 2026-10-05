@@ -85,6 +85,10 @@ jobs:
               )
               for p in payloads
           ]
+          if rows:
+              heartbeat_times = [h.emitted_at_utc.astimezone(timezone.utc) for h in rows]
+              print(f"EVIDENCE_HEARTBEAT_MIN_UTC={min(heartbeat_times).isoformat()}")
+              print(f"EVIDENCE_HEARTBEAT_MAX_UTC={max(heartbeat_times).isoformat()}")
           start=dt(os.environ["PC_OFF_FROM"])
           raw_end=os.environ.get("PC_OFF_UNTIL", "").strip()
           end=dt(raw_end) if raw_end else datetime.now(timezone.utc)
