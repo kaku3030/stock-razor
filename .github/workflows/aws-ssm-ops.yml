@@ -14,6 +14,7 @@ on:
           - futures_opend_probe
           - futures_opend_env_probe
           - futures_opend_core_mapping
+          - futures_opend_snapshot_probe
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -165,6 +166,43 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            futures_opend_snapshot_probe)
+              read -r -d '' futures_opend_snapshot_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND FUTURES READ-ONLY SNAPSHOT PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          import futu as ft
+          codes=["US.GCmain","US.CLmain","US.SImain","US.HGmain"]
+          out={"probe":"futures_opend_snapshot","codes":codes,"opend_reachable":False,"snapshot":"UNKNOWN","subscription":"NOT_ATTEMPTED","live_trade":False}
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111); out["opend_reachable"]=True
+              ret,data=ctx.get_market_snapshot(codes)
+              if ret==ft.RET_OK and hasattr(data,"to_dict"):
+                  rows=data.to_dict("records")
+                  allow=("code","name","last_price","update_time","data_date","data_time","future_valid","future_last_settle_price","future_position","future_position_change","future_main_contract","future_last_trade_time")
+                  out["rows"]=[{k:r.get(k) for k in allow if k in r} for r in rows]
+                  out["snapshot"]="PASS" if len(rows)==len(codes) else "PARTIAL"
+              else:
+                  out["snapshot"]="BLOCKED"
+                  out["snapshot_error"]=str(data)[:500]
+              out["subscription"]="SKIPPED_NO_SUBSCRIBE"
+          except Exception as exc:
+              out["snapshot"]="BLOCKED"
+              out["reason"]="OPEND_SNAPSHOT_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.close()
+                  except Exception: pass
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          PY
+          REMOTE
+              jq -c -n --arg script "$futures_opend_snapshot_probe_script" '[ $script ]' > commands.json
               ;;
             futures_opend_core_mapping)
               read -r -d '' futures_opend_core_mapping_script <<'REMOTE' || true
