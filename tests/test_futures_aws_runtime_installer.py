@@ -46,3 +46,23 @@ def test_runtime_bounds_each_yahoo_fetch_to_recent_window():
     assert "start=start.replace(tzinfo=None)" not in script
     assert "end=end.replace(tzinfo=None)" not in script
     assert "fetch=fetch_recent" in script
+
+
+def test_runtime_heartbeat_exposes_currentness_evidence_without_promotion():
+    assert "observer.latest_by_root()" in SCRIPT
+    assert '"latest_observations": latest_observations' in SCRIPT
+    for field in (
+        "provider_timestamp",
+        "age_seconds",
+        "currentness_status",
+        "currentness_reason",
+        "continuity_status",
+        "continuity_reason",
+        "gap_status",
+        "session_phase",
+        "delivery_mode",
+        "entitlement",
+        "qualification_status",
+    ):
+        assert f'"{field}"' in SCRIPT
+    assert '"live_trade": False' in SCRIPT
