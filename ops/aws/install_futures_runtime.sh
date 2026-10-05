@@ -91,6 +91,21 @@ while True:
     result = worker.run_cycle(observed_at_utc=now, monotonic_now=time.monotonic())
     seq += 1
     rss_peak_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    latest_observations = {}
+    for root, observation in observer.latest_by_root().items():
+        latest_observations[root] = {
+            "provider_timestamp": observation.provider_timestamp.isoformat() if observation.provider_timestamp else None,
+            "age_seconds": observation.age_seconds,
+            "currentness_status": observation.currentness_status,
+            "currentness_reason": observation.currentness_reason,
+            "continuity_status": observation.continuity_status,
+            "continuity_reason": observation.continuity_reason,
+            "gap_status": observation.gap_status,
+            "session_phase": observation.session_phase,
+            "delivery_mode": observation.delivery_mode,
+            "entitlement": observation.entitlement,
+            "qualification_status": observation.qualification_status,
+        }
     heartbeat = {
         "type": "futures_runtime_heartbeat",
         "runtime_instance_id": runtime_id,
@@ -103,6 +118,7 @@ while True:
         "failed": result.failed,
         "skipped_backoff": result.skipped_backoff,
         "rss_peak_kib": rss_peak_kib,
+        "latest_observations": latest_observations,
         "cloud_runtime_verified": False,
         "pc_off_verified": False,
         "live_trade": False,
