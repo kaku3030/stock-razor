@@ -38,7 +38,7 @@ def test_runtime_reports_peak_rss_without_extra_dependency():
 
 
 def test_runtime_bounds_each_yahoo_fetch_to_recent_window():
-    script = INSTALLER.read_text(encoding="utf-8")
+    script = SCRIPT
     assert "from datetime import datetime, timedelta, timezone" in script
     assert "def fetch_recent(root, timeframe, *, observed_at_utc):" in script
     assert "start = end - timedelta(hours=2)" in script
