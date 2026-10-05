@@ -65,8 +65,8 @@ def fetch_recent(root, timeframe, *, observed_at_utc):
         root,
         timeframe,
         observed_at_utc=end,
-        start=start.isoformat(),
-        end=end.isoformat(),
+        start=start.replace(tzinfo=None),
+        end=end.replace(tzinfo=None),
     )
 
 worker = FuturesPersistentWorker(
