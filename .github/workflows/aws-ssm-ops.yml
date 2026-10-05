@@ -17,6 +17,7 @@ on:
           - futures_opend_snapshot_probe
           - us_opend_k1m_probe
           - us_opend_k1m_continuity_probe
+          - us_opend_k1m_reconnect_probe
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -168,6 +169,72 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            us_opend_k1m_reconnect_probe)
+              read -r -d '' us_opend_k1m_reconnect_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US K_1M RECONNECT READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json, threading, time
+          from datetime import datetime, timezone
+          import futu as ft
+
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]
+          def attempt(label, wait_seconds=15):
+              rows=[]; errors=[]; ready=threading.Event()
+              class Handler(ft.CurKlineHandlerBase):
+                  def on_recv_rsp(self,rsp_pb):
+                      ret,data=super().on_recv_rsp(rsp_pb)
+                      if ret!=ft.RET_OK:
+                          errors.append(str(data)[:500]); ready.set(); return ret,data
+                      if hasattr(data,"to_dict"):
+                          for r in data.to_dict("records"):
+                              code=str(r.get("code",""))
+                              if code in codes:
+                                  rows.append({"code":code,"time_key":str(r.get("time_key",""))})
+                          if rows: ready.set()
+                      return ret,data
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+              try:
+                  ctx.set_handler(Handler())
+                  ret,data=ctx.subscribe(codes,[ft.SubType.K_1M],subscribe_push=True)
+                  result={"label":label,"subscription":"PASS" if ret==ft.RET_OK else "BLOCKED"}
+                  if ret!=ft.RET_OK:
+                      result["subscription_error"]=str(data)[:500]; return result
+                  ready.wait(wait_seconds)
+                  result["push"]="PASS" if rows else "NO_EVENT_OBSERVED"
+                  result["push_symbols"]=sorted(set(r["code"] for r in rows))
+                  result["first_time_key"]=rows[0]["time_key"] if rows else None
+                  result["last_time_key"]=rows[-1]["time_key"] if rows else None
+                  result["errors"]=errors
+                  return result
+              finally:
+                  try: ctx.unsubscribe(codes,[ft.SubType.K_1M])
+                  except Exception: pass
+                  ctx.close()
+
+          out={"probe":"us_opend_k1m_reconnect","codes":codes,"delivery_mode":"UNKNOWN",
+               "radar_admission":"BLOCKED","live_trade":False}
+          try:
+              out["before_close"]=attempt("before_close")
+              time.sleep(2)
+              out["after_reconnect"]=attempt("after_reconnect")
+              a=out["before_close"]; b=out["after_reconnect"]
+              out["reconnect_resubscribe"]="PASS" if (
+                  a.get("subscription")=="PASS" and b.get("subscription")=="PASS" and
+                  a.get("push")=="PASS" and b.get("push")=="PASS"
+              ) else "BLOCKED"
+          except Exception as exc:
+              out["reconnect_resubscribe"]="BLOCKED"
+              out["reason"]="OPEND_US_RECONNECT_ERROR:"+type(exc).__name__
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_k1m_reconnect_probe_script" '[ $script ]' > commands.json
               ;;
             us_opend_k1m_continuity_probe)
               read -r -d '' us_opend_k1m_continuity_probe_script <<'REMOTE' || true
