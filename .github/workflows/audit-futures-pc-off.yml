@@ -64,9 +64,10 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os, re
-          from datetime import datetime
+          import os
+          from datetime import datetime, timezone
           from src.services.live_feed.cloud_runtime_evidence import RuntimeHeartbeat, PcOffWindow, evaluate_cloud_pc_off_independence
+          from src.services.live_feed.pc_off_audit_parser import extract_futures_heartbeat_payloads
 
           def dt(v):
               return datetime.fromisoformat(v.replace("Z", "+00:00"))
@@ -82,7 +83,7 @@ jobs:
                   observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}"))
           start=dt(os.environ["PC_OFF_FROM"])
           raw_end=os.environ.get("PC_OFF_UNTIL", "").strip()
-          end=dt(raw_end) if raw_end else datetime.now().astimezone().astimezone(__import__("datetime").timezone.utc)
+          end=dt(raw_end) if raw_end else datetime.now(timezone.utc)
           inside=tuple(h for h in rows if start <= h.emitted_at_utc <= end)
           window=PcOffWindow(user_device_id=os.environ["USER_DEVICE_ID"], offline_from_utc=start, offline_until_utc=end,
               observer_id="chatgpt-remote-device-observation", observer_host_id="openai-remote-observer")
