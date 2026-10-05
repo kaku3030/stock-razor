@@ -98,6 +98,15 @@ class FuturesRuntimeObserver:
     def observations(self) -> tuple[FuturesRuntimeObservation, ...]:
         return tuple(self._observations)
 
+    def latest_by_root(self) -> dict[str, FuturesRuntimeObservation]:
+        """Return the latest data observation for each futures root."""
+
+        latest: dict[str, FuturesRuntimeObservation] = {}
+        for observation in self._observations:
+            if observation.root != "UNKNOWN" and observation.transport_transition == "SAMPLE":
+                latest[observation.root] = observation
+        return latest
+
     def rollover_generation(self, generation: int, *, observed_at_utc: datetime) -> FuturesRuntimeObservation:
         if generation <= self._generation:
             raise ValueError("generation must increase")
