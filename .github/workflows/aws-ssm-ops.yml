@@ -150,6 +150,7 @@ jobs:
               read -r -d '' futures_opend_client_install_script <<'REMOTE' || true
           set -euo pipefail
           install_root=/opt/stock-razor-opend-client
+          export HOME=/root
           python3 -m venv "$install_root/venv"
           "$install_root/venv/bin/pip" install --disable-pip-version-check --no-input 'futu-api==10.11.7108'
           "$install_root/venv/bin/python" - <<'PY'
