@@ -13,6 +13,7 @@ on:
           - futures_status
           - futures_opend_probe
           - futures_opend_env_probe
+          - futures_opend_core_mapping
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -164,6 +165,56 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            futures_opend_core_mapping)
+              read -r -d '' futures_opend_core_mapping_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND CORE FUTURES READ-ONLY MAPPING ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json, re
+          from datetime import datetime, timezone
+          import futu as ft
+          out={"probe":"futures_opend_core_mapping","targets":["GC","CL","SI","HG"],"opend_reachable":False,"global_state":"UNKNOWN","contract_discovery":"UNKNOWN","us_futures_quote_right":"UNKNOWN","subscription":"NOT_ATTEMPTED","snapshot":"NOT_ATTEMPTED","live_trade":False}
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111); out["opend_reachable"]=True
+              ret,state=ctx.get_global_state()
+              if ret==ft.RET_OK:
+                  out["global_state"]="AVAILABLE"
+                  records=state.to_dict("records") if hasattr(state,"to_dict") else []
+                  safe={}
+                  for row in records[:1]:
+                      for k,v in row.items():
+                          lk=str(k).lower()
+                          if ("qot" in lk or "quote" in lk or "futures" in lk or "future" in lk) and lk not in {"user_id","login_user_id"}:
+                              safe[str(k)]=v
+                  out["quote_right_evidence"]=safe or "NO_RELEVANT_FIELD_EXPOSED"
+              ret,data=ctx.get_stock_basicinfo(ft.Market.US,ft.SecurityType.FUTURE)
+              if ret==ft.RET_OK and hasattr(data,"to_dict"):
+                  rows=data.to_dict("records")
+                  mapped={r:[] for r in out["targets"]}
+                  for row in rows:
+                      code=str(row.get("code","")); name=str(row.get("name",""))
+                      tail=code.split(".",1)[-1]
+                      for root in mapped:
+                          if re.match(r"^"+re.escape(root)+r"(?:\\d|current$|main$|next$)",tail,re.I):
+                              mapped[root].append({k:row.get(k) for k in ("code","name","stock_type","future_main_contract") if k in row})
+                  out["mapping"]={k:v[:20] for k,v in mapped.items()}
+                  out["contract_discovery"]="PASS" if all(mapped.values()) else "PARTIAL"
+              out["subscription"]="SKIPPED_NO_PERMISSION_CHANGE"
+              out["snapshot"]="SKIPPED_PENDING_QUOTE_RIGHT_EVIDENCE"
+          except Exception as exc:
+              out["reason"]="OPEND_CORE_MAPPING_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.close()
+                  except Exception: pass
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          PY
+          REMOTE
+              jq -c -n --arg script "$futures_opend_core_mapping_script" '[ $script ]' > commands.json
               ;;
             futures_opend_probe)
               read -r -d '' futures_opend_probe_script <<'REMOTE' || true
