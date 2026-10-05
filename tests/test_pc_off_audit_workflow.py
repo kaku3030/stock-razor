@@ -29,3 +29,8 @@ def test_pc_off_workflow_reports_safe_heartbeat_time_range():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "EVIDENCE_HEARTBEAT_MIN_UTC=" in workflow
     assert "EVIDENCE_HEARTBEAT_MAX_UTC=" in workflow
+
+
+def test_pc_off_journal_prioritizes_latest_heartbeats():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert '--no-pager -r | grep' in workflow
