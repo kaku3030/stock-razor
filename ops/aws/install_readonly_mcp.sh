@@ -16,7 +16,7 @@ git -C "$INSTALL_ROOT/repo" checkout --detach "$REPO_REF"
 test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"
 
 python3 -m venv "$INSTALL_ROOT/venv"
-"$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input mcp
+"$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input "mcp>=1,<2"
 
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from realtime_monitor.readonly_mcp_server import get_futures_runtime_health, mcp
