@@ -110,3 +110,20 @@ def test_actual_history_requires_month_and_preserves_mapping_fields():
     event = provider.fetch("SI", "1d", observed_at_utc=NOW, actual_contract="SIZ6", contract_month="2026-12")[0]
     assert event.payload["contract_symbol"] == "SIZ6"
     assert event.payload["continuous_semantics"] == "explicit_actual_contract"
+
+
+def test_history_wrapper_passes_explicit_period_without_absolute_window():
+    captured = {}
+
+    def download(**kwargs):
+        captured.update(kwargs)
+        return pd.DataFrame(
+            [{"Open": 1, "High": 2, "Low": 0.5, "Close": 1.5, "Volume": 4}],
+            index=pd.DatetimeIndex([datetime(2026, 10, 2, 21, 0, tzinfo=timezone.utc)]),
+        )
+
+    provider = YahooFuturesHistoryProvider(runtime_instance_id="r1", controller_generation=0, download=download)
+    provider.fetch("GC", "5m", observed_at_utc=NOW, period="1d")
+    assert captured["period"] == "1d"
+    assert captured["start"] is None
+    assert captured["end"] is None
