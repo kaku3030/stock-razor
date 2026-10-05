@@ -18,3 +18,8 @@ def test_pc_off_embedded_python_compiles():
     script = "\n".join(line[10:] if line.startswith("          ") else line for line in script.splitlines())
     script = script.replace("${{ github.run_id }}", "12345")
     compile(script, str(WORKFLOW), "exec")
+
+
+def test_pc_off_timestamp_parser_trims_dispatch_whitespace():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert 'v.strip().replace("Z", "+00:00")' in workflow
