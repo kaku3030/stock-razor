@@ -38,6 +38,7 @@ PY
 cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json
 import os
+import resource
 import socket
 import time
 import uuid
@@ -80,6 +81,7 @@ while True:
     now = datetime.now(timezone.utc)
     result = worker.run_cycle(observed_at_utc=now, monotonic_now=time.monotonic())
     seq += 1
+    rss_peak_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     heartbeat = {
         "type": "futures_runtime_heartbeat",
         "runtime_instance_id": runtime_id,
@@ -91,6 +93,7 @@ while True:
         "succeeded": result.succeeded,
         "failed": result.failed,
         "skipped_backoff": result.skipped_backoff,
+        "rss_peak_kib": rss_peak_kib,
         "cloud_runtime_verified": False,
         "pc_off_verified": False,
         "live_trade": False,
