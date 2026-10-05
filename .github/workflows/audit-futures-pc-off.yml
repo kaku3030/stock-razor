@@ -72,15 +72,16 @@ jobs:
           def dt(v):
               return datetime.fromisoformat(v.replace("Z", "+00:00"))
 
-          rows=[]
-          for line in open("/tmp/heartbeat.log", encoding="utf-8"):
-              m=re.search(r'(\{"type":"futures_runtime_heartbeat".*\})', line)
-              if not m: continue
-              p=json.loads(m.group(1))
-              rows.append(RuntimeHeartbeat(
+          with open("/tmp/heartbeat.log", encoding="utf-8") as evidence_file:
+              payloads = extract_futures_heartbeat_payloads(evidence_file)
+          rows = [
+              RuntimeHeartbeat(
                   runtime_instance_id=p["runtime_instance_id"], generation=int(p["generation"]),
                   host_id=p["host_id"], sequence=int(p["sequence"]), emitted_at_utc=dt(p["emitted_at_utc"]),
-                  observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}"))
+                  observer_id=f"github-actions-run-${{ github.run_id }}", observer_host_id=f"github-hosted-runner-${{ github.run_id }}")
+              )
+              for p in payloads
+          ]
           start=dt(os.environ["PC_OFF_FROM"])
           raw_end=os.environ.get("PC_OFF_UNTIL", "").strip()
           end=dt(raw_end) if raw_end else datetime.now(timezone.utc)
