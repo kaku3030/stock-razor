@@ -72,8 +72,11 @@ jobs:
           def dt(v):
               return datetime.fromisoformat(v.replace("Z", "+00:00"))
 
-          with open("/tmp/heartbeat.log", encoding="utf-8") as evidence_file:
-              payloads = extract_futures_heartbeat_payloads(evidence_file)
+          evidence_text = open("/tmp/heartbeat.log", encoding="utf-8").read()
+          print(f"EVIDENCE_RAW_CHARS={len(evidence_text)}")
+          print(f"EVIDENCE_HEARTBEAT_MARKERS={evidence_text.count('futures_runtime_heartbeat')}")
+          payloads = extract_futures_heartbeat_payloads([evidence_text])
+          print(f"EVIDENCE_PARSED_HEARTBEATS={len(payloads)}")
           rows = [
               RuntimeHeartbeat(
                   runtime_instance_id=p["runtime_instance_id"], generation=int(p["generation"]),
