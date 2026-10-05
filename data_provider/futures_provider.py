@@ -222,6 +222,7 @@ class YahooFuturesHistoryProvider:
         observed_at_utc: datetime,
         start: str | None = None,
         end: str | None = None,
+        period: str | None = None,
         actual_contract: str | None = None,
         contract_month: str | None = None,
     ) -> list[ProviderEvent]:
@@ -245,6 +246,7 @@ class YahooFuturesHistoryProvider:
             tickers=ticker,
             start=start,
             end=end,
+            period=period,
             interval=normalised,
             progress=False,
             auto_adjust=False,
