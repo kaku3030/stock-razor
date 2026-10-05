@@ -13,6 +13,7 @@ on:
           - futures_status
           - futures_opend_probe
           - futures_opend_env_probe
+          - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
           - secure_mcp_remote_e2e
@@ -144,6 +145,22 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_opend_env_probe_script" '[ $script ]' > commands.json
+              ;;
+            futures_opend_client_install)
+              read -r -d '' futures_opend_client_install_script <<'REMOTE' || true
+          set -euo pipefail
+          install_root=/opt/stock-razor-opend-client
+          python3 -m venv "$install_root/venv"
+          "$install_root/venv/bin/pip" install --disable-pip-version-check --no-input 'futu-api==10.11.7108'
+          "$install_root/venv/bin/python" - <<'PY'
+          import futu
+          print("FUTU_IMPORT_SMOKE=PASS")
+          print("FUTU_VERSION=" + str(getattr(futu, "__version__", "UNKNOWN")))
+          PY
+          echo 'OPEND_CLIENT_INSTALL=PASS'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$futures_opend_client_install_script" '[ $script ]' > commands.json
               ;;
             futures_opend_probe)
               read -r -d '' futures_opend_probe_script <<'REMOTE' || true
