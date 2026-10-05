@@ -160,7 +160,9 @@ jobs:
           echo 'OPEND_CLIENT_INSTALL=PASS'
           echo 'LIVE_TRADE=NO'
           REMOTE
-              jq -c -n --arg script "$futures_opend_client_install_script" '[ $script ]' > commands.json
+              encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
+              wrapper="printf '%s' '$encoded' | base64 -d | bash"
+              jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
               ;;
             futures_opend_probe)
               read -r -d '' futures_opend_probe_script <<'REMOTE' || true
