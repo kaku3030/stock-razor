@@ -39,11 +39,10 @@ def test_runtime_reports_peak_rss_without_extra_dependency():
 
 def test_runtime_bounds_each_yahoo_fetch_to_recent_window():
     script = SCRIPT
-    assert "from datetime import datetime, timedelta, timezone" in script
+    assert "from datetime import datetime, timezone" in script
     assert "def fetch_recent(root, timeframe, *, observed_at_utc):" in script
-    assert "start = end - timedelta(hours=2)" in script
-    assert "start=start.replace(tzinfo=None)" in script
-    assert "end=end.replace(tzinfo=None)" in script
-    assert "start=start.isoformat()" not in script
-    assert "end=end.isoformat()" not in script
+    assert 'period="1d"' in script
+    assert "timedelta(hours=2)" not in script
+    assert "start=start.replace(tzinfo=None)" not in script
+    assert "end=end.replace(tzinfo=None)" not in script
     assert "fetch=fetch_recent" in script
