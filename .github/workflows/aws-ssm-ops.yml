@@ -14,6 +14,7 @@ on:
           - mcp_diagnose
           - mcp_protocol_probe
           - secure_mcp_remote_e2e
+          - canonical_futures_mcp_remote_e2e
           - secure_mcp_tunnel_deploy
 
 concurrency:
