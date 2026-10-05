@@ -11,6 +11,7 @@ on:
           - health_check
           - mcp_status
           - futures_status
+          - futures_opend_probe
           - mcp_diagnose
           - mcp_protocol_probe
           - secure_mcp_remote_e2e
@@ -105,6 +106,87 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
+              ;;
+            futures_opend_probe)
+              read -r -d '' futures_opend_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND FUTURES READ-ONLY CAPABILITY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          python3 - <<'PY'
+          import json
+          from datetime import datetime, timezone
+
+          result = {
+              "probe": "futures_opend_capability",
+              "opend_reachable": False,
+              "futu_sdk": "UNKNOWN",
+              "global_state": "UNKNOWN",
+              "futures_account_evidence": "UNKNOWN",
+              "us_futures_quote_right": "UNKNOWN",
+              "contract_discovery": "UNKNOWN",
+              "snapshot": "NOT_ATTEMPTED",
+              "subscription": "NOT_ATTEMPTED",
+              "live_trade": False,
+          }
+          try:
+              import futu as ft
+              result["futu_sdk"] = getattr(ft, "__version__", "AVAILABLE")
+          except Exception as exc:
+              result["reason"] = "FUTU_SDK_UNAVAILABLE:" + type(exc).__name__
+              print(json.dumps(result, separators=(",", ":")))
+              raise SystemExit(0)
+
+          ctx = None
+          try:
+              ctx = ft.OpenQuoteContext(host="127.0.0.1", port=11111)
+              result["opend_reachable"] = True
+              ret, state = ctx.get_global_state()
+              if ret == ft.RET_OK:
+                  result["global_state"] = "AVAILABLE"
+                  if hasattr(state, "to_dict"):
+                      records = state.to_dict("records")
+                      safe = []
+                      for row in records[:3]:
+                          safe.append({str(k): v for k, v in row.items() if str(k).lower() not in {"user_id", "login_user_id"}})
+                      result["global_state_sample"] = safe
+              else:
+                  result["global_state"] = "ERROR:" + str(state)[:200]
+
+              # Static discovery first: no market-data subscription and no trading action.
+              discovered = {}
+              for market_name in ("US",):
+                  try:
+                      market = getattr(ft.Market, market_name)
+                      ret, data = ctx.get_stock_basicinfo(market, ft.SecurityType.FUTURE)
+                      if ret == ft.RET_OK and hasattr(data, "to_dict"):
+                          rows = data.to_dict("records")
+                          discovered[market_name] = [
+                              {k: row.get(k) for k in ("code", "name", "stock_type", "future_main_contract") if k in row}
+                              for row in rows[:50]
+                          ]
+                          result["contract_discovery"] = "PASS" if rows else "EMPTY"
+                      else:
+                          discovered[market_name] = {"error": str(data)[:200]}
+                  except Exception as exc:
+                      discovered[market_name] = {"error_type": type(exc).__name__}
+              result["discovered"] = discovered
+
+              # Do not subscribe or trade. Quote rights remain UNKNOWN unless independently evidenced.
+              result["snapshot"] = "SKIPPED_REQUIRES_CONFIRMED_CONTRACT_AND_QUOTE_RIGHT"
+              result["subscription"] = "SKIPPED_NO_PERMISSION_CHANGE"
+          except Exception as exc:
+              result["reason"] = "OPEND_PROBE_ERROR:" + type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try:
+                      ctx.close()
+                  except Exception:
+                      pass
+          result["observed_at_utc"] = datetime.now(timezone.utc).isoformat()
+          print(json.dumps(result, separators=(",", ":"), default=str))
+          PY
+          REMOTE
+              jq -c -n --arg script "$futures_opend_probe_script" '[ $script ]' > commands.json
               ;;
             mcp_diagnose)
               read -r -d '' diagnostic_script <<'REMOTE' || true
