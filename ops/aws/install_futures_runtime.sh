@@ -42,7 +42,7 @@ import resource
 import socket
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from data_provider.futures_provider import YahooFuturesHistoryProvider
 from data_provider.futures_qualification import FuturesSessionPolicy
@@ -58,9 +58,20 @@ observer = FuturesRuntimeObserver(
     session_policy=FuturesSessionPolicy(),
 )
 observer.rollover_generation(generation, observed_at_utc=datetime.now(timezone.utc))
+def fetch_recent(root, timeframe, *, observed_at_utc):
+    end = observed_at_utc.astimezone(timezone.utc)
+    start = end - timedelta(hours=2)
+    return provider.fetch(
+        root,
+        timeframe,
+        observed_at_utc=end,
+        start=start.isoformat(),
+        end=end.isoformat(),
+    )
+
 worker = FuturesPersistentWorker(
     observer=observer,
-    fetch=provider.fetch,
+    fetch=fetch_recent,
     policy=WorkerPolicy(roots=("GC", "CL", "SI", "HG"), timeframe="5m"),
 )
 
