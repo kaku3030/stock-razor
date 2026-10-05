@@ -43,7 +43,7 @@ def test_bridge_reuses_controller_and_registers_provider_sink():
     snap=r.start([KEY])
     assert a.sink == c.submit_event
     assert snap.subscribed == (KEY,)
-    assert c.desired_registry_snapshot().entries[0].key == KEY
+    assert c.desired_registry_snapshot().entries[0].semantic_stream_key == KEY
 
 
 def test_bridge_rejects_empty_and_duplicate_start():
