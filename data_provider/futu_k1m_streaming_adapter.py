@@ -1,0 +1,168 @@
+# -*- coding: utf-8 -*-
+"""Minimal Futu/OpenD K_1M streaming adapter.
+
+This slice transports provider evidence only. It deliberately does not claim
+REALTIME delivery, bar closure, or LIVE qualification.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Callable
+
+from .live_feed_types import (
+    DeliveryMode,
+    ProviderEvent,
+    ProviderEventKind,
+    SemanticStreamKey,
+    freeze_normalized_payload,
+)
+
+
+class FutuK1MStreamingAdapter:
+    """OpenD K_1M push adapter for the provider-neutral Live Feed boundary."""
+
+    def __init__(
+        self,
+        quote_context: object,
+        futu_module: object,
+        *,
+        runtime_instance_id: str,
+        controller_generation: Callable[[], int],
+        now_utc: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._ctx = quote_context
+        self._ft = futu_module
+        self._runtime_instance_id = runtime_instance_id
+        self._controller_generation = controller_generation
+        self._now_utc = now_utc
+        self._monotonic = monotonic
+        self._context_id = uuid.uuid4().hex
+        self._sink: Callable[[ProviderEvent], None] | None = None
+        self._handler = None
+        self._started = False
+
+    def register_event_sink(self, sink: Callable[[ProviderEvent], None]) -> None:
+        if not callable(sink):
+            raise TypeError("event sink must be callable")
+        self._sink = sink
+
+    def start(self) -> None:
+        if self._started:
+            return
+        if self._sink is None:
+            raise RuntimeError("event sink must be registered before start")
+        adapter = self
+
+        class KlineHandler(self._ft.CurKlineHandlerBase):
+            def on_recv_rsp(self, rsp_pb):
+                ret, data = super().on_recv_rsp(rsp_pb)
+                if ret != adapter._ft.RET_OK:
+                    adapter._emit_error(str(data))
+                    return ret, data
+                if not hasattr(data, "to_dict"):
+                    adapter._emit_error("K_1M payload is not tabular")
+                    return ret, data
+                for row in data.to_dict("records"):
+                    adapter._emit_row(row)
+                return ret, data
+
+        self._handler = KlineHandler()
+        self._ctx.set_handler(self._handler)
+        self._started = True
+
+    def stop(self) -> None:
+        # Context ownership belongs to the runtime, not this adapter. Avoid
+        # closing a shared OpenQuoteContext here.
+        self._started = False
+
+    @staticmethod
+    def _validate_key(key: SemanticStreamKey) -> None:
+        if key.provider_id != "futu" or key.market != "us":
+            raise ValueError("Futu K_1M adapter requires provider=futu, market=us")
+        if key.stream_type != "K_1M" or key.timeframe != "1m":
+            raise ValueError("only K_1M / 1m is supported in this slice")
+        if not key.symbol.startswith("US."):
+            raise ValueError("US OpenD symbols must use canonical US.* form")
+
+    def subscribe_stream(self, key: SemanticStreamKey) -> None:
+        self._validate_key(key)
+        ret, data = self._ctx.subscribe(
+            [key.symbol],
+            [self._ft.SubType.K_1M],
+            subscribe_push=True,
+        )
+        if ret != self._ft.RET_OK:
+            raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
+
+    def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
+        self._validate_key(key)
+        ret, data = self._ctx.unsubscribe([key.symbol], [self._ft.SubType.K_1M])
+        if ret != self._ft.RET_OK:
+            raise RuntimeError("OpenD K_1M unsubscribe rejected: " + str(data)[:300])
+
+    def _emit_row(self, row: dict) -> None:
+        symbol = str(row.get("code") or "").strip()
+        raw_time = str(row.get("time_key") or "").strip() or None
+        if not symbol.startswith("US."):
+            self._emit_error("unexpected non-US K_1M symbol")
+            return
+        key = SemanticStreamKey(
+            provider_id="futu",
+            market="us",
+            symbol=symbol,
+            stream_type="K_1M",
+            timeframe="1m",
+        )
+        # US time_key progress semantics are intentionally NOT promoted from
+        # the older HK evidence set. Preserve the raw value as evidence only.
+        payload = freeze_normalized_payload(
+            {
+                name: row.get(name)
+                for name in ("code", "time_key", "open", "close", "high", "low", "volume", "turnover")
+                if name in row
+            }
+        )
+        self._emit(
+            ProviderEvent(
+                runtime_instance_id=self._runtime_instance_id,
+                provider_id="futu",
+                controller_generation=int(self._controller_generation()),
+                observed_at_utc=self._now_utc(),
+                observed_at_monotonic=self._monotonic(),
+                event_kind=ProviderEventKind.DATA,
+                semantic_stream_key=key,
+                provider_context_id=self._context_id,
+                payload=payload,
+                provider_timestamp_raw=raw_time,
+                delivery_mode=DeliveryMode.UNKNOWN,
+                progress_identity_candidate=None,
+                provenance="PUSH",
+                diagnostic_fields=freeze_normalized_payload(
+                    {"semantic_scope": "US_K1M_UNQUALIFIED", "bar_closure": "UNKNOWN"}
+                ),
+            )
+        )
+
+    def _emit_error(self, message: str) -> None:
+        self._emit(
+            ProviderEvent(
+                runtime_instance_id=self._runtime_instance_id,
+                provider_id="futu",
+                controller_generation=int(self._controller_generation()),
+                observed_at_utc=self._now_utc(),
+                observed_at_monotonic=self._monotonic(),
+                event_kind=ProviderEventKind.ERROR,
+                provider_context_id=self._context_id,
+                delivery_mode=DeliveryMode.UNKNOWN,
+                provenance="PUSH",
+                diagnostic_fields=freeze_normalized_payload({"error": message[:300]}),
+            )
+        )
+
+    def _emit(self, event: ProviderEvent) -> None:
+        if self._sink is not None and self._started:
+            self._sink(event)
