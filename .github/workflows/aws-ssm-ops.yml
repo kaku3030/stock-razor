@@ -82,7 +82,7 @@ jobs:
           echo '=== FUTURES UNIT STATE ==='
           systemctl is-active "$unit" 2>&1 || true
           systemctl is-enabled "$unit" 2>&1 || true
-          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
+          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p MemoryCurrent -p MemoryPeak -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
           echo '=== FUTURES STATUS ==='
           systemctl status "$unit" --no-pager 2>&1 || true
           echo '=== FUTURES JOURNAL ==='
