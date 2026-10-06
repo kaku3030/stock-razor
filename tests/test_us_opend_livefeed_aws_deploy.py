@@ -125,3 +125,42 @@ def test_deploy_gate_waits_for_bounded_self_heal_and_exact_sha():
     assert "REPO_REF=$REPO_REF" in workflow
     assert "event_count" in workflow
     assert "sleep 5" in workflow
+
+
+
+def _embedded_runtime_python() -> str:
+    marker = 'cat >"$INSTALL_ROOT/run.py" <<\'PY\'\n'
+    start = INSTALLER.index(marker) + len(marker)
+    end = INSTALLER.index("\nPY\n\ncat >/etc/systemd/system", start)
+    return INSTALLER[start:end]
+
+
+def test_installer_embedded_runtime_python_compiles():
+    compile(_embedded_runtime_python(), "install_us_opend_livefeed.sh:run.py", "exec")
+
+
+def test_installer_wires_writer_qualified_closure_into_ingest_only_cache():
+    installer = INSTALLER
+    assert "FutuK1MClosurePipeline" in installer
+    assert "FutuK1MResearchConsumer" in installer
+    assert "RealtimeMarketDataService" in installer
+    assert "futu_us_market_state_to_session" in installer
+    assert "consumer_result=research_consumer.run_once(max_events=1000)" in installer
+    assert installer.index("snap=bridge.drain()") < installer.index(
+        "consumer_result=research_consumer.run_once(max_events=1000)"
+    )
+    assert '"closure_pipeline":closure_diagnostics' in installer
+    assert '"research_consumer":consumer_payload' in installer
+    assert '"canonical_cache":canonical_cache' in installer
+    assert '"cache_session_us":cache_session' in installer
+    assert '"controller_findings_tail":list(snap.controller.findings[-20:])' in installer
+
+
+def test_installer_canonical_cache_fallback_health_and_admission_remain_fail_closed():
+    installer = INSTALLER
+    assert "freshness=0.0,completeness=0.0,timestamp=0.0" in installer
+    assert 'quality_flags=("MISSING_BAR","TIMESTAMP_SEMANTICS_UNVERIFIED")' in installer
+    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"bar_closure":"UNPROVEN"' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
