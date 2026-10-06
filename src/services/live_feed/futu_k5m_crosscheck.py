@@ -49,9 +49,10 @@ def compare_canonical_5m_to_futu_native(
 ) -> FutuK5MCrossCheckResult:
     """Fail-closed canonical 1m-derived 5m vs native OpenD K_5M check.
 
-    Raw OpenD time_key is compared with the canonical bar rendered in the
-    caller-declared provider timezone. Unless timestamp semantics were
-    independently verified, an otherwise exact match remains UNKNOWN.
+    Raw OpenD time_key is an interval-end label and is compared with the
+    canonical bar end rendered in the caller-declared provider timezone.
+    Unless timestamp semantics were independently verified, an otherwise
+    exact match remains UNKNOWN.
     """
 
     mismatches: list[str] = []
@@ -79,7 +80,7 @@ def compare_canonical_5m_to_futu_native(
 
     if native_local is not None:
         expected_local = (
-            canonical.bar_start.astimezone(ZoneInfo(native_timezone_name))
+            canonical.bar_end.astimezone(ZoneInfo(native_timezone_name))
             .replace(tzinfo=None)
         )
         if native_local != expected_local:

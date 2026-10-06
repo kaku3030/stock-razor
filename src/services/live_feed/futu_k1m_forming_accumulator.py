@@ -5,6 +5,8 @@ from typing import Mapping
 
 @dataclass(frozen=True)
 class FormingMinuteBar:
+    # Historical field name kept for compatibility. For Futu US K-lines this
+    # stores the provider time_key interval-END label, not canonical bar_start.
     symbol: str
     start: datetime
     open: float
