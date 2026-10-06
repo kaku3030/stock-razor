@@ -28,10 +28,18 @@ class FutuK1MClosurePipeline:
     diagnostics instead of escaping through the provider callback.
     """
 
-    def __init__(self, *, max_diagnostics: int = 100) -> None:
+    def __init__(
+        self,
+        *,
+        max_diagnostics: int = 100,
+        max_pending_closed: int = 1024,
+    ) -> None:
         if max_diagnostics <= 0:
             raise ValueError("max_diagnostics must be positive")
+        if max_pending_closed <= 0:
+            raise ValueError("max_pending_closed must be positive")
         self._accumulator = FutuK1MFormingAccumulator()
+        self._max_pending_closed = max_pending_closed
         self._closed: deque[Bar] = deque()
         self._diagnostics: deque[dict[str, str]] = deque(maxlen=max_diagnostics)
         self._lock = Lock()
@@ -78,6 +86,16 @@ class FutuK1MClosurePipeline:
                 )
                 if bar.symbol != symbol:
                     raise ValueError("canonical bar symbol mismatch")
+                if len(self._closed) >= self._max_pending_closed:
+                    self._blocked_count += 1
+                    self._diagnostics.append(
+                        {"symbol": symbol, "reason": "CLOSED_QUEUE_FULL"}
+                    )
+                    return FutuK1MClosurePipelineResult(
+                        status="BLOCKED",
+                        symbol=symbol,
+                        reason="CLOSED_QUEUE_FULL",
+                    )
                 self._closed.append(bar)
                 self._closed_count += 1
                 return FutuK1MClosurePipelineResult(

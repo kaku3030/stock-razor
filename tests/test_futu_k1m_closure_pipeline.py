@@ -195,3 +195,33 @@ def test_symbols_are_isolated_and_each_close_independently():
     bars = pipeline.drain_closed()
     assert [bar.symbol for bar in bars] == ["US.AMD", "US.NVDA"]
     assert all(bar.is_closed and bar.is_complete for bar in bars)
+
+
+def test_closed_queue_is_bounded_and_fails_closed_without_silent_overwrite():
+    pipeline = FutuK1MClosurePipeline(max_pending_closed=1)
+    pipeline.consume_event(event(row("2026-10-05 10:52:00", 100.5)))
+    first_close = pipeline.consume_event(event(row("2026-10-05 10:53:00", 101.0)))
+    blocked = pipeline.consume_event(event(row("2026-10-05 10:54:00", 101.5)))
+
+    assert first_close.status == "CLOSED_QUEUED"
+    assert blocked.status == "BLOCKED"
+    assert blocked.reason == "CLOSED_QUEUE_FULL"
+    diagnostics = pipeline.diagnostics()
+    assert diagnostics["blocked_count"] == 1
+    assert diagnostics["queued_closed_count"] == 1
+    assert diagnostics["recent_errors"][-1] == {
+        "symbol": "US.AMD",
+        "reason": "CLOSED_QUEUE_FULL",
+    }
+    bars = pipeline.drain_closed()
+    assert len(bars) == 1
+    assert bars[0].bar_end == datetime(2026, 10, 5, 14, 52, tzinfo=timezone.utc)
+
+
+def test_closed_queue_limit_must_be_positive():
+    try:
+        FutuK1MClosurePipeline(max_pending_closed=0)
+    except ValueError as exc:
+        assert "max_pending_closed" in str(exc)
+    else:
+        raise AssertionError("non-positive closed queue limit must fail")
