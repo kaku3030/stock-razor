@@ -16,7 +16,10 @@ test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"
 
 PYTHONPATH="$INSTALL_ROOT/repo" HOME=/root "$OPEND_CLIENT_ROOT/venv/bin/python" - <<'PY'
 import futu
-from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
+from data_provider.futu_k1m_streaming_adapter import (
+    FutuK1MStreamingAdapter,
+    OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE,
+)
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.controller import LiveFeedController
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
@@ -26,8 +29,11 @@ cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json, os, socket, time, uuid
 from datetime import datetime, timezone
 import futu as ft
-from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
-from data_provider.live_feed_types import SemanticStreamKey
+from data_provider.futu_k1m_streaming_adapter import (
+    FutuK1MStreamingAdapter,
+    OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE,
+)
+from data_provider.live_feed_types import ProviderEventKind, SemanticStreamKey
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
@@ -39,14 +45,22 @@ status_path=os.environ.get("STOCK_RAZOR_US_LIVEFEED_STATUS_PATH","/run/stock-raz
 host_id=socket.gethostname()
 ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
 controller=LiveFeedController(runtime_instance_id=runtime_id,provider_id="futu",command_executor=FakeProviderCommandExecutor())
-event_count=0
+accepted_event_count=0
+data_event_count=0
 last_push_utc=None
 def generation(): return controller.snapshot().controller_generation
-adapter=FutuK1MStreamingAdapter(ctx,ft,runtime_instance_id=runtime_id,controller_generation=generation)
+adapter=FutuK1MStreamingAdapter(
+    ctx,ft,runtime_instance_id=runtime_id,controller_generation=generation,
+    # futu-api 10.11.7108: default is_async_connect=False returns only
+    # after _init_connect_sync() reports RET_OK. Transport evidence only.
+    transport_connected_evidence=OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE,
+)
 def on_event_accepted(event):
-    global event_count,last_push_utc
-    event_count+=1
-    last_push_utc=datetime.now(timezone.utc).isoformat()
+    global accepted_event_count,data_event_count,last_push_utc
+    accepted_event_count+=1
+    if event.event_kind is ProviderEventKind.DATA:
+        data_event_count+=1
+        last_push_utc=datetime.now(timezone.utc).isoformat()
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
@@ -68,12 +82,13 @@ try:
           "symbols":list(CODES),"subscribed":[k.symbol for k in snap.subscribed],
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
-          "event_count":event_count,"last_push_utc":last_push_utc,
+          "event_count":data_event_count,"accepted_event_count":accepted_event_count,
+          "last_push_utc":last_push_utc,
           "adapter_diagnostics":adapter.diagnostics(),
           "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
-        if event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
+        if data_event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
             raise RuntimeError("US_OPEND_STARTUP_CALLBACK_STARVATION")
 finally:
     try: bridge.stop()

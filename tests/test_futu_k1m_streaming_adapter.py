@@ -5,7 +5,10 @@ import weakref
 import pytest
 
 from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
-from data_provider.live_feed_types import DeliveryMode, ProviderEventKind, SemanticStreamKey
+from data_provider.live_feed_types import DeliveryMode, LifecycleState, ProviderEventKind, SemanticStreamKey
+from src.services.live_feed.commands import FakeProviderCommandExecutor
+from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 
 
 class Frame:
@@ -190,3 +193,92 @@ def test_diagnostics_observe_callback_rows_sink_and_subscribe_without_promotion(
     assert d["row_count"] == 1
     assert d["sink_emit_count"] == 1
     assert d["last_subscribe_result"] == {"ret":0,"data":"ok"}
+
+
+def test_explicit_sync_context_evidence_emits_connected_and_subscription_result_without_realtime_claim():
+    ctx = Context()
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        ctx,
+        FT,
+        runtime_instance_id="r1",
+        controller_generation=lambda: 1,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    adapter.register_event_sink(events.append)
+
+    adapter.start()
+    adapter.subscribe_stream(key())
+
+    assert [event.event_kind for event in events] == [
+        ProviderEventKind.CONNECTED,
+        ProviderEventKind.SUBSCRIPTION_RESULT,
+    ]
+    connected, subscription = events
+    assert connected.delivery_mode is DeliveryMode.UNKNOWN
+    assert connected.provenance == "CALLER_VERIFIED_TRANSPORT"
+    assert connected.diagnostic_fields["transport_evidence"] == "OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED"
+    assert connected.diagnostic_fields["delivery_qualification"] == "UNPROVEN"
+    assert subscription.semantic_stream_key == key()
+    assert subscription.payload["accepted"] is True
+    assert subscription.delivery_mode is DeliveryMode.UNKNOWN
+    assert subscription.diagnostic_fields["administrative_only"] is True
+
+
+def test_subscription_rejection_emits_negative_administrative_evidence_before_failing_closed():
+    class BadContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push):
+            return -1, "permission denied"
+
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        BadContext(),
+        FT,
+        runtime_instance_id="r1",
+        controller_generation=lambda: 1,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    adapter.register_event_sink(events.append)
+    adapter.start()
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        adapter.subscribe_stream(key())
+
+    assert events[-1].event_kind is ProviderEventKind.SUBSCRIPTION_RESULT
+    assert events[-1].payload["accepted"] is False
+    assert events[-1].diagnostic_fields["administrative_only"] is True
+    assert events[-1].delivery_mode is DeliveryMode.UNKNOWN
+
+
+def test_runtime_bridge_reaches_connected_only_from_explicit_transport_evidence_and_never_live():
+    ctx = Context()
+    controller = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+    )
+    adapter = FutuK1MStreamingAdapter(
+        ctx,
+        FT,
+        runtime_instance_id="r1",
+        controller_generation=lambda: controller.snapshot().controller_generation,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    bridge = LiveFeedRuntimeBridge(controller, adapter)
+
+    snapshot = bridge.start((key(),))
+
+    assert snapshot.controller.lifecycle_state is LifecycleState.CONNECTED
+    assert snapshot.controller.lifecycle_state is not LifecycleState.LIVE
+    assert "UNHANDLED_EVIDENCE_KIND:SUBSCRIPTION_RESULT" in snapshot.controller.findings
+
+
+def test_arbitrary_transport_claim_cannot_manufacture_connected_evidence():
+    with pytest.raises(ValueError, match="unsupported transport connected evidence"):
+        FutuK1MStreamingAdapter(
+            Context(),
+            FT,
+            runtime_instance_id="r1",
+            controller_generation=lambda: 1,
+            transport_connected_evidence="TRUST_ME_CONNECTED",
+        )
