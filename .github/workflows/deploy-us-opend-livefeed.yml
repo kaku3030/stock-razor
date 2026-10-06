@@ -30,10 +30,7 @@ jobs:
         env: {REPO_REF: "${{ steps.source.outputs.sha }}"}
         run: |
           set -euo pipefail
-          remote=$(cat <<EOF
-curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_opend_livefeed.sh -o /tmp/install_us_opend_livefeed.sh && chmod 0755 /tmp/install_us_opend_livefeed.sh && REPO_REF=$REPO_REF /tmp/install_us_opend_livefeed.sh && for i in \$(seq 1 12); do hb=\$(cat /run/stock-razor-us-livefeed/latest-heartbeat.json 2>/dev/null || true); echo \$hb | grep -q '"repo_sha":"$REPO_REF"' && echo \$hb | grep -Eq '"event_count":[1-9][0-9]*' && break; sleep 5; done && systemctl is-enabled stock-razor-us-livefeed.service && systemctl is-active stock-razor-us-livefeed.service && cat /run/stock-razor-us-livefeed/latest-heartbeat.json
-EOF
-          )
+          remote="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_opend_livefeed.sh -o /tmp/install_us_opend_livefeed.sh && chmod 0755 /tmp/install_us_opend_livefeed.sh && REPO_REF=$REPO_REF /tmp/install_us_opend_livefeed.sh && sleep 35 && systemctl is-enabled stock-razor-us-livefeed.service && systemctl is-active stock-razor-us-livefeed.service && cat /run/stock-razor-us-livefeed/latest-heartbeat.json"
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"

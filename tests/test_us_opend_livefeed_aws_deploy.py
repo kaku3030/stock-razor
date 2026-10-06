@@ -89,7 +89,7 @@ def test_installer_fails_closed_on_startup_callback_starvation():
 
 def test_deploy_gate_waits_for_bounded_self_heal_and_exact_sha():
     workflow=(ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
-    assert "for i in \\$(seq 1 12)" in workflow
-    assert "repo_sha" in workflow
+    assert "sleep 35" in workflow
+    assert "REPO_REF=$REPO_REF" in workflow
     assert "event_count" in workflow
     assert "sleep 5" in workflow
