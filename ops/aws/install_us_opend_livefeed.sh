@@ -51,6 +51,8 @@ bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accep
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
 seq=0
+startup_monotonic=time.monotonic()
+startup_callback_deadline_seconds=20
 def publish(payload):
     os.makedirs(os.path.dirname(status_path),exist_ok=True)
     tmp=status_path+".tmp"
@@ -71,6 +73,8 @@ try:
           "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
+        if event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
+            raise RuntimeError("US_OPEND_STARTUP_CALLBACK_STARVATION")
 finally:
     try: bridge.stop()
     finally: ctx.close()
