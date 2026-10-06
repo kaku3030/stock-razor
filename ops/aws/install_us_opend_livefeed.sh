@@ -67,6 +67,7 @@ try:
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
           "event_count":event_count,"last_push_utc":last_push_utc,
+          "adapter_diagnostics":adapter.diagnostics(),
           "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)

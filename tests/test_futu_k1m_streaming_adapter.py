@@ -178,3 +178,15 @@ def test_batch_subscription_matches_proven_opend_call_shape():
     keys = (key("US.AMD"), key("US.NVDA"), key("US.TSLA"), key("US.AAPL"), key("US.QQQ"))
     adapter.subscribe_streams(keys)
     assert ctx.calls == [("sub", ["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"], ["K_1M"], True)]
+
+
+def test_diagnostics_observe_callback_rows_sink_and_subscribe_without_promotion():
+    ctx=Context(); events=[]
+    adapter=FutuK1MStreamingAdapter(ctx,FT,runtime_instance_id="r1",controller_generation=lambda:1)
+    adapter.register_event_sink(events.append); adapter.start(); adapter.subscribe_stream(key())
+    ctx.handler.on_recv_rsp(Frame([{"code":"US.AAPL","time_key":"2026-10-05 10:01:00"}]))
+    d=adapter.diagnostics()
+    assert d["handler_callback_count"] == 1
+    assert d["row_count"] == 1
+    assert d["sink_emit_count"] == 1
+    assert d["last_subscribe_result"] == {"ret":0,"data":"ok"}
