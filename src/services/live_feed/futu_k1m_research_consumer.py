@@ -24,10 +24,11 @@ class FutuK1MResearchConsumerResult:
 class FutuK1MResearchConsumer:
     """Single-consumer bridge from writer-applied DATA to canonical 1m cache.
 
-    The consumer never reads raw provider callbacks. It drains at most one
-    writer-applied evidence item at a time, then asks the closure pipeline to
-    prove the prior minute closed. Closed bars use peek/ack: cache ingestion
-    must succeed before the closure queue head is removed.
+    The consumer never reads raw provider callbacks. Writer-applied evidence
+    uses peek/ack, so an unexpected closure exception leaves the current item
+    queued for retry. The closure pipeline then proves the prior minute closed.
+    Closed bars also use peek/ack: cache ingestion must succeed before the
+    closure queue head is removed.
     """
 
     def __init__(
@@ -67,17 +68,39 @@ class FutuK1MResearchConsumer:
         bars_unchanged += flushed[1]
 
         while evidence_processed < max_events:
-            batch = self._controller.drain_applied_data_for_consumer(max_items=1)
-            if not batch:
+            evidence = self._controller.peek_applied_data_for_consumer()
+            if evidence is None:
                 break
-            evidence = batch[0]
             try:
                 result = self._closure.consume_event(evidence)
             except Exception as exc:
                 reason = f"CLOSURE_EXCEPTION:{type(exc).__name__}"
                 self._diagnostics.append({"reason": reason})
                 return FutuK1MResearchConsumerResult(
-                    evidence_processed=evidence_processed + 1,
+                    evidence_processed=evidence_processed,
+                    closure_blocked=closure_blocked,
+                    bars_ingested=bars_ingested,
+                    bars_unchanged=bars_unchanged,
+                    stopped_reason=reason,
+                )
+
+            try:
+                acked = self._controller.ack_applied_data_for_consumer(evidence)
+            except Exception as exc:
+                reason = f"CONTROLLER_ACK_EXCEPTION:{type(exc).__name__}"
+                self._diagnostics.append({"reason": reason})
+                return FutuK1MResearchConsumerResult(
+                    evidence_processed=evidence_processed,
+                    closure_blocked=closure_blocked,
+                    bars_ingested=bars_ingested,
+                    bars_unchanged=bars_unchanged,
+                    stopped_reason=reason,
+                )
+            if not acked:
+                reason = "CONTROLLER_ACK_MISSING"
+                self._diagnostics.append({"reason": reason})
+                return FutuK1MResearchConsumerResult(
+                    evidence_processed=evidence_processed,
                     closure_blocked=closure_blocked,
                     bars_ingested=bars_ingested,
                     bars_unchanged=bars_unchanged,

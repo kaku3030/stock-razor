@@ -214,10 +214,13 @@ def test_unexpected_closure_exception_stops_after_one_evidence_only():
     )
     result = consumer.run_once(max_events=100)
 
-    assert result.evidence_processed == 1
+    assert result.evidence_processed == 0
     assert result.stopped_reason == "CLOSURE_EXCEPTION:RuntimeError"
+    head = controller.peek_applied_data_for_consumer()
+    assert head is not None
     remaining = controller.drain_applied_data_for_consumer()
-    assert len(remaining) == 1
+    assert len(remaining) == 2
+    assert remaining[0] == head
 
 
 def test_closed_bar_ack_is_exact_and_non_destructive_on_mismatch():
