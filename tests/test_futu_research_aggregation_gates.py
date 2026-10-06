@@ -23,6 +23,9 @@ def test_complete_15m_does_not_launder_unverified_timestamp():
     s=RealtimeMarketDataService(Adapter(),max_minutes=60)
     for i in range(15): s.ingest(b(i))
     snap=s.snapshot("US.AMD",as_of=START+timedelta(minutes=15))
+    assert len(snap.bars_5m)==3 and all(bar.is_complete and bar.is_closed for bar in snap.bars_5m)
+    assert all("TIMESTAMP_SEMANTICS_UNVERIFIED" in bar.quality_flags for bar in snap.bars_5m)
+    assert all(bar.health.signal_permission is SignalPermission.BLOCKED for bar in snap.bars_5m)
     assert len(snap.bars_15m)==1 and snap.bars_15m[0].is_complete and snap.bars_15m[0].is_closed
     assert "TIMESTAMP_SEMANTICS_UNVERIFIED" in snap.bars_15m[0].quality_flags
     assert snap.bars_15m[0].health.signal_permission is SignalPermission.BLOCKED

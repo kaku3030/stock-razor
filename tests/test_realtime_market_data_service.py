@@ -66,6 +66,7 @@ def test_seed_and_snapshot_build_multi_timeframes() -> None:
     snapshot = service.snapshot("NVDA", as_of=START + timedelta(minutes=60))
 
     assert len(snapshot.minute_bars) == 60
+    assert len(snapshot.bars_5m) == 12
     assert len(snapshot.bars_15m) == 4
     assert len(snapshot.bars_1h) == 1
     assert snapshot.provider == "alpaca"
