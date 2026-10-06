@@ -665,6 +665,13 @@ jobs:
                           native={str(row.get("time_key") or ""):row for row in five_day}
                           pass_count=fail_count=unknown_count=matched=0
                           mismatch_examples=[]
+                          volume_abs_deltas=[]
+                          turnover_abs_deltas=[]
+                          volume_abs_delta_hist=defaultdict(int)
+                          volume_mismatch_count=0
+                          turnover_mismatch_count=0
+                          joint_volume_turnover_mismatch_count=0
+                          non_volume_mismatch_count=0
                           for bar in derived:
                               key=bar.bar_end.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
                               row=native.get(key)
@@ -674,6 +681,24 @@ jobs:
                               result=compare_canonical_5m_to_futu_native(
                                   bar,row,timezone_semantics_verified=True,native_is_forming=False,
                               )
+                              derived_volume=float(bar.volume)
+                              native_volume=float(row.get("volume") or 0)
+                              volume_abs_delta=abs(derived_volume-native_volume)
+                              volume_abs_deltas.append(volume_abs_delta)
+                              volume_hist_key=str(int(volume_abs_delta)) if float(volume_abs_delta).is_integer() else str(volume_abs_delta)
+                              volume_abs_delta_hist[volume_hist_key]+=1
+                              derived_turnover=None if bar.amount is None else float(bar.amount)
+                              native_turnover=float(row.get("turnover") or 0)
+                              turnover_abs_delta=None if derived_turnover is None else abs(derived_turnover-native_turnover)
+                              if turnover_abs_delta is not None:
+                                  turnover_abs_deltas.append(turnover_abs_delta)
+                              has_volume="VOLUME_MISMATCH" in result.mismatches
+                              has_turnover="TURNOVER_MISMATCH" in result.mismatches
+                              if has_volume: volume_mismatch_count+=1
+                              if has_turnover: turnover_mismatch_count+=1
+                              if has_volume and has_turnover: joint_volume_turnover_mismatch_count+=1
+                              if any(flag not in ("VOLUME_MISMATCH","TURNOVER_MISMATCH") for flag in result.mismatches):
+                                  non_volume_mismatch_count+=1
                               if result.status=="PASS": pass_count+=1
                               elif result.status=="FAIL":
                                   fail_count+=1
@@ -710,6 +735,16 @@ jobs:
                               else: unknown_count+=1
                           unmatched_derived=len(derived)-matched
                           unmatched_native=len(five_day)-matched
+                          sorted_volume_abs_deltas=sorted(volume_abs_deltas)
+                          sorted_turnover_abs_deltas=sorted(turnover_abs_deltas)
+                          volume_abs_delta_p95=(
+                              sorted_volume_abs_deltas[(95*len(sorted_volume_abs_deltas)-1)//100]
+                              if sorted_volume_abs_deltas else None
+                          )
+                          turnover_abs_delta_p95=(
+                              sorted_turnover_abs_deltas[(95*len(sorted_turnover_abs_deltas)-1)//100]
+                              if sorted_turnover_abs_deltas else None
+                          )
                           if fail_count:
                               status="FAIL"
                           elif unknown_count or unmatched_derived or unmatched_native or matched<10:
@@ -725,6 +760,15 @@ jobs:
                               "native_k5m_last_time_key":str(five_day[-1].get("time_key")) if five_day else None,
                               "matched":matched,"pass":pass_count,"fail":fail_count,"unknown":unknown_count,
                               "unmatched_derived":unmatched_derived,"unmatched_native":unmatched_native,
+                              "volume_mismatch_count":volume_mismatch_count,
+                              "turnover_mismatch_count":turnover_mismatch_count,
+                              "joint_volume_turnover_mismatch_count":joint_volume_turnover_mismatch_count,
+                              "non_volume_mismatch_count":non_volume_mismatch_count,
+                              "volume_abs_delta_hist":dict(sorted(volume_abs_delta_hist.items(),key=lambda pair:float(pair[0]))),
+                              "volume_abs_delta_max":max(volume_abs_deltas) if volume_abs_deltas else None,
+                              "volume_abs_delta_p95":volume_abs_delta_p95,
+                              "turnover_abs_delta_max":max(turnover_abs_deltas) if turnover_abs_deltas else None,
+                              "turnover_abs_delta_p95":turnover_abs_delta_p95,
                               "mismatch_examples":mismatch_examples,
                           })
                       except Exception as exc:

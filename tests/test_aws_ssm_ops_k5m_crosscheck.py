@@ -38,6 +38,13 @@ def test_k5m_crosscheck_uses_canonical_1m_aggregation_and_native_k5m():
     assert '"volume_delta"' in text and '"volume_ratio"' in text
     assert '"derived_turnover"' in text and '"native_turnover"' in text
     assert '"turnover_delta"' in text and '"turnover_ratio"' in text
+    assert '"volume_mismatch_count"' in text
+    assert '"turnover_mismatch_count"' in text
+    assert '"joint_volume_turnover_mismatch_count"' in text
+    assert '"non_volume_mismatch_count"' in text
+    assert '"volume_abs_delta_hist"' in text
+    assert '"volume_abs_delta_max"' in text and '"volume_abs_delta_p95"' in text
+    assert '"turnover_abs_delta_max"' in text and '"turnover_abs_delta_p95"' in text
 
 
 def test_k5m_crosscheck_only_uses_completed_prior_regular_session():
