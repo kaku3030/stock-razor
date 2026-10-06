@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+
+US_EASTERN = ZoneInfo("America/New_York")
+REGULAR_MARKET_STATES = frozenset({"MORNING", "AFTERNOON"})
+EXTENDED_MARKET_STATES = frozenset({
+    "PRE_MARKET_BEGIN",
+    "PRE_MARKET_END",
+    "AFTER_HOURS_BEGIN",
+    "AFTER_HOURS_END",
+    "OVERNIGHT",
+})
+CLOSED_MARKET_STATES = frozenset({"CLOSED", "WAITING_OPEN", "NONE"})
+
+
+@dataclass(frozen=True)
+class FutuK1MCurrentnessResult:
+    status: str
+    reason: str
+    market_state: str
+    source_time_utc: datetime | None = None
+    observed_at_utc: datetime | None = None
+    age_seconds: float | None = None
+    delivery_mode: str = "UNKNOWN"
+    radar_admission: str = "BLOCKED"
+    live_trade: bool = False
+
+    @property
+    def can_promote(self) -> bool:
+        return False
+
+
+def classify_futu_us_k1m_currentness(
+    time_key: str | None,
+    *,
+    observed_at_utc: datetime,
+    market_state: str | None,
+    max_regular_lag_seconds: int = 120,
+) -> FutuK1MCurrentnessResult:
+    """Classify K_1M currentness without promoting delivery or trading.
+
+    US OpenD K-line ``time_key`` is exchange-local US Eastern time. Regular
+    session currentness may be tested against wall-clock age. Extended-hours
+    and closed-session K_1M currentness are deliberately not inferred from a
+    cached push; they remain NOT_APPLICABLE for realtime qualification.
+    """
+
+    if observed_at_utc.tzinfo is None or observed_at_utc.utcoffset() is None:
+        raise ValueError("observed_at_utc must be timezone-aware")
+    if max_regular_lag_seconds <= 0:
+        raise ValueError("max_regular_lag_seconds must be positive")
+
+    state = str(market_state or "UNKNOWN").strip().upper() or "UNKNOWN"
+    observed = observed_at_utc.astimezone(timezone.utc)
+
+    if state in EXTENDED_MARKET_STATES:
+        return FutuK1MCurrentnessResult(
+            status="NOT_APPLICABLE",
+            reason="EXTENDED_SESSION_K1M_CURRENTNESS_UNQUALIFIED",
+            market_state=state,
+            observed_at_utc=observed,
+        )
+    if state in CLOSED_MARKET_STATES:
+        return FutuK1MCurrentnessResult(
+            status="NOT_APPLICABLE",
+            reason="MARKET_NOT_REGULAR_SESSION",
+            market_state=state,
+            observed_at_utc=observed,
+        )
+    if state not in REGULAR_MARKET_STATES:
+        return FutuK1MCurrentnessResult(
+            status="UNKNOWN",
+            reason="UNRECOGNIZED_US_MARKET_STATE",
+            market_state=state,
+            observed_at_utc=observed,
+        )
+
+    raw = str(time_key or "").strip()
+    try:
+        local = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=US_EASTERN)
+    except ValueError:
+        return FutuK1MCurrentnessResult(
+            status="FAIL",
+            reason="INVALID_K1M_TIME_KEY",
+            market_state=state,
+            observed_at_utc=observed,
+        )
+
+    source = local.astimezone(timezone.utc)
+    age = (observed - source).total_seconds()
+    if age < -5:
+        return FutuK1MCurrentnessResult(
+            status="FAIL",
+            reason="K1M_TIME_KEY_IN_FUTURE",
+            market_state=state,
+            source_time_utc=source,
+            observed_at_utc=observed,
+            age_seconds=age,
+        )
+    if age > max_regular_lag_seconds:
+        return FutuK1MCurrentnessResult(
+            status="FAIL",
+            reason="K1M_STALE_DURING_REGULAR_SESSION",
+            market_state=state,
+            source_time_utc=source,
+            observed_at_utc=observed,
+            age_seconds=age,
+        )
+    return FutuK1MCurrentnessResult(
+        status="PASS",
+        reason="K1M_WITHIN_REGULAR_SESSION_LAG_BUDGET",
+        market_state=state,
+        source_time_utc=source,
+        observed_at_utc=observed,
+        age_seconds=age,
+    )
+
+
+def summarize_futu_k1m_currentness(results: dict[str, FutuK1MCurrentnessResult]) -> str:
+    if not results:
+        return "UNKNOWN"
+    statuses = [result.status for result in results.values()]
+    if any(status == "FAIL" for status in statuses):
+        return "FAIL"
+    if all(status == "PASS" for status in statuses):
+        return "PASS"
+    if all(status == "NOT_APPLICABLE" for status in statuses):
+        return "NOT_APPLICABLE"
+    return "UNKNOWN"
