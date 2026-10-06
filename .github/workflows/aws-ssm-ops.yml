@@ -12,6 +12,7 @@ on:
           - mcp_status
           - futures_status
           - us_livefeed_status
+          - us_livefeed_controlled_restart_probe
           - futures_opend_probe
           - futures_opend_env_probe
           - futures_opend_core_mapping
@@ -118,6 +119,27 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
+              ;;
+            us_livefeed_controlled_restart_probe)
+              read -r -d '' us_livefeed_controlled_restart_probe_script <<'REMOTE' || true
+          set -eu
+          echo '=== US LIVEFEED CONTROLLED RESTART READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          before=/run/stock-razor-us-livefeed/latest-heartbeat.json
+          echo '--- BEFORE ---'
+          test -f "$before" && cat "$before" || true
+          systemctl restart stock-razor-us-livefeed.service
+          sleep 15
+          echo '--- UNIT ---'
+          systemctl is-active stock-razor-us-livefeed.service
+          systemctl show stock-razor-us-livefeed.service -p MainPID -p NRestarts -p ExecMainStartTimestamp --no-pager
+          echo '--- AFTER ---'
+          test -f "$before" && cat "$before"
+          echo
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_livefeed_controlled_restart_probe_script" '[ $script ]' > commands.json
               ;;
             us_livefeed_status)
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
