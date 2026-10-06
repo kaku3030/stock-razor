@@ -30,7 +30,7 @@ jobs:
         env: {REPO_REF: "${{ steps.source.outputs.sha }}"}
         run: |
           set -euo pipefail
-          remote="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_opend_livefeed.sh -o /tmp/install_us_opend_livefeed.sh && chmod 0755 /tmp/install_us_opend_livefeed.sh && REPO_REF=$REPO_REF /tmp/install_us_opend_livefeed.sh && sleep 35 && systemctl is-enabled stock-razor-us-livefeed.service && systemctl is-active stock-razor-us-livefeed.service && cat /run/stock-razor-us-livefeed/latest-heartbeat.json"
+          remote="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_opend_livefeed.sh -o /tmp/install_us_opend_livefeed.sh && chmod 0755 /tmp/install_us_opend_livefeed.sh && REPO_REF=$REPO_REF /tmp/install_us_opend_livefeed.sh && curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_us_opend_livefeed.sh -o /tmp/verify_us_opend_livefeed.sh && chmod 0755 /tmp/verify_us_opend_livefeed.sh && /tmp/verify_us_opend_livefeed.sh $REPO_REF"
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
