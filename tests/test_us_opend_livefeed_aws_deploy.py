@@ -41,3 +41,11 @@ def test_ssm_ops_has_canonical_adapter_standalone_readonly_probe():
     assert '"radar_admission":"BLOCKED"' in ops
     assert '"live_trade":False' in ops
     assert "OpenUSTradeContext" not in ops
+
+
+def test_ssm_ops_has_systemd_sandbox_adapter_probe():
+    ops=(ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    assert "- us_opend_adapter_systemd_probe" in ops
+    assert "systemd-run --wait --collect" in ops
+    assert "NoNewPrivileges=true" in ops and "PrivateTmp=true" in ops and "ProtectSystem=strict" in ops
+    assert "OpenUSTradeContext" not in ops
