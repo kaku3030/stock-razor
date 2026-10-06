@@ -13,6 +13,7 @@ def test_worker_installer_uses_isolated_minimal_analysis_environment():
     assert "/opt/stock-razor-us-radar" in INSTALLER
     assert "'numpy==1.26.4'" in INSTALLER
     assert "'pandas==2.2.2'" in INSTALLER
+    assert "'PyYAML==6.0.2'" in INSTALLER
     assert "futu-api" not in INSTALLER
     assert "alpaca" not in INSTALLER.lower()
     assert "yfinance" not in INSTALLER.lower()
