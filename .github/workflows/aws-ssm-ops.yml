@@ -11,6 +11,7 @@ on:
           - health_check
           - mcp_status
           - futures_status
+          - us_livefeed_status
           - futures_opend_probe
           - futures_opend_env_probe
           - futures_opend_core_mapping
@@ -113,6 +114,38 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
+              ;;
+            us_livefeed_status)
+              read -r -d '' us_livefeed_status_script <<'REMOTE' || true
+          set -u
+          unit='stock-razor-us-livefeed.service'
+          status_path='/run/stock-razor-us-livefeed/latest-heartbeat.json'
+          echo '=== US LIVEFEED UNIT STATE ==='
+          systemctl is-active "$unit" 2>&1 || true
+          systemctl is-enabled "$unit" 2>&1 || true
+          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
+          echo '=== OPEND 11111 LISTENER ==='
+          ss -lntp 2>&1 | grep -E ':(11111)\b' || true
+          echo '=== US LIVEFEED HEARTBEAT ==='
+          if [ -f "$status_path" ]; then
+            cat "$status_path"
+          else
+            echo 'HEARTBEAT=UNKNOWN:FILE_MISSING'
+          fi
+          echo '=== US LIVEFEED JOURNAL ==='
+          journalctl -u "$unit" -n 120 --no-pager 2>&1 || true
+          echo '=== US LIVEFEED DEPLOYED PROVENANCE ==='
+          workdir="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
+          if [ -n "$workdir" ] && [ "$workdir" != "-" ] && [ -d "$workdir" ]; then
+            echo "DEPLOYED_EXACT_SHA=$(git -C "$workdir" rev-parse HEAD 2>/dev/null || true)"
+            git -C "$workdir" status --porcelain 2>/dev/null || true
+          else
+            echo 'DEPLOYED_EXACT_SHA=UNKNOWN'
+          fi
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_livefeed_status_script" '[ $script ]' > commands.json
               ;;
             futures_opend_env_probe)
               read -r -d '' futures_opend_env_probe_script <<'REMOTE' || true
