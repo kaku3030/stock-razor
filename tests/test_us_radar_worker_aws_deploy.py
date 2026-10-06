@@ -13,6 +13,7 @@ def test_worker_installer_uses_isolated_minimal_analysis_environment():
     assert "/opt/stock-razor-us-radar" in INSTALLER
     assert "'numpy==1.26.4'" in INSTALLER
     assert "'pandas==2.2.2'" in INSTALLER
+    assert "'PyYAML==6.0.2'" in INSTALLER
     assert "futu-api" not in INSTALLER
     assert "alpaca" not in INSTALLER.lower()
     assert "yfinance" not in INSTALLER.lower()
@@ -114,3 +115,9 @@ def test_source_sha_discovery_ignores_trailing_blank_lines_and_emits_invocation(
     assert "awk '/^[0-9a-f]{40}$/ {sha=$0} END {print sha}'" in discover
     assert "tail -n 1" not in discover
     assert 'echo "INVALID_SOURCE_REPO_SHA" >&2' in discover
+
+
+def test_worker_installer_covers_yaml_import_required_by_package_init():
+    config_source = (ROOT / "src/services/stock_radar_v2/config.py").read_text()
+    assert "import yaml" in config_source
+    assert "'PyYAML==6.0.2'" in INSTALLER

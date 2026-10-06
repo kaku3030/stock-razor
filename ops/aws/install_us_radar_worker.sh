@@ -34,7 +34,7 @@ if [ ! -x "$INSTALL_ROOT/venv/bin/python" ]; then
   python3 -m venv "$INSTALL_ROOT/venv"
 fi
 "$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input \
-  'numpy==1.26.4' 'pandas==2.2.2'
+  'numpy==1.26.4' 'pandas==2.2.2' 'PyYAML==6.0.2'
 
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from src.services.stock_radar_v2.canonical_snapshot_worker import (
