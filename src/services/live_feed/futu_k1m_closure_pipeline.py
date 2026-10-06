@@ -128,7 +128,23 @@ class FutuK1MClosurePipeline:
             status="BLOCKED", symbol=symbol, reason=reason
         )
 
+    def peek_closed(self) -> Bar | None:
+        """Return the oldest closed bar without removing it."""
+        with self._lock:
+            return self._closed[0] if self._closed else None
+
+    def ack_closed(self, expected: Bar) -> bool:
+        """Remove the oldest closed bar only after downstream acceptance."""
+        with self._lock:
+            if not self._closed:
+                return False
+            if self._closed[0] != expected:
+                raise ValueError("closed-bar acknowledgement does not match queue head")
+            self._closed.popleft()
+            return True
+
     def drain_closed(self) -> tuple[Bar, ...]:
+        """Compatibility/test helper; runtime consumers should prefer peek/ack."""
         with self._lock:
             bars = tuple(self._closed)
             self._closed.clear()
