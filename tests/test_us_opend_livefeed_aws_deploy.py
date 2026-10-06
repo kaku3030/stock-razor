@@ -71,3 +71,12 @@ def test_ssm_ops_has_controlled_restart_probe():
     assert "systemctl restart stock-razor-us-livefeed.service" in ops
     assert "sleep 15" in ops
     assert "RADAR_ADMISSION=BLOCKED" in ops and "LIVE_TRADE=NO" in ops
+
+
+def test_ssm_ops_has_start_order_probe_with_recovery_trap():
+    ops=(ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    assert "- us_opend_start_order_probe" in ops
+    assert 'trap cleanup EXIT INT TERM' in ops
+    assert 'systemctl stop "$svc"' in ops and 'systemctl start "$svc"' in ops
+    assert "transient_while_persistent_stopped" in ops
+    assert "RADAR_ADMISSION=BLOCKED" in ops and "LIVE_TRADE=NO" in ops
