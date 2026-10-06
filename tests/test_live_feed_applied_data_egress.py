@@ -203,3 +203,69 @@ def test_applied_data_drain_is_bounded_and_validates_argument():
 def test_applied_data_queue_size_must_be_positive():
     with pytest.raises(ValueError, match="applied_data_queue_maxsize"):
         controller(applied_data_queue_maxsize=0)
+
+
+def test_applied_data_peek_is_non_destructive_and_ack_removes_exact_head():
+    c = controller()
+    c.request_add_desired(KEY)
+    c.process_pending()
+    c.submit_event(data_event())
+    c.process_pending()
+
+    first = c.peek_applied_data_for_consumer()
+    second = c.peek_applied_data_for_consumer()
+
+    assert first is not None
+    assert second == first
+    assert c.ack_applied_data_for_consumer(first) is True
+    assert c.peek_applied_data_for_consumer() is None
+    assert c.ack_applied_data_for_consumer(first) is False
+
+
+def test_applied_data_ack_mismatch_is_non_destructive():
+    c = controller()
+    c.request_add_desired(KEY)
+    c.process_pending()
+    c.submit_event(data_event())
+    c.submit_event(data_event())
+    c.process_pending()
+
+    head = c.peek_applied_data_for_consumer()
+    assert head is not None
+    tail = c.drain_applied_data_for_consumer(max_items=2)[1]
+
+    # Recreate queue so the mismatch test itself is not affected by the
+    # destructive compatibility helper used only to obtain a different item.
+    c2 = controller()
+    c2.request_add_desired(KEY)
+    c2.process_pending()
+    c2.submit_event(data_event())
+    c2.submit_event(data_event())
+    c2.process_pending()
+    expected_head = c2.peek_applied_data_for_consumer()
+    assert expected_head is not None
+
+    with pytest.raises(ValueError, match="does not match queue head"):
+        c2.ack_applied_data_for_consumer(tail)
+
+    assert c2.peek_applied_data_for_consumer() == expected_head
+    assert c2.ack_applied_data_for_consumer(expected_head) is True
+
+
+def test_peek_ack_preserves_fifo_across_multiple_items():
+    c = controller()
+    c.request_add_desired(KEY)
+    c.process_pending()
+    c.submit_event(data_event())
+    c.submit_event(data_event())
+    c.process_pending()
+
+    first = c.peek_applied_data_for_consumer()
+    assert first is not None
+    assert c.ack_applied_data_for_consumer(first) is True
+
+    second = c.peek_applied_data_for_consumer()
+    assert second is not None
+    assert second.event.local_enqueue_seq > first.event.local_enqueue_seq
+    assert c.ack_applied_data_for_consumer(second) is True
+    assert c.peek_applied_data_for_consumer() is None
