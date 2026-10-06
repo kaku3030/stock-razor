@@ -255,6 +255,15 @@ def load_canonical_snapshot_payload(payload: object) -> CanonicalSnapshotSource:
     if sequence <= 0:
         raise CanonicalSnapshotContractError("sequence must be positive")
     emitted_at = _parse_time(payload.get("emitted_at_utc"), field_name="emitted_at_utc")
+    delivery_mode = str(payload.get("delivery_mode") or "UNKNOWN").strip().upper()
+    if delivery_mode != "UNKNOWN":
+        raise CanonicalSnapshotContractError("source delivery_mode must remain UNKNOWN")
+    bar_closure = str(payload.get("bar_closure") or "UNPROVEN").strip().upper()
+    if bar_closure not in {"UNPROVEN", "PROVEN"}:
+        raise CanonicalSnapshotContractError("source bar_closure must be UNPROVEN or PROVEN")
+    radar_admission = str(payload.get("radar_admission") or "BLOCKED").strip().upper()
+    if radar_admission != "BLOCKED":
+        raise CanonicalSnapshotContractError("source radar_admission must remain BLOCKED")
     if payload.get("live_trade") is not False:
         raise CanonicalSnapshotContractError("source live_trade must remain false")
 
@@ -304,9 +313,9 @@ def load_canonical_snapshot_payload(payload: object) -> CanonicalSnapshotSource:
         emitted_at=emitted_at,
         market_state_us=str(payload.get("market_state_us") or "UNKNOWN"),
         cache_session_us=str(payload.get("cache_session_us") or "unknown").strip().lower(),
-        delivery_mode=str(payload.get("delivery_mode") or "UNKNOWN"),
-        bar_closure=str(payload.get("bar_closure") or "UNPROVEN"),
-        radar_admission=str(payload.get("radar_admission") or "BLOCKED"),
+        delivery_mode=delivery_mode,
+        bar_closure=bar_closure,
+        radar_admission=radar_admission,
         live_trade=False,
         snapshots=tuple(snapshots),
     )

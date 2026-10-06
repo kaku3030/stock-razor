@@ -49,6 +49,7 @@ from src.services.live_feed.canonical_snapshot_export import (
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_closure_qualification import (
     FutuK1MClosureQualificationTracker,
+    derive_futu_k1m_bar_closure_state,
     summarize_futu_k1m_closure_qualification,
 )
 from src.services.live_feed.futu_k1m_currentness import (
@@ -118,6 +119,7 @@ canonical_export_status="UNKNOWN"
 canonical_export_error=None
 canonical_export_last_write_utc=None
 last_export_market_state=None
+last_export_bar_closure=None
 startup_monotonic=time.monotonic()
 startup_callback_deadline_seconds=20
 def publish(payload):
@@ -236,11 +238,16 @@ try:
         closure_qualification_summary=summarize_futu_k1m_closure_qualification(
             closure_qualification
         )
+        bar_closure_evidence_state=derive_futu_k1m_bar_closure_state(
+            currentness_summary=currentness_summary,
+            closure_qualification_summary=closure_qualification_summary,
+        )
         canonical_export_updated=False
         should_export=(
             consumer_result.bars_ingested > 0
             or not os.path.exists(canonical_snapshot_path)
             or market_state != last_export_market_state
+            or bar_closure_evidence_state != last_export_bar_closure
             or canonical_export_status != "PASS"
         )
         if should_export:
@@ -254,6 +261,7 @@ try:
                     emitted_at_utc=now,
                     market_state_us=market_state,
                     cache_session_us=cache_session,
+                    bar_closure=bar_closure_evidence_state,
                 )
                 write_canonical_snapshot_export(canonical_snapshot_path,canonical_export)
                 canonical_export_sequence=next_export_sequence
@@ -261,10 +269,20 @@ try:
                 canonical_export_error=None
                 canonical_export_last_write_utc=now.isoformat()
                 last_export_market_state=market_state
+                last_export_bar_closure=bar_closure_evidence_state
                 canonical_export_updated=True
             except Exception as exc:
                 canonical_export_status="BLOCKED"
                 canonical_export_error=type(exc).__name__
+        bar_closure_state=(
+            "PROVEN"
+            if (
+                bar_closure_evidence_state == "PROVEN"
+                and canonical_export_status == "PASS"
+                and last_export_bar_closure == "PROVEN"
+            )
+            else "UNPROVEN"
+        )
         closure_diagnostics=closure_pipeline.diagnostics()
         consumer_payload={
             "evidence_processed":consumer_result.evidence_processed,
@@ -289,6 +307,7 @@ try:
           "closure_pipeline":closure_diagnostics,
           "k1m_closure_qualification":closure_qualification_payload,
           "k1m_closure_qualification_summary":closure_qualification_summary,
+          "bar_closure_evidence_state":bar_closure_evidence_state,
           "research_consumer":consumer_payload,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
@@ -299,10 +318,11 @@ try:
               "sequence":canonical_export_sequence,
               "updated":canonical_export_updated,
               "last_write_utc":canonical_export_last_write_utc,
+              "bar_closure":last_export_bar_closure or "UNPROVEN",
               "repo_sha":repo_sha,
           },
           "adapter_diagnostics":adapter.diagnostics(),
-          "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
+          "delivery_mode":"UNKNOWN","bar_closure":bar_closure_state,
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
         if data_event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:

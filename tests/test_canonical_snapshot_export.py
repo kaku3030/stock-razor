@@ -42,7 +42,7 @@ def add_minutes(svc, symbol="US.AMD", count=30):
         svc.ingest(closed_futu_minute_to_bar(minute, received_at=end + timedelta(seconds=2)))
 
 
-def payload_for(svc, symbol="US.AMD"):
+def payload_for(svc, symbol="US.AMD", *, bar_closure="UNPROVEN"):
     snap = svc.snapshot(symbol, as_of=START + timedelta(minutes=30))
     return build_canonical_snapshot_export(
         {symbol: snap},
@@ -52,6 +52,7 @@ def payload_for(svc, symbol="US.AMD"):
         emitted_at_utc=START + timedelta(minutes=30),
         market_state_us="MORNING",
         cache_session_us="regular",
+        bar_closure=bar_closure,
     )
 
 
@@ -117,3 +118,21 @@ def test_atomic_writer_produces_valid_json_and_no_tmp(tmp_path):
     assert loaded["schema"] == SCHEMA
     assert loaded["symbols"]["US.AMD"]["timeframes"]["15m"]
     assert not (tmp_path / "canonical-market-snapshot.json.tmp").exists()
+
+
+
+def test_export_accepts_proven_bar_closure_without_unlocking_radar_or_trade():
+    svc = service()
+    add_minutes(svc)
+    payload = payload_for(svc, bar_closure="PROVEN")
+
+    assert payload["bar_closure"] == "PROVEN"
+    assert payload["delivery_mode"] == "UNKNOWN"
+    assert payload["radar_admission"] == "BLOCKED"
+    assert payload["live_trade"] is False
+
+
+def test_export_rejects_unknown_bar_closure_state():
+    svc = service()
+    with pytest.raises(ValueError, match="bar_closure"):
+        payload_for(svc, bar_closure="MAYBE")

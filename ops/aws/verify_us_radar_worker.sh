@@ -29,7 +29,7 @@ assert payload.get("live_trade") is False
 evaluation = payload.get("evaluation") or {}
 assert evaluation.get("source_repo_sha") == expected_source_sha
 assert evaluation.get("source_delivery_mode") == "UNKNOWN"
-assert evaluation.get("source_bar_closure") == "UNPROVEN"
+assert evaluation.get("source_bar_closure") in {"UNPROVEN", "PROVEN"}
 assert evaluation.get("source_radar_admission") == "BLOCKED"
 assert evaluation.get("source_live_trade") is False
 assert evaluation.get("research_only") is True

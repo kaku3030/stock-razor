@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from data_provider.market_data_adapter import Bar
 from src.services.live_feed.futu_k1m_closure_qualification import (
     FutuK1MClosureQualificationTracker,
+    derive_futu_k1m_bar_closure_state,
     summarize_futu_k1m_closure_qualification,
 )
 from src.services.live_feed.futu_k1m_currentness import FutuK1MCurrentnessResult
@@ -238,3 +239,27 @@ def test_summary_is_fail_closed():
         latest_closed_bar=bar(BASE + timedelta(minutes=1), symbol="US.NVDA"),
     )
     assert summarize_futu_k1m_closure_qualification(results) == "FAIL"
+
+
+
+def test_top_level_bar_closure_promotes_only_when_both_summaries_pass():
+    assert derive_futu_k1m_bar_closure_state(
+        currentness_summary="PASS",
+        closure_qualification_summary="PASS",
+    ) == "PROVEN"
+
+    for currentness_summary, closure_summary in [
+        ("UNKNOWN", "PASS"),
+        ("FAIL", "PASS"),
+        ("NOT_APPLICABLE", "PASS"),
+        ("PASS", "UNKNOWN"),
+        ("PASS", "FAIL"),
+        ("PASS", "NOT_APPLICABLE"),
+        ("UNKNOWN", "UNKNOWN"),
+        ("BOGUS", "PASS"),
+        ("PASS", "BOGUS"),
+    ]:
+        assert derive_futu_k1m_bar_closure_state(
+            currentness_summary=currentness_summary,
+            closure_qualification_summary=closure_summary,
+        ) == "UNPROVEN"
