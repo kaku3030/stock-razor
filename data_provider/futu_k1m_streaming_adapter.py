@@ -44,6 +44,10 @@ class FutuK1MStreamingAdapter:
         self._sink: Callable[[ProviderEvent], None] | None = None
         self._handler = None
         self._started = False
+        self._handler_callback_count = 0
+        self._row_count = 0
+        self._sink_emit_count = 0
+        self._last_subscribe_result = None
 
     def register_event_sink(self, sink: Callable[[ProviderEvent], None]) -> None:
         if not callable(sink):
@@ -59,6 +63,7 @@ class FutuK1MStreamingAdapter:
 
         class KlineHandler(self._ft.CurKlineHandlerBase):
             def on_recv_rsp(self, rsp_pb):
+                adapter._handler_callback_count += 1
                 ret, data = super().on_recv_rsp(rsp_pb)
                 if ret != adapter._ft.RET_OK:
                     adapter._emit_error(str(data))
@@ -67,6 +72,7 @@ class FutuK1MStreamingAdapter:
                     adapter._emit_error("K_1M payload is not tabular")
                     return ret, data
                 for row in data.to_dict("records"):
+                    adapter._row_count += 1
                     adapter._emit_row(row)
                 return ret, data
 
@@ -113,8 +119,17 @@ class FutuK1MStreamingAdapter:
             [self._ft.SubType.K_1M],
             subscribe_push=True,
         )
+        self._last_subscribe_result = {"ret": ret, "data": str(data)[:300]}
         if ret != self._ft.RET_OK:
             raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
+
+    def diagnostics(self) -> dict:
+        return {
+            "handler_callback_count": self._handler_callback_count,
+            "row_count": self._row_count,
+            "sink_emit_count": self._sink_emit_count,
+            "last_subscribe_result": self._last_subscribe_result,
+        }
 
     def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
         self._validate_key(key)
@@ -183,4 +198,5 @@ class FutuK1MStreamingAdapter:
 
     def _emit(self, event: ProviderEvent) -> None:
         if self._sink is not None and self._started:
+            self._sink_emit_count += 1
             self._sink(event)

@@ -12,6 +12,7 @@ def test_installer_is_read_only_and_fail_closed():
     assert '"live_trade":False' in INSTALLER
     assert "OpenUSTradeContext" not in INSTALLER
     assert "OpenSecTradeContext" not in INSTALLER
+    assert "adapter_diagnostics" in INSTALLER
 
 def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert "REPO_REF=$REPO_REF" in WORKFLOW
