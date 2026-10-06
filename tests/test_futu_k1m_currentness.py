@@ -50,15 +50,47 @@ def test_regular_session_stale_k1m_fails_closed():
     assert result.age_seconds == 300
 
 
-def test_regular_session_future_time_key_fails_closed():
+def test_regular_session_forming_end_label_one_minute_ahead_is_current():
     result = classify_futu_us_k1m_currentness(
         "2026-10-06 09:36:00",
+        observed_at_utc=datetime(
+            2026, 10, 6, 13, 35, 0, 482792, tzinfo=timezone.utc
+        ),
+        market_state="MORNING",
+    )
+
+    assert result.status == "PASS"
+    assert result.reason == "K1M_FORMING_END_LABEL_WITHIN_EXPECTED_WINDOW"
+    assert result.age_seconds == pytest.approx(-59.517208)
+    assert result.delivery_mode == "UNKNOWN"
+    assert result.radar_admission == "BLOCKED"
+    assert result.can_promote is False
+
+
+def test_regular_session_near_boundary_forming_end_label_is_current():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:45:00",
+        observed_at_utc=datetime(
+            2026, 10, 6, 13, 44, 57, 570629, tzinfo=timezone.utc
+        ),
+        market_state="AFTERNOON",
+    )
+
+    assert result.status == "PASS"
+    assert result.reason == "K1M_FORMING_END_LABEL_WITHIN_EXPECTED_WINDOW"
+    assert result.age_seconds == pytest.approx(-2.429371)
+
+
+def test_regular_session_time_key_beyond_forming_window_fails_closed():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:37:00",
         observed_at_utc=datetime(2026, 10, 6, 13, 35, tzinfo=timezone.utc),
         market_state="MORNING",
     )
 
     assert result.status == "FAIL"
-    assert result.reason == "K1M_TIME_KEY_IN_FUTURE"
+    assert result.reason == "K1M_TIME_KEY_BEYOND_FORMING_END_LABEL_WINDOW"
+    assert result.age_seconds == -120
 
 
 @pytest.mark.parametrize("state", ["CLOSED", "WAITING_OPEN", "NONE"])
@@ -140,3 +172,15 @@ def test_naive_observation_time_is_rejected():
 )
 def test_futu_market_state_maps_to_cache_session_without_guessing(state, expected):
     assert futu_us_market_state_to_session(state) == expected
+
+
+def test_forming_window_must_cover_full_minute():
+    with pytest.raises(ValueError, match="cover one full minute"):
+        classify_futu_us_k1m_currentness(
+            "2026-10-06 09:36:00",
+            observed_at_utc=datetime(
+                2026, 10, 6, 13, 35, 30, tzinfo=timezone.utc
+            ),
+            market_state="MORNING",
+            max_forming_end_label_lead_seconds=59,
+        )
