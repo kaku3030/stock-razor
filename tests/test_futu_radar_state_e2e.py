@@ -28,6 +28,7 @@ def test_opend_snapshot_reaches_radar_but_cannot_confirm_signal():
     assert state.provider == "futu" and state.feed == "opend"
     assert state.signal_permission is SignalPermission.BLOCKED
     assert state.research_only is True and state.can_confirm_signal is False
-    assert "timestamp_mismatch" in state.technical.risk_flags
+    assert "timestamp_mismatch" not in state.technical.risk_flags
+    assert "timestamp_semantics_unverified" in state.technical.risk_flags
     assert state.technical.intraday.confidence <= .65
     assert state.technical.hourly.confidence <= .65
