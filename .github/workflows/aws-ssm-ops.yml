@@ -19,6 +19,7 @@ on:
           - us_opend_k1m_probe
           - us_opend_k1m_continuity_probe
           - us_opend_k1m_reconnect_probe
+          - us_opend_adapter_standalone_probe
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -202,6 +203,40 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            us_opend_adapter_standalone_probe)
+              read -r -d '' us_opend_adapter_standalone_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND CANONICAL ADAPTER STANDALONE READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          cd /opt/stock-razor-us-livefeed/repo || exit 1
+          HOME=/root PYTHONPATH=/opt/stock-razor-us-livefeed/repo /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json, time, uuid
+          import futu as ft
+          from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
+          from data_provider.live_feed_types import SemanticStreamKey
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]
+          events=[]
+          ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+          adapter=FutuK1MStreamingAdapter(ctx,ft,runtime_instance_id=str(uuid.uuid4()),controller_generation=lambda:1)
+          adapter.register_event_sink(events.append)
+          try:
+              adapter.start()
+              keys=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in codes]
+              adapter.subscribe_streams(keys)
+              time.sleep(30)
+              out={"probe":"us_opend_adapter_standalone","repo_sha":"${GITHUB_SHA:-UNKNOWN}","event_count":len(events),"diagnostics":adapter.diagnostics(),"delivery_mode":"UNKNOWN","radar_admission":"BLOCKED","live_trade":False}
+              print(json.dumps(out,separators=(",",":"),default=str))
+          finally:
+              for c in codes:
+                  try: adapter.unsubscribe_stream(SemanticStreamKey("futu","us",c,"K_1M","1m"))
+                  except Exception: pass
+              adapter.stop(); ctx.close()
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_adapter_standalone_probe_script" '[ $script ]' > commands.json
               ;;
             us_opend_k1m_reconnect_probe)
               read -r -d '' us_opend_k1m_reconnect_probe_script <<'REMOTE' || true

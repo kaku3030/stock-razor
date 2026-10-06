@@ -32,3 +32,12 @@ def test_status_audit_is_read_only_and_covers_us_livefeed_runtime():
     assert "NRestarts" in ops
     assert 'cat "$status_path"' in ops
     assert "LIVE_TRADE=NO" in ops
+
+
+def test_ssm_ops_has_canonical_adapter_standalone_readonly_probe():
+    ops=(ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    assert "- us_opend_adapter_standalone_probe" in ops
+    assert "FutuK1MStreamingAdapter" in ops
+    assert '"radar_admission":"BLOCKED"' in ops
+    assert '"live_trade":False' in ops
+    assert "OpenUSTradeContext" not in ops
