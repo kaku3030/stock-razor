@@ -389,15 +389,39 @@ class LiveFeedController:
         with self._authoritative_lock:
             return tuple(self._command_results)
 
+    def peek_applied_data_for_consumer(self) -> AppliedDataEvidence | None:
+        """Return the oldest writer-qualified DATA fact without removing it.
+
+        Runtime consumers should prefer peek/ack so an unexpected downstream
+        exception cannot silently consume evidence before it is handled.
+        """
+
+        with self._applied_data_queue_lock:
+            return self._applied_data_queue[0] if self._applied_data_queue else None
+
+    def ack_applied_data_for_consumer(self, expected: AppliedDataEvidence) -> bool:
+        """Remove the oldest DATA fact only after downstream handling.
+
+        The acknowledgement is exact and FIFO. A mismatched acknowledgement
+        is a programming error and leaves the queue unchanged.
+        """
+
+        with self._applied_data_queue_lock:
+            if not self._applied_data_queue:
+                return False
+            if self._applied_data_queue[0] != expected:
+                raise ValueError("applied-data acknowledgement does not match queue head")
+            self._applied_data_queue.popleft()
+            return True
+
     def drain_applied_data_for_consumer(
         self, max_items: int | None = None
     ) -> list[AppliedDataEvidence]:
-        """Drain writer-qualified DATA handoff evidence for one consumer.
+        """Compatibility/test helper for destructive DATA handoff draining.
 
-        This is a local transport handoff, not a second authoritative state
-        store. Events appear here only after the controller writer has applied
-        runtime/provider/generation/STOP relevance checks and confirmed that
-        the semantic stream is still desired at that exact sequence point.
+        Production/runtime consumers should prefer peek_applied_data_for_consumer
+        plus ack_applied_data_for_consumer so a downstream failure cannot lose
+        the current writer-qualified evidence item.
         """
 
         if max_items is not None and max_items < 0:
