@@ -1,12 +1,18 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from data_provider.live_feed_types import (
+    BindingStrength,
+    ControlPlaneState,
     ProviderEvent,
     ProviderEventKind,
     SemanticStreamKey,
     freeze_normalized_payload,
 )
 from data_provider.market_data_adapter import SignalPermission
+from src.services.live_feed.commands import FakeProviderCommandExecutor
+from src.services.live_feed.controller import AppliedDataEvidence, LiveFeedController
 from src.services.live_feed.futu_k1m_closure_pipeline import (
     FutuK1MClosurePipeline,
 )
@@ -35,11 +41,17 @@ def row(
     }
 
 
-def event(payload, *, key=KEY, kind=ProviderEventKind.DATA):
+def raw_event(
+    payload,
+    *,
+    key=KEY,
+    kind=ProviderEventKind.DATA,
+    generation=1,
+):
     return ProviderEvent(
         runtime_instance_id="r1",
         provider_id="futu",
-        controller_generation=1,
+        controller_generation=generation,
         observed_at_utc=OBSERVED,
         observed_at_monotonic=1.0,
         event_kind=kind,
@@ -54,6 +66,55 @@ def event(payload, *, key=KEY, kind=ProviderEventKind.DATA):
         ),
         provenance="PUSH",
     )
+
+
+def event(payload, *, key=KEY, kind=ProviderEventKind.DATA):
+    return AppliedDataEvidence(
+        event=raw_event(payload, key=key, kind=kind),
+        desired_registry_revision_at_apply=1,
+        stream_subscription_epoch_at_apply=1,
+        control_plane_state_at_apply=ControlPlaneState.DESIRED,
+        binding_strength_at_apply=BindingStrength.UNVERIFIED,
+    )
+
+
+def test_raw_provider_event_cannot_bypass_writer_applied_boundary():
+    pipeline = FutuK1MClosurePipeline()
+
+    with pytest.raises(TypeError, match="writer-applied"):
+        pipeline.consume_event(raw_event(row("2026-10-05 10:52:00")))
+
+
+def test_controller_writer_egress_chains_into_closure_pipeline():
+    controller = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+        now_utc=lambda: OBSERVED,
+    )
+    controller.request_add_desired(KEY)
+    controller.process_pending()
+    pipeline = FutuK1MClosurePipeline()
+
+    controller.submit_event(
+        raw_event(row("2026-10-05 10:52:00", 100.8), generation=0)
+    )
+    controller.process_pending()
+    first = controller.drain_applied_data_for_consumer()
+    assert len(first) == 1
+    assert pipeline.consume_event(first[0]).status == "FORMING"
+
+    controller.submit_event(
+        raw_event(row("2026-10-05 10:53:00", 101.2), generation=0)
+    )
+    controller.process_pending()
+    second = controller.drain_applied_data_for_consumer()
+    assert len(second) == 1
+    assert pipeline.consume_event(second[0]).status == "CLOSED_QUEUED"
+    bars = pipeline.drain_closed()
+    assert len(bars) == 1
+    assert bars[0].bar_end == datetime(2026, 10, 5, 14, 52, tzinfo=timezone.utc)
+    assert bars[0].health.signal_permission is SignalPermission.BLOCKED
 
 
 def test_same_label_updates_remain_forming_and_do_not_queue_history():

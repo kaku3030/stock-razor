@@ -4,9 +4,10 @@ from collections import deque
 from dataclasses import dataclass
 from threading import Lock
 
-from data_provider.live_feed_types import ProviderEvent, ProviderEventKind
+from data_provider.live_feed_types import ProviderEventKind
 from data_provider.market_data_adapter import Bar
 
+from .controller import AppliedDataEvidence
 from .futu_k1m_forming_accumulator import FutuK1MFormingAccumulator
 from .futu_research_bridge import closed_futu_minute_to_bar
 
@@ -20,12 +21,13 @@ class FutuK1MClosurePipelineResult:
 
 
 class FutuK1MClosurePipeline:
-    """Convert accepted Futu K_1M DATA evidence into queued closed 1m bars.
+    """Convert writer-applied Futu K_1M evidence into closed research bars.
 
-    Provider callbacks may call consume_event without writing the market-data
-    cache. The single consumer/main loop drains canonical bars later.
-    Malformed, mismatched, or out-of-order evidence fails closed into bounded
-    diagnostics instead of escaping through the provider callback.
+    Raw provider callbacks and ingress-accepted events are intentionally not
+    accepted by this boundary. Callers must supply AppliedDataEvidence drained
+    from LiveFeedController after its single-writer relevance checks. The
+    single consumer/main loop drains canonical bars later. Malformed,
+    mismatched, or out-of-order evidence fails closed into bounded diagnostics.
     """
 
     def __init__(
@@ -47,7 +49,12 @@ class FutuK1MClosurePipeline:
         self._closed_count = 0
         self._blocked_count = 0
 
-    def consume_event(self, event: ProviderEvent) -> FutuK1MClosurePipelineResult:
+    def consume_event(
+        self, evidence: AppliedDataEvidence
+    ) -> FutuK1MClosurePipelineResult:
+        if not isinstance(evidence, AppliedDataEvidence):
+            raise TypeError("writer-applied AppliedDataEvidence is required")
+        event = evidence.event
         if event.event_kind is not ProviderEventKind.DATA:
             return FutuK1MClosurePipelineResult(
                 status="IGNORED", reason="NON_DATA_EVENT"
