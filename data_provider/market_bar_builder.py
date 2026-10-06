@@ -27,7 +27,7 @@ MARKET_SESSIONS = {
 }
 
 MARKET_TIMEZONES = {"cn": "Asia/Shanghai", "us": "America/New_York"}
-TIMEFRAME_MINUTES = {"15m": 15, "1h": 60}
+TIMEFRAME_MINUTES = {"5m": 5, "15m": 15, "1h": 60}
 
 
 def _bucket_for(
