@@ -39,13 +39,14 @@ def _owner():
     return service
 
 
-def test_expired_final_minute_marks_completed_fifteen_and_sixty_minute_bars_stale():
+def test_expired_final_minute_marks_completed_derived_bars_stale():
     service = _owner()
     snapshot = service.snapshot("NVDA", as_of=START + timedelta(minutes=65))
     assert snapshot.minute_bars[-1].health.signal_permission is SignalPermission.WATCH_ONLY
+    assert snapshot.bars_5m[-1].is_closed and snapshot.bars_5m[-1].is_complete
     assert snapshot.bars_15m[-1].is_closed and snapshot.bars_15m[-1].is_complete
     assert snapshot.bars_1h[-1].is_closed and snapshot.bars_1h[-1].is_complete
-    for derived in (snapshot.bars_15m[-1], snapshot.bars_1h[-1]):
+    for derived in (snapshot.bars_5m[-1], snapshot.bars_15m[-1], snapshot.bars_1h[-1]):
         assert "STALE" in derived.quality_flags
         assert derived.health.signal_permission is not SignalPermission.NORMAL
 
@@ -58,5 +59,6 @@ def test_snapshot_read_does_not_mutate_owner_cache_or_permanently_poison_later_r
     assert "STALE" in stale.minute_bars[-1].quality_flags
     assert service.minute_bars("NVDA") == original
     assert "STALE" not in fresh.minute_bars[-1].quality_flags
+    assert "STALE" not in fresh.bars_5m[-1].quality_flags
     assert "STALE" not in fresh.bars_15m[-1].quality_flags
     assert "STALE" not in fresh.bars_1h[-1].quality_flags

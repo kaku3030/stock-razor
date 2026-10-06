@@ -82,7 +82,7 @@ class MarketSnapshotView:
             return None
         selected = (
             latest,
-            *(items[-1] for items in (snapshot.bars_15m, snapshot.bars_1h) if items),
+            *(items[-1] for items in (snapshot.bars_5m, snapshot.bars_15m, snapshot.bars_1h) if items),
         )
         flags = tuple(dict.fromkeys((
             *snapshot.health.quality_flags,

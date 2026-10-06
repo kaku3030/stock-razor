@@ -67,6 +67,7 @@ def _snapshot(*, partial: bool = False, health=HEALTHY) -> MarketDataSnapshot:
         symbol="NVDA",
         as_of=START + timedelta(days=3),
         minute_bars=(),
+        bars_5m=(),
         bars_15m=bars_15m,
         bars_1h=bars_1h,
         health=health,

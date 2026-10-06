@@ -26,6 +26,7 @@ class MarketDataSnapshot:
     symbol: str
     as_of: datetime
     minute_bars: tuple[Bar, ...]
+    bars_5m: tuple[Bar, ...]
     bars_15m: tuple[Bar, ...]
     bars_1h: tuple[Bar, ...]
     health: MarketDataHealth
@@ -132,6 +133,7 @@ class RealtimeMarketDataService:
                 symbol=symbol.upper(),
                 as_of=effective_as_of,
                 minute_bars=(),
+                bars_5m=(),
                 bars_15m=(),
                 bars_1h=(),
                 health=health,
@@ -156,15 +158,17 @@ class RealtimeMarketDataService:
             )
             # Never mutate the owner cache on a read. Aggregate from this
             # local evidence snapshot *after* freshness is classified, so a
-            # complete 15m/60m grid cannot launder an expired source minute.
+            # complete 5m/15m/60m grids cannot launder an expired source minute.
             minute_bars = (*minute_bars[:-1], latest)
 
+        bars_5m = tuple(aggregate_bars(list(minute_bars), "5m", as_of=effective_as_of))
         bars_15m = tuple(aggregate_bars(list(minute_bars), "15m", as_of=effective_as_of))
         bars_1h = tuple(aggregate_bars(list(minute_bars), "1h", as_of=effective_as_of))
         return MarketDataSnapshot(
             symbol=symbol.upper(),
             as_of=effective_as_of,
             minute_bars=minute_bars,
+            bars_5m=bars_5m,
             bars_15m=bars_15m,
             bars_1h=bars_1h,
             health=health,

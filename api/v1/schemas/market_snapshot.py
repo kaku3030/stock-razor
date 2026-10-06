@@ -35,7 +35,7 @@ class SnapshotQuote(BaseModel):
 
 
 class SnapshotBar(BaseModel):
-    timeframe: Literal["1m", "15m", "60m", "1h", "1d"]
+    timeframe: Literal["1m", "5m", "15m", "60m", "1h", "1d"]
     bar_start: datetime
     bar_end: datetime
     open: float

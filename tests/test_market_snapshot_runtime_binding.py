@@ -47,7 +47,7 @@ class AlreadyOwnedCache:
             health=HEALTH,
         ),)
         return MarketDataSnapshot(
-            symbol=symbol, as_of=NOW, minute_bars=bars, bars_15m=(), bars_1h=(),
+            symbol=symbol, as_of=NOW, minute_bars=bars, bars_5m=(), bars_15m=(), bars_1h=(),
             health=HEALTH, provider="alpaca" if bars else None,
             feed=self.feed if bars else None, fallback_from=None,
             fallback_reason=None,
@@ -468,6 +468,7 @@ def test_callback_to_authenticated_api_survives_restart_without_old_cache(monkey
     assert initial.status_code == 200
     assert initial.json()["quote"]["price"] == 200.5
     assert datetime.fromisoformat(initial.json()["quote"]["source_timestamp"]) == START + timedelta(minutes=1)
+    assert {bar["timeframe"] for bar in initial.json()["bars"]} == {"1m", "5m", "15m", "1h"}
 
     owner.stop()
     assert providers[0].closed == 1
