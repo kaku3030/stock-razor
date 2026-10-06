@@ -26,7 +26,7 @@ print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
 
 cat >"$INSTALL_ROOT/run.py" <<'PY'
-import json, os, socket, time, uuid
+import json, os, socket, threading, time, uuid
 from datetime import datetime, timezone
 import futu as ft
 from data_provider.futu_k1m_streaming_adapter import (
@@ -36,6 +36,10 @@ from data_provider.futu_k1m_streaming_adapter import (
 from data_provider.live_feed_types import ProviderEventKind, SemanticStreamKey
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.futu_k1m_currentness import (
+    classify_futu_us_k1m_currentness,
+    summarize_futu_k1m_currentness,
+)
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 
 CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ")
@@ -48,6 +52,8 @@ controller=LiveFeedController(runtime_instance_id=runtime_id,provider_id="futu",
 accepted_event_count=0
 data_event_count=0
 last_push_utc=None
+latest_time_keys={}
+evidence_lock=threading.Lock()
 def generation(): return controller.snapshot().controller_generation
 adapter=FutuK1MStreamingAdapter(
     ctx,ft,runtime_instance_id=runtime_id,controller_generation=generation,
@@ -57,10 +63,14 @@ adapter=FutuK1MStreamingAdapter(
 )
 def on_event_accepted(event):
     global accepted_event_count,data_event_count,last_push_utc
-    accepted_event_count+=1
-    if event.event_kind is ProviderEventKind.DATA:
-        data_event_count+=1
-        last_push_utc=datetime.now(timezone.utc).isoformat()
+    with evidence_lock:
+        accepted_event_count+=1
+        if event.event_kind is ProviderEventKind.DATA:
+            data_event_count+=1
+            last_push_utc=datetime.now(timezone.utc).isoformat()
+            key=event.semantic_stream_key
+            if key is not None and event.provider_timestamp_raw:
+                latest_time_keys[key.symbol]=str(event.provider_timestamp_raw)
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
@@ -77,13 +87,36 @@ try:
     while True:
         time.sleep(5)
         snap=bridge.drain(); seq+=1; now=datetime.now(timezone.utc)
+        with evidence_lock:
+            data_count=data_event_count
+            accepted_count=accepted_event_count
+            push_utc=last_push_utc
+            time_keys=dict(latest_time_keys)
+        state_ret,state_data=ctx.get_global_state()
+        market_state=(str(state_data.get("market_us") or "UNKNOWN")
+                      if state_ret==ft.RET_OK and isinstance(state_data,dict) else "UNKNOWN")
+        currentness={
+            code:classify_futu_us_k1m_currentness(
+                time_keys.get(code),observed_at_utc=now,market_state=market_state
+            )
+            for code in CODES
+        }
+        currentness_payload={
+            code:{"status":result.status,"reason":result.reason,
+                  "time_key":time_keys.get(code),"age_seconds":result.age_seconds}
+            for code,result in currentness.items()
+        }
+        currentness_summary=summarize_futu_k1m_currentness(currentness)
         heartbeat={"type":"us_opend_livefeed_heartbeat","runtime_instance_id":runtime_id,
           "repo_sha":repo_sha,"host_id":host_id,"sequence":seq,"emitted_at_utc":now.isoformat(),
           "symbols":list(CODES),"subscribed":[k.symbol for k in snap.subscribed],
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
-          "event_count":data_event_count,"accepted_event_count":accepted_event_count,
-          "last_push_utc":last_push_utc,
+          "event_count":data_count,"accepted_event_count":accepted_count,
+          "last_push_utc":push_utc,"market_state_us":market_state,
+          "market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED",
+          "latest_k1m_time_keys":time_keys,"k1m_currentness":currentness_payload,
+          "k1m_currentness_summary":currentness_summary,
           "adapter_diagnostics":adapter.diagnostics(),
           "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
           "radar_admission":"BLOCKED","live_trade":False}

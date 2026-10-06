@@ -87,9 +87,26 @@ def test_installer_fails_closed_on_startup_callback_starvation():
     assert "data_event_count == 0" in installer
     assert "if event_count == 0" not in installer
     assert "event.event_kind is ProviderEventKind.DATA" in installer
-    assert '"event_count":data_event_count' in installer
-    assert '"accepted_event_count":accepted_event_count' in installer
+    assert '"event_count":data_count' in installer
+    assert '"accepted_event_count":accepted_count' in installer
     assert "Restart=on-failure" in installer
+
+
+def test_installer_publishes_session_aware_k1m_currentness_without_promotion():
+    installer=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
+    assert "classify_futu_us_k1m_currentness" in installer
+    assert "summarize_futu_k1m_currentness" in installer
+    assert "ctx.get_global_state()" in installer
+    assert 'state_data.get("market_us")' in installer
+    assert '"market_state_us":market_state' in installer
+    assert '"market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED"' in installer
+    assert '"latest_k1m_time_keys":time_keys' in installer
+    assert '"k1m_currentness":currentness_payload' in installer
+    assert '"k1m_currentness_summary":currentness_summary' in installer
+    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"bar_closure":"UNPROVEN"' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
 
 
 def test_installer_enables_only_explicit_sync_transport_lifecycle_evidence():
