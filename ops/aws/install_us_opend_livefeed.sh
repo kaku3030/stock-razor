@@ -47,6 +47,10 @@ from src.services.live_feed.canonical_snapshot_export import (
     write_canonical_snapshot_export,
 )
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
+from src.services.live_feed.futu_k1m_closure_qualification import (
+    FutuK1MClosureQualificationTracker,
+    summarize_futu_k1m_closure_qualification,
+)
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
     futu_us_market_state_to_session,
@@ -79,6 +83,9 @@ market_data=RealtimeMarketDataService(
     max_minutes=480,
 )
 closure_pipeline=FutuK1MClosurePipeline(max_pending_closed=1024)
+closure_qualification_tracker=FutuK1MClosureQualificationTracker(
+    required_consecutive_boundaries=3
+)
 research_consumer=FutuK1MResearchConsumer(controller,closure_pipeline,market_data)
 accepted_event_count=0
 data_event_count=0
@@ -184,6 +191,51 @@ try:
                 "bar_count_1h":len(bars_1h),
                 "latest_1h_end_utc":latest_1h.bar_end.isoformat() if latest_1h else None,
             }
+        closure_qualification={
+            code:closure_qualification_tracker.observe(
+                code,
+                currentness=currentness[code],
+                latest_closed_bar=(
+                    canonical_snapshots[code].minute_bars[-1]
+                    if canonical_snapshots[code].minute_bars else None
+                ),
+            )
+            for code in CODES
+        }
+        closure_qualification_payload={
+            code:{
+                "status":result.status,
+                "reason":result.reason,
+                "consecutive_boundaries":result.consecutive_boundaries,
+                "required_consecutive_boundaries":result.required_consecutive_boundaries,
+                "interval_start_utc":(
+                    result.interval_start_utc.isoformat()
+                    if result.interval_start_utc else None
+                ),
+                "interval_end_utc":(
+                    result.interval_end_utc.isoformat()
+                    if result.interval_end_utc else None
+                ),
+                "latest_closed_bar_start_utc":(
+                    result.latest_closed_bar_start_utc.isoformat()
+                    if result.latest_closed_bar_start_utc else None
+                ),
+                "latest_closed_bar_end_utc":(
+                    result.latest_closed_bar_end_utc.isoformat()
+                    if result.latest_closed_bar_end_utc else None
+                ),
+                "latest_closed_bar_source_timestamp_utc":(
+                    result.latest_closed_bar_source_timestamp_utc.isoformat()
+                    if result.latest_closed_bar_source_timestamp_utc else None
+                ),
+                "boundary_delta_seconds":result.boundary_delta_seconds,
+                "can_promote":result.can_promote,
+            }
+            for code,result in closure_qualification.items()
+        }
+        closure_qualification_summary=summarize_futu_k1m_closure_qualification(
+            closure_qualification
+        )
         canonical_export_updated=False
         should_export=(
             consumer_result.bars_ingested > 0
@@ -235,6 +287,8 @@ try:
           "latest_k1m_time_keys":time_keys,"k1m_currentness":currentness_payload,
           "k1m_currentness_summary":currentness_summary,
           "closure_pipeline":closure_diagnostics,
+          "k1m_closure_qualification":closure_qualification_payload,
+          "k1m_closure_qualification_summary":closure_qualification_summary,
           "research_consumer":consumer_payload,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
