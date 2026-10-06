@@ -25,6 +25,9 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert '"bar_closure":"UNPROVEN"' in WORKFLOW
     assert '"radar_admission":"BLOCKED"' in WORKFLOW
     assert '"closure_pipeline":' in WORKFLOW
+    assert '"k1m_closure_qualification":' in WORKFLOW
+    assert '"k1m_closure_qualification_summary":' in WORKFLOW
+    assert '"can_promote":false' in WORKFLOW
     assert '"research_consumer":' in WORKFLOW
     assert '"canonical_cache":' in WORKFLOW
     assert '"canonical_snapshot_export":{"status":"PASS"' in WORKFLOW
@@ -246,3 +249,25 @@ def test_verify_gate_prints_pass_marker_on_its_own_line():
     newline_index = VERIFY.index("printf '\\n'", cat_index)
     pass_index = VERIFY.index('echo "CANONICAL_SNAPSHOT_EXPORT=PASS"', newline_index)
     assert cat_index < newline_index < pass_index
+
+
+
+def test_installer_tracks_closure_qualification_without_promoting_bar_closure():
+    installer = INSTALLER
+    assert "FutuK1MClosureQualificationTracker" in installer
+    assert "summarize_futu_k1m_closure_qualification" in installer
+    assert "required_consecutive_boundaries=3" in installer
+    assert '"k1m_closure_qualification":closure_qualification_payload' in installer
+    assert '"k1m_closure_qualification_summary":closure_qualification_summary' in installer
+    assert '"can_promote":result.can_promote' in installer
+    assert '"bar_closure":"UNPROVEN"' in installer
+    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
+
+
+def test_verify_gate_accepts_typed_closure_evidence_but_forbids_promotion():
+    assert 'heartbeat.get("k1m_closure_qualification")' in VERIFY
+    assert 'heartbeat.get("k1m_closure_qualification_summary")' in VERIFY
+    assert 'item.get("can_promote") is False' in VERIFY
+    assert 'heartbeat.get("bar_closure") == "UNPROVEN"' in VERIFY

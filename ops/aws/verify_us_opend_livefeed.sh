@@ -20,6 +20,14 @@ with open(snapshot_path, encoding="utf-8") as handle:
 export = heartbeat.get("canonical_snapshot_export") or {}
 assert heartbeat.get("repo_sha") == expected_sha
 assert int(heartbeat.get("event_count") or 0) > 0
+closure = heartbeat.get("k1m_closure_qualification") or {}
+closure_summary = heartbeat.get("k1m_closure_qualification_summary")
+assert closure_summary in {"UNKNOWN", "PASS", "FAIL", "NOT_APPLICABLE"}
+assert set(closure) == set(heartbeat.get("symbols") or [])
+for item in closure.values():
+    assert item.get("status") in {"UNKNOWN", "PASS", "FAIL", "NOT_APPLICABLE"}
+    assert item.get("can_promote") is False
+assert heartbeat.get("bar_closure") == "UNPROVEN"
 assert export.get("status") == "PASS"
 assert export.get("schema") == "stock_razor_canonical_market_snapshot_v1"
 assert export.get("repo_sha") == expected_sha
