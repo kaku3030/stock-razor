@@ -100,9 +100,16 @@ class FutuK1MStreamingAdapter:
             raise ValueError("US OpenD symbols must use canonical US.* form")
 
     def subscribe_stream(self, key: SemanticStreamKey) -> None:
-        self._validate_key(key)
+        self.subscribe_streams((key,))
+
+    def subscribe_streams(self, keys) -> None:
+        unique = tuple(dict.fromkeys(keys))
+        if not unique:
+            raise ValueError("at least one K_1M stream is required")
+        for key in unique:
+            self._validate_key(key)
         ret, data = self._ctx.subscribe(
-            [key.symbol],
+            [key.symbol for key in unique],
             [self._ft.SubType.K_1M],
             subscribe_push=True,
         )
