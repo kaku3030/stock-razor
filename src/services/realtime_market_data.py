@@ -55,8 +55,10 @@ class RealtimeMarketDataService:
 
     def __init__(
         self,
-        adapter: MarketDataAdapter,
+        adapter: Optional[MarketDataAdapter],
         *,
+        session_status_provider: Optional[Callable[[str], str]] = None,
+        provider_health_provider: Optional[Callable[[], MarketDataHealth]] = None,
         max_minutes: int = 480,
         freshness_limit_seconds: int = 120,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -65,7 +67,22 @@ class RealtimeMarketDataService:
             raise ValueError("max_minutes must be at least 60")
         if freshness_limit_seconds <= 0:
             raise ValueError("freshness_limit_seconds must be positive")
+        if adapter is None:
+            if session_status_provider is None or provider_health_provider is None:
+                raise ValueError(
+                    "ingest-only mode requires session_status_provider and provider_health_provider"
+                )
         self._adapter = adapter
+        self._session_status_provider = (
+            session_status_provider
+            if session_status_provider is not None
+            else adapter.get_session_status
+        )
+        self._provider_health_provider = (
+            provider_health_provider
+            if provider_health_provider is not None
+            else adapter.get_provider_health
+        )
         self._max_minutes = max_minutes
         self._freshness_limit_seconds = freshness_limit_seconds
         self._now = now
@@ -98,6 +115,8 @@ class RealtimeMarketDataService:
         end: Optional[datetime] = None,
         limit: Optional[int] = None,
     ) -> int:
+        if self._adapter is None:
+            raise RuntimeError("ingest-only realtime service cannot seed from a provider")
         bars = self._adapter.get_bars(
             symbol,
             "1m",
@@ -113,6 +132,9 @@ class RealtimeMarketDataService:
         *,
         observer: Optional[Callable[[Bar], None]] = None,
     ) -> None:
+        if self._adapter is None:
+            raise RuntimeError("ingest-only realtime service cannot subscribe a provider")
+
         def on_bar(bar: Bar) -> None:
             changed = self.ingest(bar)
             if changed and observer is not None:
@@ -128,7 +150,7 @@ class RealtimeMarketDataService:
         effective_as_of = as_of or self._now()
         minute_bars = self.minute_bars(symbol)
         if not minute_bars:
-            health = self._adapter.get_provider_health()
+            health = self._provider_health_provider()
             return MarketDataSnapshot(
                 symbol=symbol.upper(),
                 as_of=effective_as_of,
@@ -146,8 +168,8 @@ class RealtimeMarketDataService:
             )
 
         latest = minute_bars[-1]
-        health = latest.health or self._adapter.get_provider_health()
-        session = self._adapter.get_session_status(latest.market)
+        health = latest.health or self._provider_health_provider()
+        session = self._session_status_provider(latest.market)
         age_seconds = max(0, (effective_as_of - latest.bar_end.astimezone(effective_as_of.tzinfo)).total_seconds())
         if session in ACTIVE_SESSIONS and age_seconds > self._freshness_limit_seconds:
             health = _stale_health(health)
