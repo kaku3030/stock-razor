@@ -12,6 +12,7 @@ on:
           - mcp_status
           - futures_status
           - us_livefeed_status
+          - us_livefeed_runtime_diff_audit
           - us_livefeed_controlled_restart_probe
           - us_opend_start_order_probe
           - futures_opend_probe
@@ -179,6 +180,32 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$us_livefeed_controlled_restart_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_livefeed_runtime_diff_audit)
+              read -r -d '' us_livefeed_runtime_diff_audit_script <<'REMOTE' || true
+          set -eu
+          svc=stock-razor-us-livefeed.service
+          pid=$(systemctl show "$svc" -p MainPID --value)
+          echo '=== US LIVEFEED FORMAL RUNTIME DIFF AUDIT ==='
+          systemctl is-active "$svc" || true
+          echo "MAIN_PID=$pid"
+          systemctl show "$svc" -p WorkingDirectory -p FragmentPath -p User -p Group -p NoNewPrivileges -p PrivateTmp -p ProtectSystem -p Environment --no-pager
+          if [ "$pid" != 0 ]; then
+            readlink -f /proc/$pid/cwd
+            tr '\0' ' ' < /proc/$pid/cmdline; echo
+            tr '\0' '\n' < /proc/$pid/environ | sort
+          fi
+          sha256sum /opt/stock-razor-us-livefeed/run.py
+          sha256sum /etc/systemd/system/stock-razor-us-livefeed.service
+          cd /opt/stock-razor-us-livefeed/repo
+          git rev-parse HEAD
+          git status --porcelain
+          cat /run/stock-razor-us-livefeed/latest-heartbeat.json 2>/dev/null || true
+          echo
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_livefeed_runtime_diff_audit_script" '[ $script ]' > commands.json
               ;;
             us_livefeed_status)
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
