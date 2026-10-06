@@ -13,6 +13,7 @@ on:
           - futures_status
           - us_livefeed_status
           - us_livefeed_runtime_diff_audit
+          - us_livefeed_exact_runpy_probe
           - us_livefeed_controlled_restart_probe
           - us_opend_start_order_probe
           - futures_opend_probe
@@ -180,6 +181,26 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$us_livefeed_controlled_restart_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_livefeed_exact_runpy_probe)
+              read -r -d '' us_livefeed_exact_runpy_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== US LIVEFEED EXACT INSTALLED RUN.PY BOUNDED PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          test "$(systemctl is-active stock-razor-us-livefeed.service)" = active
+          rm -f /tmp/stock-razor-us-livefeed-exact-probe.json
+          set +e
+          env PYTHONUNBUFFERED=1 PYTHONPATH=/opt/stock-razor-us-livefeed/repo HOME=/root STOCK_RAZOR_REPO_SHA=$(cd /opt/stock-razor-us-livefeed/repo && git rev-parse HEAD) STOCK_RAZOR_US_LIVEFEED_STATUS_PATH=/tmp/stock-razor-us-livefeed-exact-probe.json timeout --signal=TERM --kill-after=5s 32s /opt/stock-razor-opend-client/venv/bin/python /opt/stock-razor-us-livefeed/run.py
+          rc=$?
+          set -e
+          echo "PROBE_EXIT=$rc"
+          cat /tmp/stock-razor-us-livefeed-exact-probe.json 2>/dev/null || true
+          echo
+          echo "FORMAL_SERVICE=$(systemctl is-active stock-razor-us-livefeed.service || true)"
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_livefeed_exact_runpy_probe_script" '[ $script ]' > commands.json
               ;;
             us_livefeed_runtime_diff_audit)
               read -r -d '' us_livefeed_runtime_diff_audit_script <<'REMOTE' || true
