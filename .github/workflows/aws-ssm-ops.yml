@@ -207,7 +207,7 @@ jobs:
               ;;
             us_opend_adapter_systemd_probe)
               read -r -d '' us_opend_adapter_systemd_probe_script <<'REMOTE' || true
-          set -euo pipefail
+          set -eu
           echo '=== OPEND CANONICAL ADAPTER SYSTEMD SANDBOX READ-ONLY PROBE ==='
           echo 'LIVE_TRADE=NO'
           probe=/run/stock-razor-us-livefeed/systemd-adapter-probe.py
