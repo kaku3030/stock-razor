@@ -32,6 +32,12 @@ def test_k5m_crosscheck_uses_canonical_1m_aggregation_and_native_k5m():
     assert "bar.bar_end.astimezone(et)" in text
     assert '"k1m_first_time_key"' in text and '"k1m_last_time_key"' in text
     assert '"native_k5m_first_time_key"' in text and '"native_k5m_last_time_key"' in text
+    assert '"source_k1m_volumes"' in text
+    assert '"source_k1m_turnovers"' in text
+    assert '"derived_volume"' in text and '"native_volume"' in text
+    assert '"volume_delta"' in text and '"volume_ratio"' in text
+    assert '"derived_turnover"' in text and '"native_turnover"' in text
+    assert '"turnover_delta"' in text and '"turnover_ratio"' in text
 
 
 def test_k5m_crosscheck_only_uses_completed_prior_regular_session():

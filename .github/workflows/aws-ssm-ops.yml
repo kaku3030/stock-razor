@@ -678,7 +678,35 @@ jobs:
                               elif result.status=="FAIL":
                                   fail_count+=1
                                   if len(mismatch_examples)<5:
-                                      mismatch_examples.append({"time_key":key,"mismatches":list(result.mismatches)})
+                                      bucket_start=bar.bar_start.astimezone(et).replace(tzinfo=None)
+                                      bucket_end=bar.bar_end.astimezone(et).replace(tzinfo=None)
+                                      source_rows=[]
+                                      for source in one_day:
+                                          try:
+                                              label=datetime.strptime(str(source.get("time_key") or ""),"%Y-%m-%d %H:%M:%S")
+                                          except ValueError:
+                                              continue
+                                          if bucket_start < label <= bucket_end:
+                                              source_rows.append(source)
+                                      derived_volume=float(bar.volume)
+                                      native_volume=float(row.get("volume") or 0)
+                                      derived_turnover=None if bar.amount is None else float(bar.amount)
+                                      native_turnover=float(row.get("turnover") or 0)
+                                      mismatch_examples.append({
+                                          "time_key":key,
+                                          "mismatches":list(result.mismatches),
+                                          "source_k1m_time_keys":[str(source.get("time_key")) for source in source_rows],
+                                          "source_k1m_volumes":[float(source.get("volume") or 0) for source in source_rows],
+                                          "source_k1m_turnovers":[float(source.get("turnover") or 0) for source in source_rows],
+                                          "derived_volume":derived_volume,
+                                          "native_volume":native_volume,
+                                          "volume_delta":derived_volume-native_volume,
+                                          "volume_ratio":None if native_volume==0 else derived_volume/native_volume,
+                                          "derived_turnover":derived_turnover,
+                                          "native_turnover":native_turnover,
+                                          "turnover_delta":None if derived_turnover is None else derived_turnover-native_turnover,
+                                          "turnover_ratio":None if native_turnover==0 or derived_turnover is None else derived_turnover/native_turnover,
+                                      })
                               else: unknown_count+=1
                           unmatched_derived=len(derived)-matched
                           unmatched_native=len(five_day)-matched
