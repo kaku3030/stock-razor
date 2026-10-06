@@ -21,7 +21,8 @@ on:
           - futures_opend_core_mapping
           - futures_opend_snapshot_probe
           - us_opend_k1m_probe
-          - us_opend_k1m_continuity_probe`r`n          - us_opend_k5m_probe
+          - us_opend_k1m_continuity_probe
+          - us_opend_k5m_probe
           - us_opend_k1m_reconnect_probe
           - us_opend_adapter_standalone_probe
           - us_opend_adapter_systemd_probe
@@ -580,7 +581,8 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_k5m_probe_script" '[ $script ]' > commands.json
-              ;;            us_opend_k1m_continuity_probe)
+              ;;
+            us_opend_k1m_continuity_probe)
               read -r -d '' us_opend_k1m_continuity_probe_script <<'REMOTE' || true
           set -u
           echo '=== OPEND US K_1M CONTINUITY PROBE ==='
