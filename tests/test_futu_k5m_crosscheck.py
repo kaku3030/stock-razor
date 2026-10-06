@@ -2,7 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from data_provider.market_bar_builder import aggregate_bars
 from data_provider.market_data_adapter import Bar
+from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
+from src.services.live_feed.futu_research_bridge import closed_futu_minute_to_bar
 from src.services.live_feed.futu_k5m_crosscheck import (
     compare_canonical_5m_to_futu_native,
 )
@@ -27,7 +30,7 @@ def canonical_5m(*, closed=True, complete=True) -> Bar:
         amount=51000.0,
         provider="futu",
         feed="opend",
-        source_timestamp=START + timedelta(minutes=4),
+        source_timestamp=START + timedelta(minutes=5),
         received_at=START + timedelta(minutes=5, seconds=1),
         session="regular",
         is_closed=closed,
@@ -38,7 +41,7 @@ def canonical_5m(*, closed=True, complete=True) -> Bar:
 def native_row(**changes):
     row = {
         "code": "US.AMD",
-        "time_key": "2026-10-05 09:30:00",
+        "time_key": "2026-10-05 09:35:00",
         "open": 100.0,
         "high": 103.0,
         "low": 99.5,
@@ -83,7 +86,7 @@ def test_any_price_volume_turnover_or_time_difference_fails_closed():
     result = compare_canonical_5m_to_futu_native(
         canonical_5m(),
         native_row(
-            time_key="2026-10-05 09:35:00",
+            time_key="2026-10-05 09:40:00",
             high=103.1,
             volume=501,
             turnover=51001,
@@ -136,3 +139,46 @@ def test_non_us_or_non_5m_canonical_input_is_rejected():
     bar = Bar(**{**canonical_5m().__dict__, "timeframe": "15m"})
     with pytest.raises(ValueError, match="US 5m"):
         compare_canonical_5m_to_futu_native(bar, native_row())
+
+
+def test_end_labeled_k1m_chain_matches_end_labeled_native_k5m():
+    closed = []
+    for index in range(5):
+        # 09:31 labels the 09:30-09:31 interval; 09:35 labels 09:34-09:35.
+        label = datetime(2026, 10, 5, 9, 31 + index)
+        minute = FormingMinuteBar(
+            "US.AMD", label, 100 + index, 101 + index, 99 + index,
+            100.5 + index, 10 + index, 1000 + index, True
+        )
+        closed.append(
+            closed_futu_minute_to_bar(
+                minute,
+                received_at=datetime(2026, 10, 5, 13, 36, tzinfo=timezone.utc),
+            )
+        )
+
+    derived = aggregate_bars(
+        closed, "5m", as_of=datetime(2026, 10, 5, 13, 36, tzinfo=timezone.utc)
+    )
+    assert len(derived) == 1
+    bar = derived[0]
+    assert bar.bar_start == datetime(2026, 10, 5, 13, 30, tzinfo=timezone.utc)
+    assert bar.bar_end == datetime(2026, 10, 5, 13, 35, tzinfo=timezone.utc)
+
+    result = compare_canonical_5m_to_futu_native(
+        bar,
+        {
+            "code": "US.AMD",
+            "time_key": "2026-10-05 09:35:00",
+            "open": 100,
+            "high": 105,
+            "low": 99,
+            "close": 104.5,
+            "volume": 60,
+            "turnover": 5010,
+        },
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+    assert result.status == "PASS"
+    assert result.mismatches == ()

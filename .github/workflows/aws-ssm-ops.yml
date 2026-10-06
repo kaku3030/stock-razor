@@ -620,7 +620,7 @@ jobs:
                       continue
                   if stamp.date() >= today_et:
                       continue
-                  if dtime(9,30) <= stamp.time() < dtime(16,0):
+                  if dtime(9,30) < stamp.time() <= dtime(16,0):
                       grouped[stamp.date().isoformat()].append(row)
               return grouped
 
@@ -666,7 +666,7 @@ jobs:
                           pass_count=fail_count=unknown_count=matched=0
                           mismatch_examples=[]
                           for bar in derived:
-                              key=bar.bar_start.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
+                              key=bar.bar_end.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
                               row=native.get(key)
                               if row is None:
                                   continue
@@ -690,7 +690,11 @@ jobs:
                               status="PASS"
                           item.update({
                               "status":status,"session_date":selected,"k1m_rows":len(one_day),
+                              "k1m_first_time_key":str(one_day[0].get("time_key")) if one_day else None,
+                              "k1m_last_time_key":str(one_day[-1].get("time_key")) if one_day else None,
                               "native_k5m_rows":len(five_day),"derived_k5m_rows":len(derived),
+                              "native_k5m_first_time_key":str(five_day[0].get("time_key")) if five_day else None,
+                              "native_k5m_last_time_key":str(five_day[-1].get("time_key")) if five_day else None,
                               "matched":matched,"pass":pass_count,"fail":fail_count,"unknown":unknown_count,
                               "unmatched_derived":unmatched_derived,"unmatched_native":unmatched_native,
                               "mismatch_examples":mismatch_examples,
