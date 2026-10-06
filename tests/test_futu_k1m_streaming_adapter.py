@@ -168,3 +168,13 @@ def test_handler_registration_failure_is_explicit():
         adapter.start()
     assert adapter._started is False
     assert adapter._handler is None
+
+
+def test_batch_subscription_matches_proven_opend_call_shape():
+    ctx = Context()
+    adapter = FutuK1MStreamingAdapter(ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1)
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    keys = (key("US.AMD"), key("US.NVDA"), key("US.TSLA"), key("US.AAPL"), key("US.QQQ"))
+    adapter.subscribe_streams(keys)
+    assert ctx.calls == [("sub", ["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"], ["K_1M"], True)]

@@ -17,6 +17,7 @@ class StreamingAdapter(Protocol):
     def start(self) -> None: ...
     def stop(self) -> None: ...
     def subscribe_stream(self, key: SemanticStreamKey) -> None: ...
+    def subscribe_streams(self, keys: Sequence[SemanticStreamKey]) -> None: ...
     def unsubscribe_stream(self, key: SemanticStreamKey) -> None: ...
 
 
@@ -55,8 +56,8 @@ class LiveFeedRuntimeBridge:
                 accepted = self._controller.request_add_desired(key)
                 if not accepted.accepted:
                     raise RuntimeError("desired registry ingress rejected")
-                self._adapter.subscribe_stream(key)
-                self._subscribed.append(key)
+            self._adapter.subscribe_streams(unique)
+            self._subscribed.extend(unique)
             self._controller.process_pending()
         except Exception:
             self._cleanup()

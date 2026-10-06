@@ -27,6 +27,8 @@ class Adapter:
         self.calls.append(("stop",))
     def subscribe_stream(self, key):
         self.calls.append(("subscribe", key))
+    def subscribe_streams(self, keys):
+        self.calls.append(("subscribe_many", tuple(keys)))
     def unsubscribe_stream(self, key):
         self.calls.append(("unsubscribe", key))
 
@@ -85,3 +87,12 @@ def test_bridge_contains_no_trading_or_delivery_promotion_surface():
     r=LiveFeedRuntimeBridge(controller(),Adapter())
     assert not hasattr(r,"submit_order")
     assert not hasattr(r,"promote_live")
+
+
+def test_bridge_batches_provider_subscription_for_multiple_streams():
+    second = SemanticStreamKey("futu", "us", "US.AMD", "K_1M", "1m")
+    a=Adapter(); r=LiveFeedRuntimeBridge(controller(),a)
+    snap=r.start([KEY, second])
+    assert ("subscribe_many", (KEY, second)) in a.calls
+    assert not any(call[0] == "subscribe" for call in a.calls)
+    assert snap.subscribed == (KEY, second)
