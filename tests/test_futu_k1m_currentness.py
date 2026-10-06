@@ -4,6 +4,7 @@ import pytest
 
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
+    futu_us_market_state_to_session,
     summarize_futu_k1m_currentness,
 )
 
@@ -117,3 +118,25 @@ def test_naive_observation_time_is_rejected():
             observed_at_utc=datetime(2026, 10, 6, 13, 35),
             market_state="MORNING",
         )
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("MORNING", "regular"),
+        ("AFTERNOON", "regular"),
+        ("PRE_MARKET_BEGIN", "premarket"),
+        ("PRE_MARKET_END", "premarket"),
+        ("AFTER_HOURS_BEGIN", "afterhours"),
+        ("AFTER_HOURS_END", "afterhours"),
+        ("OVERNIGHT", "overnight"),
+        ("CLOSED", "closed"),
+        ("WAITING_OPEN", "closed"),
+        ("NONE", "closed"),
+        ("SOMETHING_NEW", "unknown"),
+        (None, "unknown"),
+        ("", "unknown"),
+    ],
+)
+def test_futu_market_state_maps_to_cache_session_without_guessing(state, expected):
+    assert futu_us_market_state_to_session(state) == expected
