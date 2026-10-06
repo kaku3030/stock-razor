@@ -23,6 +23,7 @@ on:
           - us_opend_k1m_probe
           - us_opend_k1m_continuity_probe
           - us_opend_k5m_probe
+          - us_opend_k5m_crosscheck_probe
           - us_opend_k1m_reconnect_probe
           - us_opend_adapter_standalone_probe
           - us_opend_adapter_systemd_probe
@@ -581,6 +582,145 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_k5m_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_opend_k5m_crosscheck_probe)
+              read -r -d '' us_opend_k5m_crosscheck_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US K_1M-DERIVED 5M VS NATIVE K_5M CROSS-CHECK ==='
+          echo 'LIVE_TRADE=NO'
+          PYTHONPATH=/opt/stock-razor-us-livefeed/repo HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          from collections import defaultdict
+          from datetime import datetime, time as dtime, timezone
+          from zoneinfo import ZoneInfo
+          import futu as ft
+          from data_provider.market_bar_builder import aggregate_bars
+          from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
+          from src.services.live_feed.futu_research_bridge import closed_futu_minute_to_bar
+          from src.services.live_feed.futu_k5m_crosscheck import compare_canonical_5m_to_futu_native
+
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]
+          et=ZoneInfo("America/New_York")
+          today_et=datetime.now(timezone.utc).astimezone(et).date()
+          observed_at=datetime.now(timezone.utc)
+          out={"probe":"us_opend_k5m_crosscheck","codes":codes,"purpose":"CROSS_CHECK_ONLY",
+               "timezone_semantics":"VERIFIED_US_EASTERN","delivery_mode":"UNKNOWN",
+               "radar_admission":"BLOCKED","live_trade":False,"symbols":{}}
+
+          def rows(frame):
+              return frame.to_dict("records") if hasattr(frame,"to_dict") else []
+
+          def regular_by_date(values):
+              grouped=defaultdict(list)
+              for row in values:
+                  raw=str(row.get("time_key") or "")
+                  try:
+                      stamp=datetime.strptime(raw,"%Y-%m-%d %H:%M:%S")
+                  except ValueError:
+                      continue
+                  if stamp.date() >= today_et:
+                      continue
+                  if dtime(9,30) <= stamp.time() < dtime(16,0):
+                      grouped[stamp.date().isoformat()].append(row)
+              return grouped
+
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+              ret,data=ctx.subscribe(codes,[ft.SubType.K_1M,ft.SubType.K_5M],subscribe_push=False)
+              out["subscription"]="PASS" if ret==ft.RET_OK else "BLOCKED"
+              if ret!=ft.RET_OK:
+                  out["subscription_error"]=str(data)[:500]
+              else:
+                  for code in codes:
+                      item={"status":"UNKNOWN"}
+                      out["symbols"][code]=item
+                      try:
+                          r1,d1=ctx.get_cur_kline(code,1000,ktype=ft.KLType.K_1M,autype=ft.AuType.NONE)
+                          r5,d5=ctx.get_cur_kline(code,1000,ktype=ft.KLType.K_5M,autype=ft.AuType.NONE)
+                          if r1!=ft.RET_OK or r5!=ft.RET_OK:
+                              item["status"]="BLOCKED"
+                              item["reason"]="GET_CUR_KLINE_FAILED"
+                              item["k1m_error"]=None if r1==ft.RET_OK else str(d1)[:300]
+                              item["k5m_error"]=None if r5==ft.RET_OK else str(d5)[:300]
+                              continue
+                          one=regular_by_date(rows(d1)); five=regular_by_date(rows(d5))
+                          common=sorted(set(one).intersection(five),reverse=True)
+                          selected=next((day for day in common if len(one[day])>=5 and len(five[day])>=1),None)
+                          if selected is None:
+                              item["reason"]="NO_COMPLETED_COMMON_SESSION"
+                              continue
+                          one_day=sorted(one[selected],key=lambda row:str(row.get("time_key") or ""))
+                          five_day=sorted(five[selected],key=lambda row:str(row.get("time_key") or ""))
+                          closed=[]
+                          for row in one_day:
+                              start=datetime.strptime(str(row["time_key"]),"%Y-%m-%d %H:%M:%S")
+                              minute=FormingMinuteBar(
+                                  code,start,float(row["open"]),float(row["high"]),float(row["low"]),
+                                  float(row["close"]),float(row.get("volume") or 0),
+                                  float(row.get("turnover") or 0),True,
+                              )
+                              closed.append(closed_futu_minute_to_bar(minute,received_at=observed_at))
+                          derived=aggregate_bars(closed,"5m",as_of=observed_at)
+                          native={str(row.get("time_key") or ""):row for row in five_day}
+                          pass_count=fail_count=unknown_count=matched=0
+                          mismatch_examples=[]
+                          for bar in derived:
+                              key=bar.bar_start.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
+                              row=native.get(key)
+                              if row is None:
+                                  continue
+                              matched+=1
+                              result=compare_canonical_5m_to_futu_native(
+                                  bar,row,timezone_semantics_verified=True,native_is_forming=False,
+                              )
+                              if result.status=="PASS": pass_count+=1
+                              elif result.status=="FAIL":
+                                  fail_count+=1
+                                  if len(mismatch_examples)<5:
+                                      mismatch_examples.append({"time_key":key,"mismatches":list(result.mismatches)})
+                              else: unknown_count+=1
+                          unmatched_derived=len(derived)-matched
+                          unmatched_native=len(five_day)-matched
+                          if fail_count:
+                              status="FAIL"
+                          elif unknown_count or unmatched_derived or unmatched_native or matched<10:
+                              status="UNKNOWN"
+                          else:
+                              status="PASS"
+                          item.update({
+                              "status":status,"session_date":selected,"k1m_rows":len(one_day),
+                              "native_k5m_rows":len(five_day),"derived_k5m_rows":len(derived),
+                              "matched":matched,"pass":pass_count,"fail":fail_count,"unknown":unknown_count,
+                              "unmatched_derived":unmatched_derived,"unmatched_native":unmatched_native,
+                              "mismatch_examples":mismatch_examples,
+                          })
+                      except Exception as exc:
+                          item["status"]="BLOCKED"
+                          item["reason"]="CROSSCHECK_ERROR:"+type(exc).__name__
+                  statuses=[entry.get("status") for entry in out["symbols"].values()]
+                  if statuses and all(status=="PASS" for status in statuses):
+                      out["crosscheck"]="PASS"
+                  elif any(status in ("FAIL","BLOCKED") for status in statuses):
+                      out["crosscheck"]="FAIL"
+                  else:
+                      out["crosscheck"]="UNKNOWN"
+          except Exception as exc:
+              out["crosscheck"]="FAIL"
+              out["reason"]="OPEND_US_K5M_CROSSCHECK_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.unsubscribe(codes,[ft.SubType.K_1M,ft.SubType.K_5M])
+                  except Exception: pass
+                  try: ctx.close()
+                  except Exception: pass
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_k5m_crosscheck_probe_script" '[ $script ]' > commands.json
               ;;
             us_opend_k1m_continuity_probe)
               read -r -d '' us_opend_k1m_continuity_probe_script <<'REMOTE' || true
