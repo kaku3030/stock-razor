@@ -22,6 +22,7 @@ on:
           - us_opend_adapter_standalone_probe
           - us_opend_adapter_systemd_probe
           - us_opend_bridge_systemd_probe
+          - us_opend_persistent_loop_probe
           - futures_opend_client_install
           - mcp_diagnose
           - mcp_protocol_probe
@@ -205,6 +206,51 @@ jobs:
               encoded="$(printf '%s' "$futures_opend_client_install_script" | base64 -w0)"
               wrapper="printf '%s' '$encoded' | base64 -d | bash"
               jq -c -n --arg script "$wrapper" '[ $script ]' > commands.json
+              ;;
+            us_opend_persistent_loop_probe)
+              read -r -d '' us_opend_persistent_loop_probe_script <<'REMOTE' || true
+          set -eu
+          echo '=== OPEND PERSISTENT LOOP SYSTEMD READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          probe=/run/stock-razor-us-livefeed/systemd-persistent-loop-probe.py
+          out=/run/stock-razor-us-livefeed/systemd-persistent-loop-probe.out
+          cat >"$probe" <<'PY'
+          import json,time,uuid
+          import futu as ft
+          from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
+          from data_provider.live_feed_types import SemanticStreamKey
+          from src.services.live_feed.commands import FakeProviderCommandExecutor
+          from src.services.live_feed.controller import LiveFeedController
+          from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]; runtime_id=str(uuid.uuid4()); accepted=[]
+          ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+          controller=LiveFeedController(runtime_instance_id=runtime_id,provider_id="futu",command_executor=FakeProviderCommandExecutor())
+          adapter=FutuK1MStreamingAdapter(ctx,ft,runtime_instance_id=runtime_id,controller_generation=lambda:controller.snapshot().controller_generation)
+          bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=accepted.append)
+          keys=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in codes]
+          try:
+              bridge.start(keys)
+              samples=[]
+              for seq in range(1,7):
+                  time.sleep(5); snap=bridge.drain(); samples.append({"sequence":seq,"accepted":len(accepted),"callbacks":adapter.diagnostics()["handler_callback_count"],"subscribed":len(snap.subscribed)})
+              print(json.dumps({"probe":"us_opend_persistent_loop_systemd","accepted_event_count":len(accepted),"diagnostics":adapter.diagnostics(),"samples":samples,"delivery_mode":"UNKNOWN","radar_admission":"BLOCKED","live_trade":False},separators=(",",":")),flush=True)
+          finally:
+              try: bridge.stop()
+              finally: ctx.close()
+          PY
+          rm -f "$out"
+          systemd-run --wait --collect --quiet --unit=stock-razor-us-persistent-loop-probe \
+            -p WorkingDirectory=/opt/stock-razor-us-livefeed/repo \
+            -p Environment=PYTHONPATH=/opt/stock-razor-us-livefeed/repo -p Environment=HOME=/root \
+            -p NoNewPrivileges=true -p PrivateTmp=true -p ProtectSystem=strict \
+            -p StandardOutput=file:"$out" -p StandardError=append:"$out" \
+            /opt/stock-razor-opend-client/venv/bin/python "$probe"
+          cat "$out"
+          rm -f "$probe" "$out"
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_opend_persistent_loop_probe_script" '[ $script ]' > commands.json
               ;;
             us_opend_bridge_systemd_probe)
               read -r -d '' us_opend_bridge_systemd_probe_script <<'REMOTE' || true
