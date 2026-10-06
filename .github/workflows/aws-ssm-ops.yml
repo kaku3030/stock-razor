@@ -21,6 +21,7 @@ on:
           - futures_opend_core_mapping
           - futures_opend_snapshot_probe
           - us_opend_k1m_probe
+          - us_opend_qot_right_notify_probe
           - us_opend_k1m_continuity_probe
           - us_opend_k5m_probe
           - us_opend_k5m_crosscheck_probe
@@ -1005,6 +1006,90 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_k1m_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_opend_qot_right_notify_probe)
+              read -r -d '' us_opend_qot_right_notify_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US QOT_RIGHT READ-ONLY NOTIFY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          import threading
+          from datetime import datetime, timezone
+          import futu as ft
+
+          out={
+              "probe":"us_opend_qot_right_notify",
+              "opend_reachable":False,
+              "handler_registered":False,
+              "qot_right_notification":"NOT_OBSERVED",
+              "us_qot_right":"UNKNOWN",
+              "delivery_mode":"UNKNOWN",
+              "radar_admission":"BLOCKED",
+              "live_trade":False,
+          }
+          observed=threading.Event()
+          notifications=[]
+
+          class Handler(ft.SysNotifyHandlerBase):
+              def on_recv_rsp(self, rsp_pb):
+                  ret,content=super().on_recv_rsp(rsp_pb)
+                  if ret != ft.RET_OK:
+                      notifications.append({
+                          "ret":"ERROR",
+                          "error":str(content)[:500],
+                      })
+                      return ret,content
+                  main_type,sub_type,msg=content
+                  safe_msg={}
+                  if isinstance(msg,dict):
+                      for key,value in msg.items():
+                          if str(key).endswith("_qot_right"):
+                              safe_msg[str(key)]=str(value)
+                  notifications.append({
+                      "ret":"OK",
+                      "notify_type":str(main_type),
+                      "sub_type":str(sub_type),
+                      "quote_right_fields":safe_msg,
+                  })
+                  if main_type == ft.SysNotifyType.QOT_RIGHT:
+                      out["qot_right_notification"]="OBSERVED"
+                      if isinstance(msg,dict):
+                          out["us_qot_right"]=str(msg.get("us_qot_right","UNKNOWN"))
+                      observed.set()
+                  return ret,content
+
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+              out["opend_reachable"]=True
+              ret=ctx.set_handler(Handler())
+              out["handler_registered"]=(ret == ft.RET_OK)
+              if out["handler_registered"]:
+                  observed.wait(15)
+              else:
+                  out["reason"]="SET_HANDLER_FAILED:"+str(ret)
+          except Exception as exc:
+              out["reason"]="QOT_RIGHT_NOTIFY_PROBE_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.close()
+                  except Exception: pass
+
+          out["notifications"]=notifications[:50]
+          if out["qot_right_notification"] != "OBSERVED":
+              out["reason"]=out.get(
+                  "reason",
+                  "NO_QOT_RIGHT_NOTIFICATION_WITHIN_WINDOW",
+              )
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat()
+          print(json.dumps(out,separators=(",",":"),default=str))
+          print("DELIVERY_MODE=UNKNOWN")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_qot_right_notify_probe_script" '[ $script ]' > commands.json
               ;;
             futures_opend_snapshot_probe)
               read -r -d '' futures_opend_snapshot_probe_script <<'REMOTE' || true
