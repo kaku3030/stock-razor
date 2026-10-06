@@ -20,8 +20,9 @@ def test_opend_snapshot_reaches_radar_but_cannot_confirm_signal():
     service=RealtimeMarketDataService(Adapter(),max_minutes=120)
     for i in range(60):
         t=START+timedelta(minutes=i)
-        minute=FormingMinuteBar("US.AMD",t,100+i*.1,101+i*.1,99+i*.1,100.5+i*.1,100+i,10000+i,True)
-        service.ingest(closed_futu_minute_to_bar(minute,received_at=t+timedelta(seconds=5)))
+        end_label=t+timedelta(minutes=1)
+        minute=FormingMinuteBar("US.AMD",end_label,100+i*.1,101+i*.1,99+i*.1,100.5+i*.1,100+i,10000+i,True)
+        service.ingest(closed_futu_minute_to_bar(minute,received_at=end_label+timedelta(seconds=5)))
     snap=service.snapshot("US.AMD",as_of=START+timedelta(minutes=60))
     daily=pd.DataFrame({"date":pd.date_range("2026-07-01",periods=80,freq="D"),"open":[100+i*.2 for i in range(80)],"high":[101+i*.2 for i in range(80)],"low":[99+i*.2 for i in range(80)],"close":[100.5+i*.2 for i in range(80)],"volume":[1000+i for i in range(80)]})
     state=StockRadarTechnicalStateService().evaluate(snap,daily=daily)

@@ -604,7 +604,8 @@ jobs:
           today_et=datetime.now(timezone.utc).astimezone(et).date()
           observed_at=datetime.now(timezone.utc)
           out={"probe":"us_opend_k5m_crosscheck","codes":codes,"purpose":"CROSS_CHECK_ONLY",
-               "timezone_semantics":"VERIFIED_US_EASTERN","delivery_mode":"UNKNOWN",
+               "timezone_semantics":"VERIFIED_US_EASTERN","label_semantics":"BAR_END_EMPIRICAL",
+               "delivery_mode":"UNKNOWN",
                "radar_admission":"BLOCKED","live_trade":False,"symbols":{}}
 
           def rows(frame):
@@ -620,7 +621,7 @@ jobs:
                       continue
                   if stamp.date() >= today_et:
                       continue
-                  if dtime(9,30) <= stamp.time() < dtime(16,0):
+                  if dtime(9,30) < stamp.time() <= dtime(16,0):
                       grouped[stamp.date().isoformat()].append(row)
               return grouped
 
@@ -654,9 +655,9 @@ jobs:
                           five_day=sorted(five[selected],key=lambda row:str(row.get("time_key") or ""))
                           closed=[]
                           for row in one_day:
-                              start=datetime.strptime(str(row["time_key"]),"%Y-%m-%d %H:%M:%S")
+                              end_label=datetime.strptime(str(row["time_key"]),"%Y-%m-%d %H:%M:%S")
                               minute=FormingMinuteBar(
-                                  code,start,float(row["open"]),float(row["high"]),float(row["low"]),
+                                  code,end_label,float(row["open"]),float(row["high"]),float(row["low"]),
                                   float(row["close"]),float(row.get("volume") or 0),
                                   float(row.get("turnover") or 0),True,
                               )
@@ -666,7 +667,7 @@ jobs:
                           pass_count=fail_count=unknown_count=matched=0
                           mismatch_examples=[]
                           for bar in derived:
-                              key=bar.bar_start.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
+                              key=bar.bar_end.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")
                               row=native.get(key)
                               if row is None:
                                   continue

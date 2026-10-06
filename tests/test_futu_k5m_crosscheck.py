@@ -38,7 +38,7 @@ def canonical_5m(*, closed=True, complete=True) -> Bar:
 def native_row(**changes):
     row = {
         "code": "US.AMD",
-        "time_key": "2026-10-05 09:30:00",
+        "time_key": "2026-10-05 09:35:00",
         "open": 100.0,
         "high": 103.0,
         "low": 99.5,
@@ -83,7 +83,7 @@ def test_any_price_volume_turnover_or_time_difference_fails_closed():
     result = compare_canonical_5m_to_futu_native(
         canonical_5m(),
         native_row(
-            time_key="2026-10-05 09:35:00",
+            time_key="2026-10-05 09:40:00",
             high=103.1,
             volume=501,
             turnover=51001,

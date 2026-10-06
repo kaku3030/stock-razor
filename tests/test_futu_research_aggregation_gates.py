@@ -16,8 +16,9 @@ class Adapter(MarketDataAdapter):
 
 def b(i):
     t=START+timedelta(minutes=i)
-    m=FormingMinuteBar("US.AMD",t,100+i,101+i,99+i,100.5+i,10,1000,True)
-    return closed_futu_minute_to_bar(m,received_at=t+timedelta(seconds=5))
+    end_label=t+timedelta(minutes=1)
+    m=FormingMinuteBar("US.AMD",end_label,100+i,101+i,99+i,100.5+i,10,1000,True)
+    return closed_futu_minute_to_bar(m,received_at=end_label+timedelta(seconds=5))
 
 def test_complete_15m_does_not_launder_unverified_timestamp():
     s=RealtimeMarketDataService(Adapter(),max_minutes=60)

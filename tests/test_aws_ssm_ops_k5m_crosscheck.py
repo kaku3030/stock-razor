@@ -12,6 +12,7 @@ def test_k5m_crosscheck_action_is_registered_and_fail_closed():
     assert '"probe":"us_opend_k5m_crosscheck"' in text
     assert '"purpose":"CROSS_CHECK_ONLY"' in text
     assert '"timezone_semantics":"VERIFIED_US_EASTERN"' in text
+    assert '"label_semantics":"BAR_END_EMPIRICAL"' in text
     assert '"delivery_mode":"UNKNOWN"' in text
     assert '"radar_admission":"BLOCKED"' in text
     assert '"live_trade":False' in text
@@ -34,7 +35,8 @@ def test_k5m_crosscheck_uses_canonical_1m_aggregation_and_native_k5m():
 def test_k5m_crosscheck_only_uses_completed_prior_regular_session():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "stamp.date() >= today_et" in text
-    assert "dtime(9,30) <= stamp.time() < dtime(16,0)" in text
+    assert "dtime(9,30) < stamp.time() <= dtime(16,0)" in text
+    assert 'key=bar.bar_end.astimezone(et).strftime("%Y-%m-%d %H:%M:%S")' in text
     assert '"NO_COMPLETED_COMMON_SESSION"' in text
     assert "matched<10" in text
     assert 'status="UNKNOWN"' in text
