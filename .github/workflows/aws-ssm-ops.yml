@@ -13,6 +13,7 @@ on:
           - futures_status
           - us_livefeed_status
           - us_livefeed_controlled_restart_probe
+          - us_opend_start_order_probe
           - futures_opend_probe
           - futures_opend_env_probe
           - futures_opend_core_mapping
@@ -119,6 +120,44 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$futures_status_script" '[ $script ]' > commands.json
+              ;;
+            us_opend_start_order_probe)
+              read -r -d '' us_opend_start_order_probe_script <<'REMOTE' || true
+          set -eu
+          svc=stock-razor-us-livefeed.service
+          echo '=== US OPEND START-ORDER READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          cleanup(){ systemctl start "$svc" || true; }
+          trap cleanup EXIT INT TERM
+          echo '--- STOP PERSISTENT ---'
+          systemctl stop "$svc"
+          systemctl is-active "$svc" || true
+          echo '--- TRANSIENT ADAPTER PROBE WHILE PERSISTENT STOPPED ---'
+          PYTHONPATH=/opt/stock-razor-us-livefeed/repo HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json,time,uuid
+          import futu as ft
+          from data_provider.futu_k1m_streaming_adapter import FutuK1MStreamingAdapter
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]; events=[]
+          ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
+          adapter=FutuK1MStreamingAdapter(ctx,ft,runtime_instance_id=str(uuid.uuid4()),controller_generation=lambda:1)
+          adapter.register_event_sink(events.append); adapter.start()
+          try:
+              adapter.subscribe_streams(codes); time.sleep(15)
+              print(json.dumps({"phase":"transient_while_persistent_stopped","event_count":len(events),"diagnostics":adapter.diagnostics()},separators=(",",":")),flush=True)
+          finally:
+              adapter.unsubscribe_streams(codes); adapter.stop(); ctx.close()
+          PY
+          echo '--- START PERSISTENT AFTER TRANSIENT EXIT ---'
+          systemctl start "$svc"
+          sleep 15
+          systemctl is-active "$svc"
+          cat /run/stock-razor-us-livefeed/latest-heartbeat.json
+          echo
+          trap - EXIT INT TERM
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_opend_start_order_probe_script" '[ $script ]' > commands.json
               ;;
             us_livefeed_controlled_restart_probe)
               read -r -d '' us_livefeed_controlled_restart_probe_script <<'REMOTE' || true
