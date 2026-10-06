@@ -21,7 +21,7 @@ on:
           - futures_opend_core_mapping
           - futures_opend_snapshot_probe
           - us_opend_k1m_probe
-          - us_opend_k1m_continuity_probe
+          - us_opend_k1m_continuity_probe`r`n          - us_opend_k5m_probe
           - us_opend_k1m_reconnect_probe
           - us_opend_adapter_standalone_probe
           - us_opend_adapter_systemd_probe
@@ -540,7 +540,47 @@ jobs:
           REMOTE
               jq -c -n --arg script "$us_opend_k1m_reconnect_probe_script" '[ $script ]' > commands.json
               ;;
-            us_opend_k1m_continuity_probe)
+            us_opend_k5m_probe)
+              read -r -d '' us_opend_k5m_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US K_5M READ-ONLY CROSS-CHECK PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json, threading, time
+          from datetime import datetime, timezone
+          import futu as ft
+          codes=["US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ"]
+          rows=[]; ready=threading.Event()
+          class Handler(ft.CurKlineHandlerBase):
+              def on_recv_rsp(self,rsp_pb):
+                  ret,data=super().on_recv_rsp(rsp_pb)
+                  if ret==ft.RET_OK and hasattr(data,"to_dict"):
+                      for r in data.to_dict("records"):
+                          if str(r.get("code","")) in codes:
+                              rows.append({k:r.get(k) for k in ("code","time_key","open","close","high","low","volume","turnover") if k in r})
+                      if rows: ready.set()
+                  return ret,data
+          out={"probe":"us_opend_k5m","codes":codes,"subscription":"UNKNOWN","push":"UNKNOWN","delivery_mode":"UNKNOWN","purpose":"CROSS_CHECK_ONLY","radar_admission":"BLOCKED","live_trade":False}
+          ctx=None
+          try:
+              ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111); ctx.set_handler(Handler())
+              ret,data=ctx.subscribe(codes,[ft.SubType.K_5M],subscribe_push=True)
+              if ret==ft.RET_OK:
+                  out["subscription"]="PASS"; ready.wait(20); out["push"]="PASS" if rows else "NO_EVENT_OBSERVED"; out["push_rows"]=rows[:20]
+              else:
+                  out["subscription"]="BLOCKED"; out["subscription_error"]=str(data)[:500]
+          except Exception as exc: out["reason"]="OPEND_US_K5M_ERROR:"+type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try: ctx.unsubscribe(codes,[ft.SubType.K_5M])
+                  except Exception: pass
+                  try: ctx.close()
+                  except Exception: pass
+          out["observed_at_utc"]=datetime.now(timezone.utc).isoformat(); print(json.dumps(out,separators=(",",":"),default=str)); print("RADAR_ADMISSION=BLOCKED"); print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_k5m_probe_script" '[ $script ]' > commands.json
+              ;;            us_opend_k1m_continuity_probe)
               read -r -d '' us_opend_k1m_continuity_probe_script <<'REMOTE' || true
           set -u
           echo '=== OPEND US K_1M CONTINUITY PROBE ==='
@@ -1583,3 +1623,4 @@ jobs:
           done
           echo "Timed out waiting for SSM command" >&2
           exit 1
+
