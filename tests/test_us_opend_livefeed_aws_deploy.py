@@ -22,7 +22,7 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert '"last_push_utc":"[^"]+"' in WORKFLOW
     assert '"live_trade":false' in WORKFLOW
     assert '"delivery_mode":"UNKNOWN"' in WORKFLOW
-    assert '"bar_closure":"UNPROVEN"' in WORKFLOW
+    assert '"bar_closure":"(UNPROVEN|PROVEN)"' in WORKFLOW
     assert '"radar_admission":"BLOCKED"' in WORKFLOW
     assert '"closure_pipeline":' in WORKFLOW
     assert '"k1m_closure_qualification":' in WORKFLOW
@@ -109,7 +109,7 @@ def test_installer_fails_closed_on_startup_callback_starvation():
     assert "Restart=on-failure" in installer
 
 
-def test_installer_publishes_session_aware_k1m_currentness_without_promotion():
+def test_installer_publishes_session_aware_k1m_currentness_with_fail_closed_closure_promotion():
     installer=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
     assert "classify_futu_us_k1m_currentness" in installer
     assert "summarize_futu_k1m_currentness" in installer
@@ -123,8 +123,10 @@ def test_installer_publishes_session_aware_k1m_currentness_without_promotion():
     assert '"interval_end_utc":(' in installer
     assert '"end_offset_seconds":result.end_offset_seconds' in installer
     assert '"k1m_currentness_summary":currentness_summary' in installer
+    assert "derive_futu_k1m_bar_closure_state" in installer
+    assert "bar_closure_evidence_state=derive_futu_k1m_bar_closure_state" in installer
     assert '"delivery_mode":"UNKNOWN"' in installer
-    assert '"bar_closure":"UNPROVEN"' in installer
+    assert '"bar_closure":bar_closure_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
 
@@ -202,7 +204,7 @@ def test_installer_canonical_cache_fallback_health_and_admission_remain_fail_clo
     assert "freshness=0.0,completeness=0.0,timestamp=0.0" in installer
     assert 'quality_flags=("MISSING_BAR","TIMESTAMP_SEMANTICS_UNVERIFIED")' in installer
     assert '"delivery_mode":"UNKNOWN"' in installer
-    assert '"bar_closure":"UNPROVEN"' in installer
+    assert '"bar_closure":bar_closure_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
 
@@ -217,7 +219,8 @@ def test_verify_gate_requires_atomic_canonical_snapshot_with_exact_provenance():
     assert 'export.get("last_write_utc")' in VERIFY
     assert 'export.get("status") == "PASS"' in VERIFY
     assert 'snapshot.get("delivery_mode") == "UNKNOWN"' in VERIFY
-    assert 'snapshot.get("bar_closure") == "UNPROVEN"' in VERIFY
+    assert 'snapshot.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert 'export.get("bar_closure") == expected_bar_closure' in VERIFY
     assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'snapshot.get("live_trade") is False' in VERIFY
     assert "CANONICAL_SNAPSHOT_EXPORT=PASS" in VERIFY
@@ -252,22 +255,36 @@ def test_verify_gate_prints_pass_marker_on_its_own_line():
 
 
 
-def test_installer_tracks_closure_qualification_without_promoting_bar_closure():
+def test_installer_tracks_closure_qualification_and_promotes_only_aggregate_state():
     installer = INSTALLER
     assert "FutuK1MClosureQualificationTracker" in installer
     assert "summarize_futu_k1m_closure_qualification" in installer
+    assert "derive_futu_k1m_bar_closure_state" in installer
     assert "required_consecutive_boundaries=3" in installer
     assert '"k1m_closure_qualification":closure_qualification_payload' in installer
     assert '"k1m_closure_qualification_summary":closure_qualification_summary' in installer
     assert '"can_promote":result.can_promote' in installer
-    assert '"bar_closure":"UNPROVEN"' in installer
+    assert "bar_closure_evidence_state=derive_futu_k1m_bar_closure_state" in installer
+    assert "bar_closure_evidence_state != last_export_bar_closure" in installer
+    assert "bar_closure=bar_closure_evidence_state" in installer
+    assert 'last_export_bar_closure=bar_closure_evidence_state' in installer
+    assert '"bar_closure_evidence_state":bar_closure_evidence_state' in installer
+    assert '"bar_closure":bar_closure_state' in installer
     assert '"delivery_mode":"UNKNOWN"' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
 
 
-def test_verify_gate_accepts_typed_closure_evidence_but_forbids_promotion():
+def test_verify_gate_derives_dynamic_bar_closure_but_preserves_other_gates():
     assert 'heartbeat.get("k1m_closure_qualification")' in VERIFY
     assert 'heartbeat.get("k1m_closure_qualification_summary")' in VERIFY
+    assert 'heartbeat.get("k1m_currentness_summary")' in VERIFY
     assert 'item.get("can_promote") is False' in VERIFY
-    assert 'heartbeat.get("bar_closure") == "UNPROVEN"' in VERIFY
+    assert '"PROVEN"' in VERIFY
+    assert 'currentness_summary == "PASS" and closure_summary == "PASS"' in VERIFY
+    assert 'heartbeat.get("bar_closure_evidence_state") == expected_bar_closure' in VERIFY
+    assert 'heartbeat.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert 'snapshot.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert 'export.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'snapshot.get("live_trade") is False' in VERIFY

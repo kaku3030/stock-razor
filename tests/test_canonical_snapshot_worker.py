@@ -429,3 +429,60 @@ def test_unchanged_sequence_cannot_bypass_future_clock_gate(tmp_path):
 
     assert second.status == "BLOCKED"
     assert second.reasons == ("SOURCE_EXPORT_FROM_FUTURE",)
+
+
+
+def test_proven_bar_closure_is_preserved_without_confirming_signal(tmp_path):
+    body = payload()
+    body["bar_closure"] = "PROVEN"
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    assert result.status == "PASS"
+    assert result.source_bar_closure == "PROVEN"
+    assert result.source_delivery_mode == "UNKNOWN"
+    assert result.source_radar_admission == "BLOCKED"
+    assert result.source_live_trade is False
+    assert result.research_only is True
+    assert result.can_confirm_signal is False
+    assert result.symbols[0].technical_state is not None
+    assert result.symbols[0].technical_state.can_confirm_signal is False
+
+
+def test_invalid_source_bar_closure_is_rejected(tmp_path):
+    body = payload()
+    body["bar_closure"] = "MAYBE"
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+    assert result.status == "BLOCKED"
+    assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
+
+
+def test_non_unknown_delivery_mode_is_rejected(tmp_path):
+    body = payload()
+    body["delivery_mode"] = "REALTIME"
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+    assert result.status == "BLOCKED"
+    assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
+
+
+def test_non_blocked_radar_admission_is_rejected(tmp_path):
+    body = payload()
+    body["radar_admission"] = "PASS"
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+    assert result.status == "BLOCKED"
+    assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)

@@ -22,12 +22,20 @@ assert heartbeat.get("repo_sha") == expected_sha
 assert int(heartbeat.get("event_count") or 0) > 0
 closure = heartbeat.get("k1m_closure_qualification") or {}
 closure_summary = heartbeat.get("k1m_closure_qualification_summary")
+currentness_summary = heartbeat.get("k1m_currentness_summary")
 assert closure_summary in {"UNKNOWN", "PASS", "FAIL", "NOT_APPLICABLE"}
+assert currentness_summary in {"UNKNOWN", "PASS", "FAIL", "NOT_APPLICABLE"}
 assert set(closure) == set(heartbeat.get("symbols") or [])
 for item in closure.values():
     assert item.get("status") in {"UNKNOWN", "PASS", "FAIL", "NOT_APPLICABLE"}
     assert item.get("can_promote") is False
-assert heartbeat.get("bar_closure") == "UNPROVEN"
+expected_bar_closure = (
+    "PROVEN"
+    if currentness_summary == "PASS" and closure_summary == "PASS"
+    else "UNPROVEN"
+)
+assert heartbeat.get("bar_closure_evidence_state") == expected_bar_closure
+assert heartbeat.get("bar_closure") == expected_bar_closure
 assert export.get("status") == "PASS"
 assert export.get("schema") == "stock_razor_canonical_market_snapshot_v1"
 assert export.get("repo_sha") == expected_sha
@@ -39,7 +47,8 @@ assert snapshot_sequence == int(export.get("sequence") or -2)
 assert snapshot_sequence > 0
 assert export.get("last_write_utc")
 assert snapshot.get("delivery_mode") == "UNKNOWN"
-assert snapshot.get("bar_closure") == "UNPROVEN"
+assert snapshot.get("bar_closure") == expected_bar_closure
+assert export.get("bar_closure") == expected_bar_closure
 assert snapshot.get("radar_admission") == "BLOCKED"
 assert snapshot.get("live_trade") is False
 PY

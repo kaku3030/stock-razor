@@ -254,3 +254,21 @@ def summarize_futu_k1m_closure_qualification(
     if all(status == "NOT_APPLICABLE" for status in statuses):
         return "NOT_APPLICABLE"
     return "UNKNOWN"
+
+
+def derive_futu_k1m_bar_closure_state(
+    *,
+    currentness_summary: str,
+    closure_qualification_summary: str,
+) -> str:
+    """Derive the top-level closure state from live runtime evidence.
+
+    Promotion is deliberately non-sticky. The top-level state is PROVEN only
+    while both currentness and closure qualification are PASS. Any UNKNOWN,
+    FAIL, NOT_APPLICABLE, or unexpected value immediately fails closed to
+    UNPROVEN. This does not change DeliveryMode, Radar admission, or trading.
+    """
+
+    if currentness_summary == "PASS" and closure_qualification_summary == "PASS":
+        return "PROVEN"
+    return "UNPROVEN"
