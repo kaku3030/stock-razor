@@ -33,7 +33,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          remote="python3 -c 'import json; p=json.load(open(\"/run/stock-razor-us-livefeed/latest-heartbeat.json\",encoding=\"utf-8\")); s=str(p.get(\"repo_sha\") or \"\").strip().lower(); assert len(s)==40 and all(c in \"0123456789abcdef\" for c in s), \"INVALID_SOURCE_REPO_SHA\"; print(s)'"
+          remote="$(cat <<'REMOTE'
+          for _ in $(seq 1 30); do
+            if [ -s /run/stock-razor-us-livefeed/latest-heartbeat.json ]; then
+              python3 -c 'import json; p=json.load(open("/run/stock-razor-us-livefeed/latest-heartbeat.json",encoding="utf-8")); s=str(p.get("repo_sha") or "").strip().lower(); assert len(s)==40 and all(c in "0123456789abcdef" for c in s), "INVALID_SOURCE_REPO_SHA"; print(s)' && exit 0
+            fi
+            sleep 2
+          done
+          echo "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT" >&2
+          exit 1
+          REMOTE
+          )"
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"

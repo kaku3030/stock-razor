@@ -115,3 +115,14 @@ def test_source_sha_discovery_ignores_trailing_blank_lines_and_emits_invocation(
     assert "awk '/^[0-9a-f]{40}$/ {sha=$0} END {print sha}'" in discover
     assert "tail -n 1" not in discover
     assert 'echo "INVALID_SOURCE_REPO_SHA" >&2' in discover
+
+
+def test_source_sha_discovery_retries_during_livefeed_restart_window():
+    discover = WORKFLOW.split("      - name: Discover canonical source SHA", 1)[1].split(
+        "      - name: Deploy exact worker SHA over SSM", 1
+    )[0]
+    assert "for _ in $(seq 1 30); do" in discover
+    assert "if [ -s /run/stock-razor-us-livefeed/latest-heartbeat.json ]; then" in discover
+    assert "sleep 2" in discover
+    assert "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT" in discover
+    assert "&& exit 0" in discover
