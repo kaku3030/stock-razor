@@ -161,6 +161,23 @@ class _ControlRequest:
 
 
 @dataclass(frozen=True)
+class AppliedDataEvidence:
+    """Writer-applied DATA evidence safe for downstream research consumers.
+
+    The desired-registry revision/epoch and binding strength are controller
+    facts captured at writer-apply time. They are NOT provider-attested
+    subscription identity. In particular, UNVERIFIED must remain UNVERIFIED
+    when the provider exposes no subscription token/barrier.
+    """
+
+    event: ProviderEvent
+    desired_registry_revision_at_apply: int
+    stream_subscription_epoch_at_apply: int
+    control_plane_state_at_apply: ControlPlaneState
+    binding_strength_at_apply: BindingStrength
+
+
+@dataclass(frozen=True)
 class LiveFeedControllerSnapshot:
     """Immutable published state (frozen contract §16). Exactly one of
     these is built per writer pass and handed to readers -- readers never
@@ -192,6 +209,7 @@ class LiveFeedController:
         priority_queue_maxsize: int = 1000,
         control_queue_maxsize: int = 256,
         command_queue_maxsize: int = 256,
+        applied_data_queue_maxsize: int = 1000,
     ) -> None:
         self._runtime_instance_id = runtime_instance_id
         self._provider_id = provider_id
@@ -216,6 +234,12 @@ class LiveFeedController:
 
         self._pending_results_lock = threading.Lock()
         self._pending_command_results: list[ProviderCommandResult] = []
+
+        if applied_data_queue_maxsize <= 0:
+            raise ValueError("applied_data_queue_maxsize must be positive")
+        self._applied_data_queue_lock = threading.Lock()
+        self._applied_data_queue: deque[AppliedDataEvidence] = deque()
+        self._applied_data_queue_maxsize = applied_data_queue_maxsize
 
         # --- authoritative state: written ONLY from inside process_pending
         # (itself serialized by _writer_guard); this lock exists for
@@ -364,6 +388,29 @@ class LiveFeedController:
     def command_results(self) -> tuple[ProviderCommandResult, ...]:
         with self._authoritative_lock:
             return tuple(self._command_results)
+
+    def drain_applied_data_for_consumer(
+        self, max_items: int | None = None
+    ) -> list[AppliedDataEvidence]:
+        """Drain writer-qualified DATA handoff evidence for one consumer.
+
+        This is a local transport handoff, not a second authoritative state
+        store. Events appear here only after the controller writer has applied
+        runtime/provider/generation/STOP relevance checks and confirmed that
+        the semantic stream is still desired at that exact sequence point.
+        """
+
+        if max_items is not None and max_items < 0:
+            raise ValueError("max_items must be non-negative")
+        with self._applied_data_queue_lock:
+            if max_items is None:
+                items = list(self._applied_data_queue)
+                self._applied_data_queue.clear()
+                return items
+            return [
+                self._applied_data_queue.popleft()
+                for _ in range(min(max_items, len(self._applied_data_queue)))
+            ]
 
     # ---- the single writer path ----
 
@@ -522,6 +569,7 @@ class LiveFeedController:
                 )
             return
 
+        should_stage_data = False
         with self._authoritative_lock:
             if self._stop_requested:
                 if event.event_kind is ProviderEventKind.DISCONNECTED:
@@ -547,13 +595,11 @@ class LiveFeedController:
             elif event.event_kind is ProviderEventKind.ERROR:
                 self._failure_class = FailureClass.UNKNOWN
             elif event.event_kind is ProviderEventKind.DATA:
-                # DATA is market-data ingress, not control evidence. Slice 1
-                # has no currentness/continuity consumer for it yet, so it
-                # reaching the writer is expected and is deliberately not
-                # flagged here (its loss already has an explicit
-                # INGRESS_LOSS overflow finding). No lifecycle or
-                # DeliveryMode semantics are implied.
-                pass
+                # DATA never changes lifecycle truth. It may be handed to a
+                # downstream research consumer only after this writer pass
+                # has accepted identity/STOP relevance and the desired-stream
+                # check below succeeds.
+                should_stage_data = True
             else:
                 # Fail-loud (frozen contract section 16): any other control /
                 # priority evidence kind that reaches the writer with no
@@ -564,6 +610,71 @@ class LiveFeedController:
                 # DeliveryMode / REALTIME inference, no authoritative
                 # state change.
                 self._findings.append(f"UNHANDLED_EVIDENCE_KIND:{event.event_kind.value}")
+
+        if should_stage_data:
+            self._stage_applied_data_as_writer(event)
+
+    def _stage_applied_data_as_writer(self, event: ProviderEvent) -> None:
+        """Stage one writer-relevant DATA fact for a downstream consumer.
+
+        stream_subscription_epoch_at_apply is controller-local intent
+        evidence only. When Futu exposes no provider subscription token or
+        barrier, binding_strength_at_apply remains UNVERIFIED and downstream
+        code must not reinterpret the epoch as provider-attested identity.
+        """
+
+        self._assert_writer_context()
+        key = event.semantic_stream_key
+        if key is None:
+            # Preserve the frozen Slice-1 behavior: generic DATA evidence may
+            # reach the writer without being classified as unhandled. It is
+            # simply not eligible for semantic-stream downstream egress.
+            return
+        if key.provider_id != self._provider_id:
+            with self._authoritative_lock:
+                self._findings.append(
+                    f"DATA_EGRESS_REJECTED: reason=SEMANTIC_STREAM_PROVIDER_MISMATCH "
+                    f"seq={event.local_enqueue_seq} semantic_stream_key={key!r}"
+                )
+            return
+
+        registry_snapshot = self._registry.snapshot()
+        entry = next(
+            (
+                item
+                for item in registry_snapshot.entries
+                if item.semantic_stream_key == key
+            ),
+            None,
+        )
+        if entry is None:
+            with self._authoritative_lock:
+                self._findings.append(
+                    f"DATA_EGRESS_REJECTED: reason=STREAM_NOT_DESIRED "
+                    f"seq={event.local_enqueue_seq} semantic_stream_key={key!r}"
+                )
+            return
+
+        evidence = AppliedDataEvidence(
+            event=event,
+            desired_registry_revision_at_apply=registry_snapshot.revision,
+            stream_subscription_epoch_at_apply=entry.stream_subscription_epoch,
+            control_plane_state_at_apply=entry.control_plane_state,
+            binding_strength_at_apply=entry.binding_strength,
+        )
+        queue_full = False
+        with self._applied_data_queue_lock:
+            if len(self._applied_data_queue) >= self._applied_data_queue_maxsize:
+                queue_full = True
+            else:
+                self._applied_data_queue.append(evidence)
+
+        if queue_full:
+            with self._authoritative_lock:
+                self._findings.append(
+                    f"APPLIED_DATA_EGRESS_LOSS: reason=QUEUE_FULL "
+                    f"seq={event.local_enqueue_seq} semantic_stream_key={key!r}"
+                )
 
     def _transition_lifecycle_state(self, new_state: LifecycleState) -> None:
         """Guarded transition primitive. No caller in this module ever
