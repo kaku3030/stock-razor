@@ -107,6 +107,11 @@ def publish(payload):
 try:
     while True:
         time.sleep(5)
+        state_ret,state_data=ctx.get_global_state()
+        market_state=(str(state_data.get("market_us") or "UNKNOWN")
+                      if state_ret==ft.RET_OK and isinstance(state_data,dict) else "UNKNOWN")
+        market_state_us=market_state
+        cache_session=futu_us_market_state_to_session(market_state)
         snap=bridge.drain()
         consumer_result=research_consumer.run_once(max_events=1000)
         seq+=1; now=datetime.now(timezone.utc)
@@ -115,11 +120,6 @@ try:
             accepted_count=accepted_event_count
             push_utc=last_push_utc
             time_keys=dict(latest_time_keys)
-        state_ret,state_data=ctx.get_global_state()
-        market_state=(str(state_data.get("market_us") or "UNKNOWN")
-                      if state_ret==ft.RET_OK and isinstance(state_data,dict) else "UNKNOWN")
-        market_state_us=market_state
-        cache_session=futu_us_market_state_to_session(market_state)
         currentness={
             code:classify_futu_us_k1m_currentness(
                 time_keys.get(code),observed_at_utc=now,market_state=market_state
