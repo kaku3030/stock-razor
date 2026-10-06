@@ -20,6 +20,12 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert '"event_count":[1-9][0-9]*' in WORKFLOW
     assert '"last_push_utc":"[^"]+"' in WORKFLOW
     assert '"live_trade":false' in WORKFLOW
+    assert '"delivery_mode":"UNKNOWN"' in WORKFLOW
+    assert '"bar_closure":"UNPROVEN"' in WORKFLOW
+    assert '"radar_admission":"BLOCKED"' in WORKFLOW
+    assert '"closure_pipeline":' in WORKFLOW
+    assert '"research_consumer":' in WORKFLOW
+    assert '"canonical_cache":' in WORKFLOW
     assert "US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS" in WORKFLOW
 
 
