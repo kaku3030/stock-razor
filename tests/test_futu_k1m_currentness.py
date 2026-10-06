@@ -50,15 +50,32 @@ def test_regular_session_stale_k1m_fails_closed():
     assert result.age_seconds == 300
 
 
-def test_regular_session_future_time_key_fails_closed():
+def test_regular_session_forming_end_label_can_pass_currentness_only():
     result = classify_futu_us_k1m_currentness(
         "2026-10-06 09:36:00",
-        observed_at_utc=datetime(2026, 10, 6, 13, 35, tzinfo=timezone.utc),
+        observed_at_utc=datetime(2026, 10, 6, 13, 35, 5, tzinfo=timezone.utc),
+        market_state="MORNING",
+    )
+
+    assert result.status == "PASS"
+    assert result.reason == "K1M_FORMING_END_LABEL_WITHIN_REGULAR_SESSION_WINDOW"
+    assert result.age_seconds == -55
+    assert result.delivery_mode == "UNKNOWN"
+    assert result.radar_admission == "BLOCKED"
+    assert result.live_trade is False
+    assert result.can_promote is False
+
+
+def test_regular_session_end_label_beyond_forming_window_fails_closed():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:37:00",
+        observed_at_utc=datetime(2026, 10, 6, 13, 35, 5, tzinfo=timezone.utc),
         market_state="MORNING",
     )
 
     assert result.status == "FAIL"
     assert result.reason == "K1M_TIME_KEY_IN_FUTURE"
+    assert result.age_seconds == -115
 
 
 @pytest.mark.parametrize("state", ["CLOSED", "WAITING_OPEN", "NONE"])
@@ -140,3 +157,50 @@ def test_naive_observation_time_is_rejected():
 )
 def test_futu_market_state_maps_to_cache_session_without_guessing(state, expected):
     assert futu_us_market_state_to_session(state) == expected
+
+
+def test_forming_end_label_exact_max_lead_boundary_is_allowed():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:36:00",
+        observed_at_utc=datetime(2026, 10, 6, 13, 34, 55, tzinfo=timezone.utc),
+        market_state="AFTERNOON",
+    )
+    assert result.status == "PASS"
+    assert result.reason == "K1M_FORMING_END_LABEL_WITHIN_REGULAR_SESSION_WINDOW"
+    assert result.age_seconds == -65
+    assert result.can_promote is False
+
+
+def test_forming_end_label_beyond_max_lead_boundary_fails():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:36:00",
+        observed_at_utc=datetime(2026, 10, 6, 13, 34, 54, tzinfo=timezone.utc),
+        market_state="AFTERNOON",
+    )
+    assert result.status == "FAIL"
+    assert result.reason == "K1M_TIME_KEY_IN_FUTURE"
+    assert result.age_seconds == -66
+
+
+def test_negative_future_skew_budget_is_rejected():
+    with pytest.raises(ValueError, match="max_future_skew_seconds"):
+        classify_futu_us_k1m_currentness(
+            "2026-10-06 09:36:00",
+            observed_at_utc=datetime(2026, 10, 6, 13, 35, 5, tzinfo=timezone.utc),
+            market_state="AFTERNOON",
+            max_future_skew_seconds=-1,
+        )
+
+
+def test_summary_can_pass_when_all_streams_are_current_forming_end_labels():
+    observed = datetime(2026, 10, 6, 13, 35, 5, tzinfo=timezone.utc)
+    results = {
+        symbol: classify_futu_us_k1m_currentness(
+            "2026-10-06 09:36:00",
+            observed_at_utc=observed,
+            market_state="AFTERNOON",
+        )
+        for symbol in ("AMD", "NVDA", "TSLA", "AAPL", "QQQ")
+    }
+    assert all(result.status == "PASS" for result in results.values())
+    assert summarize_futu_k1m_currentness(results) == "PASS"

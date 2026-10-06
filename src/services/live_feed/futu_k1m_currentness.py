@@ -15,6 +15,8 @@ EXTENDED_MARKET_STATES = frozenset({
     "OVERNIGHT",
 })
 CLOSED_MARKET_STATES = frozenset({"CLOSED", "WAITING_OPEN", "NONE"})
+K1M_INTERVAL_SECONDS = 60
+DEFAULT_FUTURE_SKEW_SECONDS = 5
 
 
 def futu_us_market_state_to_session(market_state: str | None) -> str:
@@ -62,19 +64,24 @@ def classify_futu_us_k1m_currentness(
     observed_at_utc: datetime,
     market_state: str | None,
     max_regular_lag_seconds: int = 120,
+    max_future_skew_seconds: int = DEFAULT_FUTURE_SKEW_SECONDS,
 ) -> FutuK1MCurrentnessResult:
     """Classify K_1M currentness without promoting delivery or trading.
 
-    US OpenD K-line ``time_key`` is exchange-local US Eastern time. Regular
-    session currentness may be tested against wall-clock age. Extended-hours
-    and closed-session K_1M currentness are deliberately not inferred from a
-    cached push; they remain NOT_APPLICABLE for realtime qualification.
+    US OpenD K-line ``time_key`` is exchange-local US Eastern interval-end
+    time. During a live regular-session minute, the forming K_1M therefore has
+    an end label up to one minute ahead of wall clock. That provider-specific
+    lead may prove currentness only; it does not prove bar closure, delivery
+    mode, Radar admission, or trading eligibility. Extended-hours and closed-
+    session K_1M currentness are deliberately not inferred from a cached push.
     """
 
     if observed_at_utc.tzinfo is None or observed_at_utc.utcoffset() is None:
         raise ValueError("observed_at_utc must be timezone-aware")
     if max_regular_lag_seconds <= 0:
         raise ValueError("max_regular_lag_seconds must be positive")
+    if max_future_skew_seconds < 0:
+        raise ValueError("max_future_skew_seconds must be non-negative")
 
     state = str(market_state or "UNKNOWN").strip().upper() or "UNKNOWN"
     observed = observed_at_utc.astimezone(timezone.utc)
@@ -114,10 +121,20 @@ def classify_futu_us_k1m_currentness(
 
     source = local.astimezone(timezone.utc)
     age = (observed - source).total_seconds()
-    if age < -5:
+    max_forming_lead_seconds = K1M_INTERVAL_SECONDS + max_future_skew_seconds
+    if age < -max_forming_lead_seconds:
         return FutuK1MCurrentnessResult(
             status="FAIL",
             reason="K1M_TIME_KEY_IN_FUTURE",
+            market_state=state,
+            source_time_utc=source,
+            observed_at_utc=observed,
+            age_seconds=age,
+        )
+    if age < -max_future_skew_seconds:
+        return FutuK1MCurrentnessResult(
+            status="PASS",
+            reason="K1M_FORMING_END_LABEL_WITHIN_REGULAR_SESSION_WINDOW",
             market_state=state,
             source_time_utc=source,
             observed_at_utc=observed,
