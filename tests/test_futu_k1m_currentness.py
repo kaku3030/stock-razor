@@ -48,6 +48,13 @@ def test_regular_session_stale_k1m_fails_closed():
     assert result.status == "FAIL"
     assert result.reason == "K1M_STALE_DURING_REGULAR_SESSION"
     assert result.age_seconds == 300
+    assert result.interval_start_utc == datetime(
+        2026, 10, 6, 13, 29, tzinfo=timezone.utc
+    )
+    assert result.interval_end_utc == datetime(
+        2026, 10, 6, 13, 30, tzinfo=timezone.utc
+    )
+    assert result.end_offset_seconds == 300
 
 
 def test_regular_session_forming_end_label_one_minute_ahead_is_current():
@@ -62,6 +69,13 @@ def test_regular_session_forming_end_label_one_minute_ahead_is_current():
     assert result.status == "PASS"
     assert result.reason == "K1M_FORMING_END_LABEL_WITHIN_EXPECTED_WINDOW"
     assert result.age_seconds == pytest.approx(-59.517208)
+    assert result.interval_start_utc == datetime(
+        2026, 10, 6, 13, 35, tzinfo=timezone.utc
+    )
+    assert result.interval_end_utc == datetime(
+        2026, 10, 6, 13, 36, tzinfo=timezone.utc
+    )
+    assert result.end_offset_seconds == pytest.approx(-59.517208)
     assert result.delivery_mode == "UNKNOWN"
     assert result.radar_admission == "BLOCKED"
     assert result.can_promote is False
@@ -91,6 +105,13 @@ def test_regular_session_time_key_beyond_forming_window_fails_closed():
     assert result.status == "FAIL"
     assert result.reason == "K1M_TIME_KEY_BEYOND_FORMING_END_LABEL_WINDOW"
     assert result.age_seconds == -120
+    assert result.interval_start_utc == datetime(
+        2026, 10, 6, 13, 36, tzinfo=timezone.utc
+    )
+    assert result.interval_end_utc == datetime(
+        2026, 10, 6, 13, 37, tzinfo=timezone.utc
+    )
+    assert result.end_offset_seconds == -120
 
 
 @pytest.mark.parametrize("state", ["CLOSED", "WAITING_OPEN", "NONE"])
