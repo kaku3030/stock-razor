@@ -142,8 +142,21 @@ try:
             for code in CODES
         }
         currentness_payload={
-            code:{"status":result.status,"reason":result.reason,
-                  "time_key":time_keys.get(code),"age_seconds":result.age_seconds}
+            code:{
+                "status":result.status,
+                "reason":result.reason,
+                "time_key":time_keys.get(code),
+                "age_seconds":result.age_seconds,
+                "interval_start_utc":(
+                    result.interval_start_utc.isoformat()
+                    if result.interval_start_utc else None
+                ),
+                "interval_end_utc":(
+                    result.interval_end_utc.isoformat()
+                    if result.interval_end_utc else None
+                ),
+                "end_offset_seconds":result.end_offset_seconds,
+            }
             for code,result in currentness.items()
         }
         currentness_summary=summarize_futu_k1m_currentness(currentness)

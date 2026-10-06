@@ -116,6 +116,9 @@ def test_installer_publishes_session_aware_k1m_currentness_without_promotion():
     assert '"market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED"' in installer
     assert '"latest_k1m_time_keys":time_keys' in installer
     assert '"k1m_currentness":currentness_payload' in installer
+    assert '"interval_start_utc":(' in installer
+    assert '"interval_end_utc":(' in installer
+    assert '"end_offset_seconds":result.end_offset_seconds' in installer
     assert '"k1m_currentness_summary":currentness_summary' in installer
     assert '"delivery_mode":"UNKNOWN"' in installer
     assert '"bar_closure":"UNPROVEN"' in installer

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
@@ -45,8 +45,11 @@ class FutuK1MCurrentnessResult:
     reason: str
     market_state: str
     source_time_utc: datetime | None = None
+    interval_start_utc: datetime | None = None
+    interval_end_utc: datetime | None = None
     observed_at_utc: datetime | None = None
     age_seconds: float | None = None
+    end_offset_seconds: float | None = None
     delivery_mode: str = "UNKNOWN"
     radar_admission: str = "BLOCKED"
     live_trade: bool = False
@@ -122,6 +125,7 @@ def classify_futu_us_k1m_currentness(
         )
 
     source = local.astimezone(timezone.utc)
+    interval_start = source - timedelta(minutes=1)
     age = (observed - source).total_seconds()
     if age < -max_forming_end_label_lead_seconds:
         return FutuK1MCurrentnessResult(
@@ -129,8 +133,11 @@ def classify_futu_us_k1m_currentness(
             reason="K1M_TIME_KEY_BEYOND_FORMING_END_LABEL_WINDOW",
             market_state=state,
             source_time_utc=source,
+            interval_start_utc=interval_start,
+            interval_end_utc=source,
             observed_at_utc=observed,
             age_seconds=age,
+            end_offset_seconds=age,
         )
     if age > max_regular_lag_seconds:
         return FutuK1MCurrentnessResult(
@@ -138,8 +145,11 @@ def classify_futu_us_k1m_currentness(
             reason="K1M_STALE_DURING_REGULAR_SESSION",
             market_state=state,
             source_time_utc=source,
+            interval_start_utc=interval_start,
+            interval_end_utc=source,
             observed_at_utc=observed,
             age_seconds=age,
+            end_offset_seconds=age,
         )
     return FutuK1MCurrentnessResult(
         status="PASS",
@@ -150,8 +160,11 @@ def classify_futu_us_k1m_currentness(
         ),
         market_state=state,
         source_time_utc=source,
+        interval_start_utc=interval_start,
+        interval_end_utc=source,
         observed_at_utc=observed,
         age_seconds=age,
+        end_offset_seconds=age,
     )
 
 
