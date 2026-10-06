@@ -56,3 +56,10 @@ def test_ssm_ops_has_systemd_bridge_probe():
     assert "- us_opend_bridge_systemd_probe" in ops
     assert "LiveFeedRuntimeBridge" in ops and "LiveFeedController" in ops
     assert "RADAR_ADMISSION=BLOCKED" in ops and "LIVE_TRADE=NO" in ops
+
+
+def test_ssm_ops_has_persistent_loop_probe():
+    ops=(ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    assert "- us_opend_persistent_loop_probe" in ops
+    assert "for seq in range(1,7)" in ops and "bridge.drain()" in ops
+    assert "RADAR_ADMISSION=BLOCKED" in ops and "LIVE_TRADE=NO" in ops
