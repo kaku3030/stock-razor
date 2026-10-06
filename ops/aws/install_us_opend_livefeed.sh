@@ -134,12 +134,25 @@ try:
         currentness_summary=summarize_futu_k1m_currentness(currentness)
         canonical_cache={}
         for code in CODES:
-            bars=market_data.minute_bars(code)
-            latest=bars[-1] if bars else None
+            cache_snapshot=market_data.snapshot(code,as_of=now)
+            bars_1m=cache_snapshot.minute_bars
+            bars_5m=cache_snapshot.bars_5m
+            bars_15m=cache_snapshot.bars_15m
+            bars_1h=cache_snapshot.bars_1h
+            latest_1m=bars_1m[-1] if bars_1m else None
+            latest_5m=bars_5m[-1] if bars_5m else None
+            latest_15m=bars_15m[-1] if bars_15m else None
+            latest_1h=bars_1h[-1] if bars_1h else None
             canonical_cache[code]={
-                "bar_count":len(bars),
-                "latest_bar_start_utc":latest.bar_start.isoformat() if latest else None,
-                "latest_bar_end_utc":latest.bar_end.isoformat() if latest else None,
+                "bar_count":len(bars_1m),
+                "latest_bar_start_utc":latest_1m.bar_start.isoformat() if latest_1m else None,
+                "latest_bar_end_utc":latest_1m.bar_end.isoformat() if latest_1m else None,
+                "bar_count_5m":len(bars_5m),
+                "latest_5m_end_utc":latest_5m.bar_end.isoformat() if latest_5m else None,
+                "bar_count_15m":len(bars_15m),
+                "latest_15m_end_utc":latest_15m.bar_end.isoformat() if latest_15m else None,
+                "bar_count_1h":len(bars_1h),
+                "latest_1h_end_utc":latest_1h.bar_end.isoformat() if latest_1h else None,
             }
         closure_diagnostics=closure_pipeline.diagnostics()
         consumer_payload={

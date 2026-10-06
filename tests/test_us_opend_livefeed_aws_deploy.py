@@ -159,6 +159,12 @@ def test_installer_wires_writer_qualified_closure_into_ingest_only_cache():
     assert '"research_consumer":consumer_payload' in installer
     assert '"canonical_cache":canonical_cache' in installer
     assert '"cache_session_us":cache_session' in installer
+    assert '"bar_count_5m":len(bars_5m)' in installer
+    assert '"bar_count_15m":len(bars_15m)' in installer
+    assert '"bar_count_1h":len(bars_1h)' in installer
+    assert '"latest_5m_end_utc":' in installer
+    assert '"latest_15m_end_utc":' in installer
+    assert '"latest_1h_end_utc":' in installer
     assert '"controller_findings_tail":list(snap.controller.findings[-20:])' in installer
 
 
