@@ -182,3 +182,86 @@ def test_end_labeled_k1m_chain_matches_end_labeled_native_k5m():
     )
     assert result.status == "PASS"
     assert result.mismatches == ()
+
+@pytest.mark.parametrize("native_volume", [496.0, 497.0, 498.0, 499.0, 501.0, 502.0, 503.0, 504.0])
+def test_bounded_volume_only_quantization_is_unknown_never_pass(native_volume):
+    result = compare_canonical_5m_to_futu_native(
+        canonical_5m(),
+        native_row(volume=native_volume),
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+
+    assert result.status == "UNKNOWN"
+    assert result.mismatches == ()
+    assert result.unknowns == ("VOLUME_QUANTIZATION_UNVERIFIED",)
+    assert result.can_promote is False
+
+
+@pytest.mark.parametrize("native_volume", [495.0, 505.0, 600.0])
+def test_volume_delta_above_empirical_quantization_bound_fails(native_volume):
+    result = compare_canonical_5m_to_futu_native(
+        canonical_5m(),
+        native_row(volume=native_volume),
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+
+    assert result.status == "FAIL"
+    assert "VOLUME_MISMATCH" in result.mismatches
+    assert "VOLUME_QUANTIZATION_UNVERIFIED" not in result.unknowns
+
+
+def test_small_volume_delta_with_turnover_mismatch_still_fails():
+    result = compare_canonical_5m_to_futu_native(
+        canonical_5m(),
+        native_row(volume=504.0, turnover=51001.0),
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+
+    assert result.status == "FAIL"
+    assert "VOLUME_MISMATCH" in result.mismatches
+    assert "TURNOVER_MISMATCH" in result.mismatches
+    assert "VOLUME_QUANTIZATION_UNVERIFIED" not in result.unknowns
+
+
+def test_aws_observed_amd_volume_only_delta_is_unknown():
+    bar = Bar(
+        **{
+            **canonical_5m().__dict__,
+            "volume": 1087507.0,
+            "amount": 680532436.998,
+        }
+    )
+    result = compare_canonical_5m_to_futu_native(
+        bar,
+        native_row(volume=1087509.0, turnover=680532436.998),
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+
+    assert result.status == "UNKNOWN"
+    assert result.mismatches == ()
+    assert result.unknowns == ("VOLUME_QUANTIZATION_UNVERIFIED",)
+
+
+def test_aws_observed_tsla_joint_volume_turnover_delta_remains_fail():
+    bar = Bar(
+        **{
+            **canonical_5m().__dict__,
+            "volume": 1018756.0,
+            "amount": 377556863.901,
+        }
+    )
+    result = compare_canonical_5m_to_futu_native(
+        bar,
+        native_row(volume=1018497.0, turnover=377460438.668),
+        timezone_semantics_verified=True,
+        native_is_forming=False,
+    )
+
+    assert result.status == "FAIL"
+    assert "VOLUME_MISMATCH" in result.mismatches
+    assert "TURNOVER_MISMATCH" in result.mismatches
+    assert "VOLUME_QUANTIZATION_UNVERIFIED" not in result.unknowns

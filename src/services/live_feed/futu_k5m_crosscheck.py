@@ -9,6 +9,10 @@ from zoneinfo import ZoneInfo
 from data_provider.market_data_adapter import Bar
 
 
+FUTU_K5M_VOLUME_QUANTIZATION_MAX_SHARES = 4.0
+FUTU_K5M_VOLUME_QUANTIZATION_UNKNOWN = "VOLUME_QUANTIZATION_UNVERIFIED"
+
+
 @dataclass(frozen=True)
 class FutuK5MCrossCheckResult:
     status: str
@@ -53,6 +57,12 @@ def compare_canonical_5m_to_futu_native(
     canonical bar end rendered in the caller-declared provider timezone.
     Unless timestamp semantics were independently verified, an otherwise
     exact match remains UNKNOWN.
+
+    Completed-session AWS evidence across AMD/NVDA/TSLA/AAPL/QQQ showed a
+    distinct provider aggregation pattern: volume-only deltas of 1-4 shares
+    can occur while turnover remains numerically identical, whereas every
+    larger observed delta also had a turnover mismatch. A bounded volume-only
+    delta is therefore UNKNOWN (quantization semantics unverified), never PASS.
     """
 
     mismatches: list[str] = []
@@ -86,17 +96,36 @@ def compare_canonical_5m_to_futu_native(
         if native_local != expected_local:
             mismatches.append("TIME_KEY_MISMATCH")
 
-    comparisons = (
+    price_comparisons = (
         ("OPEN_MISMATCH", canonical.open, _number(native, "open")),
         ("HIGH_MISMATCH", canonical.high, _number(native, "high")),
         ("LOW_MISMATCH", canonical.low, _number(native, "low")),
         ("CLOSE_MISMATCH", canonical.close, _number(native, "close")),
-        ("VOLUME_MISMATCH", canonical.volume, _number(native, "volume")),
-        ("TURNOVER_MISMATCH", canonical.amount, _number(native, "turnover")),
     )
-    for flag, canonical_value, native_value in comparisons:
+    for flag, canonical_value, native_value in price_comparisons:
         if not _same_number(canonical_value, native_value):
             mismatches.append(flag)
+
+    native_volume = _number(native, "volume")
+    native_turnover = _number(native, "turnover")
+    volume_same = _same_number(canonical.volume, native_volume)
+    turnover_same = _same_number(canonical.amount, native_turnover)
+
+    if not turnover_same:
+        mismatches.append("TURNOVER_MISMATCH")
+
+    if not volume_same:
+        bounded_volume_only_delta = (
+            turnover_same
+            and canonical.volume is not None
+            and native_volume is not None
+            and abs(float(canonical.volume) - float(native_volume))
+            <= FUTU_K5M_VOLUME_QUANTIZATION_MAX_SHARES
+        )
+        if bounded_volume_only_delta:
+            unknowns.append(FUTU_K5M_VOLUME_QUANTIZATION_UNKNOWN)
+        else:
+            mismatches.append("VOLUME_MISMATCH")
 
     if native_is_forming is None:
         unknowns.append("NATIVE_FORMING_SEMANTICS_UNKNOWN")
