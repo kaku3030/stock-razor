@@ -17,6 +17,28 @@ EXTENDED_MARKET_STATES = frozenset({
 CLOSED_MARKET_STATES = frozenset({"CLOSED", "WAITING_OPEN", "NONE"})
 
 
+def futu_us_market_state_to_session(market_state: str | None) -> str:
+    """Map Futu US market-state evidence into cache session vocabulary.
+
+    Unknown/new provider states remain unknown rather than being guessed
+    into an active session. This helper is classification only; it does not
+    prove realtime delivery or admit Radar.
+    """
+
+    state = str(market_state or "UNKNOWN").strip().upper() or "UNKNOWN"
+    if state in REGULAR_MARKET_STATES:
+        return "regular"
+    if state in {"PRE_MARKET_BEGIN", "PRE_MARKET_END"}:
+        return "premarket"
+    if state in {"AFTER_HOURS_BEGIN", "AFTER_HOURS_END"}:
+        return "afterhours"
+    if state == "OVERNIGHT":
+        return "overnight"
+    if state in CLOSED_MARKET_STATES:
+        return "closed"
+    return "unknown"
+
+
 @dataclass(frozen=True)
 class FutuK1MCurrentnessResult:
     status: str
