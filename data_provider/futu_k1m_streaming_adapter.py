@@ -21,6 +21,9 @@ from .live_feed_types import (
 )
 
 
+OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE = "OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED"
+
+
 class FutuK1MStreamingAdapter:
     """OpenD K_1M push adapter for the provider-neutral Live Feed boundary."""
 
@@ -33,6 +36,7 @@ class FutuK1MStreamingAdapter:
         controller_generation: Callable[[], int],
         now_utc: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         monotonic: Callable[[], float] = time.monotonic,
+        transport_connected_evidence: str | None = None,
     ) -> None:
         self._ctx = quote_context
         self._ft = futu_module
@@ -40,6 +44,13 @@ class FutuK1MStreamingAdapter:
         self._controller_generation = controller_generation
         self._now_utc = now_utc
         self._monotonic = monotonic
+        supplied_transport_evidence = (
+            str(transport_connected_evidence).strip() if transport_connected_evidence else None
+        )
+        if supplied_transport_evidence not in (None, OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE):
+            raise ValueError("unsupported transport connected evidence")
+        self._transport_connected_evidence = supplied_transport_evidence
+        self._transport_evidence_emitted = False
         self._context_id = uuid.uuid4().hex
         self._sink: Callable[[ProviderEvent], None] | None = None
         self._handler = None
@@ -90,6 +101,27 @@ class FutuK1MStreamingAdapter:
             self._started = False
             self._handler = None
             raise
+        if self._transport_connected_evidence and not self._transport_evidence_emitted:
+            self._emit(
+                ProviderEvent(
+                    runtime_instance_id=self._runtime_instance_id,
+                    provider_id="futu",
+                    controller_generation=int(self._controller_generation()),
+                    observed_at_utc=self._now_utc(),
+                    observed_at_monotonic=self._monotonic(),
+                    event_kind=ProviderEventKind.CONNECTED,
+                    provider_context_id=self._context_id,
+                    delivery_mode=DeliveryMode.UNKNOWN,
+                    provenance="CALLER_VERIFIED_TRANSPORT",
+                    diagnostic_fields=freeze_normalized_payload(
+                        {
+                            "transport_evidence": self._transport_connected_evidence,
+                            "delivery_qualification": "UNPROVEN",
+                        }
+                    ),
+                )
+            )
+            self._transport_evidence_emitted = True
 
     def stop(self) -> None:
         # Context ownership belongs to the runtime, not this adapter. Avoid
@@ -120,6 +152,31 @@ class FutuK1MStreamingAdapter:
             subscribe_push=True,
         )
         self._last_subscribe_result = {"ret": ret, "data": str(data)[:300]}
+        if self._transport_connected_evidence:
+            accepted = ret == self._ft.RET_OK
+            for key in unique:
+                self._emit(
+                    ProviderEvent(
+                        runtime_instance_id=self._runtime_instance_id,
+                        provider_id="futu",
+                        controller_generation=int(self._controller_generation()),
+                        observed_at_utc=self._now_utc(),
+                        observed_at_monotonic=self._monotonic(),
+                        event_kind=ProviderEventKind.SUBSCRIPTION_RESULT,
+                        semantic_stream_key=key,
+                        provider_context_id=self._context_id,
+                        payload=freeze_normalized_payload({"accepted": accepted}),
+                        delivery_mode=DeliveryMode.UNKNOWN,
+                        provenance="OPEND_SUBSCRIBE_RETURN",
+                        diagnostic_fields=freeze_normalized_payload(
+                            {
+                                "administrative_only": True,
+                                "subscribe_ret": ret,
+                                "detail": str(data)[:300],
+                            }
+                        ),
+                    )
+                )
         if ret != self._ft.RET_OK:
             raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
 

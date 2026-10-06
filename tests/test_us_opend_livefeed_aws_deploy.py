@@ -84,8 +84,23 @@ def test_ssm_ops_has_start_order_probe_with_recovery_trap():
 def test_installer_fails_closed_on_startup_callback_starvation():
     installer=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
     assert "US_OPEND_STARTUP_CALLBACK_STARVATION" in installer
-    assert "event_count == 0" in installer
+    assert "data_event_count == 0" in installer
+    assert "if event_count == 0" not in installer
+    assert "event.event_kind is ProviderEventKind.DATA" in installer
+    assert '"event_count":data_event_count' in installer
+    assert '"accepted_event_count":accepted_event_count' in installer
     assert "Restart=on-failure" in installer
+
+
+def test_installer_enables_only_explicit_sync_transport_lifecycle_evidence():
+    installer=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
+    assert 'OpenQuoteContext(host="127.0.0.1",port=11111)' in installer
+    assert "OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE" in installer
+    assert "futu-api 10.11.7108" in installer
+    assert "_init_connect_sync() reports RET_OK" in installer
+    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
 
 def test_deploy_gate_waits_for_bounded_self_heal_and_exact_sha():
     workflow=(ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
