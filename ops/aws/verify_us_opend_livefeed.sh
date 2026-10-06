@@ -39,6 +39,7 @@ PY
       systemctl is-enabled stock-razor-us-livefeed.service
       systemctl is-active stock-razor-us-livefeed.service
       cat "$status"
+      printf '\n'
       echo "CANONICAL_SNAPSHOT_EXPORT=PASS"
       echo "CANONICAL_SNAPSHOT_PATH=$snapshot"
       exit 0

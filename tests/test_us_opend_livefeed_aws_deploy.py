@@ -236,3 +236,10 @@ def test_verify_snapshot_provenance_embedded_python_compiles():
     start = VERIFY.index("\n", start) + 1
     end = VERIFY.index("\nPY", start)
     compile(VERIFY[start:end], "verify_us_opend_livefeed.sh:snapshot-provenance", "exec")
+
+
+def test_verify_gate_prints_pass_marker_on_its_own_line():
+    cat_index = VERIFY.index('cat "$status"')
+    newline_index = VERIFY.index("printf '\\n'", cat_index)
+    pass_index = VERIFY.index('echo "CANONICAL_SNAPSHOT_EXPORT=PASS"', newline_index)
+    assert cat_index < newline_index < pass_index
