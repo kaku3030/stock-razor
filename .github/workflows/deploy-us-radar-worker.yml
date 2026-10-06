@@ -44,9 +44,13 @@ jobs:
             sleep 2
           done
           inv="$(aws ssm get-command-invocation --command-id "$id" --instance-id "$TARGET_INSTANCE_ID" --output json)"
+          printf '%s\n' "$inv"
           test "$status" = Success
-          source_sha="$(jq -r '.StandardOutputContent // ""' <<<"$inv" | tr -d '\r' | tail -n 1)"
-          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+          source_sha="$(jq -r '.StandardOutputContent // ""' <<<"$inv" | tr -d '\r' | awk '/^[0-9a-f]{40}$/ {sha=$0} END {print sha}')"
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "INVALID_SOURCE_REPO_SHA" >&2
+            exit 1
+          fi
           echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "CANONICAL_SOURCE_SHA=$source_sha"
 

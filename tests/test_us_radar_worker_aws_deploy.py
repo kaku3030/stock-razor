@@ -104,3 +104,13 @@ def test_verify_embedded_python_compiles():
 
 def test_worker_never_republishes_last_good_state_when_current_evaluation_blocks():
     assert "last_research_state" not in INSTALLER
+
+
+def test_source_sha_discovery_ignores_trailing_blank_lines_and_emits_invocation():
+    discover = WORKFLOW.split("      - name: Discover canonical source SHA", 1)[1].split(
+        "      - name: Deploy exact worker SHA over SSM", 1
+    )[0]
+    assert "printf '%s\\n' \"$inv\"" in discover
+    assert "awk '/^[0-9a-f]{40}$/ {sha=$0} END {print sha}'" in discover
+    assert "tail -n 1" not in discover
+    assert 'echo "INVALID_SOURCE_REPO_SHA" >&2' in discover
