@@ -235,6 +235,7 @@ jobs:
           set -u
           unit='stock-razor-us-livefeed.service'
           status_path='/run/stock-razor-us-livefeed/latest-heartbeat.json'
+          snapshot_path='/run/stock-razor-us-livefeed/canonical-market-snapshot.json'
           echo '=== US LIVEFEED UNIT STATE ==='
           systemctl is-active "$unit" 2>&1 || true
           systemctl is-enabled "$unit" 2>&1 || true
@@ -246,6 +247,46 @@ jobs:
             cat "$status_path"
           else
             echo 'HEARTBEAT=UNKNOWN:FILE_MISSING'
+          fi
+          echo '=== CANONICAL SNAPSHOT EXPORT ==='
+          if [ -s "$snapshot_path" ]; then
+            /opt/stock-razor-opend-client/venv/bin/python - "$snapshot_path" <<'PY'
+          import json,sys
+          path=sys.argv[1]
+          try:
+              with open(path,encoding="utf-8") as handle:
+                  payload=json.load(handle)
+              symbols={}
+              for code,item in (payload.get("symbols") or {}).items():
+                  frames=item.get("timeframes") or {}
+                  symbols[code]={
+                      tf:{
+                          "count":len(frames.get(tf) or []),
+                          "latest_end_utc":((frames.get(tf) or [{}])[-1].get("bar_end_utc") if frames.get(tf) else None),
+                      }
+                      for tf in ("1m","5m","15m","1h")
+                  }
+              out={
+                  "status":"PASS",
+                  "schema":payload.get("schema"),
+                  "repo_sha":payload.get("repo_sha"),
+                  "runtime_instance_id":payload.get("runtime_instance_id"),
+                  "sequence":payload.get("sequence"),
+                  "emitted_at_utc":payload.get("emitted_at_utc"),
+                  "market_state_us":payload.get("market_state_us"),
+                  "cache_session_us":payload.get("cache_session_us"),
+                  "delivery_mode":payload.get("delivery_mode"),
+                  "bar_closure":payload.get("bar_closure"),
+                  "radar_admission":payload.get("radar_admission"),
+                  "live_trade":payload.get("live_trade"),
+                  "symbols":symbols,
+              }
+              print(json.dumps(out,separators=(",",":")))
+          except Exception as exc:
+              print(json.dumps({"status":"BLOCKED","error":type(exc).__name__},separators=(",",":")))
+          PY
+          else
+            echo 'CANONICAL_SNAPSHOT=UNKNOWN:FILE_MISSING'
           fi
           echo '=== US LIVEFEED JOURNAL ==='
           journalctl -u "$unit" -n 120 --no-pager 2>&1 || true

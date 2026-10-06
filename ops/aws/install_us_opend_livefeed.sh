@@ -22,6 +22,7 @@ from data_provider.futu_k1m_streaming_adapter import (
 )
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.realtime_market_data import RealtimeMarketDataService
@@ -40,6 +41,11 @@ from data_provider.live_feed_types import ProviderEventKind, SemanticStreamKey
 from data_provider.market_data_adapter import evaluate_health
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.canonical_snapshot_export import (
+    SCHEMA as CANONICAL_SNAPSHOT_SCHEMA,
+    build_canonical_snapshot_export,
+    write_canonical_snapshot_export,
+)
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
@@ -54,6 +60,10 @@ CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ")
 runtime_id=os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 repo_sha=os.environ["STOCK_RAZOR_REPO_SHA"]
 status_path=os.environ.get("STOCK_RAZOR_US_LIVEFEED_STATUS_PATH","/run/stock-razor-us-livefeed/latest-heartbeat.json")
+canonical_snapshot_path=os.environ.get(
+    "STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH",
+    "/run/stock-razor-us-livefeed/canonical-market-snapshot.json",
+)
 host_id=socket.gethostname()
 ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
 controller=LiveFeedController(runtime_instance_id=runtime_id,provider_id="futu",command_executor=FakeProviderCommandExecutor())
@@ -96,6 +106,11 @@ bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accep
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
 seq=0
+canonical_export_sequence=0
+canonical_export_status="UNKNOWN"
+canonical_export_error=None
+canonical_export_last_write_utc=None
+last_export_market_state=None
 startup_monotonic=time.monotonic()
 startup_callback_deadline_seconds=20
 def publish(payload):
@@ -133,8 +148,10 @@ try:
         }
         currentness_summary=summarize_futu_k1m_currentness(currentness)
         canonical_cache={}
+        canonical_snapshots={}
         for code in CODES:
             cache_snapshot=market_data.snapshot(code,as_of=now)
+            canonical_snapshots[code]=cache_snapshot
             bars_1m=cache_snapshot.minute_bars
             bars_5m=cache_snapshot.bars_5m
             bars_15m=cache_snapshot.bars_15m
@@ -154,6 +171,35 @@ try:
                 "bar_count_1h":len(bars_1h),
                 "latest_1h_end_utc":latest_1h.bar_end.isoformat() if latest_1h else None,
             }
+        canonical_export_updated=False
+        should_export=(
+            consumer_result.bars_ingested > 0
+            or not os.path.exists(canonical_snapshot_path)
+            or market_state != last_export_market_state
+            or canonical_export_status != "PASS"
+        )
+        if should_export:
+            try:
+                next_export_sequence=canonical_export_sequence+1
+                canonical_export=build_canonical_snapshot_export(
+                    canonical_snapshots,
+                    runtime_instance_id=runtime_id,
+                    repo_sha=repo_sha,
+                    sequence=next_export_sequence,
+                    emitted_at_utc=now,
+                    market_state_us=market_state,
+                    cache_session_us=cache_session,
+                )
+                write_canonical_snapshot_export(canonical_snapshot_path,canonical_export)
+                canonical_export_sequence=next_export_sequence
+                canonical_export_status="PASS"
+                canonical_export_error=None
+                canonical_export_last_write_utc=now.isoformat()
+                last_export_market_state=market_state
+                canonical_export_updated=True
+            except Exception as exc:
+                canonical_export_status="BLOCKED"
+                canonical_export_error=type(exc).__name__
         closure_diagnostics=closure_pipeline.diagnostics()
         consumer_payload={
             "evidence_processed":consumer_result.evidence_processed,
@@ -178,6 +224,16 @@ try:
           "closure_pipeline":closure_diagnostics,
           "research_consumer":consumer_payload,
           "canonical_cache":canonical_cache,
+          "canonical_snapshot_export":{
+              "status":canonical_export_status,
+              "error":canonical_export_error,
+              "schema":CANONICAL_SNAPSHOT_SCHEMA,
+              "path":canonical_snapshot_path,
+              "sequence":canonical_export_sequence,
+              "updated":canonical_export_updated,
+              "last_write_utc":canonical_export_last_write_utc,
+              "repo_sha":repo_sha,
+          },
           "adapter_diagnostics":adapter.diagnostics(),
           "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
           "radar_admission":"BLOCKED","live_trade":False}
@@ -202,6 +258,7 @@ Environment=PYTHONPATH=$INSTALL_ROOT/repo
 Environment=HOME=/root
 Environment=STOCK_RAZOR_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_US_LIVEFEED_STATUS_PATH=/run/stock-razor-us-livefeed/latest-heartbeat.json
+Environment=STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH=/run/stock-razor-us-livefeed/canonical-market-snapshot.json
 RuntimeDirectory=stock-razor-us-livefeed
 RuntimeDirectoryMode=0755
 ExecStart=$OPEND_CLIENT_ROOT/venv/bin/python $INSTALL_ROOT/run.py

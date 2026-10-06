@@ -2,6 +2,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 INSTALLER=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
 WORKFLOW=(ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
+VERIFY=(ROOT/"ops/aws/verify_us_opend_livefeed.sh").read_text()
 
 def test_installer_is_read_only_and_fail_closed():
     assert "stock-razor-us-livefeed.service" in INSTALLER
@@ -26,6 +27,9 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert '"closure_pipeline":' in WORKFLOW
     assert '"research_consumer":' in WORKFLOW
     assert '"canonical_cache":' in WORKFLOW
+    assert '"canonical_snapshot_export":{"status":"PASS"' in WORKFLOW
+    assert "CANONICAL_SNAPSHOT_EXPORT=PASS" in WORKFLOW
+    assert "canonical-market-snapshot.json" in WORKFLOW
     assert "US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS" in WORKFLOW
 
 
@@ -35,6 +39,10 @@ def test_status_audit_is_read_only_and_covers_us_livefeed_runtime():
     assert "stock-razor-us-livefeed.service" in ops
     assert "11111" in ops
     assert "/run/stock-razor-us-livefeed/latest-heartbeat.json" in ops
+    assert "/run/stock-razor-us-livefeed/canonical-market-snapshot.json" in ops
+    assert "=== CANONICAL SNAPSHOT EXPORT ===" in ops
+    assert '"latest_end_utc":' in ops
+    assert '"radar_admission":payload.get("radar_admission")' in ops
     assert "NRestarts" in ops
     assert 'cat "$status_path"' in ops
     assert "LIVE_TRADE=NO" in ops
@@ -165,6 +173,21 @@ def test_installer_wires_writer_qualified_closure_into_ingest_only_cache():
     assert '"latest_5m_end_utc":' in installer
     assert '"latest_15m_end_utc":' in installer
     assert '"latest_1h_end_utc":' in installer
+    assert "build_canonical_snapshot_export" in installer
+    assert "write_canonical_snapshot_export(canonical_snapshot_path,canonical_export)" in installer
+    assert "canonical_export_status=\"PASS\"" in installer
+    assert "canonical_export_status=\"BLOCKED\"" in installer
+    assert "canonical_export_error=type(exc).__name__" in installer
+    assert "consumer_result.bars_ingested > 0" in installer
+    assert "not os.path.exists(canonical_snapshot_path)" in installer
+    assert "market_state != last_export_market_state" in installer
+    assert 'canonical_export_status != "PASS"' in installer
+    assert "canonical_export_sequence=next_export_sequence" in installer
+    assert '"updated":canonical_export_updated' in installer
+    assert '"last_write_utc":canonical_export_last_write_utc' in installer
+    assert '"canonical_snapshot_export":{' in installer
+    assert '"status":canonical_export_status' in installer
+    assert "STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH" in installer
     assert '"controller_findings_tail":list(snap.controller.findings[-20:])' in installer
 
 
@@ -176,3 +199,40 @@ def test_installer_canonical_cache_fallback_health_and_admission_remain_fail_clo
     assert '"bar_closure":"UNPROVEN"' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
+
+
+def test_verify_gate_requires_atomic_canonical_snapshot_with_exact_provenance():
+    assert "canonical-market-snapshot.json" in VERIFY
+    assert 'snapshot.get("schema") == "stock_razor_canonical_market_snapshot_v1"' in VERIFY
+    assert 'snapshot.get("repo_sha") == expected_sha' in VERIFY
+    assert 'snapshot.get("runtime_instance_id") == heartbeat.get("runtime_instance_id")' in VERIFY
+    assert 'snapshot_sequence == int(export.get("sequence") or -2)' in VERIFY
+    assert "snapshot_sequence > 0" in VERIFY
+    assert 'export.get("last_write_utc")' in VERIFY
+    assert 'export.get("status") == "PASS"' in VERIFY
+    assert 'snapshot.get("delivery_mode") == "UNKNOWN"' in VERIFY
+    assert 'snapshot.get("bar_closure") == "UNPROVEN"' in VERIFY
+    assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'snapshot.get("live_trade") is False' in VERIFY
+    assert "CANONICAL_SNAPSHOT_EXPORT=PASS" in VERIFY
+
+
+def test_status_snapshot_summary_embedded_python_compiles():
+    ops = (ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    marker = '/opt/stock-razor-opend-client/venv/bin/python - "$snapshot_path" <<\'PY\''
+    start = ops.index(marker)
+    start = ops.index("\n", start) + 1
+    end = ops.index("\n          PY", start)
+    source = "\n".join(
+        line[10:] if line.startswith("          ") else line
+        for line in ops[start:end].splitlines()
+    )
+    compile(source, "aws-ssm-ops.yml:canonical-snapshot-summary", "exec")
+
+
+def test_verify_snapshot_provenance_embedded_python_compiles():
+    marker = '"$python_bin" - "$status" "$snapshot" "$expected_sha" <<\'PY\''
+    start = VERIFY.index(marker)
+    start = VERIFY.index("\n", start) + 1
+    end = VERIFY.index("\nPY", start)
+    compile(VERIFY[start:end], "verify_us_opend_livefeed.sh:snapshot-provenance", "exec")
