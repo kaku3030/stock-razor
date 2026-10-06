@@ -245,6 +245,7 @@ jobs:
           echo '=== US LIVEFEED HEARTBEAT ==='
           if [ -f "$status_path" ]; then
             cat "$status_path"
+            printf '\n'
           else
             echo 'HEARTBEAT=UNKNOWN:FILE_MISSING'
           fi

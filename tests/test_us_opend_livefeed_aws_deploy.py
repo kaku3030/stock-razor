@@ -231,8 +231,15 @@ def test_status_snapshot_summary_embedded_python_compiles():
 
 
 def test_verify_snapshot_provenance_embedded_python_compiles():
-    marker = '"$python_bin" - "$status" "$snapshot" "$expected_sha" <<\'PY\''
+    marker = '"$python_bin" - "$status" "$snapshot" "$expected_sha" 2>/dev/null <<\'PY\''
     start = VERIFY.index(marker)
     start = VERIFY.index("\n", start) + 1
     end = VERIFY.index("\nPY", start)
     compile(VERIFY[start:end], "verify_us_opend_livefeed.sh:snapshot-provenance", "exec")
+
+
+def test_verify_and_status_delimit_compact_json_output():
+    assert 'cat "$status"\n      printf \'\\n\'' in VERIFY
+    assert '2>/dev/null <<\'PY\'' in VERIFY
+    ops = (ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    assert 'cat "$status_path"\n            printf \'\\n\'' in ops

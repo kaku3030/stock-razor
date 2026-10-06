@@ -7,7 +7,7 @@ python_bin=/opt/stock-razor-opend-client/venv/bin/python
 
 for _ in $(seq 1 18); do
   if systemctl is-active --quiet stock-razor-us-livefeed.service && [[ -s "$status" ]] && [[ -s "$snapshot" ]]; then
-    if "$python_bin" - "$status" "$snapshot" "$expected_sha" <<'PY'
+    if "$python_bin" - "$status" "$snapshot" "$expected_sha" 2>/dev/null <<'PY'
 import json
 import sys
 
@@ -39,6 +39,7 @@ PY
       systemctl is-enabled stock-razor-us-livefeed.service
       systemctl is-active stock-razor-us-livefeed.service
       cat "$status"
+      printf '\n'
       echo "CANONICAL_SNAPSHOT_EXPORT=PASS"
       echo "CANONICAL_SNAPSHOT_PATH=$snapshot"
       exit 0
