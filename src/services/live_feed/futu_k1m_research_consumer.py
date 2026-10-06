@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from threading import Lock
 from typing import Protocol
 
 from .controller import LiveFeedController
@@ -10,6 +11,10 @@ from .futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 
 class MinuteBarIngestor(Protocol):
     def ingest(self, bar) -> bool: ...
+
+
+class ResearchConsumerConcurrencyViolation(RuntimeError):
+    """Raised when more than one consumer pass is attempted concurrently."""
 
 
 @dataclass(frozen=True)
@@ -45,11 +50,21 @@ class FutuK1MResearchConsumer:
         self._closure = closure_pipeline
         self._market_data = market_data
         self._diagnostics: deque[dict[str, str]] = deque(maxlen=max_diagnostics)
+        self._run_guard = Lock()
 
     def run_once(self, *, max_events: int = 100) -> FutuK1MResearchConsumerResult:
         if max_events <= 0:
             raise ValueError("max_events must be positive")
+        if not self._run_guard.acquire(blocking=False):
+            raise ResearchConsumerConcurrencyViolation(
+                "FutuK1MResearchConsumer.run_once is already active"
+            )
+        try:
+            return self._run_once_locked(max_events=max_events)
+        finally:
+            self._run_guard.release()
 
+    def _run_once_locked(self, *, max_events: int) -> FutuK1MResearchConsumerResult:
         evidence_processed = 0
         closure_blocked = 0
         bars_ingested = 0

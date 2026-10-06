@@ -1,11 +1,17 @@
 from datetime import datetime, timedelta, timezone
+from threading import Event, Thread
+
+import pytest
 
 from data_provider.live_feed_types import ProviderEvent, ProviderEventKind, SemanticStreamKey
 from data_provider.market_data_adapter import SignalPermission, evaluate_health
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
-from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_k1m_research_consumer import (
+    FutuK1MResearchConsumer,
+    ResearchConsumerConcurrencyViolation,
+)
 from src.services.realtime_market_data import RealtimeMarketDataService
 
 
@@ -248,3 +254,46 @@ def test_closed_bar_ack_is_exact_and_non_destructive_on_mismatch():
     assert closure.peek_closed() == bar
     assert closure.ack_closed(bar) is True
     assert closure.peek_closed() is None
+
+
+
+class BlockingClosure:
+    def __init__(self):
+        self.entered = Event()
+        self.release = Event()
+
+    def consume_event(self, _evidence):
+        self.entered.set()
+        assert self.release.wait(timeout=5)
+        return type("Result", (), {"status": "FORMING"})()
+
+    def peek_closed(self):
+        return None
+
+    def ack_closed(self, _bar):
+        return False
+
+
+def test_concurrent_run_once_is_structurally_rejected():
+    controller = controller_with_desired()
+    closure = BlockingClosure()
+    consumer = FutuK1MResearchConsumer(controller, closure, cache())
+    submit_rows(controller, row("2026-10-06 10:52:00"))
+
+    completed = []
+
+    def first_pass():
+        completed.append(consumer.run_once(max_events=1))
+
+    worker = Thread(target=first_pass)
+    worker.start()
+    assert closure.entered.wait(timeout=5)
+
+    with pytest.raises(ResearchConsumerConcurrencyViolation, match="already active"):
+        consumer.run_once(max_events=1)
+
+    closure.release.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert len(completed) == 1
+    assert completed[0].evidence_processed == 1
