@@ -50,15 +50,35 @@ def test_regular_session_stale_k1m_fails_closed():
     assert result.age_seconds == 300
 
 
-def test_regular_session_future_time_key_fails_closed():
+def test_end_labeled_forming_minute_covers_observation_and_passes():
     result = classify_futu_us_k1m_currentness(
-        "2026-10-06 09:36:00",
+        "2026-10-06 09:49:00",
+        observed_at_utc=datetime(2026, 10, 6, 13, 48, 33, tzinfo=timezone.utc),
+        market_state="AFTERNOON",
+    )
+
+    assert result.status == "PASS"
+    assert result.reason == "K1M_FORMING_INTERVAL_COVERS_OBSERVATION"
+    assert result.age_seconds == 0
+    assert result.end_offset_seconds == -27
+    assert result.interval_start_utc == datetime(
+        2026, 10, 6, 13, 48, tzinfo=timezone.utc
+    )
+    assert result.interval_end_utc == datetime(
+        2026, 10, 6, 13, 49, tzinfo=timezone.utc
+    )
+
+
+def test_interval_whose_start_is_still_in_future_fails_closed():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:37:00",
         observed_at_utc=datetime(2026, 10, 6, 13, 35, tzinfo=timezone.utc),
         market_state="MORNING",
     )
 
     assert result.status == "FAIL"
-    assert result.reason == "K1M_TIME_KEY_IN_FUTURE"
+    assert result.reason == "K1M_INTERVAL_NOT_STARTED"
+    assert result.end_offset_seconds == -120
 
 
 @pytest.mark.parametrize("state", ["CLOSED", "WAITING_OPEN", "NONE"])
@@ -140,3 +160,26 @@ def test_naive_observation_time_is_rejected():
 )
 def test_futu_market_state_maps_to_cache_session_without_guessing(state, expected):
     assert futu_us_market_state_to_session(state) == expected
+
+
+def test_interval_start_clock_skew_budget_is_explicit():
+    result = classify_futu_us_k1m_currentness(
+        "2026-10-06 09:36:00",
+        observed_at_utc=datetime(2026, 10, 6, 13, 34, 56, tzinfo=timezone.utc),
+        market_state="MORNING",
+    )
+
+    assert result.status == "PASS"
+    assert result.reason == "K1M_INTERVAL_START_WITHIN_CLOCK_SKEW"
+    assert result.age_seconds == 0
+    assert result.end_offset_seconds == -64
+
+
+def test_negative_interval_start_skew_budget_is_rejected():
+    with pytest.raises(ValueError, match="non-negative"):
+        classify_futu_us_k1m_currentness(
+            "2026-10-06 09:36:00",
+            observed_at_utc=datetime(2026, 10, 6, 13, 35, tzinfo=timezone.utc),
+            market_state="MORNING",
+            max_interval_start_skew_seconds=-1,
+        )
