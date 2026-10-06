@@ -6,10 +6,10 @@ bar closure, create strategy signals, or expose any trading path.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
-from data_provider.live_feed_types import SemanticStreamKey
-from .controller import LiveFeedController, LiveFeedControllerSnapshot
+from data_provider.live_feed_types import ProviderEvent, SemanticStreamKey
+from .controller import EnqueueResult, LiveFeedController, LiveFeedControllerSnapshot
 
 
 class StreamingAdapter(Protocol):
@@ -29,9 +29,16 @@ class LiveFeedRuntimeSnapshot:
 class LiveFeedRuntimeBridge:
     """Bind one provider adapter to the existing single-writer controller."""
 
-    def __init__(self, controller: LiveFeedController, adapter: StreamingAdapter) -> None:
+    def __init__(
+        self,
+        controller: LiveFeedController,
+        adapter: StreamingAdapter,
+        *,
+        on_event_accepted: Callable[[ProviderEvent], None] | None = None,
+    ) -> None:
         self._controller = controller
         self._adapter = adapter
+        self._on_event_accepted = on_event_accepted
         self._subscribed: list[SemanticStreamKey] = []
         self._started = False
 
@@ -41,7 +48,7 @@ class LiveFeedRuntimeBridge:
         unique = tuple(dict.fromkeys(streams))
         if not unique:
             raise ValueError("at least one stream is required")
-        self._adapter.register_event_sink(self._controller.submit_event)
+        self._adapter.register_event_sink(self._submit_event)
         self._adapter.start()
         try:
             for key in unique:
@@ -88,3 +95,9 @@ class LiveFeedRuntimeBridge:
                 pass
         self._subscribed.clear()
         self._adapter.stop()
+
+    def _submit_event(self, event: ProviderEvent) -> EnqueueResult:
+        result = self._controller.submit_event(event)
+        if result.accepted and self._on_event_accepted is not None:
+            self._on_event_accepted(event)
+        return result

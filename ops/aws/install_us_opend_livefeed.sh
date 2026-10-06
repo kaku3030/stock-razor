@@ -43,16 +43,11 @@ event_count=0
 last_push_utc=None
 def generation(): return controller.snapshot().controller_generation
 adapter=FutuK1MStreamingAdapter(ctx,ft,runtime_instance_id=runtime_id,controller_generation=generation)
-original_submit=controller.submit_event
-def sink(event):
+def on_event_accepted(event):
     global event_count,last_push_utc
-    result=original_submit(event)
-    if result.accepted:
-        event_count+=1
-        last_push_utc=datetime.now(timezone.utc).isoformat()
-    return result
-controller.submit_event=sink
-bridge=LiveFeedRuntimeBridge(controller,adapter)
+    event_count+=1
+    last_push_utc=datetime.now(timezone.utc).isoformat()
+bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
 seq=0

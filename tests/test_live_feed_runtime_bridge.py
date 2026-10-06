@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import pytest
 
-from data_provider.live_feed_types import SemanticStreamKey
+from data_provider.live_feed_types import ProviderEvent, ProviderEventKind, SemanticStreamKey
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
@@ -41,9 +42,27 @@ def controller():
 def test_bridge_reuses_controller_and_registers_provider_sink():
     c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
     snap=r.start([KEY])
-    assert a.sink == c.submit_event
+    assert callable(a.sink)
     assert snap.subscribed == (KEY,)
     assert c.desired_registry_snapshot().entries[0].semantic_stream_key == KEY
+
+
+def test_bridge_reports_events_after_controller_ingress_accepts_them():
+    accepted = []
+    c=controller(); a=Adapter()
+    r=LiveFeedRuntimeBridge(c,a,on_event_accepted=accepted.append)
+    r.start([KEY])
+    event=ProviderEvent(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        controller_generation=0,
+        observed_at_utc=datetime(2026, 10, 5, 16, 0, tzinfo=timezone.utc),
+        observed_at_monotonic=1.0,
+        event_kind=ProviderEventKind.DATA,
+        semantic_stream_key=KEY,
+    )
+    assert a.sink(event).accepted is True
+    assert accepted == [event]
 
 
 def test_bridge_rejects_empty_and_duplicate_start():
