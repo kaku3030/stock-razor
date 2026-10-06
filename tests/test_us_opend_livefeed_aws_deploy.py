@@ -80,3 +80,9 @@ def test_ssm_ops_has_start_order_probe_with_recovery_trap():
     assert 'systemctl stop "$svc"' in ops and 'systemctl start "$svc"' in ops
     assert "transient_while_persistent_stopped" in ops
     assert "RADAR_ADMISSION=BLOCKED" in ops and "LIVE_TRADE=NO" in ops
+
+def test_installer_fails_closed_on_startup_callback_starvation():
+    installer=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
+    assert "US_OPEND_STARTUP_CALLBACK_STARVATION" in installer
+    assert "event_count == 0" in installer
+    assert "Restart=on-failure" in installer
