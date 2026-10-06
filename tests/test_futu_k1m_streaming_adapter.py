@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import gc
+import weakref
 
 import pytest
 
@@ -31,6 +33,24 @@ class Context:
     def unsubscribe(self, symbols, subtypes):
         self.calls.append(("unsub", symbols, subtypes))
         return 0, "ok"
+
+
+class LifecycleContext(Context):
+    def set_handler(self, handler):
+        self.handler = weakref.ref(handler)
+        return None
+
+    def emit(self, frame):
+        handler = self.handler()
+        assert handler is not None
+        return handler.on_recv_rsp(frame)
+
+
+class EagerRegistrationContext(LifecycleContext):
+    def set_handler(self, handler):
+        self.handler = weakref.ref(handler)
+        handler.on_recv_rsp(Frame([{"code": "US.AAPL", "time_key": "2026-10-05 10:01:00"}]))
+        return None
 
 
 FT = SimpleNamespace(
@@ -109,3 +129,42 @@ def test_same_time_key_updates_remain_distinct_forming_bar_evidence():
     assert events[0].payload["close"] != events[1].payload["close"]
     assert all(e.progress_identity_candidate is None for e in events)
     assert all(e.diagnostic_fields["bar_closure"] == "UNPROVEN" for e in events)
+
+
+def test_handler_lifecycle_keeps_delayed_callback_alive_after_context_registration():
+    ctx = LifecycleContext()
+    events = []
+    adapter = FutuK1MStreamingAdapter(ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1)
+    adapter.register_event_sink(events.append)
+    adapter.start()
+    gc.collect()
+
+    ctx.emit(Frame([{"code": "US.AAPL", "time_key": "2026-10-05 10:01:00"}]))
+    assert len(events) == 1
+    assert events[0].semantic_stream_key == key()
+
+
+def test_callback_delivered_during_handler_registration_is_not_dropped():
+    ctx = EagerRegistrationContext()
+    events = []
+    adapter = FutuK1MStreamingAdapter(ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1)
+    adapter.register_event_sink(events.append)
+
+    adapter.start()
+
+    assert len(events) == 1
+    assert events[0].provider_timestamp_raw == "2026-10-05 10:01:00"
+
+
+def test_handler_registration_failure_is_explicit():
+    class BadRegistrationContext(Context):
+        def set_handler(self, handler):
+            return -1
+
+    adapter = FutuK1MStreamingAdapter(BadRegistrationContext(), FT, runtime_instance_id="r1", controller_generation=lambda: 1)
+    adapter.register_event_sink(lambda event: None)
+
+    with pytest.raises(RuntimeError, match="handler registration rejected"):
+        adapter.start()
+    assert adapter._started is False
+    assert adapter._handler is None

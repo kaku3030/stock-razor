@@ -70,9 +70,20 @@ class FutuK1MStreamingAdapter:
                     adapter._emit_row(row)
                 return ret, data
 
-        self._handler = KlineHandler()
-        self._ctx.set_handler(self._handler)
+        handler = KlineHandler()
+        # Retain the handler independently of the provider context.  Some
+        # SDK/context implementations only retain the registered callback for
+        # dispatch, so the adapter owns its lifecycle explicitly.
+        self._handler = handler
         self._started = True
+        try:
+            registration_result = self._ctx.set_handler(handler)
+            if registration_result not in (None, self._ft.RET_OK):
+                raise RuntimeError("OpenD K_1M handler registration rejected: " + str(registration_result)[:300])
+        except Exception:
+            self._started = False
+            self._handler = None
+            raise
 
     def stop(self) -> None:
         # Context ownership belongs to the runtime, not this adapter. Avoid
