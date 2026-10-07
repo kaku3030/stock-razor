@@ -189,9 +189,11 @@ def test_secure_remote_e2e_includes_analysis_and_full_tool_discovery() -> None:
     assert "'get_futures_runtime_health'" in source
     assert "'get_market_analysis'" in source
     assert "'get_cn_market_data'" in source
+    assert "'get_cn_market_analysis'" in source
     assert "Call get_market_analysis exactly once for AMD" in source
     assert "Call get_cn_market_data exactly once" in source
-    assert "len(names) != 6" in source
-    assert "len(discovered) == 6" in source
+    assert "Call get_cn_market_analysis exactly once" in source
+    assert "len(names) != 7" in source
+    assert "len(discovered) == 7" in source
     assert "len(names) != 5" not in source
     assert "len(names) != 3" not in source
