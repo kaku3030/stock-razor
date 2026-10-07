@@ -77,6 +77,62 @@ class CanonicalRadarEvaluation:
     research_only: bool = field(default=True, init=False)
     can_confirm_signal: bool = field(default=False, init=False)
 
+    def admission_diagnostics(self) -> dict:
+        """Expose bounded admission evidence without authorizing promotion."""
+
+        delivery_mode_realtime = self.source_delivery_mode == "REALTIME"
+        bar_closure_proven = self.source_bar_closure == "PROVEN"
+        research_state_symbols = [
+            item.symbol for item in self.symbols if item.status == "RESEARCH_STATE"
+        ]
+        no_canonical_bar_symbols = [
+            item.symbol for item in self.symbols if item.status == "NO_CANONICAL_BARS"
+        ]
+        normal_health_symbols = [
+            item.symbol
+            for item in self.symbols
+            if item.technical_state is not None
+            and item.technical_state.signal_permission is SignalPermission.NORMAL
+        ]
+        non_normal_health_symbols = [
+            item.symbol
+            for item in self.symbols
+            if item.technical_state is not None
+            and item.technical_state.signal_permission is not SignalPermission.NORMAL
+        ]
+
+        reasons = list(self.reasons)
+        if self.source_delivery_mode is None:
+            reasons.append("SOURCE_DELIVERY_MODE_UNAVAILABLE")
+        elif not delivery_mode_realtime:
+            reasons.append("SOURCE_DELIVERY_MODE_NOT_REALTIME")
+        if self.source_bar_closure is None:
+            reasons.append("SOURCE_BAR_CLOSURE_UNAVAILABLE")
+        elif not bar_closure_proven:
+            reasons.append("SOURCE_BAR_CLOSURE_UNPROVEN")
+        if no_canonical_bar_symbols:
+            reasons.append("SYMBOLS_WITHOUT_CANONICAL_BARS")
+        if non_normal_health_symbols:
+            reasons.append("SYMBOL_DATA_HEALTH_NOT_NORMAL")
+        reasons.append("PROMOTION_NOT_AUTHORIZED")
+
+        return {
+            "decision": "BLOCKED",
+            "promotion_authorized": False,
+            "minimum_source_prerequisites_met": (
+                delivery_mode_realtime and bar_closure_proven
+            ),
+            "delivery_mode_realtime": delivery_mode_realtime,
+            "bar_closure_proven": bar_closure_proven,
+            "source_radar_admission": self.source_radar_admission,
+            "source_live_trade": self.source_live_trade,
+            "research_state_symbols": research_state_symbols,
+            "no_canonical_bar_symbols": no_canonical_bar_symbols,
+            "normal_health_symbols": normal_health_symbols,
+            "non_normal_health_symbols": non_normal_health_symbols,
+            "reasons": list(dict.fromkeys(reasons)),
+        }
+
     def to_dict(self) -> dict:
         return {
             "status": self.status,
@@ -96,6 +152,7 @@ class CanonicalRadarEvaluation:
             "reasons": list(self.reasons),
             "research_only": self.research_only,
             "can_confirm_signal": self.can_confirm_signal,
+            "admission_diagnostics": self.admission_diagnostics(),
         }
 
 
