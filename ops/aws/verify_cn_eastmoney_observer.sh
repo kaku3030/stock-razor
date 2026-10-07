@@ -19,8 +19,8 @@ with open(status_path, encoding="utf-8") as handle:
 assert payload.get("schema") == "stock_razor_cn_eastmoney_observation_v1"
 assert payload.get("repo_sha") == expected_sha
 assert int(payload.get("sequence") or 0) > 0
-assert payload.get("provider") == "eastmoney"
-assert payload.get("provider_lineage") == "eastmoney"
+assert payload.get("provider_policy") == "EASTMONEY_PRIMARY_TENCENT_FALLBACK"
+assert set(payload.get("provider_lineages") or []) == {"eastmoney", "tencent"}
 assert payload.get("intraday_timestamp_semantics_proven") is False
 assert payload.get("intraday_currentness_proven") is False
 assert payload.get("research_only") is True
@@ -33,7 +33,7 @@ symbols = payload.get("symbols") or {}
 assert symbols
 for symbol, item in symbols.items():
     assert item.get("status") == "PASS"
-    assert item.get("provider") == "eastmoney"
+    assert item.get("provider_policy") == "EASTMONEY_PRIMARY_TENCENT_FALLBACK"
     assert item.get("radar_admission") == "BLOCKED"
     assert item.get("live_trade") is False
     frames = item.get("timeframes") or {}
@@ -43,7 +43,21 @@ for symbol, item in symbols.items():
         assert frame.get("status") == "PASS"
         assert int(frame.get("row_count") or 0) > 0
         assert frame.get("currentness") == "UNPROVEN"
-        assert frame.get("rows")
+        rows = frame.get("rows") or []
+        assert rows
+        provider = frame.get("provider_used")
+        lineage = frame.get("provider_lineage")
+        assert provider in {"eastmoney", "tencent"}
+        assert lineage == provider
+        latest = rows[-1]
+        assert latest.get("provider") == provider
+        if provider == "eastmoney":
+            assert latest.get("volume_unit") == "PROVIDER_RAW_UNVERIFIED"
+            assert frame.get("fallback_from") is None
+        else:
+            assert latest.get("volume_unit") == "HAND"
+            assert frame.get("fallback_from") == "eastmoney"
+            assert frame.get("fallback_reason")
     assert frames["1d"].get("timestamp_semantic") == "DAILY_DATE"
     assert frames["60m"].get("timestamp_semantic") == "UNKNOWN"
     assert frames["15m"].get("timestamp_semantic") == "UNKNOWN"
