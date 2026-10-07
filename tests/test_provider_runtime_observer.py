@@ -125,6 +125,18 @@ def test_observed_at_must_be_timezone_aware():
         )
 
 
+def test_observation_fields_are_frozen_after_validation():
+    raw_fields = {"latency_ms": evidence(10.0)}
+    runtime_observation = ProviderRuntimeObservation(
+        provider_id="moomoo_opend",
+        fields=raw_fields,
+    )
+    raw_fields["latency_ms"] = evidence(999.0, seconds=1)
+    assert runtime_observation.fields["latency_ms"].value == 10.0
+    with pytest.raises(TypeError):
+        runtime_observation.fields["latency_ms"] = evidence(20.0)
+
+
 @pytest.mark.parametrize(
     "field_name",
     ["provider_id", "role", "market_scope", "decision_criticality", "fallback_provider"],
