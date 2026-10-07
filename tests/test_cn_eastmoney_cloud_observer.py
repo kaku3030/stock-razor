@@ -298,3 +298,67 @@ def test_symbol_timeframes_are_observed_concurrently(monkeypatch):
 
     assert list(result["timeframes"]) == ["1d", "60m", "15m"]
     assert all(item["status"] == "PASS" for item in result["timeframes"].values())
+
+
+
+def test_tencent_opening_bar_small_envelope_drift_is_reconciled():
+    symbol = "512730"
+    api_symbol = tencent_symbol(symbol)
+    payload = {
+        "data": {
+            api_symbol: {
+                "m15": [
+                    ["202608190945", "1.645", "1.656", "1.659", "1.648", "13011.000", {}, "236.2033"],
+                    ["202608191000", "1.656", "1.657", "1.660", "1.654", "1000.000", {}, "1.0"],
+                ]
+            }
+        }
+    }
+
+    rows = parse_tencent_kline_rows(payload, symbol=symbol, timeframe="15m")
+
+    assert rows[0]["open"] == 1.645
+    assert rows[0]["high"] == 1.659
+    assert rows[0]["low"] == 1.645
+    assert rows[0]["provider_low_raw"] == 1.648
+    assert rows[0]["provider_high_raw"] == 1.659
+    assert rows[0]["quality_flags"] == ["TENCENT_OPENING_ENVELOPE_RECONCILED"]
+
+
+def test_tencent_non_opening_bar_envelope_violation_remains_invalid():
+    symbol = "512730"
+    api_symbol = tencent_symbol(symbol)
+    payload = {
+        "data": {
+            api_symbol: {
+                "m15": [
+                    ["202608190945", "1.650", "1.656", "1.659", "1.648", "13011.000", {}, "236.2033"],
+                    ["202608191000", "1.645", "1.656", "1.659", "1.648", "13011.000", {}, "236.2033"],
+                ]
+            }
+        }
+    }
+
+    rows = parse_tencent_kline_rows(payload, symbol=symbol, timeframe="15m")
+
+    assert "INVALID_OHLC" in rows[1]["quality_flags"]
+    assert "TENCENT_OPENING_ENVELOPE_RECONCILED" not in rows[1]["quality_flags"]
+
+
+def test_tencent_opening_bar_large_envelope_violation_remains_invalid():
+    symbol = "512730"
+    api_symbol = tencent_symbol(symbol)
+    payload = {
+        "data": {
+            api_symbol: {
+                "m60": [
+                    ["202608191030", "1.640", "1.659", "1.660", "1.648", "24408.000", {}, "443.1059"],
+                ]
+            }
+        }
+    }
+
+    rows = parse_tencent_kline_rows(payload, symbol=symbol, timeframe="60m")
+
+    assert "INVALID_OHLC" in rows[0]["quality_flags"]
+    assert "TENCENT_OPENING_ENVELOPE_RECONCILED" not in rows[0]["quality_flags"]
