@@ -155,7 +155,6 @@ try:
             or (monotonic_now-last_quote_right_poll_monotonic) >= quote_right_poll_seconds
         ):
             last_quote_right_poll_monotonic=monotonic_now
-            quote_right_observed_at_utc=now
             try:
                 qot_ret,qot_data=ctx.get_user_info([ft.UserInfoField.QOTRIGHT])
                 if qot_ret==ft.RET_OK and isinstance(qot_data,dict):
@@ -170,6 +169,8 @@ try:
                 quote_right_query_status="BLOCKED"
                 quote_right_raw="UNKNOWN"
                 quote_right_query_reason="GET_USER_INFO_QOTRIGHT_ERROR:"+type(exc).__name__
+            quote_right_observed_at_utc=datetime.now(timezone.utc)
+            now=quote_right_observed_at_utc
         quote_right_age_seconds=(
             (now-quote_right_observed_at_utc).total_seconds()
             if quote_right_observed_at_utc is not None else None
