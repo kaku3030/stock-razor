@@ -25,6 +25,7 @@ from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
@@ -58,6 +59,7 @@ from src.services.live_feed.futu_k1m_currentness import (
     summarize_futu_k1m_currentness,
 )
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.realtime_market_data import RealtimeMarketDataService
 
@@ -120,6 +122,14 @@ canonical_export_error=None
 canonical_export_last_write_utc=None
 last_export_market_state=None
 last_export_bar_closure=None
+last_export_delivery_mode=None
+quote_right_poll_seconds=60.0
+quote_right_max_age_seconds=90.0
+quote_right_query_status="UNKNOWN"
+quote_right_raw="UNKNOWN"
+quote_right_observed_at_utc=None
+quote_right_query_reason="NOT_QUERIED"
+last_quote_right_poll_monotonic=None
 startup_monotonic=time.monotonic()
 startup_callback_deadline_seconds=20
 def publish(payload):
@@ -139,6 +149,47 @@ try:
         snap=bridge.drain()
         consumer_result=research_consumer.run_once(max_events=1000)
         seq+=1; now=datetime.now(timezone.utc)
+        monotonic_now=time.monotonic()
+        if (
+            last_quote_right_poll_monotonic is None
+            or (monotonic_now-last_quote_right_poll_monotonic) >= quote_right_poll_seconds
+        ):
+            last_quote_right_poll_monotonic=monotonic_now
+            quote_right_observed_at_utc=now
+            try:
+                qot_ret,qot_data=ctx.get_user_info([ft.UserInfoField.QOTRIGHT])
+                if qot_ret==ft.RET_OK and isinstance(qot_data,dict):
+                    quote_right_query_status="PASS"
+                    quote_right_raw=str(qot_data.get("us_qot_right","UNKNOWN"))
+                    quote_right_query_reason="GET_USER_INFO_QOTRIGHT_PASS"
+                else:
+                    quote_right_query_status="BLOCKED"
+                    quote_right_raw="UNKNOWN"
+                    quote_right_query_reason="GET_USER_INFO_QOTRIGHT_FAILED"
+            except Exception as exc:
+                quote_right_query_status="BLOCKED"
+                quote_right_raw="UNKNOWN"
+                quote_right_query_reason="GET_USER_INFO_QOTRIGHT_ERROR:"+type(exc).__name__
+        quote_right_age_seconds=(
+            (now-quote_right_observed_at_utc).total_seconds()
+            if quote_right_observed_at_utc is not None else None
+        )
+        quote_right_classification=classify_futu_us_quote_right(
+            query_status=quote_right_query_status,
+            us_qot_right=quote_right_raw,
+            age_seconds=quote_right_age_seconds,
+            max_age_seconds=quote_right_max_age_seconds,
+        )
+        delivery_mode_evidence_state=quote_right_classification.delivery_mode
+        quote_right_payload=quote_right_classification.to_dict()
+        quote_right_payload.update({
+            "observed_at_utc":(
+                quote_right_observed_at_utc.isoformat()
+                if quote_right_observed_at_utc is not None else None
+            ),
+            "poll_seconds":quote_right_poll_seconds,
+            "query_reason":quote_right_query_reason,
+        })
         with evidence_lock:
             data_count=data_event_count
             accepted_count=accepted_event_count
@@ -248,6 +299,7 @@ try:
             or not os.path.exists(canonical_snapshot_path)
             or market_state != last_export_market_state
             or bar_closure_evidence_state != last_export_bar_closure
+            or delivery_mode_evidence_state != last_export_delivery_mode
             or canonical_export_status != "PASS"
         )
         if should_export:
@@ -261,6 +313,7 @@ try:
                     emitted_at_utc=now,
                     market_state_us=market_state,
                     cache_session_us=cache_session,
+                    delivery_mode=delivery_mode_evidence_state,
                     bar_closure=bar_closure_evidence_state,
                 )
                 write_canonical_snapshot_export(canonical_snapshot_path,canonical_export)
@@ -270,6 +323,7 @@ try:
                 canonical_export_last_write_utc=now.isoformat()
                 last_export_market_state=market_state
                 last_export_bar_closure=bar_closure_evidence_state
+                last_export_delivery_mode=delivery_mode_evidence_state
                 canonical_export_updated=True
             except Exception as exc:
                 canonical_export_status="BLOCKED"
@@ -282,6 +336,15 @@ try:
                 and last_export_bar_closure == "PROVEN"
             )
             else "UNPROVEN"
+        )
+        delivery_mode_state=(
+            "REALTIME"
+            if (
+                delivery_mode_evidence_state == "REALTIME"
+                and canonical_export_status == "PASS"
+                and last_export_delivery_mode == "REALTIME"
+            )
+            else "UNKNOWN"
         )
         closure_diagnostics=closure_pipeline.diagnostics()
         consumer_payload={
@@ -308,6 +371,7 @@ try:
           "k1m_closure_qualification":closure_qualification_payload,
           "k1m_closure_qualification_summary":closure_qualification_summary,
           "bar_closure_evidence_state":bar_closure_evidence_state,
+          "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
@@ -318,11 +382,12 @@ try:
               "sequence":canonical_export_sequence,
               "updated":canonical_export_updated,
               "last_write_utc":canonical_export_last_write_utc,
+              "delivery_mode":last_export_delivery_mode or "UNKNOWN",
               "bar_closure":last_export_bar_closure or "UNPROVEN",
               "repo_sha":repo_sha,
           },
           "adapter_diagnostics":adapter.diagnostics(),
-          "delivery_mode":"UNKNOWN","bar_closure":bar_closure_state,
+          "delivery_mode":delivery_mode_state,"bar_closure":bar_closure_state,
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
         if data_event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
