@@ -66,8 +66,8 @@ def tencent_symbol(symbol: object) -> str:
 def _http_json(
     url: str,
     *,
-    timeout_seconds: float = 8.0,
-    max_attempts: int = 3,
+    timeout_seconds: float = 3.0,
+    max_attempts: int = 2,
     sleep_fn: Callable[[float], None] = sleep,
 ) -> Mapping[str, object]:
     if max_attempts <= 0:
@@ -97,7 +97,7 @@ def _http_json(
         except Exception as exc:
             last_exc = exc
             if attempt + 1 < max_attempts:
-                sleep_fn(0.5 * (2**attempt))
+                sleep_fn(0.25 * (2**attempt))
     if raw is None:
         assert last_exc is not None
         raise CloudObservationError(
