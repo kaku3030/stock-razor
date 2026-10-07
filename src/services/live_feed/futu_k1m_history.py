@@ -10,6 +10,7 @@ from data_provider.market_data_adapter import Bar, evaluate_health
 
 
 FUTU_US_KLINE_TIMEZONE = ZoneInfo("America/New_York")
+FUTU_US_K1M_FUTURE_SKEW_SECONDS = 5
 FUTU_US_REGULAR_FIRST_END = time(9, 31)
 FUTU_US_REGULAR_LAST_END = time(16, 0)
 
@@ -149,6 +150,10 @@ def _to_historical_bar(
     received_at: datetime,
 ) -> Bar:
     flags = ["HISTORICAL_QUERY"]
+    observed = received_at.astimezone(timezone.utc)
+    if (row.interval_end - observed).total_seconds() > FUTU_US_K1M_FUTURE_SKEW_SECONDS:
+        flags.append("TIMESTAMP_MISMATCH")
+
     prices = (row.open, row.high, row.low, row.close)
     if any(value <= 0 for value in prices):
         flags.append("NON_POSITIVE_PRICE")
@@ -172,7 +177,6 @@ def _to_historical_bar(
         cross_check=0.5,
         quality_flags=flags,
     )
-    observed = received_at.astimezone(timezone.utc)
     age_ms = max(0, round((observed - row.interval_end).total_seconds() * 1000))
 
     return Bar(
