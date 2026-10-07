@@ -37,6 +37,12 @@ def test_collector_has_no_trade_context_or_order_surface():
     assert '"live_trade": False' in INSTALLER
 
 
+def test_systemd_home_is_bound_to_service_runtime_directory():
+    assert "Environment=HOME=/run/stock-razor-us-options-intelligence" in INSTALLER
+    assert "RuntimeDirectory=stock-razor-us-options-intelligence" in INSTALLER
+    assert "ProtectHome=true" in INSTALLER
+
+
 def test_systemd_network_is_restricted_to_localhost():
     assert "PrivateNetwork=true" not in INSTALLER
     assert "IPAddressDeny=any" in INSTALLER

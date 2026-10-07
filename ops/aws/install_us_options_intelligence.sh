@@ -209,6 +209,8 @@ Type=simple
 WorkingDirectory=$INSTALL_ROOT/repo
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
+# futu-api 10.8.6808 initializes its file logger from HOME; keep it inside the service-owned runtime directory.
+Environment=HOME=/run/stock-razor-us-options-intelligence
 Environment=PYTHONPATH=$INSTALL_ROOT/repo
 Environment=STOCK_RAZOR_OPTIONS_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_OPEND_HOST=$OPEND_HOST
