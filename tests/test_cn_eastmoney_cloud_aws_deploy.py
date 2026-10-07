@@ -34,6 +34,11 @@ def test_verifier_requires_real_three_timeframe_cloud_evidence():
     assert 'frames["15m"].get("timestamp_semantic") == "UNKNOWN"' in VERIFY
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
+    assert 'print(json.dumps(summary, separators=(",", ":")))' in VERIFY
+    assert 'cat "$status"' not in VERIFY
+    assert '"row_count": int(frame.get("row_count") or 0)' in VERIFY
+    assert '"provider_used": frame.get("provider_used")' in VERIFY
+    assert '"last_label": (frame.get("rows") or [{}])[-1].get("label")' in VERIFY
 
 
 def test_workflow_deploys_exact_main_over_ssm_only():
