@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+import os
 
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
@@ -140,6 +141,7 @@ def test_livefeed_health_is_compact_and_fail_closed(tmp_path):
     assert result["cache_counts"]["US.AMD"]["1m"] == 2
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+    assert result["read_latency_ms"] >= 0
 
 
 def test_market_snapshots_accept_short_symbol_and_return_latest_only(tmp_path):
@@ -154,6 +156,8 @@ def test_market_snapshots_accept_short_symbol_and_return_latest_only(tmp_path):
     assert result["symbols"]["US.AMD"]["counts"]["1m"] == 2
     assert result["symbols"]["US.AMD"]["latest"]["1m"]["close"] == 649.0
     assert result["symbols"]["US.AMD"]["latest"]["5m"] is None
+    assert result["source_cache_hit"] is False
+    assert result["read_latency_ms"] >= 0
 
 
 def test_market_bars_are_bounded_and_keep_source_quality(tmp_path):
@@ -174,6 +178,33 @@ def test_market_bars_are_bounded_and_keep_source_quality(tmp_path):
     assert result["bars"][0]["health"]["signal_permission"] == "normal"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+    assert result["read_latency_ms"] >= 0
+
+
+def test_repeated_snapshot_reads_hit_cache_and_atomic_replace_invalidates(tmp_path):
+    path = tmp_path / "snapshot.json"
+    snapshot = _snapshot()
+    _write(path, snapshot)
+
+    first = read_us_market_bars("AMD", timeframe="1m", limit=1, path=str(path), now_utc=NOW)
+    second = read_us_market_bars("AMD", timeframe="1m", limit=1, path=str(path), now_utc=NOW)
+
+    assert first["source_cache_hit"] is False
+    assert second["source_cache_hit"] is True
+    assert second["bars"][0]["close"] == 649.0
+
+    replacement = tmp_path / "snapshot.new.json"
+    changed = _snapshot()
+    changed["sequence"] = 8
+    changed["symbols"]["US.AMD"]["timeframes"]["1m"][-1]["close"] = 650.0
+    _write(replacement, changed)
+    os.replace(replacement, path)
+
+    third = read_us_market_bars("AMD", timeframe="1m", limit=1, path=str(path), now_utc=NOW)
+
+    assert third["source_cache_hit"] is False
+    assert third["sequence"] == 8
+    assert third["bars"][0]["close"] == 650.0
 
 
 def test_stale_snapshot_is_returned_as_stale_not_laundered(tmp_path):
