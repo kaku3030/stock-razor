@@ -25,6 +25,7 @@ from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
@@ -115,6 +116,51 @@ def on_event_accepted(event):
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
+def fetch_history_page(symbol,start_date,end_date,page_req_key):
+    ret,data,next_page_req_key=ctx.request_history_kline(
+        symbol,
+        start=start_date,
+        end=end_date,
+        ktype=ft.KLType.K_1M,
+        autype=ft.AuType.NONE,
+        max_count=1000,
+        page_req_key=page_req_key,
+        extended_time=False,
+        session=ft.Session.RTH,
+    )
+    if ret != ft.RET_OK:
+        raise RuntimeError("FUTU_HISTORY_QUERY_FAILED")
+    if not hasattr(data,"to_dict"):
+        raise RuntimeError("FUTU_HISTORY_QUERY_INVALID_PAYLOAD")
+    return tuple(data.to_dict("records")),next_page_req_key
+warm_start_seeded_total=0
+try:
+    warm_start_result=seed_futu_k1m_research_cache(
+        CODES,
+        fetch_page=fetch_history_page,
+        market_data=market_data,
+        received_at=datetime.now(timezone.utc),
+        lookback_days=10,
+        max_pages=5,
+    )
+    warm_start_payload=warm_start_result.to_dict()
+    warm_start_seeded_total=warm_start_result.seeded_total
+except Exception as exc:
+    warm_start_payload={
+        "status":"BLOCKED",
+        "error":"WARM_START_EXCEPTION:"+type(exc).__name__,
+        "symbols":{},
+        "seeded_total":0,
+        "unchanged_total":0,
+        "lookback_days":10,
+        "max_pages":5,
+        "purpose":"RESEARCH_CACHE_WARM_START",
+        "historical_query":True,
+        "realtime_currentness_proven":False,
+        "bar_closure_promotion_authorized":False,
+        "radar_admission":"BLOCKED",
+        "live_trade":False,
+    }
 seq=0
 canonical_export_sequence=0
 canonical_export_status="UNKNOWN"
@@ -297,6 +343,7 @@ try:
         canonical_export_updated=False
         should_export=(
             consumer_result.bars_ingested > 0
+            or (warm_start_seeded_total > 0 and canonical_export_sequence == 0)
             or not os.path.exists(canonical_snapshot_path)
             or market_state != last_export_market_state
             or bar_closure_evidence_state != last_export_bar_closure
@@ -374,6 +421,7 @@ try:
           "bar_closure_evidence_state":bar_closure_evidence_state,
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
+          "warm_start":warm_start_payload,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
               "status":canonical_export_status,

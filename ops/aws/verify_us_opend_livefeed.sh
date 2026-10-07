@@ -21,6 +21,43 @@ with open(snapshot_path, encoding="utf-8") as handle:
 export = heartbeat.get("canonical_snapshot_export") or {}
 assert heartbeat.get("repo_sha") == expected_sha
 assert int(heartbeat.get("event_count") or 0) > 0
+
+warm_start = heartbeat.get("warm_start") or {}
+assert warm_start.get("status") == "PASS"
+assert warm_start.get("historical_query") is True
+assert warm_start.get("realtime_currentness_proven") is False
+assert warm_start.get("bar_closure_promotion_authorized") is False
+assert warm_start.get("radar_admission") == "BLOCKED"
+assert warm_start.get("live_trade") is False
+warm_symbols = warm_start.get("symbols") or {}
+expected_symbols = set(heartbeat.get("symbols") or [])
+assert set(warm_symbols) == expected_symbols
+assert expected_symbols
+for symbol, item in warm_symbols.items():
+    assert item.get("status") == "PASS"
+    assert int(item.get("planned_bar_count") or 0) == 390
+    assert int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 390
+    assert item.get("closure_anchor_time_key")
+assert int(warm_start.get("seeded_total") or 0) + int(warm_start.get("unchanged_total") or 0) == 390 * len(expected_symbols)
+
+canonical_cache = heartbeat.get("canonical_cache") or {}
+assert set(canonical_cache) == expected_symbols
+for symbol in expected_symbols:
+    item = canonical_cache.get(symbol) or {}
+    assert int(item.get("bar_count") or 0) >= 390
+    assert int(item.get("bar_count_5m") or 0) > 0
+    assert int(item.get("bar_count_15m") or 0) > 0
+    assert int(item.get("bar_count_1h") or 0) > 0
+
+snapshot_symbols = snapshot.get("symbols") or {}
+assert set(snapshot_symbols) == expected_symbols
+for symbol in expected_symbols:
+    frames = (snapshot_symbols.get(symbol) or {}).get("timeframes") or {}
+    assert len(frames.get("1m") or []) >= 390
+    assert len(frames.get("5m") or []) > 0
+    assert len(frames.get("15m") or []) > 0
+    assert len(frames.get("1h") or []) > 0
+
 closure = heartbeat.get("k1m_closure_qualification") or {}
 closure_summary = heartbeat.get("k1m_closure_qualification_summary")
 currentness_summary = heartbeat.get("k1m_currentness_summary")
