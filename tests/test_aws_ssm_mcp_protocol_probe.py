@@ -24,3 +24,15 @@ def test_mcp_protocol_probe_binds_process_socket_and_source_to_same_mainpid():
     assert 'grep "pid=$pid,"' in block
     assert "127.0.0.1:8000" in block
     assert "MCP_PROBE_REASON=readonly-mcp-process-not-evidenced" in block
+
+
+def test_mcp_protocol_probe_accepts_module_invocation_and_five_tool_surface():
+    block = _probe_block()
+    assert "grep -Eq 'readonly_mcp_server(\\.py|([[:space:]]|$))'" in block
+    assert "has_streamable_run = any(" in block
+    assert "kw.value.value == 'streamable-http'" in block
+    assert "get_futures_runtime_health" in block
+    assert "get_market_analysis" in block
+    assert "PRIVATE_MCP_TOOL_DISCOVERY_5_OF_5" in block
+    assert "len(names)==5 and set(names)==allowed" in block
+    assert "call('get_market_analysis',{'symbols':['AMD']},'AMD')" in block

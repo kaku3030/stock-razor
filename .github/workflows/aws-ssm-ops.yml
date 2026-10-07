@@ -1404,7 +1404,7 @@ jobs:
           echo "MCP_PROCESS_START=$(ps -p "$pid" -o lstart= 2>/dev/null || true)"
           socket_line="$(ss -lntp 2>/dev/null | grep "pid=$pid," | head -n 1 || true)"
           echo "MCP_LISTENER=$socket_line"
-          if ! printf '%s' "$cmdline" | grep -q 'readonly_mcp_server\.py'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=readonly-mcp-process-not-evidenced'; exit 0; fi
+          if ! printf '%s' "$cmdline" | grep -Eq 'readonly_mcp_server(\.py|([[:space:]]|$))'; then echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=readonly-mcp-process-not-evidenced'; exit 0; fi
           echo '=== DEPLOYED PROVENANCE (BEFORE PROTOCOL) ==='
           if [ -z "$cwd" ] || [ "$(git -C "$cwd" rev-parse --is-inside-work-tree 2>/dev/null || true)" != true ]; then
             echo 'RUNTIME_GIT_WORKTREE=NO'; echo 'DEPLOYED_COMMIT=UNKNOWN'; echo 'CHECKOUT_DIRTY=UNKNOWN'
@@ -1458,8 +1458,24 @@ jobs:
           import ast, importlib, inspect, pathlib, sys
           text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
           tree = ast.parse(text)
-          has_transport = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == 'streamable_http_app' for n in ast.walk(tree))
-          has_run = 'streamable-http' in text
+          has_streamable_app = any(
+              isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Attribute)
+              and n.func.attr == 'streamable_http_app'
+              for n in ast.walk(tree)
+          )
+          has_streamable_run = any(
+              isinstance(n, ast.Call)
+              and isinstance(n.func, ast.Attribute)
+              and n.func.attr == 'run'
+              and any(
+                  kw.arg == 'transport'
+                  and isinstance(kw.value, ast.Constant)
+                  and kw.value.value == 'streamable-http'
+                  for kw in n.keywords
+              )
+              for n in ast.walk(tree)
+          )
           try:
               mod = importlib.import_module('mcp.server.mcpserver')
               src = inspect.getsource(getattr(mod, 'MCPServer'))
@@ -1467,7 +1483,7 @@ jobs:
           except Exception:
               src = ''
               library = 'unavailable'
-          print('transport=' + str(has_transport and has_run).lower() + ';library=' + library + ';library_source=' + str(bool(src)).lower())
+          print('transport=' + str(has_streamable_app or has_streamable_run).lower() + ';library=' + library + ';library_source=' + str(bool(src)).lower())
           PY
           )"
           echo "MCP_ROUTE_TRANSPORT_EVIDENCE=$route_evidence"
@@ -1480,7 +1496,7 @@ jobs:
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
-          allowed={'get_market_snapshots','get_market_bars','get_livefeed_health'}; results={}
+          allowed={'get_futures_runtime_health','get_market_snapshots','get_market_bars','get_livefeed_health','get_market_analysis'}; results={}
           def safe(value):
               if isinstance(value,dict): return {k:('[REDACTED]' if any(x in k.lower() for x in ('token','session','secret','password','api_key','access_key')) else safe(v)) for k,v in value.items()}
               if isinstance(value,list): return [safe(v) for v in value]
@@ -1513,14 +1529,16 @@ jobs:
           if not ok(st,o):print('MCP_INITIALIZE_DETAIL='+json.dumps(safe(o))[:500]);raise SystemExit
           send({'jsonrpc':'2.0','method':'notifications/initialized'},sid); st,o,sid=send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}},sid)
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
-          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_3_OF_3='+('PASS' if len(names)==3 and set(names)==allowed else 'FAIL'))
+          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_5_OF_5='+('PASS' if len(names)==5 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
           def call(n,a,label=None):
               st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); key=n+(':'+label if label else ''); results[key]=z.get('result',z); print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL')); print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL')); print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(safe(results[key]),separators=(',',':'))[:3000])
-          if len(names)==3 and set(names)==allowed:
+          if len(names)==5 and set(names)==allowed:
+              call('get_futures_runtime_health',args(by['get_futures_runtime_health']))
               call('get_livefeed_health',args(by['get_livefeed_health']))
               for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s),s)
               for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s),s)
+              call('get_market_analysis',{'symbols':['AMD']},'AMD')
           try:
               import futu as ft
               from datetime import datetime, timedelta
@@ -1608,11 +1626,12 @@ jobs:
           import urllib.request
 
           tunnel_id = sys.argv[1]
-          expected = {'get_livefeed_health', 'get_market_snapshots', 'get_market_bars'}
+          expected = {'get_futures_runtime_health', 'get_livefeed_health', 'get_market_snapshots', 'get_market_bars', 'get_market_analysis'}
           requests = [
               ('get_livefeed_health', 'Call get_livefeed_health exactly once with valid read-only arguments.', expected),
               ('get_market_snapshots', 'Call get_market_snapshots exactly once for AMD with valid read-only arguments.', {'get_market_snapshots'}),
               ('get_market_bars', 'Call get_market_bars exactly once for AMD with valid read-only arguments.', {'get_market_bars'}),
+              ('get_market_analysis', 'Call get_market_analysis exactly once for AMD with valid read-only arguments.', {'get_market_analysis'}),
           ]
           RETRY_AFTER_FALLBACK_SECONDS = 25
           RETRY_AFTER_MAX_SECONDS = 60
@@ -1753,7 +1772,7 @@ jobs:
                   failures.append(expected_name + ':call-name-or-output')
               calls.append(call.get('name'))
 
-          names_ok = isinstance(discovered, list) and len(discovered) == 3 and set(discovered) == expected
+          names_ok = isinstance(discovered, list) and len(discovered) == 5 and set(discovered) == expected
           if not names_ok:
               failures.append('tool-discovery-missing-or-mismatch')
           calls_ok = calls == [name for name, _, _ in requests] and not failures
