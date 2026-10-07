@@ -388,6 +388,9 @@ def test_verify_gate_requires_full_research_warm_start_without_promotion():
 
 def test_installer_exports_same_opend_daily_research_history():
     runtime = _embedded_runtime_python()
+    assert "from src.services.live_feed.futu_us_daily_history import (" in runtime
+    assert "build_futu_us_daily_history," in runtime
+    assert "write_futu_us_daily_history," in runtime
     assert "build_futu_us_daily_history" in runtime
     assert "write_futu_us_daily_history" in runtime
     assert '"/run/stock-razor-us-livefeed/daily-history.json"' in runtime
