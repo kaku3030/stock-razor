@@ -1,0 +1,127 @@
+from datetime import datetime, timedelta, timezone
+
+from src.services.live_feed.futu_k1m_warm_start import (
+    build_futu_k1m_warm_start_plan,
+)
+
+
+RECEIVED = datetime(2026, 10, 7, 4, 0, tzinfo=timezone.utc)
+
+
+def _session(day: str, symbol: str = "US.AMD"):
+    start = datetime.strptime(day + " 09:31:00", "%Y-%m-%d %H:%M:%S")
+    rows = []
+    for index in range(390):
+        stamp = start + timedelta(minutes=index)
+        price = 100 + index / 100
+        rows.append(
+            {
+                "code": symbol,
+                "time_key": stamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "open": price,
+                "high": price + 0.2,
+                "low": price - 0.2,
+                "close": price + 0.1,
+                "volume": 1000 + index,
+                "turnover": 100000 + index,
+            }
+        )
+    return rows
+
+
+def test_selects_previous_complete_session_when_latest_tail_has_no_later_label():
+    prior = _session("2026-10-05")
+    latest = _session("2026-10-06")
+
+    plan = build_futu_k1m_warm_start_plan(
+        [*prior, *latest],
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert plan.status == "PASS"
+    assert plan.session_date == "2026-10-05"
+    assert len(plan.bars) == 390
+    assert plan.bars[-1].bar_end.hour == 20  # 16:00 New York = 20:00 UTC in EDT
+    assert plan.closure_anchor_time_key == "2026-10-06 09:31:00"
+    assert plan.bars[-1].quality_flags == ("HISTORICAL_QUERY",)
+    assert plan.research_cache_seed_eligible is True
+
+
+def test_selects_latest_session_once_next_provider_label_exists():
+    prior = _session("2026-10-05")
+    latest = _session("2026-10-06")
+    anchor = dict(_session("2026-10-07")[0])
+
+    plan = build_futu_k1m_warm_start_plan(
+        [*prior, *latest, anchor],
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert plan.status == "PASS"
+    assert plan.session_date == "2026-10-06"
+    assert len(plan.bars) == 390
+    assert plan.closure_anchor_time_key == "2026-10-07 09:31:00"
+
+
+def test_latest_session_without_anchor_is_not_partially_seeded():
+    latest = _session("2026-10-06")
+
+    plan = build_futu_k1m_warm_start_plan(
+        latest,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert plan.status == "BLOCKED"
+    assert plan.bars == ()
+    assert any("MISSING_LATER_PROVIDER_LABEL" in reason for reason in plan.reasons)
+
+
+def test_incomplete_session_does_not_become_seed_eligible():
+    prior = _session("2026-10-05")[:-1]
+    anchor = dict(_session("2026-10-06")[0])
+
+    plan = build_futu_k1m_warm_start_plan(
+        [*prior, anchor],
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert plan.status == "BLOCKED"
+    assert plan.research_cache_seed_eligible is False
+    assert plan.bars == ()
+
+
+def test_symbol_mismatch_fails_closed():
+    rows = _session("2026-10-05")
+    rows[100] = {**rows[100], "code": "US.NVDA"}
+
+    plan = build_futu_k1m_warm_start_plan(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert plan.status == "BLOCKED"
+    assert plan.reasons == ("SYMBOL_MISMATCH",)
+
+
+def test_pass_never_promotes_realtime_or_execution():
+    prior = _session("2026-10-05")
+    latest = _session("2026-10-06")
+
+    plan = build_futu_k1m_warm_start_plan(
+        [*prior, *latest],
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+    payload = plan.to_dict()
+
+    assert payload["historical_query"] is True
+    assert payload["realtime_currentness_proven"] is False
+    assert payload["bar_closure_promotion_authorized"] is False
+    assert payload["radar_admission"] == "BLOCKED"
+    assert payload["live_trade"] is False
+    assert payload["bar_count"] == 390
