@@ -7,7 +7,10 @@ bar closure, Radar admission, or execution readiness.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import math
+import os
+from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
@@ -245,3 +248,14 @@ def build_futu_us_daily_history(
         "radar_admission": "BLOCKED",
         "live_trade": False,
     }
+
+
+def write_futu_us_daily_history(path: str | os.PathLike[str], payload: Mapping) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, separators=(",", ":"), allow_nan=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, destination)
