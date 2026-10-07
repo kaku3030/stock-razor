@@ -61,12 +61,34 @@ for symbol, item in symbols.items():
     assert frames["1d"].get("timestamp_semantic") == "DAILY_DATE"
     assert frames["60m"].get("timestamp_semantic") == "UNKNOWN"
     assert frames["15m"].get("timestamp_semantic") == "UNKNOWN"
+
+summary = {
+    "schema": payload["schema"],
+    "repo_sha": payload["repo_sha"],
+    "status": payload["status"],
+    "provider_policy": payload["provider_policy"],
+    "provider_lineages": payload["provider_lineages"],
+    "intraday_timestamp_semantics_proven": False,
+    "intraday_currentness_proven": False,
+    "radar_admission": "BLOCKED",
+    "live_trade": False,
+    "symbols": {
+        symbol: {
+            timeframe: {
+                "row_count": int(frame.get("row_count") or 0),
+                "provider_used": frame.get("provider_used"),
+                "last_label": (frame.get("rows") or [{}])[-1].get("label"),
+            }
+            for timeframe, frame in (item.get("timeframes") or {}).items()
+        }
+        for symbol, item in symbols.items()
+    },
+}
+print(json.dumps(summary, separators=(",", ":")))
 PY
     then
       systemctl is-enabled "$service"
       systemctl is-active "$service"
-      cat "$status"
-      printf '\n'
       echo "CN_EASTMONEY_CLOUD_VERIFY=PASS"
       echo "RADAR_ADMISSION=BLOCKED"
       echo "LIVE_TRADE=NO"
