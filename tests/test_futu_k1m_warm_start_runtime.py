@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
+from data_provider.market_data_adapter import evaluate_health
 from src.services.live_feed.futu_k1m_warm_start_runtime import (
     seed_futu_k1m_research_cache,
 )
+from src.services.realtime_market_data import RealtimeMarketDataService
 
 
 NOW = datetime(2026, 10, 7, 5, 0, tzinfo=timezone.utc)
@@ -197,3 +199,37 @@ def test_runtime_warm_start_result_remains_research_only():
     assert payload["bar_closure_promotion_authorized"] is False
     assert payload["radar_admission"] == "BLOCKED"
     assert payload["live_trade"] is False
+
+
+def test_three_session_seed_produces_hourly_ready_canonical_aggregates():
+    symbol = "US.AMD"
+    rows = _three_sessions_with_anchor(symbol)
+    provider_health = evaluate_health(
+        freshness=1,
+        completeness=1,
+        timestamp=1,
+        provider=1,
+        continuity=1,
+        cross_check=1,
+    )
+    service = RealtimeMarketDataService(
+        None,
+        session_status_provider=lambda _market: "closed",
+        provider_health_provider=lambda: provider_health,
+        max_minutes=1600,
+        now=lambda: NOW,
+    )
+
+    result = seed_futu_k1m_research_cache(
+        [symbol],
+        fetch_page=lambda *args: (rows, None),
+        market_data=service,
+        received_at=NOW,
+    )
+    snapshot = service.snapshot(symbol, as_of=NOW)
+
+    assert result.status == "PASS"
+    assert len(snapshot.minute_bars) == 1170
+    assert len(snapshot.bars_5m) == 234
+    assert len(snapshot.bars_15m) == 78
+    assert len(snapshot.bars_1h) == 21
