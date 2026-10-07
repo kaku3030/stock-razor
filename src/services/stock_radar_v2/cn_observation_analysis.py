@@ -19,6 +19,8 @@ SUPPORTED_FRAMES = ("1d", "60m", "15m")
 STRUCTURAL_FLAGS = frozenset(
     {"NON_POSITIVE_PRICE", "INVALID_OHLC", "NEGATIVE_VOLUME", "NEGATIVE_AMOUNT"}
 )
+OPENING_AUCTION_RANGE_GAP = "OPENING_AUCTION_RANGE_GAP"
+_OPENING_BAR_SUFFIX = {"15m": "09:45", "60m": "10:30"}
 
 
 class CnObservationAnalysisError(ValueError):
@@ -47,6 +49,29 @@ def _finite(value: object, *, field_name: str) -> float:
     return number
 
 
+def _is_tencent_opening_auction_range_gap(
+    raw: Mapping[str, object],
+    *,
+    timeframe: str,
+    label: str,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+) -> bool:
+    """Recognize the Tencent A-share opening-auction aggregate edge case."""
+
+    suffix = _OPENING_BAR_SUFFIX.get(timeframe)
+    return bool(
+        str(raw.get("provider") or "").strip().lower() == "tencent"
+        and suffix is not None
+        and label.endswith(suffix)
+        and high >= low
+        and low <= close <= high
+        and not (low <= open_ <= high)
+    )
+
+
 def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, dict]:
     frames = item.get("timeframes")
     if not isinstance(frames, Mapping):
@@ -63,6 +88,7 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
     records: list[dict] = []
     previous: pd.Timestamp | None = None
     severe: list[str] = []
+    soft_warnings: list[str] = []
     for index, raw in enumerate(rows):
         if not isinstance(raw, Mapping):
             raise CnObservationAnalysisError(f"{timeframe}[{index}] invalid")
@@ -84,19 +110,32 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
             raw.get("volume_raw"),
             field_name=f"{timeframe}[{index}].volume_raw",
         )
+        opening_gap = _is_tencent_opening_auction_range_gap(
+            raw,
+            timeframe=timeframe,
+            label=label,
+            open_=open_,
+            high=high,
+            low=low,
+            close=close,
+        )
         if min(open_, high, low, close) <= 0:
             severe.append("NON_POSITIVE_PRICE")
         if high < max(open_, close, low) or low > min(open_, close, high):
-            severe.append("INVALID_OHLC")
+            if opening_gap:
+                soft_warnings.append(OPENING_AUCTION_RANGE_GAP)
+            else:
+                severe.append("INVALID_OHLC")
         if volume < 0:
             severe.append("NEGATIVE_VOLUME")
         flags = raw.get("quality_flags") or []
         if isinstance(flags, list):
-            severe.extend(
-                str(flag).strip().upper()
-                for flag in flags
-                if str(flag).strip().upper() in STRUCTURAL_FLAGS
-            )
+            for flag in flags:
+                normalized = str(flag).strip().upper()
+                if normalized == "INVALID_OHLC" and opening_gap:
+                    soft_warnings.append(OPENING_AUCTION_RANGE_GAP)
+                elif normalized in STRUCTURAL_FLAGS:
+                    severe.append(normalized)
         records.append(
             {
                 "date": stamp,
@@ -122,6 +161,7 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
         "row_count": len(records),
         "latest_label": rows[-1].get("label"),
         "volume_unit": rows[-1].get("volume_unit"),
+        "analysis_warnings": list(dict.fromkeys(soft_warnings)),
     }
     return pd.DataFrame(records), provenance
 
@@ -224,12 +264,22 @@ def evaluate_cn_observation_payload(
             )
             technical.hourly = _mark_intraday_unproven(technical.hourly, "1h")
             technical.intraday = _mark_intraday_unproven(technical.intraday, "15m")
+            provenance_warnings = {
+                warning
+                for provenance in (daily_prov, hourly_prov, intraday_prov)
+                for warning in provenance.get("analysis_warnings", [])
+            }
             technical.risk_flags = list(
                 dict.fromkeys(
                     [
                         *technical.risk_flags,
                         "cn_intraday_timestamp_semantics_unproven",
                         "cn_intraday_currentness_unproven",
+                        *(
+                            ["cn_opening_auction_range_gap"]
+                            if OPENING_AUCTION_RANGE_GAP in provenance_warnings
+                            else []
+                        ),
                     ]
                 )
             )
