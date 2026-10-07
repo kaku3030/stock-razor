@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import math
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
