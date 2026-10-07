@@ -45,3 +45,10 @@ def test_workflow_deploys_exact_main_over_ssm_only():
     assert "EASTMONEY_PRIMARY_TENCENT_FALLBACK" in WORKFLOW
     assert "CN_EASTMONEY_CLOUD_DEPLOYMENT=PASS" in WORKFLOW
     assert "LIVE_TRADE=NO" in WORKFLOW
+
+
+def test_verifier_emits_compact_summary_before_pass_marker():
+    assert "CN_EASTMONEY_SUMMARY=" in VERIFY
+    assert 'json.dumps(summary, separators=(",", ":"), ensure_ascii=True)' in VERIFY
+    assert 'cat "$status"' not in VERIFY
+    assert VERIFY.index("CN_EASTMONEY_SUMMARY=") < VERIFY.index("CN_EASTMONEY_CLOUD_VERIFY=PASS")
