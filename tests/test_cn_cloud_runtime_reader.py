@@ -25,7 +25,12 @@ def _row(label, close):
     }
 
 
-def _payload(*, emitted_at=NOW - timedelta(seconds=10), safe=True):
+def _payload(
+    *,
+    emitted_at=NOW - timedelta(seconds=10),
+    safe=True,
+    timestamp_semantics_proven=False,
+):
     rows = [_row("2026-09-29", 1.6), _row("2026-09-30", 1.61)]
     return {
         "schema": "stock_razor_cn_eastmoney_observation_v1",
@@ -37,7 +42,7 @@ def _payload(*, emitted_at=NOW - timedelta(seconds=10), safe=True):
         "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
         "providers_used": ["tencent"],
         "provider_lineages": ["eastmoney", "tencent"],
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
         "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
@@ -51,6 +56,8 @@ def _payload(*, emitted_at=NOW - timedelta(seconds=10), safe=True):
                 "providers_used": ["tencent"],
                 "radar_admission": "BLOCKED",
                 "live_trade": False,
+                "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
+                "intraday_currentness_proven": False,
                 "timeframes": {
                     "1d": {
                         "status": "PASS",
@@ -69,7 +76,20 @@ def _payload(*, emitted_at=NOW - timedelta(seconds=10), safe=True):
                         "provider_lineage": "tencent",
                         "fallback_from": "eastmoney",
                         "fallback_reason": "CloudObservationError",
-                        "timestamp_semantic": "UNKNOWN",
+                        "timestamp_semantic": (
+                            "BAR_END" if timestamp_semantics_proven else "UNKNOWN"
+                        ),
+                        "timestamp_qualification": (
+                            {
+                                "status": "PASS",
+                                "timestamp_semantic": "BAR_END",
+                                "currentness_proven": False,
+                                "radar_admission": "BLOCKED",
+                                "live_trade": False,
+                            }
+                            if timestamp_semantics_proven
+                            else None
+                        ),
                         "currentness": "UNPROVEN",
                         "row_count": 2,
                         "rows": rows,
@@ -80,7 +100,20 @@ def _payload(*, emitted_at=NOW - timedelta(seconds=10), safe=True):
                         "provider_lineage": "tencent",
                         "fallback_from": "eastmoney",
                         "fallback_reason": "CloudObservationError",
-                        "timestamp_semantic": "UNKNOWN",
+                        "timestamp_semantic": (
+                            "BAR_END" if timestamp_semantics_proven else "UNKNOWN"
+                        ),
+                        "timestamp_qualification": (
+                            {
+                                "status": "PASS",
+                                "timestamp_semantic": "BAR_END",
+                                "currentness_proven": False,
+                                "radar_admission": "BLOCKED",
+                                "live_trade": False,
+                            }
+                            if timestamp_semantics_proven
+                            else None
+                        ),
                         "currentness": "UNPROVEN",
                         "row_count": 2,
                         "rows": rows,
@@ -130,6 +163,39 @@ def test_symbol_aliases_are_normalized(tmp_path):
     assert result["symbol"] == "159611"
     assert result["timestamp_semantic"] == "UNKNOWN"
     assert result["currentness"] == "UNPROVEN"
+
+
+def test_qualified_bar_end_is_exposed_without_promoting_currentness(tmp_path):
+    path = _write(
+        tmp_path / "cn.json",
+        _payload(timestamp_semantics_proven=True),
+    )
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is False
+    assert result["symbol_intraday_timestamp_semantics_proven"] is True
+    assert result["timestamp_semantic"] == "BAR_END"
+    assert result["timestamp_qualification"]["status"] == "PASS"
+    assert result["currentness"] == "UNPROVEN"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_forged_bar_end_without_qualification_fails_closed(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["symbols"]["159611"]["timeframes"]["15m"][
+        "timestamp_qualification"
+    ] = None
+    path = _write(tmp_path / "cn.json", payload)
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is False
+    assert result["status"] == "INVALID"
+    assert result["error"] == "TIMESTAMP_SEMANTICS_EVIDENCE_INVALID"
 
 
 def test_stale_observation_is_explicit(tmp_path):
