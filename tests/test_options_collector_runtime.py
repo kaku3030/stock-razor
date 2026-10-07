@@ -143,7 +143,7 @@ def test_partial_source_failure_writes_only_qualified_packets(tmp_path):
     assert set(payload["symbols"]) == {"US.QQQ"}
     amd = next(item for item in result.symbol_results if item.symbol == "US.AMD")
     assert amd.packet is None
-    assert amd.reasons == ("SOURCE_OR_QUALIFICATION_ERROR:RuntimeError",)
+    assert amd.reasons == ("SOURCE_FETCH_ERROR:RuntimeError",)
 
 
 def test_all_stale_rows_do_not_overwrite_previous_snapshot(tmp_path):
@@ -184,3 +184,59 @@ def test_postmarket_cycle_does_not_fetch_until_spot_semantics_are_qualified(tmp_
     assert result.status == "BLOCKED"
     assert source.calls == []
     assert "POSTMARKET_SPOT_SEMANTICS_NOT_QUALIFIED" in result.reasons
+
+
+def test_source_keyerror_reports_only_missing_key_name(tmp_path):
+    class KeyErrorSource:
+        def fetch(self, symbol, *, evaluated_at):
+            raise KeyError("option_gamma")
+
+    now = datetime(2026, 10, 7, 10, 0, tzinfo=ET)
+    result = run_options_collection_cycle(
+        KeyErrorSource(),
+        ["QQQ"],
+        evaluated_at=now,
+        runtime_instance_id="collector-1",
+        repo_sha=SHA,
+        sequence=6,
+        output_path=tmp_path / "options.json",
+    )
+
+    assert result.status == "BLOCKED"
+    assert result.symbol_results[0].reasons == (
+        "SOURCE_FETCH_ERROR:KeyError:option_gamma",
+    )
+
+
+def test_qualification_keyerror_reports_stage_and_key_without_payload(
+    monkeypatch,
+    tmp_path,
+):
+    import src.services.options_intelligence.collector_runtime as runtime
+
+    def broken_qualification(**kwargs):
+        raise KeyError("expiry_concentration")
+
+    monkeypatch.setattr(
+        runtime,
+        "build_futu_options_intelligence_packet",
+        broken_qualification,
+    )
+
+    now = datetime(2026, 10, 7, 10, 0, tzinfo=ET)
+    result = run_options_collection_cycle(
+        FakeSource(),
+        ["QQQ"],
+        evaluated_at=now,
+        runtime_instance_id="collector-1",
+        repo_sha=SHA,
+        sequence=7,
+        output_path=tmp_path / "options.json",
+    )
+
+    assert result.status == "BLOCKED"
+    item = result.symbol_results[0]
+    assert item.source_contracts_total == 2
+    assert item.reasons == (
+        "QUALIFICATION_ERROR:KeyError:expiry_concentration",
+    )
