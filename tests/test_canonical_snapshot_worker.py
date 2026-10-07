@@ -9,6 +9,16 @@ from src.services.live_feed.canonical_snapshot_export import build_canonical_sna
 from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
 from src.services.live_feed.futu_research_bridge import closed_futu_minute_to_bar
 from src.services.realtime_market_data import RealtimeMarketDataService
+from src.services.options_intelligence import (
+    OptionGexObservation,
+    build_gamma_profile,
+    build_gex_evidence,
+    build_options_intelligence_packet,
+    qualify_options_clock_alignment,
+    qualify_quote_freshness,
+)
+from src.services.options_intelligence.gamma_profile import apply_gamma_profile
+from src.services.options_intelligence.gex import OptionType
 from src.services.stock_radar_v2 import canonical_snapshot_worker as worker_module
 from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarEvaluator,
@@ -705,3 +715,114 @@ def test_worker_preserves_daily_context_on_unchanged_sequence(tmp_path):
     assert second.status == "UNCHANGED"
     assert second.symbols[0].technical_state is not None
     assert second.symbols[0].technical_state.technical.daily.quality.bars == 120
+
+
+def _qualified_options_packet(as_of, *, underlying="AMD", oi_known=True):
+    oi_asof = as_of if oi_known else None
+    rows = [
+        OptionGexObservation(
+            contract_symbol=f"{underlying}-C105",
+            underlying_symbol=underlying,
+            option_type=OptionType.CALL,
+            strike=105.0,
+            expiration=(as_of + timedelta(days=10)).date(),
+            open_interest=1000,
+            gamma=0.02,
+            contract_multiplier=100,
+            source="futu_opend",
+            quote_asof=as_of,
+            oi_asof=oi_asof,
+            implied_volatility=0.25,
+        ),
+        OptionGexObservation(
+            contract_symbol=f"{underlying}-P95",
+            underlying_symbol=underlying,
+            option_type=OptionType.PUT,
+            strike=95.0,
+            expiration=(as_of + timedelta(days=10)).date(),
+            open_interest=800,
+            gamma=0.018,
+            contract_multiplier=100,
+            source="futu_opend",
+            quote_asof=as_of,
+            oi_asof=oi_asof,
+            implied_volatility=0.27,
+        ),
+    ]
+    freshness = qualify_quote_freshness(
+        rows,
+        min_quote_asof=as_of - timedelta(minutes=1),
+    )
+    clock = qualify_options_clock_alignment(
+        freshness,
+        underlying_asof=as_of,
+    )
+    current = build_gex_evidence(
+        rows,
+        spot=100.0,
+        market_date=as_of.date(),
+        calculated_at=as_of,
+        spot_asof=as_of,
+        spot_source="canonical_spot",
+    )
+    profile = build_gamma_profile(
+        rows,
+        reference_spot=100.0,
+        calculated_at=as_of,
+    )
+    current = apply_gamma_profile(current, profile)
+    return build_options_intelligence_packet(
+        current_gex=current,
+        freshness=freshness,
+        gamma_profile=profile,
+        generated_at=as_of,
+        clock_alignment=clock,
+    )
+
+
+def test_evaluator_attaches_read_only_options_context_to_us_symbol(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    packet = _qualified_options_packet(emitted)
+    evaluator = CanonicalSnapshotRadarEvaluator(
+        now=lambda: emitted + timedelta(seconds=5)
+    )
+
+    result = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+        options_packets={"AMD": packet},
+    )
+
+    assert result.status == "PASS"
+    symbol = result.symbols[0]
+    assert symbol.technical_state is not None
+    assert symbol.options_context is not None
+    assert symbol.options_context.status == "RESEARCH_ONLY"
+    assert symbol.options_context.decision_permission == "BLOCKED_V0_1"
+    assert symbol.options_context.trading_authority is False
+    assert symbol.options_context.live_trade is False
+    rendered = symbol.to_dict()["options_context"]
+    assert rendered["price_acceptance_required"] is True
+
+
+def test_blocked_options_context_does_not_block_price_radar_state(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    stale_packet = _qualified_options_packet(emitted - timedelta(hours=1))
+    evaluator = CanonicalSnapshotRadarEvaluator(now=lambda: emitted)
+
+    result = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+        options_packets={"US.AMD": stale_packet},
+    )
+
+    assert result.status == "PASS"
+    symbol = result.symbols[0]
+    assert symbol.status == "RESEARCH_STATE"
+    assert symbol.technical_state is not None
+    assert symbol.options_context is not None
+    assert symbol.options_context.status == "BLOCKED"
+    assert "OPTIONS_PACKET_STALE" in symbol.options_context.warnings
+    assert result.can_confirm_signal is False

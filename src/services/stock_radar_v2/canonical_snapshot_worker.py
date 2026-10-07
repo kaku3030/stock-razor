@@ -18,6 +18,12 @@ from data_provider.market_data_adapter import (
 from src.services.live_feed.canonical_snapshot_export import SCHEMA
 from src.services.live_feed.futu_k1m_currentness import REGULAR_MARKET_STATES
 from src.services.realtime_market_data import MarketDataSnapshot
+from src.services.options_intelligence.contract import OptionsIntelligencePacket
+from src.services.stock_radar_v2.options_context import (
+    RadarOptionsContext,
+    build_radar_options_context,
+    normalize_options_underlying,
+)
 from src.services.stock_radar_v2.technical_state import (
     StockRadarTechnicalState,
     StockRadarTechnicalStateService,
@@ -49,6 +55,7 @@ class CanonicalRadarSymbolResult:
     symbol: str
     status: str
     technical_state: StockRadarTechnicalState | None = None
+    options_context: RadarOptionsContext | None = None
     reasons: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
@@ -58,6 +65,11 @@ class CanonicalRadarSymbolResult:
             "technical_state": (
                 self.technical_state.to_dict()
                 if self.technical_state is not None
+                else None
+            ),
+            "options_context": (
+                self.options_context.to_dict()
+                if self.options_context is not None
                 else None
             ),
             "reasons": list(self.reasons),
@@ -388,6 +400,25 @@ def load_canonical_snapshot_file(path: str | Path) -> CanonicalSnapshotSource:
         return load_canonical_snapshot_payload(json.load(handle))
 
 
+def _find_options_packet(
+    symbol: str,
+    packets: Mapping[str, OptionsIntelligencePacket] | None,
+) -> OptionsIntelligencePacket | None:
+    if not packets:
+        return None
+    target = normalize_options_underlying(symbol)
+    matches: list[OptionsIntelligencePacket] = []
+    for key, packet in packets.items():
+        if (
+            normalize_options_underlying(key) == target
+            or normalize_options_underlying(packet.current_gex.underlying_symbol)
+            == target
+        ):
+            if all(existing is not packet for existing in matches):
+                matches.append(packet)
+    return matches[0] if len(matches) == 1 else None
+
+
 class CanonicalSnapshotRadarEvaluator:
     """Evaluate exported canonical snapshots without opening a provider path."""
 
@@ -414,6 +445,7 @@ class CanonicalSnapshotRadarEvaluator:
         *,
         expected_repo_sha: str | None = None,
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
+        options_packets: Mapping[str, OptionsIntelligencePacket] | None = None,
     ) -> CanonicalRadarEvaluation:
         try:
             source = load_canonical_snapshot_file(path)
@@ -434,6 +466,7 @@ class CanonicalSnapshotRadarEvaluator:
             source,
             expected_repo_sha=expected_repo_sha,
             daily_frames=daily_frames,
+            options_packets=options_packets,
         )
 
     def preflight_source(
@@ -464,6 +497,7 @@ class CanonicalSnapshotRadarEvaluator:
         *,
         expected_repo_sha: str | None = None,
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
+        options_packets: Mapping[str, OptionsIntelligencePacket] | None = None,
     ) -> CanonicalRadarEvaluation:
         blocked = self.preflight_source(
             source,
@@ -473,12 +507,26 @@ class CanonicalSnapshotRadarEvaluator:
             return blocked
 
         results: list[CanonicalRadarSymbolResult] = []
+        options_observed_at = self._now()
+        if options_observed_at.tzinfo is None or options_observed_at.utcoffset() is None:
+            raise ValueError("now() must return a timezone-aware datetime")
         for snapshot in source.snapshots:
+            packet = _find_options_packet(snapshot.symbol, options_packets)
+            options_context = (
+                build_radar_options_context(
+                    packet,
+                    expected_underlying=snapshot.symbol,
+                    observed_at=options_observed_at,
+                )
+                if packet is not None
+                else None
+            )
             if not snapshot.minute_bars:
                 results.append(
                     CanonicalRadarSymbolResult(
                         symbol=snapshot.symbol,
                         status="NO_CANONICAL_BARS",
+                        options_context=options_context,
                         reasons=("NO_CANONICAL_BARS",),
                     )
                 )
@@ -490,6 +538,7 @@ class CanonicalSnapshotRadarEvaluator:
                     symbol=snapshot.symbol,
                     status="RESEARCH_STATE",
                     technical_state=state,
+                    options_context=options_context,
                 )
             )
         return CanonicalRadarEvaluation(
