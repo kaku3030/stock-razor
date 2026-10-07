@@ -5,6 +5,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
+from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
@@ -20,6 +21,12 @@ mcp = FastMCP("stock-razor-readonly")
 def get_futures_runtime_health() -> dict:
     """Return fail-closed Futures runtime heartbeat health evidence."""
     return read_futures_runtime_health()
+
+
+@mcp.tool()
+def get_cn_market_analysis(symbols: list[str] | None = None) -> dict:
+    """Return the latest precomputed A-share Radar research state."""
+    return read_cn_radar_analysis(symbols)
 
 
 @mcp.tool()
