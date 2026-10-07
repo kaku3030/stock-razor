@@ -76,6 +76,7 @@ jobs:
           grep -q '"research_only":true' <<<"$out"
           grep -q '"trading_authority":false' <<<"$out"
           grep -q '"live_trade":false' <<<"$out"
+          grep -q '^NETWORK_SANDBOX_ENFORCEMENT=PASS$' <<<"$out"
           grep -q '^US_OPTIONS_INTELLIGENCE_VERIFY=PASS$' <<<"$out"
           grep -q '^RADAR_ADMISSION=CONTEXT_ONLY$' <<<"$out"
           grep -q '^LIVE_TRADE=NO$' <<<"$out"

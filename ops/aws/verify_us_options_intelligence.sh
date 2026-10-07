@@ -101,6 +101,34 @@ PY
       test "$(systemctl show "$service" -p NoNewPrivileges --value)" = "yes"
       test "$(systemctl show "$service" -p ProtectSystem --value)" = "strict"
       test "$(systemctl show "$service" -p ProtectHome --value)" = "yes"
+      unit_text="$(systemctl cat "$service")"
+      grep -q '^IPAddressDeny=any$' <<<"$unit_text"
+      grep -q '^IPAddressAllow=localhost$' <<<"$unit_text"
+
+      probe_script="$(mktemp)"
+      cat >"$probe_script" <<'PYNET'
+import errno
+import socket
+
+with socket.create_connection(("127.0.0.1", 11111), timeout=2):
+    print("LOOPBACK_OPEND=PASS")
+
+try:
+    with socket.create_connection(("1.1.1.1", 443), timeout=2):
+        raise SystemExit("NON_LOOPBACK_UNEXPECTEDLY_ALLOWED")
+except OSError as exc:
+    if exc.errno not in {errno.EPERM, errno.EACCES}:
+        raise
+    print("NON_LOOPBACK_POLICY_BLOCK=PASS")
+PYNET
+      probe_out="$(
+        systemd-run --quiet --wait --pipe --collect           -p IPAddressDeny=any           -p IPAddressAllow=localhost           -p 'RestrictAddressFamilies=AF_INET AF_INET6'           "$python_bin" "$probe_script"
+      )"
+      rm -f "$probe_script"
+      grep -q '^LOOPBACK_OPEND=PASS$' <<<"$probe_out"
+      grep -q '^NON_LOOPBACK_POLICY_BLOCK=PASS$' <<<"$probe_out"
+      echo "NETWORK_SANDBOX_ENFORCEMENT=PASS"
+
       cat "$status"
       printf '\n'
       echo "US_OPTIONS_INTELLIGENCE_VERIFY=PASS"

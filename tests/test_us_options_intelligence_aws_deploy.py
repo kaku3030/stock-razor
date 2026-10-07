@@ -139,3 +139,21 @@ def test_workflow_reasserts_context_only_and_no_live_trade():
     assert "LIVE_TRADE=NO" in WORKFLOW
     assert '"trading_authority":false' in WORKFLOW
     assert '"live_trade":false' in WORKFLOW
+
+
+def test_verifier_requires_runtime_loopback_only_enforcement_evidence():
+    assert "IPAddressDeny=any" in VERIFY
+    assert "IPAddressAllow=localhost" in VERIFY
+    assert 'socket.create_connection(("127.0.0.1", 11111), timeout=2)' in VERIFY
+    assert 'socket.create_connection(("1.1.1.1", 443), timeout=2)' in VERIFY
+    assert "errno.EPERM" in VERIFY
+    assert "errno.EACCES" in VERIFY
+    assert "systemd-run --quiet --wait --pipe --collect" in VERIFY
+    assert "NETWORK_SANDBOX_ENFORCEMENT=PASS" in VERIFY
+
+
+def test_workflow_requires_network_sandbox_enforcement_before_deployment_pass():
+    assert "NETWORK_SANDBOX_ENFORCEMENT=PASS" in WORKFLOW
+    assert WORKFLOW.index("NETWORK_SANDBOX_ENFORCEMENT=PASS") < WORKFLOW.index(
+        "US_OPTIONS_INTELLIGENCE_AWS_DEPLOYMENT=PASS"
+    )
