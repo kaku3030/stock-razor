@@ -42,7 +42,13 @@ def add_minutes(svc, symbol="US.AMD", count=30):
         svc.ingest(closed_futu_minute_to_bar(minute, received_at=end + timedelta(seconds=2)))
 
 
-def payload_for(svc, symbol="US.AMD", *, bar_closure="UNPROVEN"):
+def payload_for(
+    svc,
+    symbol="US.AMD",
+    *,
+    delivery_mode="UNKNOWN",
+    bar_closure="UNPROVEN",
+):
     snap = svc.snapshot(symbol, as_of=START + timedelta(minutes=30))
     return build_canonical_snapshot_export(
         {symbol: snap},
@@ -52,6 +58,7 @@ def payload_for(svc, symbol="US.AMD", *, bar_closure="UNPROVEN"):
         emitted_at_utc=START + timedelta(minutes=30),
         market_state_us="MORNING",
         cache_session_us="regular",
+        delivery_mode=delivery_mode,
         bar_closure=bar_closure,
     )
 
@@ -136,3 +143,19 @@ def test_export_rejects_unknown_bar_closure_state():
     svc = service()
     with pytest.raises(ValueError, match="bar_closure"):
         payload_for(svc, bar_closure="MAYBE")
+
+
+def test_export_accepts_realtime_delivery_without_unlocking_radar_or_trade():
+    svc = service()
+    add_minutes(svc, count=5)
+    payload = payload_for(svc, delivery_mode="REALTIME")
+
+    assert payload["delivery_mode"] == "REALTIME"
+    assert payload["radar_admission"] == "BLOCKED"
+    assert payload["live_trade"] is False
+
+
+def test_export_rejects_unknown_delivery_mode_state():
+    svc = service()
+    with pytest.raises(ValueError, match="delivery_mode"):
+        payload_for(svc, delivery_mode="DELAYED")
