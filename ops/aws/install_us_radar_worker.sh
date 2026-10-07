@@ -61,6 +61,9 @@ from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarEvaluator,
     CanonicalSnapshotRadarWorker,
 )
+from src.services.stock_radar_v2.daily_history_reader import (
+    load_futu_us_daily_history_frames,
+)
 
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().lower()
