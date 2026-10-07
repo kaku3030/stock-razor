@@ -166,12 +166,56 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
     return pd.DataFrame(records), provenance
 
 
-def _mark_intraday_unproven(state: TimeframeState, timeframe: str) -> TimeframeState:
+def _qualified_intraday_bar_end(item: Mapping[str, object]) -> bool:
+    """Validate symbol-level BAR_END evidence instead of trusting one boolean."""
+
+    claim = item.get("intraday_timestamp_semantics_proven")
+    if claim is False or claim is None:
+        return False
+    if claim is not True:
+        raise CnObservationAnalysisError(
+            "symbol intraday_timestamp_semantics_proven must be boolean"
+        )
+    frames = item.get("timeframes")
+    if not isinstance(frames, Mapping):
+        raise CnObservationAnalysisError("symbol timeframes missing")
+    for timeframe in ("60m", "15m"):
+        frame = frames.get(timeframe)
+        if not isinstance(frame, Mapping):
+            raise CnObservationAnalysisError(f"{timeframe} frame missing")
+        qualification = frame.get("timestamp_qualification")
+        if not (
+            frame.get("status") == "PASS"
+            and frame.get("timestamp_semantic") == "BAR_END"
+            and frame.get("currentness") == "UNPROVEN"
+            and isinstance(qualification, Mapping)
+            and qualification.get("status") == "PASS"
+            and qualification.get("timestamp_semantic") == "BAR_END"
+            and qualification.get("currentness_proven") is False
+            and qualification.get("radar_admission") == "BLOCKED"
+            and qualification.get("live_trade") is False
+        ):
+            raise CnObservationAnalysisError(
+                f"{timeframe} BAR_END qualification evidence invalid"
+            )
+    return True
+
+
+def _mark_intraday_unproven(
+    state: TimeframeState,
+    timeframe: str,
+    *,
+    timestamp_semantics_proven: bool,
+) -> TimeframeState:
     warnings = list(
         dict.fromkeys(
             [
                 *state.quality.warnings,
-                f"{timeframe}_timestamp_semantics_unproven",
+                *(
+                    []
+                    if timestamp_semantics_proven
+                    else [f"{timeframe}_timestamp_semantics_unproven"]
+                ),
                 f"{timeframe}_currentness_unproven",
             ]
         )
@@ -197,12 +241,18 @@ def evaluate_cn_observation_payload(
 
     if payload.get("schema") != CN_OBSERVATION_SCHEMA:
         raise CnObservationAnalysisError("unsupported CN observation schema")
+    root_timestamp_semantics_proven = payload.get(
+        "intraday_timestamp_semantics_proven"
+    )
+    if not isinstance(root_timestamp_semantics_proven, bool):
+        raise CnObservationAnalysisError(
+            "intraday_timestamp_semantics_proven must be boolean"
+        )
     if not (
         payload.get("research_only") is True
         and payload.get("can_confirm_signal") is False
         and payload.get("radar_admission") == "BLOCKED"
         and payload.get("live_trade") is False
-        and payload.get("intraday_timestamp_semantics_proven") is False
         and payload.get("intraday_currentness_proven") is False
     ):
         raise CnObservationAnalysisError("CN observation safety contract violation")
@@ -254,6 +304,11 @@ def evaluate_cn_observation_payload(
             daily, daily_prov = _frame(item, "1d")
             hourly, hourly_prov = _frame(item, "60m")
             intraday, intraday_prov = _frame(item, "15m")
+            timestamp_semantics_proven = _qualified_intraday_bar_end(item)
+            if root_timestamp_semantics_proven and not timestamp_semantics_proven:
+                raise CnObservationAnalysisError(
+                    "root BAR_END claim is not supported by symbol evidence"
+                )
             technical = technical_analyzer.analyze(
                 symbol,
                 daily,
@@ -262,8 +317,16 @@ def evaluate_cn_observation_payload(
                 hourly_partial=False,
                 intraday_partial=False,
             )
-            technical.hourly = _mark_intraday_unproven(technical.hourly, "1h")
-            technical.intraday = _mark_intraday_unproven(technical.intraday, "15m")
+            technical.hourly = _mark_intraday_unproven(
+                technical.hourly,
+                "1h",
+                timestamp_semantics_proven=timestamp_semantics_proven,
+            )
+            technical.intraday = _mark_intraday_unproven(
+                technical.intraday,
+                "15m",
+                timestamp_semantics_proven=timestamp_semantics_proven,
+            )
             provenance_warnings = {
                 warning
                 for provenance in (daily_prov, hourly_prov, intraday_prov)
@@ -273,7 +336,11 @@ def evaluate_cn_observation_payload(
                 dict.fromkeys(
                     [
                         *technical.risk_flags,
-                        "cn_intraday_timestamp_semantics_unproven",
+                        *(
+                            []
+                            if timestamp_semantics_proven
+                            else ["cn_intraday_timestamp_semantics_unproven"]
+                        ),
                         "cn_intraday_currentness_unproven",
                         *(
                             ["cn_opening_auction_range_gap"]
@@ -293,6 +360,8 @@ def evaluate_cn_observation_payload(
                 },
                 "providers_used": item.get("providers_used") or [],
                 "provider_policy": item.get("provider_policy"),
+                "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
+                "intraday_currentness_proven": False,
                 "research_only": True,
                 "can_confirm_signal": False,
                 "signal_permission": "record_only",
@@ -312,6 +381,13 @@ def evaluate_cn_observation_payload(
     status = "PASS" if len(research_symbols) == len(results) else (
         "PARTIAL" if research_symbols else "BLOCKED"
     )
+    evaluated_timestamp_semantics_proven = bool(research_symbols) and (
+        len(research_symbols) == len(results)
+        and all(
+            results[symbol].get("intraday_timestamp_semantics_proven") is True
+            for symbol in research_symbols
+        )
+    )
     return {
         "schema": CN_RADAR_SCHEMA,
         "source_repo_sha": repo_sha,
@@ -323,7 +399,7 @@ def evaluate_cn_observation_payload(
         "research_state_symbols": research_symbols,
         "provider_policy": payload.get("provider_policy"),
         "provider_lineages": payload.get("provider_lineages") or [],
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": evaluated_timestamp_semantics_proven,
         "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
