@@ -14,7 +14,8 @@ from data_provider.market_data_adapter import (
     SignalPermission,
 )
 from src.services.live_feed.canonical_snapshot_export import SCHEMA
-from src.services.realtime_market_data import ACTIVE_SESSIONS, MarketDataSnapshot
+from src.services.live_feed.futu_k1m_currentness import REGULAR_MARKET_STATES
+from src.services.realtime_market_data import MarketDataSnapshot
 from src.services.stock_radar_v2.technical_state import (
     StockRadarTechnicalState,
     StockRadarTechnicalStateService,
@@ -443,7 +444,8 @@ class CanonicalSnapshotRadarEvaluator:
         signed_age_seconds = (now_utc - source.emitted_at).total_seconds()
         if signed_age_seconds < -self._max_future_skew_seconds:
             return self._blocked(source, "SOURCE_EXPORT_FROM_FUTURE")
-        if source.cache_session_us in ACTIVE_SESSIONS:
+        market_state = source.market_state_us.strip().upper()
+        if market_state in REGULAR_MARKET_STATES:
             age_seconds = max(0.0, signed_age_seconds)
             if age_seconds > self._max_active_age_seconds:
                 return self._blocked(source, "SOURCE_EXPORT_STALE")

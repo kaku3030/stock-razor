@@ -68,6 +68,7 @@ def payload(
     count=90,
     emitted_at=None,
     cache_session="regular",
+    market_state=None,
     delivery_mode="UNKNOWN",
     bar_closure="UNPROVEN",
 ):
@@ -82,7 +83,11 @@ def payload(
         repo_sha=SHA,
         sequence=3,
         emitted_at_utc=emitted,
-        market_state_us="MORNING" if cache_session == "regular" else "CLOSED",
+        market_state_us=(
+            market_state
+            if market_state is not None
+            else ("MORNING" if cache_session == "regular" else "CLOSED")
+        ),
         cache_session_us=cache_session,
         delivery_mode=delivery_mode,
         bar_closure=bar_closure,
@@ -252,6 +257,57 @@ def test_closed_session_old_export_is_not_promoted_but_can_be_researched(tmp_pat
     assert result.status == "PASS"
     assert result.symbols[0].technical_state is not None
     assert result.symbols[0].technical_state.can_confirm_signal is False
+
+
+def test_after_hours_end_old_export_can_be_researched_without_realtime_promotion(tmp_path):
+    emitted = START + timedelta(minutes=90)
+    body = payload(
+        emitted_at=emitted,
+        cache_session="afterhours",
+        market_state="AFTER_HOURS_END",
+        delivery_mode="REALTIME",
+        bar_closure="UNPROVEN",
+    )
+    evaluator = CanonicalSnapshotRadarEvaluator(
+        max_active_age_seconds=120,
+        now=lambda: emitted + timedelta(hours=10),
+    )
+    result = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    assert result.status == "PASS"
+    assert result.source_delivery_mode == "REALTIME"
+    assert result.source_bar_closure == "UNPROVEN"
+    assert result.research_only is True
+    assert result.can_confirm_signal is False
+    assert result.symbols[0].status == "RESEARCH_STATE"
+    assert result.symbols[0].technical_state is not None
+    assert result.symbols[0].technical_state.can_confirm_signal is False
+    assert result.admission_diagnostics()["decision"] == "BLOCKED"
+    assert "SOURCE_BAR_CLOSURE_UNPROVEN" in result.admission_diagnostics()["reasons"]
+
+
+def test_regular_market_state_still_blocks_stale_export_even_if_cache_session_is_wrong(tmp_path):
+    emitted = START + timedelta(minutes=90)
+    body = payload(
+        emitted_at=emitted,
+        cache_session="closed",
+        market_state="AFTERNOON",
+    )
+    evaluator = CanonicalSnapshotRadarEvaluator(
+        max_active_age_seconds=120,
+        now=lambda: emitted + timedelta(seconds=121),
+    )
+    result = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    assert result.status == "BLOCKED"
+    assert result.reasons == ("SOURCE_EXPORT_STALE",)
+    assert result.symbols == ()
 
 
 def test_future_export_is_blocked(tmp_path):
