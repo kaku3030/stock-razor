@@ -169,10 +169,13 @@ def read_cn_radar_analysis(
     evaluation_timestamp_semantics_proven = evaluation.get(
         "intraday_timestamp_semantics_proven"
     )
+    evaluation_currentness_proven = evaluation.get(
+        "intraday_currentness_proven"
+    )
     if not (
         evaluation.get("schema") == "stock_razor_cn_radar_research_v1"
         and isinstance(evaluation_timestamp_semantics_proven, bool)
-        and evaluation.get("intraday_currentness_proven") is False
+        and isinstance(evaluation_currentness_proven, bool)
         and evaluation.get("research_only") is True
         and evaluation.get("can_confirm_signal") is False
         and evaluation.get("radar_admission") == "BLOCKED"
@@ -212,6 +215,41 @@ def read_cn_radar_analysis(
 
     raw_symbols = evaluation.get("symbols")
     raw_symbols = raw_symbols if isinstance(raw_symbols, dict) else {}
+    currentness_states = []
+    for state in raw_symbols.values():
+        if not isinstance(state, dict):
+            return _finish(
+                started_at,
+                _fail("INVALID", error="SYMBOL_EVALUATION_INVALID"),
+            )
+        currentness = state.get("intraday_currentness_proven")
+        if not isinstance(currentness, bool):
+            return _finish(
+                started_at,
+                _fail("INVALID", error="SYMBOL_CURRENTNESS_INVALID"),
+            )
+        risk_flags = set((state.get("technical") or {}).get("risk_flags") or [])
+        if currentness and "cn_intraday_currentness_unproven" in risk_flags:
+            return _finish(
+                started_at,
+                _fail("INVALID", error="SYMBOL_CURRENTNESS_RISK_MISMATCH"),
+            )
+        if (
+            state.get("status") == "RESEARCH_STATE"
+            and not currentness
+            and "cn_intraday_currentness_unproven" not in risk_flags
+        ):
+            return _finish(
+                started_at,
+                _fail("INVALID", error="SYMBOL_CURRENTNESS_RISK_MISMATCH"),
+            )
+        currentness_states.append(currentness)
+    derived_currentness = bool(raw_symbols) and all(currentness_states)
+    if evaluation_currentness_proven is not derived_currentness:
+        return _finish(
+            started_at,
+            _fail("INVALID", error="EVALUATION_CURRENTNESS_MISMATCH"),
+        )
     selected = requested or tuple(sorted(raw_symbols))
     result = {
         symbol: raw_symbols[symbol]
@@ -242,7 +280,7 @@ def read_cn_radar_analysis(
         "provider_policy": evaluation.get("provider_policy"),
         "provider_lineages": evaluation.get("provider_lineages") or [],
         "intraday_timestamp_semantics_proven": evaluation_timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": evaluation_currentness_proven,
         "symbols": result,
         "missing_symbols": missing,
         "research_only": True,

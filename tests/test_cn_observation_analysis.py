@@ -58,16 +58,25 @@ def _minute_rows(minutes, count=100):
     return rows
 
 
-def _frame(rows, timeframe, *, qualified=False):
+def _frame(rows, timeframe, *, qualified=False, currentness_proven=False):
     timestamp_semantic = "DAILY_DATE" if timeframe == "1d" else (
         "BAR_END" if qualified else "UNKNOWN"
     )
     timestamp_qualification = None
+    currentness_qualification = None
     if qualified and timeframe in {"15m", "60m"}:
         timestamp_qualification = {
             "status": "PASS",
             "timestamp_semantic": "BAR_END",
             "currentness_proven": False,
+            "continuity_proven": False,
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+        currentness_qualification = {
+            "status": "PASS" if currentness_proven else "BLOCKED",
+            "timestamp_semantic": "BAR_END",
+            "currentness_proven": currentness_proven,
             "continuity_proven": False,
             "radar_admission": "BLOCKED",
             "live_trade": False,
@@ -84,12 +93,19 @@ def _frame(rows, timeframe, *, qualified=False):
         "fallback_reason": "CloudObservationError",
         "timestamp_semantic": timestamp_semantic,
         "timestamp_qualification": timestamp_qualification,
-        "currentness": "UNPROVEN",
+        "currentness_qualification": currentness_qualification,
+        "currentness": "PROVEN" if currentness_proven else "UNPROVEN",
         "adjustment": "NONE",
     }
 
 
-def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=False):
+def _payload(
+    *,
+    safe=True,
+    symbol_status="PASS",
+    timestamp_semantics_proven=False,
+    currentness_proven=False,
+):
     return {
         "schema": "stock_razor_cn_eastmoney_observation_v1",
         "repo_sha": "a" * 40,
@@ -101,7 +117,7 @@ def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=Fals
         "providers_used": ["tencent"],
         "provider_lineages": ["eastmoney", "tencent"],
         "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": currentness_proven,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED" if safe else "ADMITTED",
@@ -115,18 +131,20 @@ def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=Fals
                 "radar_admission": "BLOCKED",
                 "live_trade": False,
                 "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-                "intraday_currentness_proven": False,
+                "intraday_currentness_proven": currentness_proven,
                 "timeframes": {
                     "1d": _frame(_daily_rows(), "1d"),
                     "60m": _frame(
                         _minute_rows(60),
                         "60m",
                         qualified=timestamp_semantics_proven,
+                        currentness_proven=currentness_proven,
                     ),
                     "15m": _frame(
                         _minute_rows(15),
                         "15m",
                         qualified=timestamp_semantics_proven,
+                        currentness_proven=currentness_proven,
                     ),
                 },
             }
@@ -191,6 +209,31 @@ def test_qualified_bar_end_removes_only_timestamp_semantics_risk():
         state["technical"]["intraday"]["quality"]["warnings"]
     )
     assert "15m_currentness_unproven" in (
+        state["technical"]["intraday"]["quality"]["warnings"]
+    )
+
+
+def test_proven_currentness_removes_currentness_risk_without_admission():
+    result = evaluate_cn_observation_payload(
+        _payload(
+            timestamp_semantics_proven=True,
+            currentness_proven=True,
+        )
+    )
+
+    assert result["status"] == "PASS"
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is True
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    state = result["symbols"]["159611"]
+    assert state["intraday_currentness_proven"] is True
+    assert state["signal_permission"] == "record_only"
+    assert "cn_intraday_currentness_unproven" not in state["technical"]["risk_flags"]
+    assert "1h_currentness_unproven" not in (
+        state["technical"]["hourly"]["quality"]["warnings"]
+    )
+    assert "15m_currentness_unproven" not in (
         state["technical"]["intraday"]["quality"]["warnings"]
     )
 

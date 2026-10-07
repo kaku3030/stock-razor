@@ -1,8 +1,9 @@
 """Cloud-safe read-only A-share observation lane.
 
 Eastmoney is the primary cloud source. Tencent is an independent-lineage
-fallback for daily/15m/60m K-lines. This layer deliberately stops before
-intraday timestamp/currentness promotion and never authorizes trading.
+fallback for daily/15m/60m K-lines. This layer can qualify governed
+intraday timestamp/currentness evidence but never authorizes Radar admission
+or trading.
 """
 
 from __future__ import annotations
@@ -16,9 +17,13 @@ from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from src.services.a_share_intraday_currentness import (
+    qualify_same_session_currentness,
+)
 from src.services.a_share_intraday_grid_qualification import (
     qualify_intraday_end_label_grid,
 )
+from src.services.a_share_intraday_semantics import TimestampSemantic
 
 
 EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
@@ -319,6 +324,7 @@ def _frame_observation(
     code: str,
     timeframe: str,
     *,
+    observed_at: datetime,
     eastmoney_fetch_json: Callable[[str], Mapping[str, object]],
     tencent_fetch_json: Callable[[str], Mapping[str, object]],
     limit: int | None,
@@ -378,6 +384,22 @@ def _frame_observation(
         timestamp_qualification = qualification.to_dict()
         if qualification.status == "PASS":
             timestamp_semantic = qualification.timestamp_semantic.value
+    currentness_qualification = None
+    currentness = "UNPROVEN"
+    if (
+        rows
+        and timeframe in {"15m", "60m"}
+        and timestamp_semantic == "BAR_END"
+    ):
+        currentness_result = qualify_same_session_currentness(
+            rows[-1]["label"],
+            interval_minutes=int(timeframe[:-1]),
+            timestamp_semantic=TimestampSemantic.BAR_END,
+            observed_at=observed_at,
+        )
+        currentness_qualification = currentness_result.to_dict()
+        if currentness_result.currentness_proven:
+            currentness = "PROVEN"
     return {
         "status": status,
         "error": None if rows else fallback_reason,
@@ -390,7 +412,8 @@ def _frame_observation(
         "fallback_reason": fallback_reason,
         "timestamp_semantic": timestamp_semantic,
         "timestamp_qualification": timestamp_qualification,
-        "currentness": "UNPROVEN",
+        "currentness_qualification": currentness_qualification,
+        "currentness": currentness,
         "adjustment": "NONE",
     }
 
@@ -417,6 +440,7 @@ def observe_cn_cloud_symbol(
                 _frame_observation,
                 code,
                 timeframe,
+                observed_at=now,
                 eastmoney_fetch_json=eastmoney_fetch_json,
                 tencent_fetch_json=tencent_fetch_json,
                 limit=(limits or {}).get(timeframe),
@@ -448,7 +472,10 @@ def observe_cn_cloud_symbol(
             frames[timeframe]["timestamp_semantic"] == "BAR_END"
             for timeframe in ("15m", "60m")
         ),
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": all(
+            frames[timeframe]["currentness"] == "PROVEN"
+            for timeframe in ("15m", "60m")
+        ),
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
@@ -518,7 +545,10 @@ def build_cn_cloud_observation(
             item["intraday_timestamp_semantics_proven"]
             for item in results.values()
         ),
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": all(
+            item["intraday_currentness_proven"]
+            for item in results.values()
+        ),
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",

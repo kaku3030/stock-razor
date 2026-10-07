@@ -30,6 +30,7 @@ def _payload(
     emitted_at=NOW - timedelta(seconds=10),
     safe=True,
     timestamp_semantics_proven=False,
+    currentness_proven=False,
 ):
     rows = [_row("2026-09-29", 1.6), _row("2026-09-30", 1.61)]
     return {
@@ -43,7 +44,7 @@ def _payload(
         "providers_used": ["tencent"],
         "provider_lineages": ["eastmoney", "tencent"],
         "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": currentness_proven,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED" if safe else "ADMITTED",
@@ -57,7 +58,7 @@ def _payload(
                 "radar_admission": "BLOCKED",
                 "live_trade": False,
                 "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-                "intraday_currentness_proven": False,
+                "intraday_currentness_proven": currentness_proven,
                 "timeframes": {
                     "1d": {
                         "status": "PASS",
@@ -90,7 +91,19 @@ def _payload(
                             if timestamp_semantics_proven
                             else None
                         ),
-                        "currentness": "UNPROVEN",
+                        "currentness_qualification": (
+                            {
+                                "status": "PASS" if currentness_proven else "BLOCKED",
+                                "timestamp_semantic": "BAR_END",
+                                "currentness_proven": currentness_proven,
+                                "continuity_proven": False,
+                                "radar_admission": "BLOCKED",
+                                "live_trade": False,
+                            }
+                            if timestamp_semantics_proven
+                            else None
+                        ),
+                        "currentness": "PROVEN" if currentness_proven else "UNPROVEN",
                         "row_count": 2,
                         "rows": rows,
                     },
@@ -114,7 +127,19 @@ def _payload(
                             if timestamp_semantics_proven
                             else None
                         ),
-                        "currentness": "UNPROVEN",
+                        "currentness_qualification": (
+                            {
+                                "status": "PASS" if currentness_proven else "BLOCKED",
+                                "timestamp_semantic": "BAR_END",
+                                "currentness_proven": currentness_proven,
+                                "continuity_proven": False,
+                                "radar_admission": "BLOCKED",
+                                "live_trade": False,
+                            }
+                            if timestamp_semantics_proven
+                            else None
+                        ),
+                        "currentness": "PROVEN" if currentness_proven else "UNPROVEN",
                         "row_count": 2,
                         "rows": rows,
                     },
@@ -184,6 +209,27 @@ def test_qualified_bar_end_is_exposed_without_promoting_currentness(tmp_path):
     assert result["live_trade"] is False
 
 
+def test_proven_currentness_is_exposed_without_authorizing_radar(tmp_path):
+    path = _write(
+        tmp_path / "cn.json",
+        _payload(
+            timestamp_semantics_proven=True,
+            currentness_proven=True,
+        ),
+    )
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["intraday_currentness_proven"] is True
+    assert result["symbol_intraday_currentness_proven"] is True
+    assert result["currentness"] == "PROVEN"
+    assert result["currentness_qualification"]["status"] == "PASS"
+    assert result["currentness_qualification"]["currentness_proven"] is True
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
 def test_forged_bar_end_without_qualification_fails_closed(tmp_path):
     payload = _payload(timestamp_semantics_proven=True)
     payload["symbols"]["159611"]["timeframes"]["15m"][
@@ -196,6 +242,21 @@ def test_forged_bar_end_without_qualification_fails_closed(tmp_path):
     assert result["ok"] is False
     assert result["status"] == "INVALID"
     assert result["error"] == "TIMESTAMP_SEMANTICS_EVIDENCE_INVALID"
+
+
+def test_forged_positive_currentness_without_evidence_fails_closed(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["intraday_currentness_proven"] = True
+    payload["symbols"]["159611"]["intraday_currentness_proven"] = True
+    payload["symbols"]["159611"]["timeframes"]["15m"]["currentness"] = "PROVEN"
+    payload["symbols"]["159611"]["timeframes"]["60m"]["currentness"] = "PROVEN"
+    path = _write(tmp_path / "cn.json", payload)
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is False
+    assert result["status"] == "INVALID"
+    assert result["error"] == "INTRADAY_CURRENTNESS_EVIDENCE_INVALID"
 
 
 def test_stale_observation_is_explicit(tmp_path):

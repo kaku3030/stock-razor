@@ -29,11 +29,15 @@ def test_verifier_requires_real_three_timeframe_cloud_evidence():
     assert 'latest.get("volume_unit") == "PROVIDER_RAW_UNVERIFIED"' in VERIFY
     assert 'latest.get("volume_unit") == "HAND"' in VERIFY
     assert 'frame.get("fallback_from") == "eastmoney"' in VERIFY
-    assert 'frame.get("currentness") == "UNPROVEN"' in VERIFY
+    assert 'frame.get("currentness") in {"UNPROVEN", "PROVEN"}' in VERIFY
     assert 'qualification.get("status") == "PASS"' in VERIFY
     assert 'qualification.get("timestamp_semantic") == "BAR_END"' in VERIFY
     assert 'qualification.get("currentness_proven") is False' in VERIFY
     assert 'qualification.get("continuity_proven") is False' in VERIFY
+    assert 'currentness.get("status") == "PASS"' in VERIFY
+    assert 'currentness.get("status") == "BLOCKED"' in VERIFY
+    assert 'currentness.get("currentness_proven") is True' in VERIFY
+    assert 'currentness.get("currentness_proven") is False' in VERIFY
     assert 'frame.get("timestamp_semantic") == "BAR_END"' in VERIFY
     assert 'frame.get("timestamp_semantic") == "UNKNOWN"' in VERIFY
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
@@ -53,5 +57,6 @@ def test_workflow_deploys_exact_main_over_ssm_only():
     assert "EASTMONEY_PRIMARY_TENCENT_FALLBACK" in WORKFLOW
     assert '\"intraday_timestamp_semantics_proven\":true' in WORKFLOW
     assert '\"intraday_timestamp_semantics_proven\":false' not in WORKFLOW
+    assert 'intraday_currentness_proven\":(true|false)' in WORKFLOW
     assert "CN_EASTMONEY_CLOUD_DEPLOYMENT=PASS" in WORKFLOW
     assert "LIVE_TRADE=NO" in WORKFLOW

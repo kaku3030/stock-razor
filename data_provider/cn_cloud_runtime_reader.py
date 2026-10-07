@@ -87,6 +87,36 @@ def _aware_timestamp(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _frame_currentness_evidence(frame: dict) -> tuple[bool, bool]:
+    currentness = frame.get("currentness")
+    qualification = frame.get("currentness_qualification")
+    if currentness == "PROVEN":
+        valid = (
+            isinstance(qualification, dict)
+            and qualification.get("status") == "PASS"
+            and qualification.get("timestamp_semantic") == "BAR_END"
+            and qualification.get("currentness_proven") is True
+            and qualification.get("continuity_proven") is False
+            and qualification.get("radar_admission") == "BLOCKED"
+            and qualification.get("live_trade") is False
+        )
+        return True, valid
+    if currentness == "UNPROVEN":
+        if qualification is None:
+            return False, True
+        valid = (
+            isinstance(qualification, dict)
+            and qualification.get("status") == "BLOCKED"
+            and qualification.get("timestamp_semantic") == "BAR_END"
+            and qualification.get("currentness_proven") is False
+            and qualification.get("continuity_proven") is False
+            and qualification.get("radar_admission") == "BLOCKED"
+            and qualification.get("live_trade") is False
+        )
+        return False, valid
+    return False, False
+
+
 def _symbol(value: object) -> str | None:
     raw = str(value or "").strip().upper()
     for suffix in (".SH", ".SZ", ".BJ"):
@@ -160,13 +190,14 @@ def read_cn_market_data(
     intraday_timestamp_semantics_proven = payload.get(
         "intraday_timestamp_semantics_proven"
     )
+    intraday_currentness_proven = payload.get("intraday_currentness_proven")
     if not (
         isinstance(intraday_timestamp_semantics_proven, bool)
+        and isinstance(intraday_currentness_proven, bool)
         and payload.get("research_only") is True
         and payload.get("can_confirm_signal") is False
         and payload.get("radar_admission") == "BLOCKED"
         and payload.get("live_trade") is False
-        and payload.get("intraday_currentness_proven") is False
     ):
         return _finish(
             started_at,
@@ -195,6 +226,17 @@ def read_cn_market_data(
 
     symbols = payload.get("symbols")
     symbols = symbols if isinstance(symbols, dict) else {}
+    if symbols:
+        derived_root_currentness = all(
+            isinstance(value, dict)
+            and value.get("intraday_currentness_proven") is True
+            for value in symbols.values()
+        )
+        if intraday_currentness_proven is not derived_root_currentness:
+            return _finish(
+                started_at,
+                _fail("INVALID", error="ROOT_CURRENTNESS_EVIDENCE_MISMATCH"),
+            )
     item = symbols.get(normalized)
     if not isinstance(item, dict):
         return _finish(started_at, {
@@ -230,10 +272,36 @@ def read_cn_market_data(
     symbol_timestamp_semantics_proven = item.get(
         "intraday_timestamp_semantics_proven"
     )
+    symbol_currentness_proven = item.get("intraday_currentness_proven")
     if symbol_timestamp_semantics_proven not in {True, False, None}:
         return _finish(
             started_at,
             _fail("INVALID", error="SYMBOL_TIMESTAMP_SEMANTICS_INVALID"),
+        )
+    if not isinstance(symbol_currentness_proven, bool):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="SYMBOL_CURRENTNESS_INVALID"),
+        )
+    intraday_currentness_states = []
+    for intraday_frame in ("15m", "60m"):
+        evidence = frames.get(intraday_frame)
+        if not isinstance(evidence, dict):
+            return _finish(
+                started_at,
+                _fail("INVALID", error="INTRADAY_CURRENTNESS_EVIDENCE_MISSING"),
+            )
+        proven, valid = _frame_currentness_evidence(evidence)
+        if not valid:
+            return _finish(
+                started_at,
+                _fail("INVALID", error="INTRADAY_CURRENTNESS_EVIDENCE_INVALID"),
+            )
+        intraday_currentness_states.append(proven)
+    if symbol_currentness_proven is not all(intraday_currentness_states):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="SYMBOL_CURRENTNESS_EVIDENCE_MISMATCH"),
         )
     if frame in {"15m", "60m"} and frame_payload.get("timestamp_semantic") == "BAR_END":
         qualification = frame_payload.get("timestamp_qualification")
@@ -276,10 +344,11 @@ def read_cn_market_data(
         "provider_policy": payload.get("provider_policy"),
         "provider_lineages": payload.get("provider_lineages"),
         "intraday_timestamp_semantics_proven": intraday_timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": intraday_currentness_proven,
         "symbol_intraday_timestamp_semantics_proven": (
             symbol_timestamp_semantics_proven is True
         ),
+        "symbol_intraday_currentness_proven": symbol_currentness_proven,
         "symbol": normalized,
         "symbol_status": item.get("status"),
         "timeframe": frame,
@@ -289,6 +358,7 @@ def read_cn_market_data(
         "fallback_reason": frame_payload.get("fallback_reason"),
         "timestamp_semantic": frame_payload.get("timestamp_semantic"),
         "timestamp_qualification": frame_payload.get("timestamp_qualification"),
+        "currentness_qualification": frame_payload.get("currentness_qualification"),
         "currentness": frame_payload.get("currentness"),
         "total_row_count": len(rows),
         "row_count": len(selected),

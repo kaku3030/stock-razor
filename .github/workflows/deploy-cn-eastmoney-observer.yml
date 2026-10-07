@@ -56,7 +56,7 @@ jobs:
           grep -q '"provider_policy":"EASTMONEY_PRIMARY_TENCENT_FALLBACK"' <<<"$out"
           grep -q '"provider_lineages":\["eastmoney","tencent"\]' <<<"$out"
           grep -q '"intraday_timestamp_semantics_proven":true' <<<"$out"
-          grep -q '"intraday_currentness_proven":false' <<<"$out"
+          grep -Eq '"intraday_currentness_proven":(true|false)' <<<"$out"
           grep -q '"radar_admission":"BLOCKED"' <<<"$out"
           grep -q '"live_trade":false' <<<"$out"
           grep -q '^CN_EASTMONEY_CLOUD_VERIFY=PASS$' <<<"$out"

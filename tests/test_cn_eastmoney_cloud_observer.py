@@ -63,6 +63,37 @@ def _qualified_tencent_payload(symbol, timeframe):
     return {"code": 0, "data": {api_symbol: {key: rows}}}
 
 
+def _same_session_qualified_tencent_payload(symbol, timeframe):
+    api_symbol = tencent_symbol(symbol)
+    if timeframe == "1d":
+        return _tencent_payload(symbol, timeframe)
+    expected = {
+        "15m": [
+            "0945", "1000", "1015", "1030",
+            "1045", "1100", "1115", "1130",
+            "1315", "1330", "1345", "1400",
+            "1415", "1430", "1445", "1500",
+        ],
+        "60m": ["1030", "1130", "1400", "1500"],
+    }[timeframe]
+    rows = []
+    for day in ("20260929", "20260930", "20261008"):
+        for index, hhmm in enumerate(expected):
+            price = 10 + index / 100
+            rows.append([
+                day + hhmm,
+                f"{price:.2f}",
+                f"{price + 0.02:.2f}",
+                f"{price + 0.04:.2f}",
+                f"{price - 0.03:.2f}",
+                f"{1000 + index:.3f}",
+                {},
+                "1.0",
+            ])
+    key = f"m{timeframe[:-1]}"
+    return {"code": 0, "data": {api_symbol: {key: rows}}}
+
+
 def _tencent_payload(symbol, timeframe):
     api_symbol = tencent_symbol(symbol)
     if timeframe == "1d":
@@ -240,6 +271,45 @@ def test_qualified_tencent_intraday_promotes_bar_end_without_currentness():
         assert qualification["radar_admission"] == "BLOCKED"
         assert qualification["live_trade"] is False
         assert frame["currentness"] == "UNPROVEN"
+        currentness = frame["currentness_qualification"]
+        assert currentness["status"] == "BLOCKED"
+        assert currentness["currentness_proven"] is False
+        assert currentness["reasons"] == ["LATEST_LABEL_NOT_OBSERVATION_DATE"]
+
+
+def test_same_session_tencent_bar_end_can_prove_intraday_currentness():
+    def eastmoney(_url):
+        raise RuntimeError("primary unavailable")
+
+    def tencent(url):
+        if "day" in url:
+            frame = "1d"
+        elif "m60" in url:
+            frame = "60m"
+        else:
+            frame = "15m"
+        return _same_session_qualified_tencent_payload("159611", frame)
+
+    result = observe_cn_cloud_symbol(
+        "159611",
+        observed_at_utc=datetime(2026, 10, 8, 7, 5, tzinfo=timezone.utc),
+        eastmoney_fetch_json=eastmoney,
+        tencent_fetch_json=tencent,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is True
+    for timeframe in ("15m", "60m"):
+        frame = result["timeframes"][timeframe]
+        assert frame["timestamp_semantic"] == "BAR_END"
+        assert frame["currentness"] == "PROVEN"
+        currentness = frame["currentness_qualification"]
+        assert currentness["status"] == "PASS"
+        assert currentness["currentness_proven"] is True
+        assert currentness["continuity_proven"] is False
+        assert currentness["radar_admission"] == "BLOCKED"
+        assert currentness["live_trade"] is False
 
 
 def test_partial_tencent_grid_remains_unknown():
