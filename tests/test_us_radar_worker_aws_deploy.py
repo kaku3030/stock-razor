@@ -166,3 +166,25 @@ def test_embedded_worker_runtime_imports_daily_history_reader():
     assert source.index("load_futu_us_daily_history_frames") < source.index(
         "daily_frames, daily_history = load_futu_us_daily_history_frames("
     )
+
+
+def test_options_context_slot_is_opt_in_and_requires_exact_source_provenance():
+    assert 'OPTIONS_CONTEXT_ENABLED="${OPTIONS_CONTEXT_ENABLED:-false}"' in INSTALLER
+    assert 'OPTIONS_SOURCE_REPO_SHA="${OPTIONS_SOURCE_REPO_SHA:-}"' in INSTALLER
+    assert 'if [ "$OPTIONS_CONTEXT_ENABLED" = "true" ]; then' in INSTALLER
+    assert "OPTIONS_SOURCE_REPO_SHA exact options source SHA is required when enabled" in INSTALLER
+    assert 'test "${#OPTIONS_SOURCE_REPO_SHA}" -eq 40' in INSTALLER
+    assert "STOCK_RAZOR_OPTIONS_CONTEXT_ENABLED=$OPTIONS_CONTEXT_ENABLED" in INSTALLER
+    assert "STOCK_RAZOR_OPTIONS_SOURCE_REPO_SHA=$OPTIONS_SOURCE_REPO_SHA" in INSTALLER
+
+
+def test_options_context_keeps_radar_network_isolated_and_context_only():
+    assert "from src.services.stock_radar_v2.options_context_reader import RadarOptionsContextReader" in INSTALLER
+    assert "options_result = options_reader.read_file(" in INSTALLER
+    assert "options_contexts = options_result.by_symbol()" in INSTALLER
+    assert "options_contexts=options_contexts" in INSTALLER
+    assert '"options_context": {' in INSTALLER
+    assert "ReadOnlyPaths=-/run/stock-razor-us-options-intelligence" in INSTALLER
+    assert "PrivateNetwork=true" in INSTALLER
+    assert "futu-api" not in INSTALLER
+    assert "alpaca" not in INSTALLER.lower()

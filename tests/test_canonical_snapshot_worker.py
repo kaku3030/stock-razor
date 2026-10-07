@@ -15,6 +15,7 @@ from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarWorker,
     load_canonical_snapshot_payload,
 )
+from src.services.stock_radar_v2.options_context_reader import RadarOptionsContext
 
 
 START = datetime(2026, 10, 6, 13, 30, tzinfo=timezone.utc)
@@ -705,3 +706,76 @@ def test_worker_preserves_daily_context_on_unchanged_sequence(tmp_path):
     assert second.status == "UNCHANGED"
     assert second.symbols[0].technical_state is not None
     assert second.symbols[0].technical_state.technical.daily.quality.bars == 120
+
+
+def _options_context(*, net_gex: float) -> RadarOptionsContext:
+    return RadarOptionsContext(
+        symbol="US.AMD",
+        generated_at=START,
+        context_permission="DEGRADED_RESEARCH",
+        radar_admission="CONTEXT_ONLY",
+        decision_permission="BLOCKED_V0_1",
+        options_regime="POSITIVE_GAMMA_ASSUMPTION",
+        net_gex=net_gex,
+        gamma_flip=105.0,
+        gamma_flip_status="ESTIMATED_STATIC_IV",
+        call_wall=110.0,
+        put_wall=95.0,
+        zero_dte_share=0.4,
+        completeness=0.6,
+        clock_status="DEGRADED",
+        unknown_fields=("oi_asof",),
+        warnings=("OI_ASOF_UNKNOWN",),
+    )
+
+
+def test_evaluator_attaches_options_context_without_changing_technical_state(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    evaluator = CanonicalSnapshotRadarEvaluator(now=lambda: emitted)
+
+    without_context = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+    with_context = evaluator.evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+        options_contexts={"US.AMD": _options_context(net_gex=123.0)},
+    )
+
+    assert without_context.status == with_context.status == "PASS"
+    plain = without_context.symbols[0]
+    enriched = with_context.symbols[0]
+    assert plain.options_context is None
+    assert enriched.options_context is not None
+    assert enriched.options_context.net_gex == 123.0
+    assert enriched.technical_state == plain.technical_state
+    assert enriched.technical_state.signal_permission is plain.technical_state.signal_permission
+    assert enriched.to_dict()["options_context"]["decision_permission"] == "BLOCKED_V0_1"
+
+
+def test_worker_refreshes_options_context_when_canonical_sequence_is_unchanged(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    path = write_payload(tmp_path, body)
+    worker = CanonicalSnapshotRadarWorker(
+        expected_repo_sha=SHA,
+        evaluator=CanonicalSnapshotRadarEvaluator(now=lambda: emitted),
+    )
+
+    first = worker.poll_file(
+        path,
+        options_contexts={"US.AMD": _options_context(net_gex=100.0)},
+    )
+    second = worker.poll_file(
+        path,
+        options_contexts={"US.AMD": _options_context(net_gex=200.0)},
+    )
+
+    assert first.status == "PASS"
+    assert second.status == "UNCHANGED"
+    assert first.symbols[0].technical_state == second.symbols[0].technical_state
+    assert first.symbols[0].options_context.net_gex == 100.0
+    assert second.symbols[0].options_context.net_gex == 200.0
+    assert second.can_confirm_signal is False

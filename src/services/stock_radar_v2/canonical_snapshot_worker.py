@@ -18,6 +18,7 @@ from data_provider.market_data_adapter import (
 from src.services.live_feed.canonical_snapshot_export import SCHEMA
 from src.services.live_feed.futu_k1m_currentness import REGULAR_MARKET_STATES
 from src.services.realtime_market_data import MarketDataSnapshot
+from src.services.stock_radar_v2.options_context_reader import RadarOptionsContext
 from src.services.stock_radar_v2.technical_state import (
     StockRadarTechnicalState,
     StockRadarTechnicalStateService,
@@ -49,6 +50,7 @@ class CanonicalRadarSymbolResult:
     symbol: str
     status: str
     technical_state: StockRadarTechnicalState | None = None
+    options_context: RadarOptionsContext | None = None
     reasons: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
@@ -58,6 +60,11 @@ class CanonicalRadarSymbolResult:
             "technical_state": (
                 self.technical_state.to_dict()
                 if self.technical_state is not None
+                else None
+            ),
+            "options_context": (
+                self.options_context.to_dict()
+                if self.options_context is not None
                 else None
             ),
             "reasons": list(self.reasons),
@@ -414,6 +421,7 @@ class CanonicalSnapshotRadarEvaluator:
         *,
         expected_repo_sha: str | None = None,
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
+        options_contexts: Mapping[str, RadarOptionsContext] | None = None,
     ) -> CanonicalRadarEvaluation:
         try:
             source = load_canonical_snapshot_file(path)
@@ -434,6 +442,7 @@ class CanonicalSnapshotRadarEvaluator:
             source,
             expected_repo_sha=expected_repo_sha,
             daily_frames=daily_frames,
+            options_contexts=options_contexts,
         )
 
     def preflight_source(
@@ -464,6 +473,7 @@ class CanonicalSnapshotRadarEvaluator:
         *,
         expected_repo_sha: str | None = None,
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
+        options_contexts: Mapping[str, RadarOptionsContext] | None = None,
     ) -> CanonicalRadarEvaluation:
         blocked = self.preflight_source(
             source,
@@ -472,6 +482,10 @@ class CanonicalSnapshotRadarEvaluator:
         if blocked is not None:
             return blocked
 
+        normalized_options = {
+            str(symbol).strip().upper(): context
+            for symbol, context in (options_contexts or {}).items()
+        }
         results: list[CanonicalRadarSymbolResult] = []
         for snapshot in source.snapshots:
             if not snapshot.minute_bars:
@@ -479,6 +493,7 @@ class CanonicalSnapshotRadarEvaluator:
                     CanonicalRadarSymbolResult(
                         symbol=snapshot.symbol,
                         status="NO_CANONICAL_BARS",
+                        options_context=normalized_options.get(snapshot.symbol.upper()),
                         reasons=("NO_CANONICAL_BARS",),
                     )
                 )
@@ -490,6 +505,7 @@ class CanonicalSnapshotRadarEvaluator:
                     symbol=snapshot.symbol,
                     status="RESEARCH_STATE",
                     technical_state=state,
+                    options_context=normalized_options.get(snapshot.symbol.upper()),
                 )
             )
         return CanonicalRadarEvaluation(
@@ -544,6 +560,7 @@ class CanonicalSnapshotRadarWorker:
         path: str | Path,
         *,
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
+        options_contexts: Mapping[str, RadarOptionsContext] | None = None,
     ) -> CanonicalRadarEvaluation:
         try:
             source = load_canonical_snapshot_file(path)
@@ -552,6 +569,7 @@ class CanonicalSnapshotRadarWorker:
                 path,
                 expected_repo_sha=self._expected_repo_sha,
                 daily_frames=daily_frames,
+                options_contexts=options_contexts,
             )
 
         blocked = self._evaluator.preflight_source(
@@ -565,6 +583,25 @@ class CanonicalSnapshotRadarWorker:
             if source.sequence < self._last_sequence:
                 return self._blocked(source, "SOURCE_SEQUENCE_REGRESSION")
             if source.sequence == self._last_sequence:
+                cached_symbols = (
+                    self._last_successful_evaluation.symbols
+                    if self._last_successful_evaluation is not None
+                    else ()
+                )
+                normalized_options = {
+                    str(symbol).strip().upper(): context
+                    for symbol, context in (options_contexts or {}).items()
+                }
+                refreshed_symbols = tuple(
+                    CanonicalRadarSymbolResult(
+                        symbol=item.symbol,
+                        status=item.status,
+                        technical_state=item.technical_state,
+                        options_context=normalized_options.get(item.symbol.upper()),
+                        reasons=item.reasons,
+                    )
+                    for item in cached_symbols
+                )
                 return CanonicalRadarEvaluation(
                     status="UNCHANGED",
                     source_repo_sha=source.repo_sha,
@@ -575,11 +612,7 @@ class CanonicalSnapshotRadarWorker:
                     source_bar_closure=source.bar_closure,
                     source_radar_admission=source.radar_admission,
                     source_live_trade=source.live_trade,
-                    symbols=(
-                        self._last_successful_evaluation.symbols
-                        if self._last_successful_evaluation is not None
-                        else ()
-                    ),
+                    symbols=refreshed_symbols,
                     reasons=("SOURCE_SEQUENCE_UNCHANGED",),
                 )
 
@@ -587,6 +620,7 @@ class CanonicalSnapshotRadarWorker:
             source,
             expected_repo_sha=self._expected_repo_sha,
             daily_frames=daily_frames,
+            options_contexts=options_contexts,
         )
         if evaluation.status == "PASS":
             self._last_runtime_instance_id = source.runtime_instance_id
