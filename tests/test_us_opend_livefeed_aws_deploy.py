@@ -325,3 +325,37 @@ def test_verify_gate_derives_delivery_from_fresh_quote_right_evidence():
     assert 'export.get("delivery_mode") == expected_delivery_mode' in VERIFY
     assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'snapshot.get("live_trade") is False' in VERIFY
+
+
+def test_installer_warm_starts_from_same_opend_context_without_promoting_live_evidence():
+    installer = INSTALLER
+    assert "build_futu_k1m_warm_start_plan" in installer
+    assert 'ctx.request_history_kline(' in installer
+    assert installer.count('OpenQuoteContext(host="127.0.0.1",port=11111)') == 1
+    assert "ktype=ft.KLType.K_1M" in installer
+    assert "autype=ft.AuType.NONE" in installer
+    assert "max_count=1000" in installer
+    assert "page_req_key=page_req_key" in installer
+    assert "extended_time=False" in installer
+    assert "warm_start_lookback_days=10" in installer
+    assert "warm_start_max_pages=4" in installer
+    assert '"reason":"HISTORY_QUERY_PAGE_LIMIT_REACHED"' in installer
+    assert "market_data.ingest(bar)" in installer
+    assert "market_data.seed(" not in installer
+    assert installer.index("for code in CODES:") < installer.index("bridge.start(streams)")
+    assert '"historical_warm_start":{' in installer
+    assert '"realtime_currentness_proven":False' in installer
+    assert '"bar_closure_promotion_authorized":False' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
+
+
+def test_installer_warm_start_failure_is_observable_but_does_not_abort_live_start():
+    installer = INSTALLER
+    warm_exception = installer.index('"reason":"WARM_START_EXCEPTION:"+type(exc).__name__')
+    bridge_start = installer.index("bridge.start(streams)")
+    assert warm_exception < bridge_start
+    assert 'warm_start_status=(' in installer
+    assert '"status":warm_start_status' in installer
+    assert '"total_bars_ingested":warm_start_total_seeded' in installer
+    assert "raise RuntimeError" not in installer[warm_exception:bridge_start]
