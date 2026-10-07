@@ -33,7 +33,7 @@ assert evaluation.get("research_only") is True
 assert evaluation.get("can_confirm_signal") is False
 assert evaluation.get("radar_admission") == "BLOCKED"
 assert evaluation.get("live_trade") is False
-assert evaluation.get("intraday_timestamp_semantics_proven") is False
+assert evaluation.get("intraday_timestamp_semantics_proven") is True
 assert evaluation.get("intraday_currentness_proven") is False
 
 symbols = evaluation.get("symbols") or {}
@@ -45,12 +45,14 @@ for symbol, item in symbols.items():
     assert item.get("research_only") is True
     assert item.get("can_confirm_signal") is False
     assert item.get("signal_permission") == "record_only"
+    assert item.get("intraday_timestamp_semantics_proven") is True
+    assert item.get("intraday_currentness_proven") is False
     technical = item.get("technical") or {}
     assert technical
     frames = item.get("frame_provenance") or {}
     assert set(frames) == {"1d", "60m", "15m"}
     risk_flags = set(technical.get("risk_flags") or [])
-    assert "cn_intraday_timestamp_semantics_unproven" in risk_flags
+    assert "cn_intraday_timestamp_semantics_unproven" not in risk_flags
     assert "cn_intraday_currentness_unproven" in risk_flags
 
 print("CN_RADAR_SYMBOLS=" + ",".join(sorted(symbols)))
