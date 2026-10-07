@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from data_provider.cn_cloud_runtime_reader import read_cn_market_bars
 from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
@@ -13,6 +14,16 @@ from data_provider.us_canonical_runtime_reader import (
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 
 mcp = FastMCP("stock-razor-readonly")
+
+
+@mcp.tool()
+def get_cn_market_bars(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = 100,
+) -> dict:
+    """Return bounded A-share cloud observation rows with provider provenance."""
+    return read_cn_market_bars(symbol, timeframe=timeframe, limit=limit)
 
 
 @mcp.tool()
