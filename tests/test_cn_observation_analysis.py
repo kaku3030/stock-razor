@@ -237,3 +237,41 @@ def test_opening_bar_with_close_outside_range_remains_hard_block():
 
     assert result["status"] == "BLOCKED"
     assert result["symbols"]["159611"]["status"] == "BLOCKED"
+
+
+def test_real_512730_tencent_opening_rows_are_soft_only_at_session_open():
+    payload = _payload()
+    symbol = payload["symbols"].pop("159611")
+    payload["symbols"]["512730"] = symbol
+
+    frames = symbol["timeframes"]
+    exact_cases = {
+        "15m": ("2026-08-19 09:45", 1.645, 1.656, 1.659, 1.648),
+        "60m": ("2026-08-19 10:30", 1.645, 1.659, 1.660, 1.648),
+    }
+    for timeframe, (label, open_, close, high, low) in exact_cases.items():
+        row = frames[timeframe]["rows"][0]
+        row.update({
+            "label": label,
+            "provider_label_raw": label.replace("-", "").replace(" ", "").replace(":", ""),
+            "open": open_,
+            "close": close,
+            "high": high,
+            "low": low,
+            "quality_flags": ["INVALID_OHLC"],
+            "provider": "tencent",
+        })
+        # Keep remaining rows strictly after the real opening label.
+        base = datetime.fromisoformat(label)
+        step = 15 if timeframe == "15m" else 60
+        for index, later in enumerate(frames[timeframe]["rows"][1:], start=1):
+            stamp = base + timedelta(minutes=step * index)
+            later["label"] = stamp.strftime("%Y-%m-%d %H:%M")
+            later["provider_label_raw"] = stamp.strftime("%Y%m%d%H%M")
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "PASS"
+    state = result["symbols"]["512730"]
+    assert state["status"] == "RESEARCH_STATE"
+    assert "cn_opening_auction_range_gap" in state["technical"]["risk_flags"]
