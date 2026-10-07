@@ -61,12 +61,47 @@ for symbol, item in symbols.items():
     assert frames["1d"].get("timestamp_semantic") == "DAILY_DATE"
     assert frames["60m"].get("timestamp_semantic") == "UNKNOWN"
     assert frames["15m"].get("timestamp_semantic") == "UNKNOWN"
+
+summary = {
+    "schema": payload.get("schema"),
+    "repo_sha": payload.get("repo_sha"),
+    "sequence": payload.get("sequence"),
+    "status": payload.get("status"),
+    "provider_policy": payload.get("provider_policy"),
+    "provider_lineages": payload.get("provider_lineages"),
+    "providers_used": payload.get("providers_used"),
+    "intraday_timestamp_semantics_proven": payload.get(
+        "intraday_timestamp_semantics_proven"
+    ),
+    "intraday_currentness_proven": payload.get("intraday_currentness_proven"),
+    "radar_admission": payload.get("radar_admission"),
+    "live_trade": payload.get("live_trade"),
+    "symbols": {},
+}
+for symbol, item in symbols.items():
+    frame_summary = {}
+    for timeframe, frame in (item.get("timeframes") or {}).items():
+        rows = frame.get("rows") or []
+        frame_summary[timeframe] = {
+            "status": frame.get("status"),
+            "row_count": frame.get("row_count"),
+            "provider_used": frame.get("provider_used"),
+            "provider_lineage": frame.get("provider_lineage"),
+            "latest_label": rows[-1].get("label") if rows else None,
+            "timestamp_semantic": frame.get("timestamp_semantic"),
+            "currentness": frame.get("currentness"),
+            "fallback_from": frame.get("fallback_from"),
+        }
+    summary["symbols"][symbol] = {
+        "status": item.get("status"),
+        "providers_used": item.get("providers_used"),
+        "timeframes": frame_summary,
+    }
+print(json.dumps(summary, separators=(",", ":")))
 PY
     then
       systemctl is-enabled "$service"
       systemctl is-active "$service"
-      cat "$status"
-      printf '\n'
       echo "CN_EASTMONEY_CLOUD_VERIFY=PASS"
       echo "RADAR_ADMISSION=BLOCKED"
       echo "LIVE_TRADE=NO"
