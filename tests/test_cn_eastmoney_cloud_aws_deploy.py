@@ -45,3 +45,10 @@ def test_workflow_deploys_exact_main_over_ssm_only():
     assert "EASTMONEY_PRIMARY_TENCENT_FALLBACK" in WORKFLOW
     assert "CN_EASTMONEY_CLOUD_DEPLOYMENT=PASS" in WORKFLOW
     assert "LIVE_TRADE=NO" in WORKFLOW
+
+
+def test_verifier_emits_compact_summary_instead_of_full_kline_payload():
+    assert 'summary = {' in VERIFY
+    assert '"latest_label": rows[-1].get("label") if rows else None' in VERIFY
+    assert 'print(json.dumps(summary, separators=(",", ":")))' in VERIFY
+    assert 'cat "$status"' not in VERIFY
