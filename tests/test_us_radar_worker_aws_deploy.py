@@ -50,7 +50,7 @@ def test_verify_requires_systemd_sandbox_and_research_only_contract():
     assert 'payload.get("can_confirm_signal") is False' in VERIFY
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
-    assert 'evaluation.get("source_delivery_mode") == "UNKNOWN"' in VERIFY
+    assert 'evaluation.get("source_delivery_mode") in {"UNKNOWN", "REALTIME"}' in VERIFY
     assert 'evaluation.get("source_bar_closure") in {"UNPROVEN", "PROVEN"}' in VERIFY
     assert 'evaluation.get("source_radar_admission") == "BLOCKED"' in VERIFY
     assert 'evaluation.get("source_live_trade") is False' in VERIFY
