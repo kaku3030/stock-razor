@@ -156,3 +156,13 @@ def test_worker_verifier_requires_daily_context_in_actual_technical_state():
     assert '"1d_data_missing" not in set(quality.get("warnings") or [])' in VERIFY
     assert 'technical_state.get("research_only") is True' in VERIFY
     assert 'technical_state.get("can_confirm_signal") is False' in VERIFY
+
+
+def test_embedded_worker_runtime_imports_daily_history_reader():
+    marker = "cat >\"$INSTALL_ROOT/run.py\" <<'PY'"
+    source = _embedded_source(INSTALLER, marker, "\nPY\n\ncat >/etc/systemd")
+    assert "from src.services.stock_radar_v2.daily_history_reader import (" in source
+    assert "load_futu_us_daily_history_frames" in source
+    assert source.index("load_futu_us_daily_history_frames") < source.index(
+        "daily_frames, daily_history = load_futu_us_daily_history_frames("
+    )
