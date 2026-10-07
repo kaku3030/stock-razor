@@ -3,6 +3,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from data_provider import cn_eastmoney_cloud_observer as observer
 from data_provider.cn_eastmoney_cloud_observer import (
     SCHEMA,
     build_cn_cloud_observation,
@@ -236,3 +237,35 @@ def test_cloud_snapshot_is_research_only_and_lineage_explicit():
     assert result["can_confirm_signal"] is False
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_http_json_retries_transient_disconnects(monkeypatch):
+    attempts = []
+
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+        def read(self):
+            return b'{"data":{"klines":[]}}'
+
+    def fake_urlopen(request, timeout):
+        attempts.append(timeout)
+        if len(attempts) < 3:
+            raise ConnectionResetError("transient")
+        return Response()
+
+    sleeps = []
+    monkeypatch.setattr(observer, "urlopen", fake_urlopen)
+
+    payload = observer._http_json(
+        "https://example.invalid",
+        timeout_seconds=2,
+        max_attempts=3,
+        sleep_fn=sleeps.append,
+    )
+
+    assert payload == {"data": {"klines": []}}
+    assert attempts == [2, 2, 2]
+    assert sleeps == [0.5, 1.0]
