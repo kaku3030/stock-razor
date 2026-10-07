@@ -2,6 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from src.services.a_share_intraday_currentness import (
+    qualify_same_session_currentness,
+)
+from src.services.a_share_intraday_semantics import TimestampSemantic
 from src.services.stock_radar_v2.cn_observation_analysis import (
     CN_RADAR_SCHEMA,
     CnObservationAnalysisError,
@@ -58,7 +62,7 @@ def _minute_rows(minutes, count=100):
     return rows
 
 
-def _frame(rows, timeframe, *, qualified=False):
+def _frame(rows, timeframe, *, qualified=False, currentness_proven=False):
     timestamp_semantic = "DAILY_DATE" if timeframe == "1d" else (
         "BAR_END" if qualified else "UNKNOWN"
     )
@@ -72,6 +76,20 @@ def _frame(rows, timeframe, *, qualified=False):
             "radar_admission": "BLOCKED",
             "live_trade": False,
         }
+    currentness_qualification = None
+    currentness = "UNPROVEN"
+    if currentness_proven and timeframe in {"15m", "60m"}:
+        rows[-1]["label"] = "2026-10-07 15:00"
+        rows[-1]["provider_label_raw"] = "202610071500"
+        evidence = qualify_same_session_currentness(
+            rows[-1]["label"],
+            interval_minutes=int(timeframe[:-1]),
+            timestamp_semantic=TimestampSemantic.BAR_END,
+            observed_at=NOW,
+        )
+        assert evidence.currentness_proven is True
+        currentness_qualification = evidence.to_dict()
+        currentness = "PROVEN"
     return {
         "status": "PASS",
         "error": None,
@@ -84,12 +102,20 @@ def _frame(rows, timeframe, *, qualified=False):
         "fallback_reason": "CloudObservationError",
         "timestamp_semantic": timestamp_semantic,
         "timestamp_qualification": timestamp_qualification,
-        "currentness": "UNPROVEN",
+        "currentness_qualification": currentness_qualification,
+        "currentness": currentness,
         "adjustment": "NONE",
     }
 
 
-def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=False):
+def _payload(
+    *,
+    safe=True,
+    symbol_status="PASS",
+    timestamp_semantics_proven=False,
+    currentness_proven=False,
+):
+    timestamp_semantics_proven = timestamp_semantics_proven or currentness_proven
     return {
         "schema": "stock_razor_cn_eastmoney_observation_v1",
         "repo_sha": "a" * 40,
@@ -101,7 +127,7 @@ def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=Fals
         "providers_used": ["tencent"],
         "provider_lineages": ["eastmoney", "tencent"],
         "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": currentness_proven,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED" if safe else "ADMITTED",
@@ -115,18 +141,20 @@ def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=Fals
                 "radar_admission": "BLOCKED",
                 "live_trade": False,
                 "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-                "intraday_currentness_proven": False,
+                "intraday_currentness_proven": currentness_proven,
                 "timeframes": {
                     "1d": _frame(_daily_rows(), "1d"),
                     "60m": _frame(
                         _minute_rows(60),
                         "60m",
                         qualified=timestamp_semantics_proven,
+                        currentness_proven=currentness_proven,
                     ),
                     "15m": _frame(
                         _minute_rows(15),
                         "15m",
                         qualified=timestamp_semantics_proven,
+                        currentness_proven=currentness_proven,
                     ),
                 },
             }
@@ -193,6 +221,24 @@ def test_qualified_bar_end_removes_only_timestamp_semantics_risk():
     assert "15m_currentness_unproven" in (
         state["technical"]["intraday"]["quality"]["warnings"]
     )
+
+
+def test_proven_currentness_removes_only_currentness_penalty_not_safety_gates():
+    result = evaluate_cn_observation_payload(
+        _payload(currentness_proven=True)
+    )
+
+    assert result["status"] == "PASS"
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is True
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    state = result["symbols"]["159611"]
+    assert state["intraday_currentness_proven"] is True
+    assert state["signal_permission"] == "record_only"
+    assert "cn_intraday_currentness_unproven" not in state["technical"]["risk_flags"]
+    assert "1h_currentness_unproven" not in state["technical"]["hourly"]["quality"]["warnings"]
+    assert "15m_currentness_unproven" not in state["technical"]["intraday"]["quality"]["warnings"]
 
 
 def test_forged_root_bar_end_claim_cannot_launder_unqualified_frames():

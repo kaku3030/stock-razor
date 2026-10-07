@@ -3,6 +3,10 @@ import json
 import os
 
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
+from src.services.a_share_intraday_currentness import (
+    qualify_same_session_currentness,
+)
+from src.services.a_share_intraday_semantics import TimestampSemantic
 
 
 NOW = datetime(2026, 10, 7, 7, 50, tzinfo=timezone.utc)
@@ -180,6 +184,60 @@ def test_qualified_bar_end_is_exposed_without_promoting_currentness(tmp_path):
     assert result["timestamp_semantic"] == "BAR_END"
     assert result["timestamp_qualification"]["status"] == "PASS"
     assert result["currentness"] == "UNPROVEN"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_proven_currentness_is_exposed_with_recomputed_evidence(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    observed_at = datetime.fromisoformat(payload["emitted_at_utc"])
+    payload["intraday_currentness_proven"] = True
+    item = payload["symbols"]["159611"]
+    item["intraday_currentness_proven"] = True
+    for timeframe in ("60m", "15m"):
+        frame = item["timeframes"][timeframe]
+        frame["rows"] = [_row("2026-10-07 15:00", 1.62)]
+        frame["row_count"] = 1
+        evidence = qualify_same_session_currentness(
+            "2026-10-07 15:00",
+            interval_minutes=int(timeframe[:-1]),
+            timestamp_semantic=TimestampSemantic.BAR_END,
+            observed_at=observed_at,
+        )
+        assert evidence.currentness_proven is True
+        frame["currentness_qualification"] = evidence.to_dict()
+        frame["currentness"] = "PROVEN"
+
+    path = _write(tmp_path / "cn.json", payload)
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["intraday_currentness_proven"] is True
+    assert result["symbol_intraday_currentness_proven"] is True
+    assert result["currentness"] == "PROVEN"
+    assert result["currentness_qualification"]["status"] == "PASS"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_forged_proven_currentness_fails_closed(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["intraday_currentness_proven"] = True
+    payload["symbols"]["159611"]["intraday_currentness_proven"] = True
+    for timeframe in ("60m", "15m"):
+        frame = payload["symbols"]["159611"]["timeframes"][timeframe]
+        frame["currentness"] = "PROVEN"
+        frame["currentness_qualification"] = {
+            "status": "PASS",
+            "currentness_proven": True,
+        }
+    path = _write(tmp_path / "forged.json", payload)
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["ok"] is False
+    assert result["status"] == "INVALID"
+    assert result["error"] == "CURRENTNESS_EVIDENCE_MISMATCH"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
 

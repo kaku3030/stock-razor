@@ -22,7 +22,7 @@ assert int(payload.get("sequence") or 0) > 0
 assert payload.get("provider_policy") == "EASTMONEY_PRIMARY_TENCENT_FALLBACK"
 assert set(payload.get("provider_lineages") or []) == {"eastmoney", "tencent"}
 assert isinstance(payload.get("intraday_timestamp_semantics_proven"), bool)
-assert payload.get("intraday_currentness_proven") is False
+assert isinstance(payload.get("intraday_currentness_proven"), bool)
 assert payload.get("research_only") is True
 assert payload.get("can_confirm_signal") is False
 assert payload.get("radar_admission") == "BLOCKED"
@@ -42,7 +42,7 @@ for symbol, item in symbols.items():
         frame = frames[timeframe]
         assert frame.get("status") == "PASS"
         assert int(frame.get("row_count") or 0) > 0
-        assert frame.get("currentness") == "UNPROVEN"
+        assert frame.get("currentness") in {"UNPROVEN", "PROVEN"}
         rows = frame.get("rows") or []
         assert rows
         provider = frame.get("provider_used")
@@ -71,15 +71,33 @@ for symbol, item in symbols.items():
             assert qualification.get("radar_admission") == "BLOCKED"
             assert qualification.get("live_trade") is False
             assert frame.get("timestamp_semantic") == "BAR_END"
+            currentness = frame.get("currentness_qualification")
+            assert isinstance(currentness, dict)
+            assert currentness.get("status") in {"PASS", "BLOCKED"}
+            assert currentness.get("timestamp_semantic") == "BAR_END"
+            assert currentness.get("currentness_proven") is (
+                frame.get("currentness") == "PROVEN"
+            )
+            assert currentness.get("radar_admission") == "BLOCKED"
+            assert currentness.get("live_trade") is False
         else:
             intraday_proven = False
             assert frame.get("timestamp_semantic") == "UNKNOWN"
             assert frame.get("timestamp_qualification") is None
+            assert frame.get("currentness") == "UNPROVEN"
+            assert frame.get("currentness_qualification") is None
     assert item.get("intraday_timestamp_semantics_proven") is intraday_proven
-    assert item.get("intraday_currentness_proven") is False
+    assert item.get("intraday_currentness_proven") is all(
+        frames[timeframe].get("currentness") == "PROVEN"
+        for timeframe in ("15m", "60m")
+    )
 
 assert payload.get("intraday_timestamp_semantics_proven") is all(
     item.get("intraday_timestamp_semantics_proven") is True
+    for item in symbols.values()
+)
+assert payload.get("intraday_currentness_proven") is all(
+    item.get("intraday_currentness_proven") is True
     for item in symbols.values()
 )
 
@@ -108,6 +126,12 @@ summary = {
                         (frame.get("timestamp_qualification") or {}).get("status")
                     ),
                     "currentness": frame.get("currentness"),
+                    "currentness_qualification_status": (
+                        (frame.get("currentness_qualification") or {}).get("status")
+                    ),
+                    "currentness_reasons": (
+                        (frame.get("currentness_qualification") or {}).get("reasons")
+                    ),
                     "fallback_from": frame.get("fallback_from"),
                     "latest_label": ((frame.get("rows") or [{}])[-1]).get("label"),
                 }

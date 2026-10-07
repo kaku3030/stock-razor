@@ -169,10 +169,13 @@ def read_cn_radar_analysis(
     evaluation_timestamp_semantics_proven = evaluation.get(
         "intraday_timestamp_semantics_proven"
     )
+    evaluation_currentness_proven = evaluation.get(
+        "intraday_currentness_proven"
+    )
     if not (
         evaluation.get("schema") == "stock_razor_cn_radar_research_v1"
         and isinstance(evaluation_timestamp_semantics_proven, bool)
-        and evaluation.get("intraday_currentness_proven") is False
+        and isinstance(evaluation_currentness_proven, bool)
         and evaluation.get("research_only") is True
         and evaluation.get("can_confirm_signal") is False
         and evaluation.get("radar_admission") == "BLOCKED"
@@ -212,6 +215,36 @@ def read_cn_radar_analysis(
 
     raw_symbols = evaluation.get("symbols")
     raw_symbols = raw_symbols if isinstance(raw_symbols, dict) else {}
+    research_states = [
+        item
+        for item in raw_symbols.values()
+        if isinstance(item, dict) and item.get("status") == "RESEARCH_STATE"
+    ]
+    if any(
+        not (
+            isinstance(item.get("intraday_currentness_proven"), bool)
+            and item.get("research_only") is True
+            and item.get("can_confirm_signal") is False
+            and item.get("signal_permission") == "record_only"
+        )
+        for item in research_states
+    ):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="RESEARCH_STATE_SAFETY_CONTRACT_VIOLATION"),
+        )
+    if evaluation_currentness_proven and (
+        not research_states
+        or len(research_states) != len(raw_symbols)
+        or not all(
+            item.get("intraday_currentness_proven") is True
+            for item in research_states
+        )
+    ):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="EVALUATION_CURRENTNESS_MISMATCH"),
+        )
     selected = requested or tuple(sorted(raw_symbols))
     result = {
         symbol: raw_symbols[symbol]
@@ -242,7 +275,7 @@ def read_cn_radar_analysis(
         "provider_policy": evaluation.get("provider_policy"),
         "provider_lineages": evaluation.get("provider_lineages") or [],
         "intraday_timestamp_semantics_proven": evaluation_timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": evaluation_currentness_proven,
         "symbols": result,
         "missing_symbols": missing,
         "research_only": True,

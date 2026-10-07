@@ -9,6 +9,10 @@ from typing import Mapping
 
 import pandas as pd
 
+from src.services.a_share_intraday_currentness import (
+    qualify_same_session_currentness,
+)
+from src.services.a_share_intraday_semantics import TimestampSemantic
 from src.technical.models import TimeframeState
 from src.technical.technical_analyzer import TechnicalAnalyzer
 
@@ -187,7 +191,7 @@ def _qualified_intraday_bar_end(item: Mapping[str, object]) -> bool:
         if not (
             frame.get("status") == "PASS"
             and frame.get("timestamp_semantic") == "BAR_END"
-            and frame.get("currentness") == "UNPROVEN"
+            and frame.get("currentness") in {"UNPROVEN", "PROVEN"}
             and isinstance(qualification, Mapping)
             and qualification.get("status") == "PASS"
             and qualification.get("timestamp_semantic") == "BAR_END"
@@ -199,6 +203,86 @@ def _qualified_intraday_bar_end(item: Mapping[str, object]) -> bool:
                 f"{timeframe} BAR_END qualification evidence invalid"
             )
     return True
+
+
+def _qualified_intraday_currentness(
+    item: Mapping[str, object],
+    *,
+    observed_at: datetime,
+) -> bool:
+    """Recompute deterministic same-session Currentness from source evidence."""
+
+    claim = item.get("intraday_currentness_proven")
+    if not isinstance(claim, bool):
+        raise CnObservationAnalysisError(
+            "symbol intraday_currentness_proven must be boolean"
+        )
+    frames = item.get("timeframes")
+    if not isinstance(frames, Mapping):
+        raise CnObservationAnalysisError("symbol timeframes missing")
+
+    proven: list[bool] = []
+    for timeframe in ("60m", "15m"):
+        frame = frames.get(timeframe)
+        if not isinstance(frame, Mapping):
+            raise CnObservationAnalysisError(f"{timeframe} frame missing")
+        currentness = frame.get("currentness")
+        if currentness not in {"UNPROVEN", "PROVEN"}:
+            raise CnObservationAnalysisError(
+                f"{timeframe} currentness claim invalid"
+            )
+
+        if frame.get("timestamp_semantic") != "BAR_END":
+            if currentness != "UNPROVEN":
+                raise CnObservationAnalysisError(
+                    f"{timeframe} cannot prove Currentness without BAR_END"
+                )
+            proven.append(False)
+            continue
+
+        evidence = frame.get("currentness_qualification")
+        if evidence is None:
+            # Backward-compatible rolling deployment: pre-wiring BAR_END
+            # observations remain explicitly UNPROVEN.
+            if currentness != "UNPROVEN":
+                raise CnObservationAnalysisError(
+                    f"{timeframe} missing Currentness evidence"
+                )
+            proven.append(False)
+            continue
+        if not isinstance(evidence, Mapping):
+            raise CnObservationAnalysisError(
+                f"{timeframe} Currentness evidence invalid"
+            )
+
+        rows = frame.get("rows")
+        if not isinstance(rows, list) or not rows or not isinstance(rows[-1], Mapping):
+            raise CnObservationAnalysisError(
+                f"{timeframe} rows missing for Currentness verification"
+            )
+        expected = qualify_same_session_currentness(
+            str(rows[-1].get("label") or ""),
+            interval_minutes=int(timeframe[:-1]),
+            timestamp_semantic=TimestampSemantic.BAR_END,
+            observed_at=observed_at,
+        )
+        if dict(evidence) != expected.to_dict():
+            raise CnObservationAnalysisError(
+                f"{timeframe} Currentness evidence mismatch"
+            )
+        frame_proven = expected.currentness_proven
+        if (currentness == "PROVEN") is not frame_proven:
+            raise CnObservationAnalysisError(
+                f"{timeframe} Currentness claim/evidence mismatch"
+            )
+        proven.append(frame_proven)
+
+    evaluated = all(proven)
+    if claim is not evaluated:
+        raise CnObservationAnalysisError(
+            "symbol intraday_currentness_proven claim/evidence mismatch"
+        )
+    return evaluated
 
 
 def _mark_intraday_unproven(
@@ -237,23 +321,27 @@ def evaluate_cn_observation_payload(
     *,
     analyzer: TechnicalAnalyzer | None = None,
 ) -> dict:
-    """Evaluate A-share daily/60m/15m observations without promoting currentness."""
+    """Evaluate A-share observations while keeping Currentness non-actionable."""
 
     if payload.get("schema") != CN_OBSERVATION_SCHEMA:
         raise CnObservationAnalysisError("unsupported CN observation schema")
     root_timestamp_semantics_proven = payload.get(
         "intraday_timestamp_semantics_proven"
     )
+    root_currentness_proven = payload.get("intraday_currentness_proven")
     if not isinstance(root_timestamp_semantics_proven, bool):
         raise CnObservationAnalysisError(
             "intraday_timestamp_semantics_proven must be boolean"
+        )
+    if not isinstance(root_currentness_proven, bool):
+        raise CnObservationAnalysisError(
+            "intraday_currentness_proven must be boolean"
         )
     if not (
         payload.get("research_only") is True
         and payload.get("can_confirm_signal") is False
         and payload.get("radar_admission") == "BLOCKED"
         and payload.get("live_trade") is False
-        and payload.get("intraday_currentness_proven") is False
     ):
         raise CnObservationAnalysisError("CN observation safety contract violation")
 
@@ -309,6 +397,14 @@ def evaluate_cn_observation_payload(
                 raise CnObservationAnalysisError(
                     "root BAR_END claim is not supported by symbol evidence"
                 )
+            currentness_proven = _qualified_intraday_currentness(
+                item,
+                observed_at=emitted_at,
+            )
+            if root_currentness_proven and not currentness_proven:
+                raise CnObservationAnalysisError(
+                    "root Currentness claim is not supported by symbol evidence"
+                )
             technical = technical_analyzer.analyze(
                 symbol,
                 daily,
@@ -317,16 +413,17 @@ def evaluate_cn_observation_payload(
                 hourly_partial=False,
                 intraday_partial=False,
             )
-            technical.hourly = _mark_intraday_unproven(
-                technical.hourly,
-                "1h",
-                timestamp_semantics_proven=timestamp_semantics_proven,
-            )
-            technical.intraday = _mark_intraday_unproven(
-                technical.intraday,
-                "15m",
-                timestamp_semantics_proven=timestamp_semantics_proven,
-            )
+            if not currentness_proven:
+                technical.hourly = _mark_intraday_unproven(
+                    technical.hourly,
+                    "1h",
+                    timestamp_semantics_proven=timestamp_semantics_proven,
+                )
+                technical.intraday = _mark_intraday_unproven(
+                    technical.intraday,
+                    "15m",
+                    timestamp_semantics_proven=timestamp_semantics_proven,
+                )
             provenance_warnings = {
                 warning
                 for provenance in (daily_prov, hourly_prov, intraday_prov)
@@ -341,7 +438,11 @@ def evaluate_cn_observation_payload(
                             if timestamp_semantics_proven
                             else ["cn_intraday_timestamp_semantics_unproven"]
                         ),
-                        "cn_intraday_currentness_unproven",
+                        *(
+                            []
+                            if currentness_proven
+                            else ["cn_intraday_currentness_unproven"]
+                        ),
                         *(
                             ["cn_opening_auction_range_gap"]
                             if OPENING_AUCTION_RANGE_GAP in provenance_warnings
@@ -361,7 +462,7 @@ def evaluate_cn_observation_payload(
                 "providers_used": item.get("providers_used") or [],
                 "provider_policy": item.get("provider_policy"),
                 "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
-                "intraday_currentness_proven": False,
+                "intraday_currentness_proven": currentness_proven,
                 "research_only": True,
                 "can_confirm_signal": False,
                 "signal_permission": "record_only",
@@ -388,6 +489,13 @@ def evaluate_cn_observation_payload(
             for symbol in research_symbols
         )
     )
+    evaluated_currentness_proven = bool(research_symbols) and (
+        len(research_symbols) == len(results)
+        and all(
+            results[symbol].get("intraday_currentness_proven") is True
+            for symbol in research_symbols
+        )
+    )
     return {
         "schema": CN_RADAR_SCHEMA,
         "source_repo_sha": repo_sha,
@@ -400,7 +508,7 @@ def evaluate_cn_observation_payload(
         "provider_policy": payload.get("provider_policy"),
         "provider_lineages": payload.get("provider_lineages") or [],
         "intraday_timestamp_semantics_proven": evaluated_timestamp_semantics_proven,
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": evaluated_currentness_proven,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",

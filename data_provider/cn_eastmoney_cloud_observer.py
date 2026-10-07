@@ -16,6 +16,9 @@ from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from src.services.a_share_intraday_currentness import (
+    qualify_same_session_currentness,
+)
 from src.services.a_share_intraday_grid_qualification import (
     qualify_intraday_end_label_grid,
 )
@@ -322,6 +325,7 @@ def _frame_observation(
     eastmoney_fetch_json: Callable[[str], Mapping[str, object]],
     tencent_fetch_json: Callable[[str], Mapping[str, object]],
     limit: int | None,
+    observed_at: datetime,
 ) -> dict:
     started = perf_counter()
     primary_error: str | None = None
@@ -364,6 +368,8 @@ def _frame_observation(
     status = "PASS" if rows else "BLOCKED"
     timestamp_semantic = "DAILY_DATE" if timeframe == "1d" else "UNKNOWN"
     timestamp_qualification = None
+    currentness_qualification = None
+    currentness = "UNPROVEN"
     if (
         rows
         and provider_used == "tencent"
@@ -378,6 +384,15 @@ def _frame_observation(
         timestamp_qualification = qualification.to_dict()
         if qualification.status == "PASS":
             timestamp_semantic = qualification.timestamp_semantic.value
+            currentness_evidence = qualify_same_session_currentness(
+                rows[-1]["label"],
+                interval_minutes=int(timeframe[:-1]),
+                timestamp_semantic=qualification.timestamp_semantic,
+                observed_at=observed_at,
+            )
+            currentness_qualification = currentness_evidence.to_dict()
+            if currentness_evidence.currentness_proven:
+                currentness = "PROVEN"
     return {
         "status": status,
         "error": None if rows else fallback_reason,
@@ -390,7 +405,8 @@ def _frame_observation(
         "fallback_reason": fallback_reason,
         "timestamp_semantic": timestamp_semantic,
         "timestamp_qualification": timestamp_qualification,
-        "currentness": "UNPROVEN",
+        "currentness_qualification": currentness_qualification,
+        "currentness": currentness,
         "adjustment": "NONE",
     }
 
@@ -420,6 +436,7 @@ def observe_cn_cloud_symbol(
                 eastmoney_fetch_json=eastmoney_fetch_json,
                 tencent_fetch_json=tencent_fetch_json,
                 limit=(limits or {}).get(timeframe),
+                observed_at=now,
             )
             for timeframe in frame_order
         }
@@ -448,7 +465,10 @@ def observe_cn_cloud_symbol(
             frames[timeframe]["timestamp_semantic"] == "BAR_END"
             for timeframe in ("15m", "60m")
         ),
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": all(
+            frames[timeframe]["currentness"] == "PROVEN"
+            for timeframe in ("15m", "60m")
+        ),
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
@@ -518,7 +538,10 @@ def build_cn_cloud_observation(
             item["intraday_timestamp_semantics_proven"]
             for item in results.values()
         ),
-        "intraday_currentness_proven": False,
+        "intraday_currentness_proven": all(
+            item["intraday_currentness_proven"]
+            for item in results.values()
+        ),
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
