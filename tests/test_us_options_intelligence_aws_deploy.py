@@ -70,6 +70,17 @@ def test_embedded_runtime_compiles():
     compile(source, "install_us_options_intelligence.sh:run.py", "exec")
 
 
+def test_embedded_runtime_bounds_top_level_failure_diagnostics():
+    source = _embedded_source(
+        INSTALLER,
+        'cat >"$INSTALL_ROOT/run.py" <<\'PY\'',
+        "\nPY\n",
+    )
+    assert "_safe_exception_code" in source
+    assert 'f"COLLECTOR_CYCLE_ERROR:{_safe_exception_code(exc)}"' in source
+    assert 'f"COLLECTOR_CYCLE_ERROR:{type(exc).__name__}"' not in source
+
+
 def test_import_smoke_compiles():
     source = _embedded_source(
         INSTALLER,
