@@ -7,6 +7,7 @@ intraday timestamp/currentness promotion and never authorizes trading.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
 import math
@@ -385,16 +386,26 @@ def observe_cn_cloud_symbol(
     now = observed_at_utc or datetime.now(timezone.utc)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("observed_at_utc must be timezone-aware")
-    frames = {
-        timeframe: _frame_observation(
-            code,
-            timeframe,
-            eastmoney_fetch_json=eastmoney_fetch_json,
-            tencent_fetch_json=tencent_fetch_json,
-            limit=(limits or {}).get(timeframe),
-        )
-        for timeframe in ("1d", "60m", "15m")
-    }
+    frame_order = ("1d", "60m", "15m")
+    with ThreadPoolExecutor(
+        max_workers=len(frame_order),
+        thread_name_prefix="cn-cloud-frame",
+    ) as executor:
+        futures = {
+            timeframe: executor.submit(
+                _frame_observation,
+                code,
+                timeframe,
+                eastmoney_fetch_json=eastmoney_fetch_json,
+                tencent_fetch_json=tencent_fetch_json,
+                limit=(limits or {}).get(timeframe),
+            )
+            for timeframe in frame_order
+        }
+        frames = {
+            timeframe: futures[timeframe].result()
+            for timeframe in frame_order
+        }
     passed = sum(item["status"] == "PASS" for item in frames.values())
     overall = "PASS" if passed == len(frames) else ("PARTIAL" if passed else "BLOCKED")
     providers_used = sorted(
