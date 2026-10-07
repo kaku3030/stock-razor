@@ -74,6 +74,17 @@ class CollectorCycleResult:
         }
 
 
+def _safe_exception_code(exc: Exception) -> str:
+    """Return a bounded, non-sensitive diagnostic code."""
+
+    kind = type(exc).__name__
+    if isinstance(exc, KeyError):
+        key = str(exc.args[0]) if exc.args else "UNKNOWN_KEY"
+        safe = "".join(ch for ch in key if ch.isalnum() or ch in "._-")[:80]
+        return f"{kind}:{safe or 'UNKNOWN_KEY'}"
+    return kind
+
+
 def _canonical_symbols(symbols: Iterable[str]) -> tuple[str, ...]:
     normalized: list[str] = []
     for raw in symbols:
@@ -128,12 +139,6 @@ def run_options_collection_cycle(
     for symbol in normalized_symbols:
         try:
             fetched = source.fetch(symbol, evaluated_at=evaluated_at)
-            result = build_futu_options_intelligence_packet(
-                symbol=fetched.symbol,
-                underlying_row=fetched.underlying_row,
-                option_rows=fetched.option_rows,
-                evaluated_at=evaluated_at,
-            )
         except Exception as exc:
             result = CollectorSymbolResult(
                 symbol=symbol,
@@ -145,8 +150,31 @@ def run_options_collection_cycle(
                 source_contracts_total=0,
                 normalized_contracts=0,
                 fresh_contracts=0,
-                reasons=(f"SOURCE_OR_QUALIFICATION_ERROR:{type(exc).__name__}",),
+                reasons=(f"SOURCE_FETCH_ERROR:{_safe_exception_code(exc)}",),
             )
+        else:
+            try:
+                result = build_futu_options_intelligence_packet(
+                    symbol=fetched.symbol,
+                    underlying_row=fetched.underlying_row,
+                    option_rows=fetched.option_rows,
+                    evaluated_at=evaluated_at,
+                )
+            except Exception as exc:
+                result = CollectorSymbolResult(
+                    symbol=symbol,
+                    status="BLOCKED",
+                    phase=session.phase,
+                    packet=None,
+                    policy=None,
+                    clock=None,
+                    source_contracts_total=fetched.chain_contracts,
+                    normalized_contracts=0,
+                    fresh_contracts=0,
+                    reasons=(
+                        f"QUALIFICATION_ERROR:{_safe_exception_code(exc)}",
+                    ),
+                )
         results.append(result)
         if result.packet is not None:
             packets[result.symbol] = result.packet
