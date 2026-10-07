@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.services.live_feed.futu_k1m_warm_start import (
     build_futu_k1m_warm_start_plan,
+    build_futu_k1m_warm_start_selection,
 )
 
 
@@ -125,3 +126,59 @@ def test_pass_never_promotes_realtime_or_execution():
     assert payload["radar_admission"] == "BLOCKED"
     assert payload["live_trade"] is False
     assert payload["bar_count"] == 390
+
+
+def test_three_session_selection_is_newest_first_and_seed_eligible():
+    rows = [
+        *_session("2026-10-02"),
+        *_session("2026-10-05"),
+        *_session("2026-10-06"),
+        dict(_session("2026-10-07")[0]),
+    ]
+
+    selection = build_futu_k1m_warm_start_selection(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+        requested_sessions=3,
+    )
+
+    assert selection.status == "PASS"
+    assert selection.research_cache_seed_eligible is True
+    assert [plan.session_date for plan in selection.plans] == [
+        "2026-10-06",
+        "2026-10-05",
+        "2026-10-02",
+    ]
+    assert selection.session_dates == (
+        "2026-10-02",
+        "2026-10-05",
+        "2026-10-06",
+    )
+    assert selection.closure_anchor_time_keys == (
+        "2026-10-05 09:31:00",
+        "2026-10-06 09:31:00",
+        "2026-10-07 09:31:00",
+    )
+    assert selection.bar_count == 1170
+
+
+def test_two_proven_sessions_do_not_satisfy_three_session_selection():
+    rows = [
+        *_session("2026-10-05"),
+        *_session("2026-10-06"),
+        dict(_session("2026-10-07")[0]),
+    ]
+
+    selection = build_futu_k1m_warm_start_selection(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+        requested_sessions=3,
+    )
+
+    assert selection.status == "PARTIAL"
+    assert selection.research_cache_seed_eligible is False
+    assert len(selection.plans) == 2
+    assert selection.bar_count == 780
+    assert selection.reasons[0] == "INSUFFICIENT_CLOSURE_PROVEN_SESSIONS:2/3"
