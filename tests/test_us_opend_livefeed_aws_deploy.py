@@ -244,7 +244,7 @@ def test_status_snapshot_summary_embedded_python_compiles():
 
 
 def test_verify_snapshot_provenance_embedded_python_compiles():
-    marker = '"$python_bin" - "$status" "$snapshot" "$expected_sha" <<\'PY\''
+    marker = '"$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" <<\'PY\''
     start = VERIFY.index(marker)
     start = VERIFY.index("\n", start) + 1
     end = VERIFY.index("\nPY", start)
