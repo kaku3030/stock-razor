@@ -20,21 +20,22 @@ def b(i):
     m=FormingMinuteBar("US.AMD",time_key,100+i,101+i,99+i,100.5+i,10,1000,True)
     return closed_futu_minute_to_bar(m,received_at=time_key+timedelta(seconds=5))
 
-def test_complete_15m_does_not_launder_unverified_timestamp():
+def test_complete_15m_preserves_proven_timestamp_health():
     s=RealtimeMarketDataService(Adapter(),max_minutes=60)
     for i in range(15): s.ingest(b(i))
     snap=s.snapshot("US.AMD",as_of=START+timedelta(minutes=15))
     assert len(snap.bars_5m)==3 and all(bar.is_complete and bar.is_closed for bar in snap.bars_5m)
-    assert all("TIMESTAMP_SEMANTICS_UNVERIFIED" in bar.quality_flags for bar in snap.bars_5m)
-    assert all(bar.health.signal_permission is SignalPermission.BLOCKED for bar in snap.bars_5m)
+    assert all("TIMESTAMP_SEMANTICS_UNVERIFIED" not in bar.quality_flags for bar in snap.bars_5m)
+    assert all(bar.health.signal_permission is SignalPermission.NORMAL for bar in snap.bars_5m)
     assert len(snap.bars_15m)==1 and snap.bars_15m[0].is_complete and snap.bars_15m[0].is_closed
-    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" in snap.bars_15m[0].quality_flags
-    assert snap.bars_15m[0].health.signal_permission is SignalPermission.BLOCKED
+    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" not in snap.bars_15m[0].quality_flags
+    assert snap.bars_15m[0].health.signal_permission is SignalPermission.NORMAL
 
-def test_missing_source_minute_stays_incomplete_and_blocked():
+def test_missing_source_minute_stays_incomplete_and_watch_only():
     s=RealtimeMarketDataService(Adapter(),max_minutes=60)
     for i in range(15):
         if i != 7: s.ingest(b(i))
     bar=s.snapshot("US.AMD",as_of=START+timedelta(minutes=15)).bars_15m[0]
     assert not bar.is_complete and "MISSING_BAR" in bar.quality_flags
-    assert bar.health.signal_permission is SignalPermission.BLOCKED
+    assert bar.health.score == 79
+    assert bar.health.signal_permission is SignalPermission.WATCH_ONLY
