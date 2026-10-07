@@ -1,0 +1,65 @@
+name: Deploy Read-Only CN Eastmoney Observer
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: deploy-read-only-cn-eastmoney-observer
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main}
+      - id: source
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: cn-eastmoney-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy exact main SHA over SSM
+        id: deploy
+        shell: bash
+        env: {REPO_REF: "${{ steps.source.outputs.sha }}"}
+        run: |
+          set -euo pipefail
+          remote="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_eastmoney_observer.sh -o /tmp/install_cn_eastmoney_observer.sh && chmod 0755 /tmp/install_cn_eastmoney_observer.sh && REPO_REF=$REPO_REF /tmp/install_cn_eastmoney_observer.sh && curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_eastmoney_observer.sh -o /tmp/verify_cn_eastmoney_observer.sh && chmod 0755 /tmp/verify_cn_eastmoney_observer.sh && /tmp/verify_cn_eastmoney_observer.sh $REPO_REF"
+          encoded="$(printf '%s' "$remote" | base64 -w0)"
+          params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
+          id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
+          echo "command_id=$id" >> "$GITHUB_OUTPUT"
+      - name: Verify runtime evidence
+        shell: bash
+        env: {COMMAND_ID: "${{ steps.deploy.outputs.command_id }}"}
+        run: |
+          set -euo pipefail
+          status=""
+          for _ in $(seq 1 90); do
+            status="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 5
+          done
+          inv="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --output json)"
+          printf '%s\n' "$inv"
+          test "$status" = Success
+          out="$(jq -r '.StandardOutputContent // ""' <<<"$inv")"
+          grep -q '^enabled$' <<<"$out"
+          grep -q '^active$' <<<"$out"
+          grep -q '"schema":"stock_razor_cn_eastmoney_observation_v1"' <<<"$out"
+          grep -q '"provider_policy":"EASTMONEY_PRIMARY_TENCENT_FALLBACK"' <<<"$out"
+          grep -q '"provider_lineages":\["eastmoney","tencent"\]' <<<"$out"
+          grep -q '"intraday_timestamp_semantics_proven":false' <<<"$out"
+          grep -q '"intraday_currentness_proven":false' <<<"$out"
+          grep -q '"radar_admission":"BLOCKED"' <<<"$out"
+          grep -q '"live_trade":false' <<<"$out"
+          grep -q '^CN_EASTMONEY_CLOUD_VERIFY=PASS$' <<<"$out"
+          echo "CN_EASTMONEY_CLOUD_DEPLOYMENT=PASS"
+          echo "RADAR_ADMISSION=BLOCKED"
+          echo "LIVE_TRADE=NO"
