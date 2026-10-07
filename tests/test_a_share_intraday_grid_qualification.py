@@ -1,7 +1,10 @@
 from src.services.a_share_intraday_grid_qualification import (
     qualify_intraday_end_label_grid,
 )
-from src.services.a_share_intraday_semantics import TimestampSemantic
+from src.services.a_share_intraday_semantics import (
+    CN_INTRADAY_ENDPOINT_EXTENSIONS,
+    TimestampSemantic,
+)
 
 
 END_15 = (
@@ -147,3 +150,10 @@ def test_wrong_lineage_or_endpoint_fails_closed():
     assert wrong_source.reasons == ("UNSUPPORTED_SOURCE_LINEAGE",)
     assert wrong_endpoint.status == "BLOCKED"
     assert wrong_endpoint.reasons == ("INVALID_INTRADAY_ENDPOINT_BINDING",)
+
+
+def test_tencent_qualification_does_not_mutate_pinned_a1_capture_authority():
+    assert "tencent" not in CN_INTRADAY_ENDPOINT_EXTENSIONS
+    assert CN_INTRADAY_ENDPOINT_EXTENSIONS == {
+        "akshare_em": frozenset({"akshare.eastmoney_intraday"})
+    }
