@@ -26,13 +26,15 @@ def test_mcp_protocol_probe_binds_process_socket_and_source_to_same_mainpid():
     assert "MCP_PROBE_REASON=readonly-mcp-process-not-evidenced" in block
 
 
-def test_mcp_protocol_probe_accepts_module_invocation_and_five_tool_surface():
+def test_mcp_protocol_probe_accepts_module_invocation_and_six_tool_surface():
     block = _probe_block()
     assert "grep -Eq 'readonly_mcp_server(\\.py|([[:space:]]|$))'" in block
     assert "has_streamable_run = any(" in block
     assert "kw.value.value == 'streamable-http'" in block
     assert "get_futures_runtime_health" in block
     assert "get_market_analysis" in block
-    assert "PRIVATE_MCP_TOOL_DISCOVERY_5_OF_5" in block
-    assert "len(names)==5 and set(names)==allowed" in block
+    assert "get_cn_market_bars" in block
+    assert "PRIVATE_MCP_TOOL_DISCOVERY_6_OF_6" in block
+    assert "len(names)==6 and set(names)==allowed" in block
     assert "call('get_market_analysis',{'symbols':['AMD']},'AMD')" in block
+    assert "call('get_cn_market_bars',{'symbol':'512730','timeframe':'1d','limit':5},'512730')" in block
