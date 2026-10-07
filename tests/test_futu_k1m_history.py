@@ -172,6 +172,35 @@ def test_unqualified_or_malformed_time_key_is_rejected(bad_time):
         )
 
 
+def test_future_historical_fact_beyond_clock_skew_is_blocked():
+    result = normalize_futu_k1m_history_rows(
+        [
+            row("2026-10-06 09:31:00"),
+            row("2026-10-06 09:32:00"),
+        ],
+        received_at=datetime(2026, 10, 6, 13, 30, 54, tzinfo=timezone.utc),
+    )
+
+    bar = result.bars[0]
+    assert "TIMESTAMP_MISMATCH" in bar.quality_flags
+    assert bar.health.signal_permission.value == "blocked"
+    assert bar.health.score <= 49
+
+
+def test_future_historical_fact_at_clock_skew_boundary_is_not_timestamp_mismatch():
+    result = normalize_futu_k1m_history_rows(
+        [
+            row("2026-10-06 09:31:00"),
+            row("2026-10-06 09:32:00"),
+        ],
+        received_at=datetime(2026, 10, 6, 13, 30, 55, tzinfo=timezone.utc),
+    )
+
+    bar = result.bars[0]
+    assert "TIMESTAMP_MISMATCH" not in bar.quality_flags
+    assert bar.health.signal_permission.value == "record_only"
+
+
 def test_received_at_must_be_timezone_aware():
     with pytest.raises(ValueError, match="timezone-aware"):
         normalize_futu_k1m_history_rows(
