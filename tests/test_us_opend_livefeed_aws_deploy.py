@@ -8,7 +8,8 @@ def test_installer_is_read_only_and_fail_closed():
     assert "stock-razor-us-livefeed.service" in INSTALLER
     assert "FutuK1MStreamingAdapter" in INSTALLER
     assert "LiveFeedRuntimeBridge" in INSTALLER
-    assert '"delivery_mode":"UNKNOWN"' in INSTALLER
+    assert '"delivery_mode":delivery_mode_state' in INSTALLER
+    assert '"quote_right_evidence":quote_right_payload' in INSTALLER
     assert '"radar_admission":"BLOCKED"' in INSTALLER
     assert '"live_trade":False' in INSTALLER
     assert "OpenUSTradeContext" not in INSTALLER
@@ -21,7 +22,8 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert '"event_count":[1-9][0-9]*' in WORKFLOW
     assert '"last_push_utc":"[^"]+"' in WORKFLOW
     assert '"live_trade":false' in WORKFLOW
-    assert '"delivery_mode":"UNKNOWN"' in WORKFLOW
+    assert '"delivery_mode":"(UNKNOWN|REALTIME)"' in WORKFLOW
+    assert '"quote_right_evidence":' in WORKFLOW
     assert '"bar_closure":"(UNPROVEN|PROVEN)"' in WORKFLOW
     assert '"radar_admission":"BLOCKED"' in WORKFLOW
     assert '"closure_pipeline":' in WORKFLOW
@@ -125,7 +127,7 @@ def test_installer_publishes_session_aware_k1m_currentness_with_fail_closed_clos
     assert '"k1m_currentness_summary":currentness_summary' in installer
     assert "derive_futu_k1m_bar_closure_state" in installer
     assert "bar_closure_evidence_state=derive_futu_k1m_bar_closure_state" in installer
-    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"delivery_mode":delivery_mode_state' in installer
     assert '"bar_closure":bar_closure_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
@@ -137,7 +139,7 @@ def test_installer_enables_only_explicit_sync_transport_lifecycle_evidence():
     assert "OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE" in installer
     assert "futu-api 10.11.7108" in installer
     assert "_init_connect_sync() reports RET_OK" in installer
-    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"delivery_mode":delivery_mode_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
 
@@ -203,7 +205,7 @@ def test_installer_canonical_cache_fallback_health_and_admission_remain_fail_clo
     installer = INSTALLER
     assert "freshness=0.0,completeness=0.0,timestamp=0.0" in installer
     assert 'quality_flags=("MISSING_BAR","TIMESTAMP_SEMANTICS_UNVERIFIED")' in installer
-    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"delivery_mode":delivery_mode_state' in installer
     assert '"bar_closure":bar_closure_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
@@ -218,7 +220,9 @@ def test_verify_gate_requires_atomic_canonical_snapshot_with_exact_provenance():
     assert "snapshot_sequence > 0" in VERIFY
     assert 'export.get("last_write_utc")' in VERIFY
     assert 'export.get("status") == "PASS"' in VERIFY
-    assert 'snapshot.get("delivery_mode") == "UNKNOWN"' in VERIFY
+    assert 'heartbeat.get("delivery_mode") == expected_delivery_mode' in VERIFY
+    assert 'snapshot.get("delivery_mode") == expected_delivery_mode' in VERIFY
+    assert 'export.get("delivery_mode") == expected_delivery_mode' in VERIFY
     assert 'snapshot.get("bar_closure") == expected_bar_closure' in VERIFY
     assert 'export.get("bar_closure") == expected_bar_closure' in VERIFY
     assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
@@ -270,7 +274,7 @@ def test_installer_tracks_closure_qualification_and_promotes_only_aggregate_stat
     assert 'last_export_bar_closure=bar_closure_evidence_state' in installer
     assert '"bar_closure_evidence_state":bar_closure_evidence_state' in installer
     assert '"bar_closure":bar_closure_state' in installer
-    assert '"delivery_mode":"UNKNOWN"' in installer
+    assert '"delivery_mode":delivery_mode_state' in installer
     assert '"radar_admission":"BLOCKED"' in installer
     assert '"live_trade":False' in installer
 
@@ -286,5 +290,38 @@ def test_verify_gate_derives_dynamic_bar_closure_but_preserves_other_gates():
     assert 'heartbeat.get("bar_closure") == expected_bar_closure' in VERIFY
     assert 'snapshot.get("bar_closure") == expected_bar_closure' in VERIFY
     assert 'export.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'snapshot.get("live_trade") is False' in VERIFY
+
+
+def test_installer_refreshes_quote_right_and_promotes_delivery_non_sticky():
+    installer = INSTALLER
+    assert "classify_futu_us_quote_right" in installer
+    assert "quote_right_poll_seconds=60.0" in installer
+    assert "quote_right_max_age_seconds=90.0" in installer
+    assert "ctx.get_user_info([ft.UserInfoField.QOTRIGHT])" in installer
+    assert 'quote_right_query_status="PASS"' in installer
+    assert 'quote_right_query_status="BLOCKED"' in installer
+    assert 'quote_right_raw="UNKNOWN"' in installer
+    assert "delivery_mode_evidence_state=quote_right_classification.delivery_mode" in installer
+    assert "delivery_mode_evidence_state != last_export_delivery_mode" in installer
+    assert "delivery_mode=delivery_mode_evidence_state" in installer
+    assert "last_export_delivery_mode=delivery_mode_evidence_state" in installer
+    assert '"quote_right_evidence":quote_right_payload' in installer
+    assert '"delivery_mode":last_export_delivery_mode or "UNKNOWN"' in installer
+    assert '"delivery_mode":delivery_mode_state' in installer
+    assert '"radar_admission":"BLOCKED"' in installer
+    assert '"live_trade":False' in installer
+
+
+def test_verify_gate_derives_delivery_from_fresh_quote_right_evidence():
+    assert 'quote_right = heartbeat.get("quote_right_evidence") or {}' in VERIFY
+    assert 'quote_right.get("query_status") == "PASS"' in VERIFY
+    assert '"LV3"' in VERIFY
+    assert 'age <= max_age' in VERIFY
+    assert 'expected_delivery_mode = "REALTIME" if fresh_realtime else "UNKNOWN"' in VERIFY
+    assert 'heartbeat.get("delivery_mode") == expected_delivery_mode' in VERIFY
+    assert 'snapshot.get("delivery_mode") == expected_delivery_mode' in VERIFY
+    assert 'export.get("delivery_mode") == expected_delivery_mode' in VERIFY
     assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'snapshot.get("live_trade") is False' in VERIFY
