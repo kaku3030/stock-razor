@@ -34,6 +34,10 @@ def test_verifier_requires_real_three_timeframe_cloud_evidence():
     assert 'frames["15m"].get("timestamp_semantic") == "UNKNOWN"' in VERIFY
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
+    assert 'CN_EASTMONEY_COMPACT=' in VERIFY
+    assert 'latest_label' in VERIFY
+    assert 'row_count' in VERIFY
+    assert 'cat "$status"' not in VERIFY
 
 
 def test_workflow_deploys_exact_main_over_ssm_only():
