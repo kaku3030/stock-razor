@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -244,7 +244,10 @@ from src.services.options_intelligence.gamma_profile import (
     build_gamma_profile,
 )
 from src.services.options_intelligence.qualification import (
+    qualify_options_clock_alignment,
     qualify_quote_freshness,
+    qualify_quote_freshness_with_policy,
+    resolve_us_options_freshness_policy,
 )
 
 
@@ -443,3 +446,161 @@ def test_options_packet_is_context_only_and_never_trading_authority():
     assert payload["price_acceptance_required"] is True
     assert payload["trading_authority"] is False
     assert payload["live_trade"] is False
+
+
+def test_premarket_policy_requires_explicit_completed_session_reference():
+    evaluated_at = datetime(2026, 10, 7, 11, 0, tzinfo=timezone.utc)
+
+    blocked = resolve_us_options_freshness_policy(
+        evaluated_at=evaluated_at,
+        phase="premarket",
+    )
+    assert blocked.status == "BLOCKED_UNKNOWN_SESSION_REFERENCE"
+    assert blocked.min_quote_asof is None
+
+    prior_close = datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc)
+    ready = resolve_us_options_freshness_policy(
+        evaluated_at=evaluated_at,
+        phase="premarket",
+        reference_session_close=prior_close,
+    )
+    assert ready.status == "READY"
+    assert ready.min_quote_asof == prior_close - timedelta(minutes=30)
+
+    rows = [
+        _obs(
+            symbol="QQQ-C100",
+            option_type=OptionType.CALL,
+            strike=100,
+            oi=100,
+            gamma=0.01,
+            quote_asof=datetime(2026, 10, 6, 19, 45, tzinfo=timezone.utc),
+        )
+    ]
+    qualified = qualify_quote_freshness_with_policy(rows, policy=ready)
+    assert qualified.status == "PASS_RESEARCH"
+    assert qualified.policy_phase == "premarket"
+
+
+def test_clock_gate_blocks_live_premarket_spot_mixed_with_prior_close_greeks():
+    rows = [
+        _obs(
+            symbol="QQQ-C100",
+            option_type=OptionType.CALL,
+            strike=100,
+            oi=100,
+            gamma=0.01,
+            quote_asof=datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc),
+        )
+    ]
+    freshness = qualify_quote_freshness(
+        rows,
+        min_quote_asof=datetime(2026, 10, 6, 19, 30, tzinfo=timezone.utc),
+    )
+
+    clock = qualify_options_clock_alignment(
+        freshness,
+        underlying_asof=datetime(2026, 10, 7, 11, 0, tzinfo=timezone.utc),
+    )
+
+    assert clock.status == "BLOCKED"
+    assert "UNDERLYING_OPTION_CLOCK_SKEW_TOO_LARGE" in clock.warnings
+
+
+def test_clock_gate_allows_aligned_spot_but_degrades_unknown_oi_clock():
+    rows = [
+        _obs(
+            symbol="QQQ-C100",
+            option_type=OptionType.CALL,
+            strike=100,
+            oi=100,
+            gamma=0.01,
+            quote_asof=datetime(2026, 10, 6, 20, 10, tzinfo=timezone.utc),
+            oi_asof=None,
+        )
+    ]
+    freshness = qualify_quote_freshness(
+        rows,
+        min_quote_asof=datetime(2026, 10, 6, 19, 30, tzinfo=timezone.utc),
+    )
+    clock = qualify_options_clock_alignment(
+        freshness,
+        underlying_asof=datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc),
+    )
+
+    assert clock.status == "DEGRADED"
+    assert clock.actual_underlying_quote_skew_seconds == pytest.approx(600)
+    assert "OI_ASOF_UNKNOWN" in clock.warnings
+
+
+def test_packet_blocks_context_when_three_clock_gate_is_blocked():
+    rows = [
+        _obs(
+            symbol="QQQ-C100",
+            option_type=OptionType.CALL,
+            strike=100,
+            oi=100,
+            gamma=0.01,
+            expiration=date(2026, 10, 17),
+            quote_asof=datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc),
+        )
+    ]
+    freshness = qualify_quote_freshness(
+        rows,
+        min_quote_asof=datetime(2026, 10, 6, 19, 30, tzinfo=timezone.utc),
+    )
+    current = build_gex_evidence(
+        rows,
+        spot=100,
+        market_date=MARKET_DATE,
+        calculated_at=NOW,
+        spot_asof=datetime(2026, 10, 7, 11, 0, tzinfo=timezone.utc),
+        spot_source="premarket_last",
+    )
+    profile = build_gamma_profile(
+        rows,
+        reference_spot=100,
+        calculated_at=NOW,
+    )
+    clock = qualify_options_clock_alignment(
+        freshness,
+        underlying_asof=current.spot_asof,
+    )
+    packet = build_options_intelligence_packet(
+        current_gex=current,
+        freshness=freshness,
+        gamma_profile=profile,
+        generated_at=NOW,
+        clock_alignment=clock,
+    )
+
+    assert packet.context_permission == "BLOCKED"
+    assert packet.radar_admission == "BLOCKED"
+    assert packet.decision_permission == "BLOCKED_V0_1"
+
+
+def test_gex_payload_declares_spot_clock_and_source():
+    rows = [
+        _obs(
+            symbol="QQQ-C100",
+            option_type=OptionType.CALL,
+            strike=100,
+            oi=100,
+            gamma=0.01,
+        )
+    ]
+    spot_asof = datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc)
+    evidence = build_gex_evidence(
+        rows,
+        spot=100,
+        market_date=MARKET_DATE,
+        calculated_at=NOW,
+        spot_asof=spot_asof,
+        spot_source="official_close",
+    )
+
+    payload = evidence.to_payload()
+    assert payload["spot_asof"] == spot_asof.isoformat()
+    assert payload["spot_source"] == "official_close"
+    assert "spot_asof" not in evidence.unknown_fields
+    assert "spot_source" not in evidence.unknown_fields

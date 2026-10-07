@@ -144,6 +144,8 @@ class GexEvidence:
     unknown_fields: tuple[str, ...]
     warnings: tuple[str, ...]
 
+    spot_asof: datetime | None = None
+    spot_source: str | None = None
     research_only: bool = True
     trading_authority: bool = False
 
@@ -151,6 +153,10 @@ class GexEvidence:
         return {
             "underlying_symbol": self.underlying_symbol,
             "spot": self.spot,
+            "spot_asof": (
+                self.spot_asof.isoformat() if self.spot_asof is not None else None
+            ),
+            "spot_source": self.spot_source,
             "market_date": self.market_date.isoformat(),
             "calculated_at": self.calculated_at.isoformat(),
             "source_set": list(self.source_set),
@@ -252,6 +258,8 @@ def build_gex_evidence(
     calculated_at: datetime,
     assumptions: GexAssumptionSet | None = None,
     source_contracts_total: int | None = None,
+    spot_asof: datetime | None = None,
+    spot_source: str | None = None,
 ) -> GexEvidence:
     """Build current-spot GEX evidence from already-normalized observations.
 
@@ -264,6 +272,12 @@ def build_gex_evidence(
         raise ValueError("spot must be finite and positive")
     if calculated_at.tzinfo is None or calculated_at.utcoffset() is None:
         raise ValueError("calculated_at must be timezone-aware")
+    if spot_asof is not None and (
+        spot_asof.tzinfo is None or spot_asof.utcoffset() is None
+    ):
+        raise ValueError("spot_asof must be timezone-aware")
+    if spot_source is not None and not spot_source.strip():
+        raise ValueError("spot_source cannot be blank")
 
     assumption_set = assumptions or GexAssumptionSet()
     rows = list(observations)
@@ -375,6 +389,12 @@ def build_gex_evidence(
     if quote_min is None:
         unknown_fields.append("quote_asof")
         warnings.append("QUOTE_ASOF_NOT_OBSERVED")
+    if spot_asof is None:
+        unknown_fields.append("spot_asof")
+        warnings.append("SPOT_ASOF_NOT_OBSERVED")
+    if spot_source is None:
+        unknown_fields.append("spot_source")
+        warnings.append("SPOT_SOURCE_NOT_DECLARED")
 
     return GexEvidence(
         underlying_symbol=underlying,
@@ -405,4 +425,6 @@ def build_gex_evidence(
         gamma_flip_status="UNKNOWN_REPRICING_NOT_IMPLEMENTED",
         unknown_fields=tuple(unknown_fields),
         warnings=tuple(warnings),
+        spot_asof=spot_asof,
+        spot_source=spot_source.strip() if spot_source is not None else None,
     )

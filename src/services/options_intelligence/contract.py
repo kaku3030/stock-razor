@@ -7,7 +7,7 @@ from datetime import datetime
 
 from .gamma_profile import GammaProfileEvidence
 from .gex import GexEvidence
-from .qualification import GexFreshnessQualification
+from .qualification import GexFreshnessQualification, OptionsClockQualification
 
 
 @dataclass(frozen=True)
@@ -17,13 +17,18 @@ class OptionsIntelligencePacket:
     current_gex: GexEvidence
     freshness: GexFreshnessQualification
     gamma_profile: GammaProfileEvidence
+    clock_alignment: OptionsClockQualification | None = None
 
     @property
     def context_permission(self) -> str:
         if self.freshness.status == "BLOCKED":
             return "BLOCKED"
+        if self.clock_alignment is not None and self.clock_alignment.status == "BLOCKED":
+            return "BLOCKED"
         if (
-            self.freshness.status == "DEGRADED"
+            self.clock_alignment is None
+            or self.clock_alignment.status == "DEGRADED"
+            or self.freshness.status == "DEGRADED"
             or self.current_gex.completeness < 0.80
             or self.gamma_profile.completeness < 0.80
         ):
@@ -47,6 +52,8 @@ class OptionsIntelligencePacket:
         values = list(self.current_gex.unknown_fields)
         if self.gamma_profile.gamma_flip is None and "gamma_flip" not in values:
             values.append("gamma_flip")
+        if self.clock_alignment is None and "clock_alignment" not in values:
+            values.append("clock_alignment")
         return tuple(values)
 
     def to_payload(self) -> dict[str, object]:
@@ -56,6 +63,11 @@ class OptionsIntelligencePacket:
             "underlying_symbol": self.current_gex.underlying_symbol,
             "current_gex": self.current_gex.to_payload(),
             "freshness": self.freshness.to_payload(),
+            "clock_alignment": (
+                self.clock_alignment.to_payload()
+                if self.clock_alignment is not None
+                else None
+            ),
             "gamma_profile": self.gamma_profile.to_payload(),
             "context_permission": self.context_permission,
             "decision_permission": self.decision_permission,
@@ -73,6 +85,7 @@ def build_options_intelligence_packet(
     freshness: GexFreshnessQualification,
     gamma_profile: GammaProfileEvidence,
     generated_at: datetime,
+    clock_alignment: OptionsClockQualification | None = None,
 ) -> OptionsIntelligencePacket:
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise ValueError("generated_at must be timezone-aware")
@@ -84,4 +97,5 @@ def build_options_intelligence_packet(
         current_gex=current_gex,
         freshness=freshness,
         gamma_profile=gamma_profile,
+        clock_alignment=clock_alignment,
     )

@@ -206,3 +206,52 @@ Current known limitations:
    only.
 8. Keep LIVE_TRADE=NO until higher data, PIT, Shadow, Paper and execution gates
    pass.
+
+
+## V0.1.1 session-aware / three-clock qualification
+
+Live pre-market verification exposed a clock-consistency risk that is now
+explicitly gated.
+
+Three clocks are independent:
+
+1. underlying spot as-of
+2. option quote / Greeks as-of
+3. Open Interest as-of
+
+A successful option snapshot does not make those timestamps equivalent.
+
+Observed example on 2026-10-07 pre-market:
+
+- QQQ live/pre-market price had already updated on 2026-10-07.
+- QQQ option quote/Greeks timestamps were mainly from the 2026-10-06
+  regular-session close.
+- Futu exposed OI values but did not expose a distinct per-contract OI
+  timestamp in the observed snapshot.
+
+Therefore STOCK RAZOR must not combine the current pre-market underlying
+price with prior-close Greeks and label the result current GEX.
+
+V0.1.1 adds:
+
+- OptionsFreshnessPolicy
+  - intraday / closing-auction floors are relative to the evaluation clock
+  - pre-market / post-market / non-trading floors require an explicit
+    completed exchange-session close
+  - no weekday arithmetic is allowed to guess holidays
+- OptionsClockQualification
+  - blocks missing underlying as-of
+  - blocks missing option quote as-of
+  - blocks excessive spot-vs-option clock skew
+  - keeps unknown OI as-of DEGRADED for research by default
+  - may fail closed when require_oi_asof=true
+- GexEvidence now carries spot_asof and spot_source.
+- OptionsIntelligencePacket treats a BLOCKED clock qualification as BLOCKED
+  context and still keeps decision_permission=BLOCKED_V0_1.
+
+This preserves the rule:
+
+same payload != same clock.
+
+The Radar may consume GEX only as context after the clock/freshness layer
+qualifies it; no GEX field independently changes trading authority.
