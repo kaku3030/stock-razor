@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
 
+import pandas as pd
+
 from data_provider.market_data_adapter import (
     Bar,
     HealthGrade,
@@ -411,6 +413,7 @@ class CanonicalSnapshotRadarEvaluator:
         path: str | Path,
         *,
         expected_repo_sha: str | None = None,
+        daily_frames: Mapping[str, pd.DataFrame] | None = None,
     ) -> CanonicalRadarEvaluation:
         try:
             source = load_canonical_snapshot_file(path)
@@ -427,7 +430,11 @@ class CanonicalSnapshotRadarEvaluator:
                 source_live_trade=None,
                 reasons=(f"SOURCE_INVALID:{type(exc).__name__}",),
             )
-        return self.evaluate_source(source, expected_repo_sha=expected_repo_sha)
+        return self.evaluate_source(
+            source,
+            expected_repo_sha=expected_repo_sha,
+            daily_frames=daily_frames,
+        )
 
     def preflight_source(
         self,
@@ -456,6 +463,7 @@ class CanonicalSnapshotRadarEvaluator:
         source: CanonicalSnapshotSource,
         *,
         expected_repo_sha: str | None = None,
+        daily_frames: Mapping[str, pd.DataFrame] | None = None,
     ) -> CanonicalRadarEvaluation:
         blocked = self.preflight_source(
             source,
@@ -475,7 +483,8 @@ class CanonicalSnapshotRadarEvaluator:
                     )
                 )
                 continue
-            state = self._technical.evaluate(snapshot)
+            daily = daily_frames.get(snapshot.symbol) if daily_frames is not None else None
+            state = self._technical.evaluate(snapshot, daily=daily)
             results.append(
                 CanonicalRadarSymbolResult(
                     symbol=snapshot.symbol,
@@ -530,13 +539,19 @@ class CanonicalSnapshotRadarWorker:
         self._last_sequence: int | None = None
         self._last_successful_evaluation: CanonicalRadarEvaluation | None = None
 
-    def poll_file(self, path: str | Path) -> CanonicalRadarEvaluation:
+    def poll_file(
+        self,
+        path: str | Path,
+        *,
+        daily_frames: Mapping[str, pd.DataFrame] | None = None,
+    ) -> CanonicalRadarEvaluation:
         try:
             source = load_canonical_snapshot_file(path)
         except (OSError, json.JSONDecodeError, CanonicalSnapshotContractError):
             return self._evaluator.evaluate_file(
                 path,
                 expected_repo_sha=self._expected_repo_sha,
+                daily_frames=daily_frames,
             )
 
         blocked = self._evaluator.preflight_source(
@@ -571,6 +586,7 @@ class CanonicalSnapshotRadarWorker:
         evaluation = self._evaluator.evaluate_source(
             source,
             expected_repo_sha=self._expected_repo_sha,
+            daily_frames=daily_frames,
         )
         if evaluation.status == "PASS":
             self._last_runtime_instance_id = source.runtime_instance_id
