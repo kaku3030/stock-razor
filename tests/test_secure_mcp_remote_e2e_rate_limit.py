@@ -197,3 +197,15 @@ def test_secure_remote_e2e_includes_analysis_and_full_tool_discovery() -> None:
     assert "len(discovered) == 7" in source
     assert "len(names) != 5" not in source
     assert "len(names) != 3" not in source
+
+
+def test_secure_remote_e2e_has_longer_bounded_ssm_wait_budget() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    wait_step = source.split("- name: Wait for SSM result", 1)[1]
+
+    assert "REQUESTED_ACTION: ${{ inputs.action }}" in wait_step
+    assert "wait_attempts=30" in wait_step
+    assert 'if [ "$REQUESTED_ACTION" = "secure_mcp_remote_e2e" ]; then' in wait_step
+    assert "wait_attempts=180" in wait_step
+    assert 'for attempt in $(seq 1 "$wait_attempts"); do' in wait_step
+    assert "for attempt in {1..30}; do" not in wait_step
