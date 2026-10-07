@@ -34,8 +34,10 @@ PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from data_provider.cn_eastmoney_cloud_observer import (
     build_cn_cloud_observation,
     build_kline_url,
+    build_tencent_kline_url,
 )
 assert "push2his.eastmoney.com" in build_kline_url("512730", "15m")
+assert "ifzq.gtimg.cn" in build_tencent_kline_url("159611", "15m")
 print("CN_EASTMONEY_IMPORT_SMOKE=PASS")
 PY
 
@@ -105,8 +107,9 @@ while True:
             "status": "BLOCKED",
             "error": type(exc).__name__,
             "symbols": {},
-            "provider": "eastmoney",
-            "provider_lineage": "eastmoney",
+            "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
+            "providers_used": [],
+            "provider_lineages": ["eastmoney", "tencent"],
             "intraday_timestamp_semantics_proven": False,
             "intraday_currentness_proven": False,
             "research_only": True,
@@ -122,7 +125,7 @@ PY
 
 cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
 [Unit]
-Description=STOCK RAZOR A-share Eastmoney cloud observation service
+Description=STOCK RAZOR A-share Eastmoney primary with Tencent fallback cloud observer
 After=network-online.target
 Wants=network-online.target
 
