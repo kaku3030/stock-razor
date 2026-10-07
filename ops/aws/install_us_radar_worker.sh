@@ -41,7 +41,11 @@ from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarEvaluator,
     CanonicalSnapshotRadarWorker,
 )
+from src.services.stock_radar_v2.daily_history_reader import (
+    load_futu_us_daily_history_frames,
+)
 from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
+from src.services.stock_radar_v2.daily_history_reader import load_futu_us_daily_history_frames
 print("US_RADAR_WORKER_IMPORT_SMOKE=PASS")
 PY
 
@@ -63,6 +67,10 @@ expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().low
 source_path = os.environ.get(
     "STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH",
     "/run/stock-razor-us-livefeed/canonical-market-snapshot.json",
+)
+daily_history_path = os.environ.get(
+    "STOCK_RAZOR_US_DAILY_HISTORY_PATH",
+    "/run/stock-razor-us-livefeed/daily-history.json",
 )
 status_path = os.environ.get(
     "STOCK_RAZOR_US_RADAR_STATUS_PATH",
@@ -93,7 +101,14 @@ def publish(payload):
 
 while True:
     now = datetime.now(timezone.utc)
-    evaluation = worker.poll_file(source_path)
+    daily_frames, daily_history = load_futu_us_daily_history_frames(
+        daily_history_path,
+        expected_repo_sha=expected_source_repo_sha,
+    )
+    evaluation = worker.poll_file(
+        source_path,
+        daily_frames=daily_frames,
+    )
     evaluation_payload = evaluation.to_dict()
     cycle += 1
     payload = {
@@ -105,6 +120,8 @@ while True:
         "sequence": cycle,
         "emitted_at_utc": now.isoformat(),
         "source_path": source_path,
+        "daily_history_path": daily_history_path,
+        "daily_history": daily_history,
         "poll_status": evaluation.status,
         "evaluation": evaluation_payload,
         "research_only": True,
@@ -131,6 +148,7 @@ Environment=PYTHONPATH=$INSTALL_ROOT/repo
 Environment=STOCK_RAZOR_WORKER_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_SOURCE_REPO_SHA=$SOURCE_REPO_SHA
 Environment=STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH=$SOURCE_PATH
+Environment=STOCK_RAZOR_US_DAILY_HISTORY_PATH=/run/stock-razor-us-livefeed/daily-history.json
 Environment=STOCK_RAZOR_US_RADAR_STATUS_PATH=$STATUS_PATH
 Environment=STOCK_RAZOR_US_RADAR_POLL_SECONDS=5
 RuntimeDirectory=stock-razor-us-radar

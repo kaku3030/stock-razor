@@ -134,3 +134,25 @@ def test_source_sha_discovery_retries_during_livefeed_restart_window():
     assert "sleep 2" in discover
     assert "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT" in discover
     assert "&& exit 0" in discover
+
+
+def test_worker_consumes_daily_history_without_provider_access():
+    assert "load_futu_us_daily_history_frames" in INSTALLER
+    assert '"/run/stock-razor-us-livefeed/daily-history.json"' in INSTALLER
+    assert "daily_frames=daily_frames" in INSTALLER
+    assert '"daily_history": daily_history' in INSTALLER
+    assert "PrivateNetwork=true" in INSTALLER
+    assert "futu-api" not in INSTALLER
+
+
+def test_worker_verifier_requires_daily_context_in_actual_technical_state():
+    assert 'daily_history.get("status") == "PASS"' in VERIFY
+    assert 'daily_history.get("historical_query") is True' in VERIFY
+    assert 'daily_history.get("currentness_proven") is False' in VERIFY
+    assert 'daily_history.get("bar_closure_promotion_authorized") is False' in VERIFY
+    assert 'int(item.get("row_count") or 0) >= 120' in VERIFY
+    assert 'quality.get("status") != "missing"' in VERIFY
+    assert 'int(quality.get("bars") or 0) >= 60' in VERIFY
+    assert '"1d_data_missing" not in set(quality.get("warnings") or [])' in VERIFY
+    assert 'technical_state.get("research_only") is True' in VERIFY
+    assert 'technical_state.get("can_confirm_signal") is False' in VERIFY

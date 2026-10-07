@@ -2,6 +2,8 @@ import inspect
 import json
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
+
 from data_provider.market_data_adapter import SignalPermission, evaluate_health
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
@@ -641,3 +643,65 @@ def test_non_blocked_radar_admission_is_rejected(tmp_path):
     )
     assert result.status == "BLOCKED"
     assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
+
+
+def test_evaluator_uses_validated_daily_context_when_supplied(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    daily = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-04-01") + pd.Timedelta(days=index),
+                "open": 80.0 + index * 0.2,
+                "high": 82.0 + index * 0.2,
+                "low": 79.0 + index * 0.2,
+                "close": 81.0 + index * 0.2,
+                "volume": 100000.0 + index,
+            }
+            for index in range(120)
+        ]
+    )
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+        daily_frames={"US.AMD": daily},
+    )
+
+    assert result.status == "PASS"
+    state = result.symbols[0].technical_state
+    assert state is not None
+    assert state.research_only is True
+    assert state.can_confirm_signal is False
+    assert state.technical.daily.quality.status != "missing"
+    assert state.technical.daily.quality.bars == 120
+    assert "1d_data_missing" not in state.technical.daily.quality.warnings
+
+
+def test_worker_preserves_daily_context_on_unchanged_sequence(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    daily = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-04-01") + pd.Timedelta(days=index),
+                "open": 90.0 + index * 0.1,
+                "high": 91.0 + index * 0.1,
+                "low": 89.0 + index * 0.1,
+                "close": 90.5 + index * 0.1,
+                "volume": 1000.0 + index,
+            }
+            for index in range(120)
+        ]
+    )
+    worker = CanonicalSnapshotRadarWorker(
+        expected_repo_sha=SHA,
+        evaluator=CanonicalSnapshotRadarEvaluator(now=lambda: emitted),
+    )
+    path = write_payload(tmp_path, body)
+    first = worker.poll_file(path, daily_frames={"US.AMD": daily})
+    second = worker.poll_file(path, daily_frames={"US.AMD": daily})
+
+    assert first.status == "PASS"
+    assert second.status == "UNCHANGED"
+    assert second.symbols[0].technical_state is not None
+    assert second.symbols[0].technical_state.technical.daily.quality.bars == 120

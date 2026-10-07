@@ -26,6 +26,21 @@ assert payload.get("can_confirm_signal") is False
 assert payload.get("radar_admission") == "BLOCKED"
 assert payload.get("live_trade") is False
 
+daily_history = payload.get("daily_history") or {}
+assert daily_history.get("status") == "PASS"
+assert daily_history.get("historical_query") is True
+assert daily_history.get("currentness_proven") is False
+assert daily_history.get("bar_closure_promotion_authorized") is False
+assert daily_history.get("research_only") is True
+assert daily_history.get("can_confirm_signal") is False
+assert daily_history.get("radar_admission") == "BLOCKED"
+assert daily_history.get("live_trade") is False
+daily_symbols = daily_history.get("symbols") or {}
+assert daily_symbols
+for symbol, item in daily_symbols.items():
+    assert int(item.get("row_count") or 0) >= 120
+    assert item.get("latest_date")
+
 evaluation = payload.get("evaluation") or {}
 assert evaluation.get("source_repo_sha") == expected_source_sha
 assert evaluation.get("source_delivery_mode") in {"UNKNOWN", "REALTIME"}
@@ -52,6 +67,22 @@ assert diagnostics.get("minimum_source_prerequisites_met") is (
 )
 diagnostic_reasons = set(diagnostics.get("reasons") or [])
 assert "PROMOTION_NOT_AUTHORIZED" in diagnostic_reasons
+
+if evaluation.get("status") in {"PASS", "UNCHANGED"}:
+    symbols = evaluation.get("symbols") or []
+    assert symbols
+    for item in symbols:
+        if item.get("status") != "RESEARCH_STATE":
+            continue
+        technical_state = item.get("technical_state") or {}
+        technical = technical_state.get("technical") or {}
+        daily_state = technical.get("daily") or {}
+        quality = daily_state.get("quality") or {}
+        assert quality.get("status") != "missing"
+        assert int(quality.get("bars") or 0) >= 60
+        assert "1d_data_missing" not in set(quality.get("warnings") or [])
+        assert technical_state.get("research_only") is True
+        assert technical_state.get("can_confirm_signal") is False
 
 assert evaluation.get("status") in {"PASS", "UNCHANGED", "BLOCKED"}
 if evaluation.get("status") == "BLOCKED":

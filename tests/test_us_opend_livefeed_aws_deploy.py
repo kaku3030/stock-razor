@@ -244,7 +244,7 @@ def test_status_snapshot_summary_embedded_python_compiles():
 
 
 def test_verify_snapshot_provenance_embedded_python_compiles():
-    marker = '"$python_bin" - "$status" "$snapshot" "$expected_sha" <<\'PY\''
+    marker = '"$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" <<\'PY\''
     start = VERIFY.index(marker)
     start = VERIFY.index("\n", start) + 1
     end = VERIFY.index("\nPY", start)
@@ -384,3 +384,35 @@ def test_verify_gate_requires_full_research_warm_start_without_promotion():
     assert 'len(frames.get("5m") or []) >= 234' in VERIFY
     assert 'len(frames.get("15m") or []) >= 78' in VERIFY
     assert 'len(frames.get("1h") or []) >= 20' in VERIFY
+
+
+def test_installer_exports_same_opend_daily_research_history():
+    runtime = _embedded_runtime_python()
+    assert "build_futu_us_daily_history" in runtime
+    assert "write_futu_us_daily_history" in runtime
+    assert '"/run/stock-razor-us-livefeed/daily-history.json"' in runtime
+    assert "ctx.request_history_kline(" in runtime
+    assert "ktype=ft.KLType.K_DAY" in runtime
+    assert "autype=ft.AuType.NONE" in runtime
+    assert "required_rows=120" in runtime
+    assert "lookback_calendar_days=260" in runtime
+    assert runtime.count('ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)') == 1
+    assert '"daily_history":daily_history_summary' in runtime
+    assert '"currentness_proven":False' in runtime
+    assert '"bar_closure_promotion_authorized":False' in runtime
+    assert '"radar_admission":"BLOCKED"' in runtime
+    assert '"live_trade":False' in runtime
+
+
+def test_livefeed_verifier_requires_completed_daily_history_without_promotion():
+    assert "/run/stock-razor-us-livefeed/daily-history.json" in VERIFY
+    assert 'daily_summary.get("status") == "PASS"' in VERIFY
+    assert 'int(daily_summary.get("required_rows") or 0) == 120' in VERIFY
+    assert 'daily_summary.get("same_opend_context_required") is True' in VERIFY
+    assert 'daily_summary.get("currentness_proven") is False' in VERIFY
+    assert 'daily_summary.get("bar_closure_promotion_authorized") is False' in VERIFY
+    assert 'int(item.get("row_count") or 0) == 120' in VERIFY
+    assert 'daily.get("schema") == "stock_razor_futu_us_daily_history_v1"' in VERIFY
+    assert 'daily.get("repo_sha") == expected_sha' in VERIFY
+    assert 'daily.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'daily.get("live_trade") is False' in VERIFY
