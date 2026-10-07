@@ -103,6 +103,68 @@ def test_full_390_row_session_still_leaves_1600_unresolved():
     assert result.radar_admission == "BLOCKED"
 
 
+def test_prior_new_york_date_can_close_complete_390_row_terminal_session():
+    rows = []
+    start = datetime(2026, 10, 6, 9, 31)
+    for index in range(390):
+        stamp = start + timedelta(minutes=index)
+        rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
+
+    result = normalize_futu_k1m_history_rows(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+        allow_completed_prior_session_tail=True,
+    )
+
+    assert len(result.bars) == 390
+    assert result.bars[-1].bar_end == datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc)
+    assert result.unresolved_tail is None
+    assert result.closure_method == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+    assert result.research_only is True
+    assert result.can_promote is False
+    assert result.radar_admission == "BLOCKED"
+    assert result.live_trade is False
+
+
+def test_same_new_york_date_does_not_use_terminal_session_shortcut():
+    rows = []
+    start = datetime(2026, 10, 6, 9, 31)
+    for index in range(390):
+        stamp = start + timedelta(minutes=index)
+        rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
+
+    result = normalize_futu_k1m_history_rows(
+        rows,
+        received_at=datetime(2026, 10, 6, 22, 0, tzinfo=timezone.utc),
+        expected_symbol="US.AMD",
+        allow_completed_prior_session_tail=True,
+    )
+
+    assert len(result.bars) == 389
+    assert result.unresolved_tail.time_key == "2026-10-06 16:00:00"
+    assert result.closure_method == "NEXT_TIME_KEY_PROGRESS"
+
+
+def test_incomplete_prior_date_grid_keeps_terminal_row_unresolved():
+    rows = []
+    start = datetime(2026, 10, 6, 9, 31)
+    for index in range(389):
+        stamp = start + timedelta(minutes=index)
+        rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
+
+    result = normalize_futu_k1m_history_rows(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+        allow_completed_prior_session_tail=True,
+    )
+
+    assert len(result.bars) == 388
+    assert result.unresolved_tail is not None
+    assert result.closure_method == "NEXT_TIME_KEY_PROGRESS"
+
+
 def test_next_session_first_label_can_close_all_390_prior_session_rows():
     rows = []
     start = datetime(2026, 10, 6, 9, 31)

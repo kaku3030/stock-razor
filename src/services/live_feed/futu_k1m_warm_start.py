@@ -18,6 +18,7 @@ class FutuK1MWarmStartPlan:
     session_date: str | None
     bars: tuple[Bar, ...]
     closure_anchor_time_key: str | None
+    closure_method: str
     rows_seen: int
     reasons: tuple[str, ...] = ()
     purpose: str = field(default="RESEARCH_CACHE_WARM_START", init=False)
@@ -85,6 +86,10 @@ class FutuK1MWarmStartSelection:
             if plan.closure_anchor_time_key is not None
         )
 
+    @property
+    def closure_methods(self) -> tuple[str, ...]:
+        return tuple(plan.closure_method for plan in reversed(self.plans))
+
     def to_dict(self) -> dict:
         return {
             "status": self.status,
@@ -93,6 +98,7 @@ class FutuK1MWarmStartSelection:
             "selected_sessions": len(self.plans),
             "session_dates": list(self.session_dates),
             "closure_anchor_time_keys": list(self.closure_anchor_time_keys),
+            "closure_methods": list(self.closure_methods),
             "rows_seen": self.rows_seen,
             "bar_count": self.bar_count,
             "research_cache_seed_eligible": self.research_cache_seed_eligible,
@@ -193,34 +199,54 @@ def build_futu_k1m_warm_start_selection(
 
         last_time_key = qualification.last_time_key
         last_index = time_key_indexes.get(str(last_time_key or ""))
-        if last_index is None or last_index + 1 >= len(parsed):
+        if last_index is None:
             deferred_reasons.append(
-                f"{session_date.isoformat()}:MISSING_LATER_PROVIDER_LABEL"
+                f"{session_date.isoformat()}:LAST_TIME_KEY_NOT_FOUND"
             )
             continue
 
-        anchor_row = parsed[last_index + 1][1]
-        anchor_time_key = str(anchor_row.get("time_key") or "").strip()
-        normalization = normalize_futu_k1m_history_rows(
-            [*session_rows, anchor_row],
-            received_at=received_at,
-            expected_symbol=symbol,
-        )
-        if len(normalization.bars) != qualification.expected_row_count:
-            deferred_reasons.append(
-                f"{session_date.isoformat()}:NORMALIZED_BAR_COUNT_MISMATCH"
+        if last_index + 1 < len(parsed):
+            anchor_row = parsed[last_index + 1][1]
+            anchor_time_key = str(anchor_row.get("time_key") or "").strip()
+            normalization = normalize_futu_k1m_history_rows(
+                [*session_rows, anchor_row],
+                received_at=received_at,
+                expected_symbol=symbol,
             )
-            continue
-        if normalization.unresolved_tail is None:
-            deferred_reasons.append(
-                f"{session_date.isoformat()}:CLOSURE_ANCHOR_NOT_RETAINED_AS_TAIL"
+            if len(normalization.bars) != qualification.expected_row_count:
+                deferred_reasons.append(
+                    f"{session_date.isoformat()}:NORMALIZED_BAR_COUNT_MISMATCH"
+                )
+                continue
+            if normalization.unresolved_tail is None:
+                deferred_reasons.append(
+                    f"{session_date.isoformat()}:CLOSURE_ANCHOR_NOT_RETAINED_AS_TAIL"
+                )
+                continue
+            if normalization.unresolved_tail.time_key != anchor_time_key:
+                deferred_reasons.append(
+                    f"{session_date.isoformat()}:CLOSURE_ANCHOR_MISMATCH"
+                )
+                continue
+            closure_anchor_time_key = anchor_time_key
+        else:
+            normalization = normalize_futu_k1m_history_rows(
+                session_rows,
+                received_at=received_at,
+                expected_symbol=symbol,
+                allow_completed_prior_session_tail=True,
             )
-            continue
-        if normalization.unresolved_tail.time_key != anchor_time_key:
-            deferred_reasons.append(
-                f"{session_date.isoformat()}:CLOSURE_ANCHOR_MISMATCH"
-            )
-            continue
+            if not (
+                len(normalization.bars) == qualification.expected_row_count
+                and normalization.unresolved_tail is None
+                and normalization.closure_method
+                == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+            ):
+                deferred_reasons.append(
+                    f"{session_date.isoformat()}:MISSING_LATER_PROVIDER_LABEL"
+                )
+                continue
+            closure_anchor_time_key = None
 
         plans.append(
             FutuK1MWarmStartPlan(
@@ -228,7 +254,8 @@ def build_futu_k1m_warm_start_selection(
                 symbol=symbol,
                 session_date=session_date.isoformat(),
                 bars=normalization.bars,
-                closure_anchor_time_key=anchor_time_key,
+                closure_anchor_time_key=closure_anchor_time_key,
+                closure_method=normalization.closure_method,
                 rows_seen=len(materialized),
                 reasons=(),
             )
@@ -318,6 +345,7 @@ def _blocked(
         session_date=None,
         bars=(),
         closure_anchor_time_key=None,
+        closure_method="UNPROVEN",
         rows_seen=rows_seen,
         reasons=reasons,
     )

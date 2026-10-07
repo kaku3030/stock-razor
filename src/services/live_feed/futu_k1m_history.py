@@ -23,12 +23,12 @@ class FutuK1MHistoricalTail:
 
 @dataclass(frozen=True)
 class FutuK1MHistoricalNormalization:
-    """Research-only historical K1M facts bounded by next-label closure proof."""
+    """Research-only historical K1M facts with explicit closure provenance."""
 
     bars: tuple[Bar, ...]
     unresolved_tail: FutuK1MHistoricalTail | None
     rows_seen: int
-    closure_method: str = field(default="NEXT_TIME_KEY_PROGRESS", init=False)
+    closure_method: str = "NEXT_TIME_KEY_PROGRESS"
     research_only: bool = field(default=True, init=False)
     can_promote: bool = field(default=False, init=False)
     radar_admission: str = field(default="BLOCKED", init=False)
@@ -53,17 +53,16 @@ def normalize_futu_k1m_history_rows(
     *,
     received_at: datetime,
     expected_symbol: str | None = None,
+    allow_completed_prior_session_tail: bool = False,
 ) -> FutuK1MHistoricalNormalization:
     """Normalize same-OpenD historical K1M rows without inventing closure.
 
-    Futu US K1M time_key is a qualified interval-END label. Historical query
-    availability does not itself prove that the newest row is closed, so only
+    Futu US K1M time_key is a qualified interval-END label. By default, only
     a row followed by a strictly later provider label is emitted as a closed
-    canonical fact. The final row remains an unresolved tail regardless of
-    wall-clock age.
-
-    This boundary is provider-SDK free and cannot promote currentness,
-    delivery mode, Radar admission, or execution.
+    canonical fact. A caller may also allow the terminal row of a complete
+    390-row regular session when that session is on a prior New York calendar
+    date relative to received_at. That path is historical-only evidence and
+    never proves realtime currentness or authorizes Radar or trading.
     """
 
     if received_at.tzinfo is None or received_at.utcoffset() is None:
@@ -91,11 +90,19 @@ def normalize_futu_k1m_history_rows(
         if current.interval_end <= prior.interval_end:
             raise ValueError("historical K1M time_key must be strictly increasing")
 
+    terminal_closed = (
+        allow_completed_prior_session_tail
+        and _is_complete_prior_regular_session(
+            parsed,
+            received_at=received_at,
+        )
+    )
+    emitted = parsed if terminal_closed else parsed[:-1]
     bars = tuple(
         _to_historical_bar(row, received_at=received_at)
-        for row in parsed[:-1]
+        for row in emitted
     )
-    tail = FutuK1MHistoricalTail(
+    tail = None if terminal_closed else FutuK1MHistoricalTail(
         symbol=parsed[-1].symbol,
         time_key=parsed[-1].time_key,
     )
@@ -103,6 +110,39 @@ def normalize_futu_k1m_history_rows(
         bars=bars,
         unresolved_tail=tail,
         rows_seen=len(parsed),
+        closure_method=(
+            "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+            if terminal_closed
+            else "NEXT_TIME_KEY_PROGRESS"
+        ),
+    )
+
+
+def _is_complete_prior_regular_session(
+    parsed: Sequence[_ParsedHistoricalRow],
+    *,
+    received_at: datetime,
+) -> bool:
+    if len(parsed) != 390:
+        return False
+    local_ends = tuple(
+        row.interval_end.astimezone(FUTU_US_KLINE_TIMEZONE)
+        for row in parsed
+    )
+    session_dates = {stamp.date() for stamp in local_ends}
+    if len(session_dates) != 1:
+        return False
+    session_date = local_ends[0].date()
+    observed_date = received_at.astimezone(FUTU_US_KLINE_TIMEZONE).date()
+    if session_date >= observed_date:
+        return False
+    if local_ends[0].time() != FUTU_US_REGULAR_FIRST_END:
+        return False
+    if local_ends[-1].time() != FUTU_US_REGULAR_LAST_END:
+        return False
+    return all(
+        current - prior == timedelta(minutes=1)
+        for prior, current in zip(local_ends, local_ends[1:])
     )
 
 
