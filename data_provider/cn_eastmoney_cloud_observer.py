@@ -63,29 +63,46 @@ def tencent_symbol(symbol: object) -> str:
     return f"sz{code}"
 
 
-def _http_json(url: str, *, timeout_seconds: float = 8.0) -> Mapping[str, object]:
+def _http_json(
+    url: str,
+    *,
+    timeout_seconds: float = 8.0,
+    max_attempts: int = 3,
+    sleep_fn: Callable[[float], None] = sleep,
+) -> Mapping[str, object]:
+    if max_attempts <= 0:
+        raise ValueError("max_attempts must be positive")
     referer = (
         "https://gu.qq.com/"
         if "gtimg.cn" in url
         else "https://quote.eastmoney.com/"
     )
-    request = Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json,text/plain,*/*",
-            "Referer": referer,
-            "Connection": "close",
-        },
-        method="GET",
-    )
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read()
-    except Exception as exc:
+    raw: bytes | None = None
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json,text/plain,*/*",
+                "Referer": referer,
+                "Connection": "close",
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                raw = response.read()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt + 1 < max_attempts:
+                sleep_fn(0.5 * (2**attempt))
+    if raw is None:
+        assert last_exc is not None
         raise CloudObservationError(
-            f"provider request failed: {type(exc).__name__}"
-        ) from exc
+            f"provider request failed after {max_attempts} attempts: {type(last_exc).__name__}"
+        ) from last_exc
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
