@@ -32,7 +32,8 @@ PY
 
 cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json, os, socket, threading, time, uuid
-from datetime import datetime, timezone
+from datetime import datetime, time as dtime, timezone
+from zoneinfo import ZoneInfo
 import futu as ft
 from data_provider.futu_k1m_streaming_adapter import (
     FutuK1MStreamingAdapter,
@@ -60,6 +61,7 @@ from src.services.live_feed.futu_k1m_currentness import (
 )
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
+from src.services.live_feed.futu_k1m_warm_start import historical_futu_k1m_to_bar
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.realtime_market_data import RealtimeMarketDataService
 
@@ -115,6 +117,84 @@ def on_event_accepted(event):
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
+
+# Warm-start only the technical lookback from the same OpenD context. These
+# historical facts never enter the closure/currentness evidence pipelines and
+# therefore cannot authorize realtime promotion or Radar admission.
+warm_start={
+    "status":"UNKNOWN",
+    "source":"FUTU_OPEND_GET_CUR_KLINE_K1M",
+    "historical_only":True,
+    "bars_ingested":0,
+    "symbols":{},
+}
+warm_start_now=datetime.now(timezone.utc)
+warm_start_et=ZoneInfo("America/New_York")
+try:
+    sub_ret,sub_data=ctx.subscribe(list(CODES),[ft.SubType.K_1M],subscribe_push=False)
+    if sub_ret != ft.RET_OK:
+        warm_start["status"]="BLOCKED"
+        warm_start["reason"]="WARM_START_SUBSCRIBE_FAILED"
+        warm_start["error"]=str(sub_data)[:300]
+    else:
+        for code in CODES:
+            item={"status":"UNKNOWN","rows_returned":0,"bars_ingested":0}
+            warm_start["symbols"][code]=item
+            ret,data=ctx.get_cur_kline(
+                code,
+                480,
+                ktype=ft.KLType.K_1M,
+                autype=ft.AuType.NONE,
+            )
+            if ret != ft.RET_OK or not hasattr(data,"to_dict"):
+                item["status"]="BLOCKED"
+                item["reason"]="GET_CUR_KLINE_FAILED"
+                item["error"]=str(data)[:300]
+                continue
+            rows=data.to_dict("records")
+            item["rows_returned"]=len(rows)
+            ingested=0
+            rejected=0
+            for row in rows:
+                raw=str(row.get("time_key") or "")
+                try:
+                    end_local=datetime.strptime(raw,"%Y-%m-%d %H:%M:%S").replace(
+                        tzinfo=warm_start_et
+                    )
+                except ValueError:
+                    rejected+=1
+                    continue
+                # Qualified Futu K1M labels are interval END labels. Only
+                # regular-session completed minutes (09:31..16:00 ET) and
+                # labels no later than observation time are eligible.
+                if not (dtime(9,31) <= end_local.time() <= dtime(16,0)):
+                    rejected+=1
+                    continue
+                if end_local.astimezone(timezone.utc) > warm_start_now:
+                    rejected+=1
+                    continue
+                try:
+                    bar=historical_futu_k1m_to_bar(
+                        row,
+                        received_at=warm_start_now,
+                    )
+                    if market_data.ingest(bar):
+                        ingested+=1
+                except Exception:
+                    rejected+=1
+            item["bars_ingested"]=ingested
+            item["rows_rejected"]=rejected
+            item["status"]="PASS" if ingested > 0 else "EMPTY"
+            warm_start["bars_ingested"]+=ingested
+        warm_start["status"]=(
+            "PASS"
+            if warm_start["bars_ingested"] > 0
+            else "EMPTY"
+        )
+except Exception as exc:
+    warm_start["status"]="BLOCKED"
+    warm_start["reason"]="WARM_START_ERROR:"+type(exc).__name__
+
 seq=0
 canonical_export_sequence=0
 canonical_export_status="UNKNOWN"
@@ -374,6 +454,7 @@ try:
           "bar_closure_evidence_state":bar_closure_evidence_state,
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
+          "warm_start":warm_start,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
               "status":canonical_export_status,
