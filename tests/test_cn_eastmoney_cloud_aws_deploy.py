@@ -30,8 +30,12 @@ def test_verifier_requires_real_three_timeframe_cloud_evidence():
     assert 'latest.get("volume_unit") == "HAND"' in VERIFY
     assert 'frame.get("fallback_from") == "eastmoney"' in VERIFY
     assert 'frame.get("currentness") == "UNPROVEN"' in VERIFY
-    assert 'frames["60m"].get("timestamp_semantic") == "UNKNOWN"' in VERIFY
-    assert 'frames["15m"].get("timestamp_semantic") == "UNKNOWN"' in VERIFY
+    assert 'qualification.get("status") == "PASS"' in VERIFY
+    assert 'qualification.get("timestamp_semantic") == "BAR_END"' in VERIFY
+    assert 'qualification.get("currentness_proven") is False' in VERIFY
+    assert 'qualification.get("continuity_proven") is False' in VERIFY
+    assert 'frame.get("timestamp_semantic") == "BAR_END"' in VERIFY
+    assert 'frame.get("timestamp_semantic") == "UNKNOWN"' in VERIFY
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
     assert 'CN_EASTMONEY_COMPACT=' in VERIFY
