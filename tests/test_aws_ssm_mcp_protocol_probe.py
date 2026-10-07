@@ -26,7 +26,7 @@ def test_mcp_protocol_probe_binds_process_socket_and_source_to_same_mainpid():
     assert "MCP_PROBE_REASON=readonly-mcp-process-not-evidenced" in block
 
 
-def test_mcp_protocol_probe_accepts_module_invocation_and_six_tool_surface():
+def test_mcp_protocol_probe_accepts_module_invocation_and_seven_tool_surface():
     block = _probe_block()
     assert "grep -Eq 'readonly_mcp_server(\\.py|([[:space:]]|$))'" in block
     assert "has_streamable_run = any(" in block
@@ -34,7 +34,9 @@ def test_mcp_protocol_probe_accepts_module_invocation_and_six_tool_surface():
     assert "get_futures_runtime_health" in block
     assert "get_market_analysis" in block
     assert "get_cn_market_data" in block
-    assert "PRIVATE_MCP_TOOL_DISCOVERY_6_OF_6" in block
-    assert "len(names)==6 and set(names)==allowed" in block
+    assert "get_cn_market_analysis" in block
+    assert "PRIVATE_MCP_TOOL_DISCOVERY_7_OF_7" in block
+    assert "len(names)==7 and set(names)==allowed" in block
     assert "call('get_market_analysis',{'symbols':['AMD']},'AMD')" in block
     assert "call('get_cn_market_data',{'symbol':'159611','timeframe':'1d','limit':1},'159611')" in block
+    assert "call('get_cn_market_analysis',{'symbols':['159611']},'159611')" in block
