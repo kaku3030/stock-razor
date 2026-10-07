@@ -26,6 +26,10 @@ from src.services.live_feed.canonical_snapshot_export import build_canonical_sna
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache
+from src.services.live_feed.futu_us_daily_history import (
+    build_futu_us_daily_history,
+    write_futu_us_daily_history,
+)
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
@@ -72,6 +76,10 @@ status_path=os.environ.get("STOCK_RAZOR_US_LIVEFEED_STATUS_PATH","/run/stock-raz
 canonical_snapshot_path=os.environ.get(
     "STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH",
     "/run/stock-razor-us-livefeed/canonical-market-snapshot.json",
+)
+daily_history_path=os.environ.get(
+    "STOCK_RAZOR_US_DAILY_HISTORY_PATH",
+    "/run/stock-razor-us-livefeed/daily-history.json",
 )
 host_id=socket.gethostname()
 ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
@@ -164,6 +172,80 @@ except Exception as exc:
         "radar_admission":"BLOCKED",
         "live_trade":False,
     }
+
+def fetch_daily_rows(symbol,start_date,end_date):
+    ret,data,_=ctx.request_history_kline(
+        symbol,
+        start=start_date,
+        end=end_date,
+        ktype=ft.KLType.K_DAY,
+        autype=ft.AuType.NONE,
+        max_count=1000,
+    )
+    if ret != ft.RET_OK:
+        raise RuntimeError("FUTU_DAILY_HISTORY_QUERY_FAILED")
+    if not hasattr(data,"to_dict"):
+        raise RuntimeError("FUTU_DAILY_HISTORY_INVALID_PAYLOAD")
+    return tuple(data.to_dict("records"))
+
+daily_observed_at=datetime.now(timezone.utc)
+try:
+    daily_history_payload=build_futu_us_daily_history(
+        CODES,
+        fetch_rows=fetch_daily_rows,
+        repo_sha=repo_sha,
+        runtime_instance_id=runtime_id,
+        observed_at_utc=daily_observed_at,
+        required_rows=120,
+        lookback_calendar_days=260,
+    )
+    write_futu_us_daily_history(daily_history_path,daily_history_payload)
+except Exception as exc:
+    daily_history_payload={
+        "schema":"stock_razor_futu_us_daily_history_v1",
+        "repo_sha":repo_sha,
+        "runtime_instance_id":runtime_id,
+        "emitted_at_utc":daily_observed_at.isoformat(),
+        "status":"BLOCKED",
+        "error":"DAILY_HISTORY_EXCEPTION:"+type(exc).__name__,
+        "symbols":{},
+        "required_rows":120,
+        "lookback_calendar_days":260,
+        "provider":"futu",
+        "feed":"opend",
+        "same_opend_context_required":True,
+        "historical_query":True,
+        "currentness_proven":False,
+        "bar_closure_promotion_authorized":False,
+        "research_only":True,
+        "can_confirm_signal":False,
+        "radar_admission":"BLOCKED",
+        "live_trade":False,
+    }
+    try:
+        write_futu_us_daily_history(daily_history_path,daily_history_payload)
+    except Exception:
+        pass
+
+daily_history_summary={
+    "status":daily_history_payload.get("status"),
+    "path":daily_history_path,
+    "required_rows":daily_history_payload.get("required_rows"),
+    "symbols":{
+        code:{
+            "status":(daily_history_payload.get("symbols") or {}).get(code,{}).get("status"),
+            "row_count":int((daily_history_payload.get("symbols") or {}).get(code,{}).get("row_count") or 0),
+            "latest_date":(daily_history_payload.get("symbols") or {}).get(code,{}).get("latest_date"),
+        }
+        for code in CODES
+    },
+    "same_opend_context_required":True,
+    "historical_query":True,
+    "currentness_proven":False,
+    "bar_closure_promotion_authorized":False,
+    "radar_admission":"BLOCKED",
+    "live_trade":False,
+}
 seq=0
 canonical_export_sequence=0
 canonical_export_status="UNKNOWN"
@@ -425,6 +507,7 @@ try:
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
           "warm_start":warm_start_payload,
+          "daily_history":daily_history_summary,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
               "status":canonical_export_status,
