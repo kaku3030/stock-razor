@@ -102,6 +102,8 @@ class ProviderRuntimeObservation:
                 + ", ".join(sorted(invalid_values))
             )
 
+        object.__setattr__(self, "fields", MappingProxyType(dict(self.fields)))
+
 
 @dataclass(frozen=True)
 class RuntimeProviderSnapshot:
