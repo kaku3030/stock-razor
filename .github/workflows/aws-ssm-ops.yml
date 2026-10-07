@@ -1383,7 +1383,11 @@ jobs:
               fi
               read -r -d '' protocol_script <<'REMOTE' || true
           set -u
-          pid=8607
+          unit='stock-razor-mcp.service'
+          pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+          case "$pid" in
+            ''|0|*[!0-9]*) echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=systemd-mainpid-not-evidenced'; exit 0 ;;
+          esac
           cwd="$(readlink -f /proc/$pid/cwd 2>/dev/null || true)"
           source="$cwd/realtime_monitor/readonly_mcp_server.py"
           expected='d7622c6a0c549282d6da5be0cb32aa6701fb8f59'
