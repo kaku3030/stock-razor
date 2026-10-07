@@ -464,9 +464,25 @@ def test_invalid_source_bar_closure_is_rejected(tmp_path):
     assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
 
 
-def test_non_unknown_delivery_mode_is_rejected(tmp_path):
+def test_realtime_delivery_mode_is_preserved_without_confirming_signal(tmp_path):
     body = payload()
     body["delivery_mode"] = "REALTIME"
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+    assert result.status == "PASS"
+    assert result.source_delivery_mode == "REALTIME"
+    assert result.source_radar_admission == "BLOCKED"
+    assert result.source_live_trade is False
+    assert result.research_only is True
+    assert result.can_confirm_signal is False
+
+
+def test_invalid_delivery_mode_is_rejected(tmp_path):
+    body = payload()
+    body["delivery_mode"] = "DELAYED"
     emitted = datetime.fromisoformat(body["emitted_at_utc"])
     result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
         write_payload(tmp_path, body),
