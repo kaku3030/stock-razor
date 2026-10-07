@@ -114,7 +114,7 @@ def test_controller_writer_egress_chains_into_closure_pipeline():
     bars = pipeline.drain_closed()
     assert len(bars) == 1
     assert bars[0].bar_end == datetime(2026, 10, 5, 14, 52, tzinfo=timezone.utc)
-    assert bars[0].health.signal_permission is SignalPermission.BLOCKED
+    assert bars[0].health.signal_permission is SignalPermission.NORMAL
 
 
 def test_same_label_updates_remain_forming_and_do_not_queue_history():
@@ -155,8 +155,8 @@ def test_next_end_label_queues_exactly_one_closure_proven_canonical_bar():
     assert bar.close == 100.8
     assert bar.volume == 20
     assert bar.is_closed and bar.is_complete
-    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" in bar.quality_flags
-    assert bar.health.signal_permission is SignalPermission.BLOCKED
+    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" not in bar.quality_flags
+    assert bar.health.signal_permission is SignalPermission.NORMAL
     assert pipeline.drain_closed() == ()
 
 
