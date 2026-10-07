@@ -340,6 +340,8 @@ def test_installer_wires_bounded_same_context_research_warm_start():
     assert "session=ft.Session.RTH" in runtime
     assert "lookback_days=10" in runtime
     assert "max_pages=5" in runtime
+    assert "required_sessions=3" in runtime
+    assert "max_minutes=1600" in runtime
     assert runtime.count('ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)') == 1
     assert "market_data.seed(" not in runtime
     assert "market_data=market_data" in runtime
@@ -372,10 +374,13 @@ def test_verify_gate_requires_full_research_warm_start_without_promotion():
     assert 'warm_start.get("bar_closure_promotion_authorized") is False' in VERIFY
     assert 'warm_start.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'warm_start.get("live_trade") is False' in VERIFY
-    assert 'int(item.get("planned_bar_count") or 0) == 390' in VERIFY
-    assert 'int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 390' in VERIFY
-    assert 'int(item.get("bar_count") or 0) >= 390' in VERIFY
-    assert 'len(frames.get("1m") or []) >= 390' in VERIFY
-    assert 'len(frames.get("5m") or []) > 0' in VERIFY
-    assert 'len(frames.get("15m") or []) > 0' in VERIFY
-    assert 'len(frames.get("1h") or []) > 0' in VERIFY
+    assert 'int(warm_start.get("required_sessions") or 0) == 3' in VERIFY
+    assert 'int(item.get("planned_bar_count") or 0) == 1170' in VERIFY
+    assert 'len(item.get("session_dates") or []) == 3' in VERIFY
+    assert 'len(item.get("closure_anchor_time_keys") or []) == 3' in VERIFY
+    assert 'int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170' in VERIFY
+    assert 'int(item.get("bar_count") or 0) >= 1170' in VERIFY
+    assert 'len(frames.get("1m") or []) >= 1170' in VERIFY
+    assert 'len(frames.get("5m") or []) >= 234' in VERIFY
+    assert 'len(frames.get("15m") or []) >= 78' in VERIFY
+    assert 'len(frames.get("1h") or []) >= 20' in VERIFY
