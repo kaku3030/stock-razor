@@ -12,6 +12,7 @@ on:
           - mcp_status
           - futures_status
           - us_livefeed_status
+          - us_options_intelligence_status
           - us_livefeed_runtime_diff_audit
           - us_livefeed_exact_runpy_probe
           - us_livefeed_controlled_restart_probe
@@ -304,6 +305,160 @@ jobs:
           echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$us_livefeed_status_script" '[ $script ]' > commands.json
+              ;;
+            us_options_intelligence_status)
+              read -r -d '' us_options_intelligence_status_script <<'REMOTE' || true
+          set -u
+          unit='stock-razor-us-options-intelligence.service'
+          status_path='/run/stock-razor-us-options-intelligence/latest-heartbeat.json'
+          snapshot_path='/run/stock-razor-us-options-intelligence/options-intelligence.json'
+          repo='/opt/stock-razor-us-options-intelligence/repo'
+          python_bin='/opt/stock-razor-us-options-intelligence/venv/bin/python'
+          echo '=== US OPTIONS COLLECTOR UNIT STATE ==='
+          systemctl is-active "$unit" 2>&1 || true
+          systemctl is-enabled "$unit" 2>&1 || true
+          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
+          echo '=== OPEND 11111 LISTENER ==='
+          ss -lntp 2>&1 | grep -E ':(11111)\b' || true
+          echo '=== COLLECTOR HEARTBEAT ==='
+          if [ -s "$status_path" ]; then
+            cat "$status_path"
+          else
+            echo 'OPTIONS_HEARTBEAT=UNKNOWN:FILE_MISSING'
+          fi
+          echo
+          echo '=== OPTIONS SIDECAR ==='
+          if [ -s "$snapshot_path" ]; then
+            cat "$snapshot_path"
+          else
+            echo 'OPTIONS_SIDECAR=UNKNOWN:FILE_MISSING'
+          fi
+          echo
+          echo '=== ONE-SHOT READ-ONLY TRACEBACK PROBE ==='
+          if [ -x "$python_bin" ] && [ -d "$repo" ]; then
+            PYTHONPATH="$repo" "$python_bin" - <<'PY'
+          import json
+          import traceback
+          from datetime import datetime, timezone
+
+          from src.services.options_intelligence.collector import (
+              build_futu_options_intelligence_packet,
+              resolve_us_options_session_context,
+          )
+          from src.services.options_intelligence.futu_opend_source import (
+              FutuOpenDOptionsSource,
+          )
+
+          now = datetime.now(timezone.utc)
+          print("EVALUATED_AT", now.isoformat())
+          session = resolve_us_options_session_context(now)
+          print("SESSION", json.dumps({
+              "phase": session.phase,
+              "status": session.status,
+              "session_date": str(session.session_date),
+              "session_open": session.session_open.isoformat() if session.session_open else None,
+              "session_close": session.session_close.isoformat() if session.session_close else None,
+              "reference_session_close": (
+                  session.reference_session_close.isoformat()
+                  if session.reference_session_close else None
+              ),
+              "warnings": list(session.warnings),
+          }, separators=(",", ":")))
+
+          try:
+              with FutuOpenDOptionsSource(
+                  host="127.0.0.1",
+                  port=11111,
+                  chain_days=7,
+                  snapshot_batch_size=200,
+              ) as source:
+                  fetched = source.fetch("US.QQQ", evaluated_at=now)
+              print("FETCH_COUNTS", fetched.chain_contracts, fetched.snapshot_contracts)
+              print("UNDERLYING_KEYS", sorted(fetched.underlying_row.keys()))
+              print(
+                  "UNDERLYING_CORE",
+                  json.dumps(
+                      {
+                          key: fetched.underlying_row.get(key)
+                          for key in (
+                              "code",
+                              "last_price",
+                              "prev_close_price",
+                              "update_time",
+                          )
+                      },
+                      default=str,
+                      separators=(",", ":"),
+                  ),
+              )
+              if fetched.option_rows:
+                  first = fetched.option_rows[0]
+                  print("OPTION_KEYS", sorted(first.keys()))
+                  print(
+                      "OPTION_CORE",
+                      json.dumps(
+                          {
+                              key: first.get(key)
+                              for key in (
+                                  "code",
+                                  "option_valid",
+                                  "option_type",
+                                  "option_strike_price",
+                                  "strike_time",
+                                  "option_open_interest",
+                                  "option_gamma",
+                                  "option_implied_volatility",
+                                  "option_contract_size",
+                                  "option_contract_multiplier",
+                                  "lot_size",
+                                  "update_time",
+                              )
+                          },
+                          default=str,
+                          separators=(",", ":"),
+                      ),
+                  )
+              try:
+                  result = build_futu_options_intelligence_packet(
+                      symbol=fetched.symbol,
+                      underlying_row=fetched.underlying_row,
+                      option_rows=fetched.option_rows,
+                      evaluated_at=now,
+                  )
+                  print("BUILD_RESULT", json.dumps({
+                      "status": result.status,
+                      "phase": result.phase,
+                      "source_contracts_total": result.source_contracts_total,
+                      "normalized_contracts": result.normalized_contracts,
+                      "fresh_contracts": result.fresh_contracts,
+                      "packet": result.packet is not None,
+                      "reasons": list(result.reasons),
+                  }, separators=(",", ":")))
+              except Exception:
+                  print("BUILD_TRACEBACK_BEGIN")
+                  traceback.print_exc()
+                  print("BUILD_TRACEBACK_END")
+          except Exception:
+              print("FETCH_TRACEBACK_BEGIN")
+              traceback.print_exc()
+              print("FETCH_TRACEBACK_END")
+          PY
+          else
+            echo 'ONE_SHOT_PROBE=UNKNOWN:RUNTIME_MISSING'
+          fi
+          echo '=== COLLECTOR JOURNAL ==='
+          journalctl -u "$unit" -n 120 --no-pager 2>&1 || true
+          echo '=== DEPLOYED PROVENANCE ==='
+          if [ -d "$repo/.git" ]; then
+            echo "DEPLOYED_EXACT_SHA=$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+            git -C "$repo" status --porcelain 2>/dev/null || true
+          else
+            echo 'DEPLOYED_EXACT_SHA=UNKNOWN'
+          fi
+          echo 'RADAR_ADMISSION=CONTEXT_ONLY_OR_BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$us_options_intelligence_status_script" '[ $script ]' > commands.json
               ;;
             futures_opend_env_probe)
               read -r -d '' futures_opend_env_probe_script <<'REMOTE' || true
