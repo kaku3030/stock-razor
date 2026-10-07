@@ -172,6 +172,45 @@ def _number(value: object, *, field: str) -> float:
     return parsed
 
 
+def _price_tick_for_symbol(symbol: object) -> float:
+    code = normalize_cn_symbol(symbol)
+    return 0.001 if code.startswith(("1", "5")) else 0.01
+
+
+def _reconcile_tencent_opening_envelope(
+    *,
+    symbol: object,
+    timeframe: str,
+    label: str,
+    open_: float,
+    close: float,
+    high: float,
+    low: float,
+) -> tuple[float, float, bool]:
+    """Bounded repair for Tencent opening-bar auction envelope drift.
+
+    Some Tencent ETF intraday rows retain the auction/open price in the open
+    field while the published high/low envelope can start from continuous
+    trading. Reconciliation is allowed only for the known first intraday bar
+    labels, only when close already lies inside the raw envelope, and only
+    within three minimum price ticks.
+    """
+
+    opening_suffix = {"15m": " 09:45", "60m": " 10:30"}.get(timeframe)
+    if opening_suffix is None or not label.endswith(opening_suffix):
+        return high, low, False
+    if high < low or not (low <= close <= high):
+        return high, low, False
+    if low <= open_ <= high:
+        return high, low, False
+
+    tick = _price_tick_for_symbol(symbol)
+    distance = (low - open_) if open_ < low else (open_ - high)
+    if distance < 0 or distance > (3 * tick + 1e-12):
+        return high, low, False
+    return max(high, open_), min(low, open_), True
+
+
 def _quality_flags(
     open_: float,
     close: float,
@@ -287,27 +326,41 @@ def parse_tencent_kline_rows(
         previous_label = label
         open_ = _number(raw[1], field="open")
         close = _number(raw[2], field="close")
-        high = _number(raw[3], field="high")
-        low = _number(raw[4], field="low")
+        high_raw = _number(raw[3], field="high")
+        low_raw = _number(raw[4], field="low")
         volume = _number(raw[5], field="volume")
-        rows.append(
-            {
-                "label": label,
-                "provider_label_raw": raw_label,
-                "open": open_,
-                "close": close,
-                "high": high,
-                "low": low,
-                "volume_raw": volume,
-                "volume_unit": "HAND",
-                "amount_raw": None,
-                "amount_unit": "UNAVAILABLE",
-                "provider": "tencent",
-                "quality_flags": _quality_flags(
-                    open_, close, high, low, volume, None
-                ),
-            }
+        high, low, reconciled = _reconcile_tencent_opening_envelope(
+            symbol=symbol,
+            timeframe=frame,
+            label=label,
+            open_=open_,
+            close=close,
+            high=high_raw,
+            low=low_raw,
         )
+        quality_flags = _quality_flags(
+            open_, close, high, low, volume, None
+        )
+        if reconciled:
+            quality_flags.append("TENCENT_OPENING_ENVELOPE_RECONCILED")
+        row = {
+            "label": label,
+            "provider_label_raw": raw_label,
+            "open": open_,
+            "close": close,
+            "high": high,
+            "low": low,
+            "volume_raw": volume,
+            "volume_unit": "HAND",
+            "amount_raw": None,
+            "amount_unit": "UNAVAILABLE",
+            "provider": "tencent",
+            "quality_flags": quality_flags,
+        }
+        if reconciled:
+            row["provider_high_raw"] = high_raw
+            row["provider_low_raw"] = low_raw
+        rows.append(row)
     return tuple(rows)
 
 
