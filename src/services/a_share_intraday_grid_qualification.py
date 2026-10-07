@@ -11,12 +11,13 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Sequence
 
-from src.services.a_share_intraday_semantics import (
-    CN_INTRADAY_ENDPOINT_EXTENSIONS,
-    TimestampSemantic,
-)
+from src.services.a_share_intraday_semantics import TimestampSemantic
 from src.services.a_share_provider_lineage import CN_REALTIME_SOURCE_LINEAGE
 
+
+_QUALIFICATION_ENDPOINTS = {
+    "tencent": frozenset({"tencent.kline_intraday"}),
+}
 
 _EXPECTED_END_LABELS = {
     15: (
@@ -77,7 +78,7 @@ def qualify_intraday_end_label_grid(
             source, endpoint, interval_minutes, labels,
             reasons=("UNSUPPORTED_SOURCE_LINEAGE",),
         )
-    allowed = CN_INTRADAY_ENDPOINT_EXTENSIONS.get(source, frozenset())
+    allowed = _QUALIFICATION_ENDPOINTS.get(source, frozenset())
     if endpoint not in allowed:
         return _blocked(
             source, endpoint, interval_minutes, labels,
