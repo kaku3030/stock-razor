@@ -329,6 +329,7 @@ def test_verify_gate_derives_delivery_from_fresh_quote_right_evidence():
 
 def test_installer_wires_bounded_same_context_research_warm_start():
     runtime = _embedded_runtime_python()
+    assert "from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache" in runtime
     assert "seed_futu_k1m_research_cache" in runtime
     assert "ctx.request_history_kline(" in runtime
     assert "ktype=ft.KLType.K_1M" in runtime
