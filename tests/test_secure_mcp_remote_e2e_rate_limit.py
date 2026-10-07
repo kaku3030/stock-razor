@@ -183,12 +183,15 @@ def test_workflow_keeps_sensitive_request_data_out_of_diagnostics() -> None:
     assert "print(req" not in source
 
 
-def test_secure_remote_e2e_includes_analysis_and_full_tool_discovery() -> None:
+def test_secure_remote_e2e_includes_us_analysis_cn_bars_and_full_tool_discovery() -> None:
     source = _script_source()
 
     assert "'get_futures_runtime_health'" in source
     assert "'get_market_analysis'" in source
+    assert "'get_cn_market_bars'" in source
     assert "Call get_market_analysis exactly once for AMD" in source
-    assert "len(names) != 5" in source
-    assert "len(discovered) == 5" in source
+    assert "Call get_cn_market_bars exactly once for 512730 daily bars" in source
+    assert "len(names) != 6" in source
+    assert "len(discovered) == 6" in source
+    assert "len(names) != 5" not in source
     assert "len(names) != 3" not in source
