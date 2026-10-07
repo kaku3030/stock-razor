@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import os
+from threading import RLock
+from time import perf_counter
 from typing import Iterable
 
 
@@ -13,6 +15,16 @@ DEFAULT_SNAPSHOT_PATH = "/run/stock-razor-us-livefeed/canonical-market-snapshot.
 DEFAULT_HEARTBEAT_MAX_AGE_SECONDS = 30
 DEFAULT_SNAPSHOT_MAX_AGE_SECONDS = 120
 SUPPORTED_TIMEFRAMES = ("1m", "5m", "15m", "1h")
+
+_JSON_CACHE_LOCK = RLock()
+_JSON_CACHE: dict[str, tuple[tuple[int, int, int, int], dict]] = {}
+
+
+def _latency_payload(started_at: float, payload: dict) -> dict:
+    return {
+        **payload,
+        "read_latency_ms": round((perf_counter() - started_at) * 1000, 3),
+    }
 
 
 def _fail(status: str, *, error: str | None = None, **extra) -> dict:
@@ -28,15 +40,40 @@ def _fail(status: str, *, error: str | None = None, **extra) -> dict:
     return payload
 
 
-def _load_json(path: str) -> tuple[dict | None, str | None]:
+def _file_signature(path: str) -> tuple[int, int, int, int]:
+    stat = os.stat(path)
+    return (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
+def _load_json(path: str) -> tuple[dict | None, str | None, bool]:
+    try:
+        signature = _file_signature(path)
+    except OSError as exc:
+        return None, type(exc).__name__, False
+
+    with _JSON_CACHE_LOCK:
+        cached = _JSON_CACHE.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1], None, True
+
     try:
         with open(path, "r", encoding="utf-8") as handle:
             payload = json.load(handle)
+            stat = os.fstat(handle.fileno())
+            loaded_signature = (
+                stat.st_dev,
+                stat.st_ino,
+                stat.st_mtime_ns,
+                stat.st_size,
+            )
     except (OSError, ValueError, TypeError) as exc:
-        return None, type(exc).__name__
+        return None, type(exc).__name__, False
     if not isinstance(payload, dict):
-        return None, "INVALID_JSON_ROOT"
-    return payload, None
+        return None, "INVALID_JSON_ROOT", False
+
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE[path] = (loaded_signature, payload)
+    return payload, None, False
 
 
 def _aware_timestamp(value: object) -> datetime | None:
@@ -123,9 +160,14 @@ def _snapshot_source(
     if max_age_seconds <= 0:
         raise ValueError("max_age_seconds must be positive")
     source_path = _snapshot_path(path)
-    payload, error = _load_json(source_path)
+    payload, error, cache_hit = _load_json(source_path)
     if payload is None:
-        return None, _fail("UNAVAILABLE", error=error, source_path=source_path)
+        return None, _fail(
+            "UNAVAILABLE",
+            error=error,
+            source_path=source_path,
+            source_cache_hit=False,
+        )
     if payload.get("schema") != "stock_razor_canonical_market_snapshot_v1":
         return None, _fail("INVALID", error="UNSUPPORTED_SCHEMA", source_path=source_path)
     if not _safety_contract(payload):
@@ -148,6 +190,7 @@ def _snapshot_source(
         "status": source_status,
         "source_path": source_path,
         "source_age_seconds": age,
+        "source_cache_hit": cache_hit,
         "repo_sha": payload.get("repo_sha"),
         "runtime_instance_id": payload.get("runtime_instance_id"),
         "sequence": payload.get("sequence"),
@@ -172,25 +215,43 @@ def read_us_livefeed_health(
 ) -> dict:
     """Return compact service health without touching a provider SDK."""
 
+    started_at = perf_counter()
     if heartbeat_max_age_seconds <= 0:
         raise ValueError("heartbeat_max_age_seconds must be positive")
     now = _now(now_utc)
     source_path = _status_path(status_path)
-    heartbeat, error = _load_json(source_path)
+    heartbeat, error, heartbeat_cache_hit = _load_json(source_path)
     if heartbeat is None:
-        return _fail("UNAVAILABLE", error=error, source_path=source_path)
+        return _latency_payload(
+            started_at,
+            _fail(
+                "UNAVAILABLE",
+                error=error,
+                source_path=source_path,
+                heartbeat_cache_hit=False,
+            ),
+        )
     if heartbeat.get("type") != "us_opend_livefeed_heartbeat":
-        return _fail("INVALID", error="UNSUPPORTED_HEARTBEAT", source_path=source_path)
+        return _latency_payload(
+            started_at,
+            _fail("INVALID", error="UNSUPPORTED_HEARTBEAT", source_path=source_path),
+        )
     if not _safety_contract(heartbeat):
-        return _fail(
-            "INVALID",
-            error="SAFETY_CONTRACT_VIOLATION",
-            source_path=source_path,
+        return _latency_payload(
+            started_at,
+            _fail(
+                "INVALID",
+                error="SAFETY_CONTRACT_VIOLATION",
+                source_path=source_path,
+            ),
         )
 
     age = _age_seconds(heartbeat.get("emitted_at_utc"), now_utc=now)
     if age is None or age < -5:
-        return _fail("INVALID", error="INVALID_EMITTED_AT", source_path=source_path)
+        return _latency_payload(
+            started_at,
+            _fail("INVALID", error="INVALID_EMITTED_AT", source_path=source_path),
+        )
     heartbeat_fresh = age <= heartbeat_max_age_seconds
     controller_connected = heartbeat.get("controller_lifecycle") == "CONNECTED"
     canonical_export = heartbeat.get("canonical_snapshot_export")
@@ -216,7 +277,7 @@ def read_us_livefeed_health(
     }
     healthy = heartbeat_fresh and controller_connected and export_pass
     status = "HEALTHY" if healthy else ("STALE" if not heartbeat_fresh else "DEGRADED")
-    return {
+    return _latency_payload(started_at, {
         "ok": healthy,
         "status": status,
         "heartbeat_age_seconds": age,
@@ -237,6 +298,8 @@ def read_us_livefeed_health(
         "canonical_snapshot_status": snapshot_meta.get("status"),
         "canonical_snapshot_age_seconds": snapshot_meta.get("source_age_seconds"),
         "canonical_snapshot_available": snapshot is not None,
+        "heartbeat_cache_hit": heartbeat_cache_hit,
+        "canonical_snapshot_cache_hit": snapshot_meta.get("source_cache_hit"),
         "cache_counts": cache_counts,
         "realtime_delivery_evidence": (
             heartbeat_fresh and heartbeat.get("delivery_mode") == "REALTIME"
@@ -244,7 +307,7 @@ def read_us_livefeed_health(
         "bar_closure_proven": heartbeat.get("bar_closure") == "PROVEN",
         "radar_admission": "BLOCKED",
         "live_trade": False,
-    }
+    })
 
 
 def read_us_market_snapshots(
@@ -256,27 +319,34 @@ def read_us_market_snapshots(
 ) -> dict:
     """Return compact latest canonical bars for requested US symbols."""
 
+    started_at = perf_counter()
     payload, meta = _snapshot_source(
         path,
         now_utc=now_utc,
         max_age_seconds=max_age_seconds,
     )
     if payload is None:
-        return meta
+        return _latency_payload(started_at, meta)
 
     source_symbols = payload.get("symbols")
     if not isinstance(source_symbols, dict):
-        return _fail("INVALID", error="INVALID_SYMBOL_MAP", **{
-            key: value for key, value in meta.items()
-            if key not in {"ok", "status", "radar_admission", "live_trade"}
-        })
+        return _latency_payload(
+            started_at,
+            _fail("INVALID", error="INVALID_SYMBOL_MAP", **{
+                key: value for key, value in meta.items()
+                if key not in {"ok", "status", "radar_admission", "live_trade"}
+            }),
+        )
 
     requested, invalid = _normalize_symbols(symbols)
     if invalid:
-        return _fail(
-            "INVALID_ARGUMENT",
-            error="INVALID_SYMBOL",
-            invalid_symbols=list(invalid),
+        return _latency_payload(
+            started_at,
+            _fail(
+                "INVALID_ARGUMENT",
+                error="INVALID_SYMBOL",
+                invalid_symbols=list(invalid),
+            ),
         )
     selected = requested or tuple(sorted(source_symbols))
     result: dict[str, dict] = {}
@@ -303,7 +373,7 @@ def read_us_market_snapshots(
             "latest": latest,
         }
 
-    return {
+    return _latency_payload(started_at, {
         **meta,
         "symbols": result,
         "missing_symbols": missing,
@@ -311,7 +381,7 @@ def read_us_market_snapshots(
             any(value is not None for value in item["latest"].values())
             for item in result.values()
         ),
-    }
+    })
 
 
 def read_us_market_bars(
@@ -325,18 +395,28 @@ def read_us_market_bars(
 ) -> dict:
     """Return bounded canonical bars from the local cloud snapshot."""
 
+    started_at = perf_counter()
     normalized = _normalize_symbol(symbol)
     if normalized is None:
-        return _fail("INVALID_ARGUMENT", error="INVALID_SYMBOL")
+        return _latency_payload(
+            started_at,
+            _fail("INVALID_ARGUMENT", error="INVALID_SYMBOL"),
+        )
     frame = str(timeframe or "").strip().lower()
     if frame not in SUPPORTED_TIMEFRAMES:
-        return _fail(
-            "INVALID_ARGUMENT",
-            error="UNSUPPORTED_TIMEFRAME",
-            supported_timeframes=list(SUPPORTED_TIMEFRAMES),
+        return _latency_payload(
+            started_at,
+            _fail(
+                "INVALID_ARGUMENT",
+                error="UNSUPPORTED_TIMEFRAME",
+                supported_timeframes=list(SUPPORTED_TIMEFRAMES),
+            ),
         )
     if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 480:
-        return _fail("INVALID_ARGUMENT", error="INVALID_LIMIT", limit_max=480)
+        return _latency_payload(
+            started_at,
+            _fail("INVALID_ARGUMENT", error="INVALID_LIMIT", limit_max=480),
+        )
 
     payload, meta = _snapshot_source(
         path,
@@ -344,12 +424,12 @@ def read_us_market_bars(
         max_age_seconds=max_age_seconds,
     )
     if payload is None:
-        return meta
+        return _latency_payload(started_at, meta)
     source_symbols = payload.get("symbols")
     source_symbols = source_symbols if isinstance(source_symbols, dict) else {}
     item = source_symbols.get(normalized)
     if not isinstance(item, dict):
-        return {
+        return _latency_payload(started_at, {
             **meta,
             "ok": False,
             "status": "NO_DATA",
@@ -358,13 +438,13 @@ def read_us_market_bars(
             "bars": [],
             "bar_count": 0,
             "total_bar_count": 0,
-        }
+        })
     frames = item.get("timeframes")
     frames = frames if isinstance(frames, dict) else {}
     bars = frames.get(frame)
     bars = [bar for bar in bars if isinstance(bar, dict)] if isinstance(bars, list) else []
     selected = bars[-limit:]
-    return {
+    return _latency_payload(started_at, {
         **meta,
         "ok": bool(selected),
         "status": meta["status"] if selected else "NO_DATA",
@@ -373,4 +453,4 @@ def read_us_market_bars(
         "bar_count": len(selected),
         "total_bar_count": len(bars),
         "bars": selected,
-    }
+    })
