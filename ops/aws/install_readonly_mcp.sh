@@ -22,6 +22,7 @@ PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from realtime_monitor.readonly_mcp_server import (
     get_futures_runtime_health,
     get_livefeed_health,
+    get_market_analysis,
     get_market_bars,
     get_market_snapshots,
     mcp,
@@ -34,6 +35,7 @@ for result in (
     get_livefeed_health(),
     get_market_snapshots(["AMD"]),
     get_market_bars("AMD", timeframe="1m", limit=1),
+    get_market_analysis(["AMD"]),
 ):
     assert result["live_trade"] is False
     assert result["radar_admission"] == "BLOCKED"
@@ -43,7 +45,7 @@ PY
 cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
 [Unit]
 Description=STOCK RAZOR canonical read-only MCP
-After=network-online.target stock-razor-futures.service stock-razor-us-livefeed.service
+After=network-online.target stock-razor-futures.service stock-razor-us-livefeed.service stock-razor-us-radar.service
 Wants=network-online.target
 
 [Service]
@@ -54,6 +56,7 @@ Environment=PYTHONPATH=$INSTALL_ROOT/repo
 Environment=STOCK_RAZOR_FUTURES_STATUS_PATH=/run/stock-razor-futures/latest-heartbeat.json
 Environment=STOCK_RAZOR_US_LIVEFEED_STATUS_PATH=/run/stock-razor-us-livefeed/latest-heartbeat.json
 Environment=STOCK_RAZOR_US_CANONICAL_SNAPSHOT_PATH=/run/stock-razor-us-livefeed/canonical-market-snapshot.json
+Environment=STOCK_RAZOR_US_RADAR_STATUS_PATH=/run/stock-razor-us-radar/latest-research-state.json
 ExecStart=$INSTALL_ROOT/venv/bin/python -m realtime_monitor.readonly_mcp_server
 Restart=on-failure
 RestartSec=5
