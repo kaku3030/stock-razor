@@ -40,6 +40,14 @@ def _three_sessions_with_anchor(symbol: str):
     ]
 
 
+def _three_sessions_without_anchor(symbol: str):
+    return [
+        *_session("2026-10-02", symbol),
+        *_session("2026-10-05", symbol),
+        *_session("2026-10-06", symbol),
+    ]
+
+
 class _Cache:
     def __init__(self):
         self.bars = {}
@@ -89,9 +97,45 @@ def test_runtime_warm_start_pages_then_seeds_three_complete_sessions():
         "2026-10-06 09:31:00",
         "2026-10-07 09:31:00",
     )
+    assert item.closure_methods == (
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+    )
     assert calls[0][3] is None
     assert calls[1][3] == b"page-2"
     assert calls[2][3] == b"page-3"
+
+
+def test_runtime_warm_start_seeds_prior_day_terminal_session_without_anchor():
+    symbol = "US.AMD"
+    rows = _three_sessions_without_anchor(symbol)
+    cache = _Cache()
+
+    result = seed_futu_k1m_research_cache(
+        [symbol],
+        fetch_page=lambda *args: (rows, None),
+        market_data=cache,
+        received_at=NOW,
+    )
+
+    assert result.status == "PASS"
+    assert result.seeded_total == 1170
+    assert len(cache.bars) == 1170
+    item = result.symbols[0]
+    assert item.status == "PASS"
+    assert item.session_date == "2026-10-06"
+    assert item.session_dates == ("2026-10-02", "2026-10-05", "2026-10-06")
+    assert item.closure_anchor_time_key is None
+    assert item.closure_anchor_time_keys == (
+        "2026-10-05 09:31:00",
+        "2026-10-06 09:31:00",
+    )
+    assert item.closure_methods == (
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+        "QUALIFIED_PRIOR_SESSION_FULL_GRID",
+    )
 
 
 def test_page_limit_blocks_without_partial_seed():

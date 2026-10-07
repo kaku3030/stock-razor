@@ -377,7 +377,12 @@ def test_verify_gate_requires_full_research_warm_start_without_promotion():
     assert 'int(warm_start.get("required_sessions") or 0) == 3' in VERIFY
     assert 'int(item.get("planned_bar_count") or 0) == 1170' in VERIFY
     assert 'len(item.get("session_dates") or []) == 3' in VERIFY
-    assert 'len(item.get("closure_anchor_time_keys") or []) == 3' in VERIFY
+    assert 'methods = item.get("closure_methods") or []' in VERIFY
+    assert 'anchors = item.get("closure_anchor_time_keys") or []' in VERIFY
+    assert 'assert len(methods) == 3' in VERIFY
+    assert '"QUALIFIED_PRIOR_SESSION_FULL_GRID"' in VERIFY
+    assert 'assert len(anchors) == 2' in VERIFY
+    assert 'assert len(anchors) == 3' in VERIFY
     assert 'int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170' in VERIFY
     assert 'int(item.get("bar_count") or 0) >= 1170' in VERIFY
     assert 'len(frames.get("1m") or []) >= 1170' in VERIFY

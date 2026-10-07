@@ -30,7 +30,7 @@ def _session(day: str, symbol: str = "US.AMD"):
     return rows
 
 
-def test_selects_previous_complete_session_when_latest_tail_has_no_later_label():
+def test_selects_complete_prior_day_terminal_session_without_next_label():
     prior = _session("2026-10-05")
     latest = _session("2026-10-06")
 
@@ -41,10 +41,11 @@ def test_selects_previous_complete_session_when_latest_tail_has_no_later_label()
     )
 
     assert plan.status == "PASS"
-    assert plan.session_date == "2026-10-05"
+    assert plan.session_date == "2026-10-06"
     assert len(plan.bars) == 390
     assert plan.bars[-1].bar_end.hour == 20  # 16:00 New York = 20:00 UTC in EDT
-    assert plan.closure_anchor_time_key == "2026-10-06 09:31:00"
+    assert plan.closure_anchor_time_key is None
+    assert plan.closure_method == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
     assert plan.bars[-1].quality_flags == ("HISTORICAL_QUERY",)
     assert plan.research_cache_seed_eligible is True
 
@@ -66,12 +67,12 @@ def test_selects_latest_session_once_next_provider_label_exists():
     assert plan.closure_anchor_time_key == "2026-10-07 09:31:00"
 
 
-def test_latest_session_without_anchor_is_not_partially_seeded():
+def test_same_day_latest_session_without_anchor_remains_blocked():
     latest = _session("2026-10-06")
 
     plan = build_futu_k1m_warm_start_plan(
         latest,
-        received_at=RECEIVED,
+        received_at=datetime(2026, 10, 6, 22, 0, tzinfo=timezone.utc),
         expected_symbol="US.AMD",
     )
 
@@ -160,7 +161,45 @@ def test_three_session_selection_is_newest_first_and_seed_eligible():
         "2026-10-06 09:31:00",
         "2026-10-07 09:31:00",
     )
+    assert selection.closure_methods == (
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+    )
     assert selection.bar_count == 1170
+
+
+def test_three_session_selection_can_use_prior_date_terminal_full_grid():
+    rows = [
+        *_session("2026-10-02"),
+        *_session("2026-10-05"),
+        *_session("2026-10-06"),
+    ]
+
+    selection = build_futu_k1m_warm_start_selection(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+        requested_sessions=3,
+    )
+
+    assert selection.status == "PASS"
+    assert selection.session_dates == (
+        "2026-10-02",
+        "2026-10-05",
+        "2026-10-06",
+    )
+    assert selection.closure_anchor_time_keys == (
+        "2026-10-05 09:31:00",
+        "2026-10-06 09:31:00",
+    )
+    assert selection.closure_methods == (
+        "NEXT_TIME_KEY_PROGRESS",
+        "NEXT_TIME_KEY_PROGRESS",
+        "QUALIFIED_PRIOR_SESSION_FULL_GRID",
+    )
+    assert selection.bar_count == 1170
+    assert selection.plans[0].closure_anchor_time_key is None
 
 
 def test_two_proven_sessions_do_not_satisfy_three_session_selection():

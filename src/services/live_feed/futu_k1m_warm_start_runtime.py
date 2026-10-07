@@ -32,12 +32,14 @@ class FutuK1MSymbolWarmStartResult:
     reasons: tuple[str, ...] = ()
     session_dates: tuple[str, ...] = ()
     closure_anchor_time_keys: tuple[str, ...] = ()
+    closure_methods: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         payload = asdict(self)
         payload["reasons"] = list(self.reasons)
         payload["session_dates"] = list(self.session_dates)
         payload["closure_anchor_time_keys"] = list(self.closure_anchor_time_keys)
+        payload["closure_methods"] = list(self.closure_methods)
         return payload
 
 
@@ -185,6 +187,7 @@ def seed_futu_k1m_research_cache(
                     reasons=selection.reasons,
                     session_dates=selection.session_dates,
                     closure_anchor_time_keys=selection.closure_anchor_time_keys,
+                    closure_methods=selection.closure_methods,
                 )
             )
             continue
@@ -218,6 +221,7 @@ def seed_futu_k1m_research_cache(
                     reasons=(f"CACHE_INGEST_EXCEPTION:{type(exc).__name__}",),
                     session_dates=selection.session_dates,
                     closure_anchor_time_keys=selection.closure_anchor_time_keys,
+                    closure_methods=selection.closure_methods,
                 )
             )
             continue
@@ -236,6 +240,7 @@ def seed_futu_k1m_research_cache(
                 reasons=(),
                 session_dates=selection.session_dates,
                 closure_anchor_time_keys=selection.closure_anchor_time_keys,
+                closure_methods=selection.closure_methods,
             )
         )
 

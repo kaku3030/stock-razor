@@ -41,9 +41,24 @@ for symbol, item in warm_symbols.items():
     assert item.get("status") == "PASS"
     assert int(item.get("planned_bar_count") or 0) == 1170
     assert len(item.get("session_dates") or []) == 3
-    assert len(item.get("closure_anchor_time_keys") or []) == 3
+    methods = item.get("closure_methods") or []
+    anchors = item.get("closure_anchor_time_keys") or []
+    assert len(methods) == 3
+    assert set(methods) <= {
+        "NEXT_TIME_KEY_PROGRESS",
+        "QUALIFIED_PRIOR_SESSION_FULL_GRID",
+    }
+    terminal_count = methods.count("QUALIFIED_PRIOR_SESSION_FULL_GRID")
+    assert terminal_count in {0, 1}
+    if terminal_count:
+        assert methods[-1] == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+        assert len(anchors) == 2
+        assert item.get("closure_anchor_time_key") is None
+    else:
+        assert methods == ["NEXT_TIME_KEY_PROGRESS"] * 3
+        assert len(anchors) == 3
+        assert item.get("closure_anchor_time_key")
     assert int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170
-    assert item.get("closure_anchor_time_key")
 assert int(warm_start.get("seeded_total") or 0) + int(warm_start.get("unchanged_total") or 0) == 1170 * len(expected_symbols)
 
 daily_summary = heartbeat.get("daily_history") or {}
