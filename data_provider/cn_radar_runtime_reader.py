@@ -166,8 +166,13 @@ def read_cn_radar_analysis(
             started_at,
             _fail("INVALID", error="MISSING_EVALUATION"),
         )
+    evaluation_timestamp_semantics_proven = evaluation.get(
+        "intraday_timestamp_semantics_proven"
+    )
     if not (
         evaluation.get("schema") == "stock_razor_cn_radar_research_v1"
+        and isinstance(evaluation_timestamp_semantics_proven, bool)
+        and evaluation.get("intraday_currentness_proven") is False
         and evaluation.get("research_only") is True
         and evaluation.get("can_confirm_signal") is False
         and evaluation.get("radar_admission") == "BLOCKED"
@@ -236,7 +241,7 @@ def read_cn_radar_analysis(
         "research_state_symbols": evaluation.get("research_state_symbols") or [],
         "provider_policy": evaluation.get("provider_policy"),
         "provider_lineages": evaluation.get("provider_lineages") or [],
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": evaluation_timestamp_semantics_proven,
         "intraday_currentness_proven": False,
         "symbols": result,
         "missing_symbols": missing,
