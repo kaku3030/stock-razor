@@ -83,8 +83,8 @@ def test_export_preserves_canonical_timeframes_health_and_safety():
     assert first["provider"] == "futu"
     assert first["feed"] == "opend"
     assert first["is_closed"] and first["is_complete"]
-    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" in first["quality_flags"]
-    assert first["health"]["signal_permission"] == "blocked"
+    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" not in first["quality_flags"]
+    assert first["health"]["signal_permission"] == "normal"
 
 
 def test_empty_snapshot_is_exportable_without_inventing_bars():

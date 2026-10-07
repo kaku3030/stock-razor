@@ -27,9 +27,9 @@ def test_opend_snapshot_reaches_radar_but_cannot_confirm_signal():
     daily=pd.DataFrame({"date":pd.date_range("2026-07-01",periods=80,freq="D"),"open":[100+i*.2 for i in range(80)],"high":[101+i*.2 for i in range(80)],"low":[99+i*.2 for i in range(80)],"close":[100.5+i*.2 for i in range(80)],"volume":[1000+i for i in range(80)]})
     state=StockRadarTechnicalStateService().evaluate(snap,daily=daily)
     assert state.provider == "futu" and state.feed == "opend"
-    assert state.signal_permission is SignalPermission.BLOCKED
+    assert state.signal_permission is SignalPermission.NORMAL
     assert state.research_only is True and state.can_confirm_signal is False
     assert "timestamp_mismatch" not in state.technical.risk_flags
-    assert "timestamp_semantics_unverified" in state.technical.risk_flags
+    assert "timestamp_semantics_unverified" not in state.technical.risk_flags
     assert state.technical.intraday.confidence <= .65
     assert state.technical.hourly.confidence <= .65

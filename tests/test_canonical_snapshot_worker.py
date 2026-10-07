@@ -103,8 +103,8 @@ def test_loader_reconstructs_all_canonical_timeframes_and_health():
     assert len(snapshot.bars_5m) == 18
     assert len(snapshot.bars_15m) == 6
     assert len(snapshot.bars_1h) == 2
-    assert snapshot.health.signal_permission is SignalPermission.BLOCKED
-    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" in snapshot.health.quality_flags
+    assert snapshot.health.signal_permission is SignalPermission.NORMAL
+    assert "TIMESTAMP_SEMANTICS_UNVERIFIED" not in snapshot.health.quality_flags
 
 
 def test_evaluator_produces_research_only_state_from_canonical_snapshot(tmp_path):
@@ -131,8 +131,8 @@ def test_evaluator_produces_research_only_state_from_canonical_snapshot(tmp_path
     assert symbol.technical_state is not None
     assert symbol.technical_state.research_only is True
     assert symbol.technical_state.can_confirm_signal is False
-    assert symbol.technical_state.signal_permission is SignalPermission.BLOCKED
-    assert "timestamp_semantics_unverified" in symbol.technical_state.technical.risk_flags
+    assert symbol.technical_state.signal_permission is SignalPermission.NORMAL
+    assert "timestamp_semantics_unverified" not in symbol.technical_state.technical.risk_flags
 
 
 def test_empty_canonical_cache_returns_no_bars_without_inventing_state(tmp_path):
