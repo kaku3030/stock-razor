@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -18,7 +19,13 @@ HEALTHY = evaluate_health(
 )
 
 
-def _bar(index: int, timeframe: str, *, partial: bool = False) -> Bar:
+def _bar(
+    index: int,
+    timeframe: str,
+    *,
+    partial: bool = False,
+    quality_flags: tuple[str, ...] = (),
+) -> Bar:
     minutes = 15 if timeframe == "15m" else 60
     start = START + timedelta(minutes=index * minutes)
     close = 100 + index * 0.5
@@ -42,7 +49,10 @@ def _bar(index: int, timeframe: str, *, partial: bool = False) -> Bar:
         is_closed=not partial,
         is_complete=not partial,
         health=HEALTHY,
-        quality_flags=("PARTIAL_BAR",) if partial else (),
+        quality_flags=tuple(
+            dict.fromkeys((*quality_flags, *(("PARTIAL_BAR",) if partial else ())))
+        ),
+
     )
 
 
@@ -96,6 +106,70 @@ def test_forming_bar_is_partial_and_caps_intraday_confidence() -> None:
     assert state.technical.intraday.quality.is_partial_bar is True
     assert state.technical.intraday.confidence <= 0.65
     assert "15m_partial_bar" in state.technical.risk_flags
+
+
+def test_old_temporal_quality_flags_do_not_poison_current_intraday_state() -> None:
+    base = _snapshot()
+    bars_15m = tuple(
+        _bar(
+            index,
+            "15m",
+            quality_flags=("HISTORICAL_QUERY", "STALE", "DELAYED_FEED")
+            if index == 0
+            else (),
+        )
+        for index in range(40)
+    )
+    state = StockRadarTechnicalStateService().evaluate(
+        replace(base, bars_15m=bars_15m),
+        daily=_daily(),
+    )
+
+    assert state.technical.intraday.quality.status != "partial"
+    assert state.technical.intraday.confidence > 0.65
+    assert "15m_historical_query" not in state.technical.risk_flags
+    assert "15m_stale" not in state.technical.risk_flags
+    assert "15m_delayed_feed" not in state.technical.risk_flags
+
+
+def test_latest_temporal_quality_flag_still_caps_intraday_state() -> None:
+    base = _snapshot()
+    bars_15m = tuple(
+        _bar(
+            index,
+            "15m",
+            quality_flags=("HISTORICAL_QUERY",) if index == 39 else (),
+        )
+        for index in range(40)
+    )
+    state = StockRadarTechnicalStateService().evaluate(
+        replace(base, bars_15m=bars_15m),
+        daily=_daily(),
+    )
+
+    assert state.technical.intraday.quality.status == "partial"
+    assert state.technical.intraday.confidence <= 0.65
+    assert "15m_historical_query" in state.technical.risk_flags
+
+
+def test_old_structural_quality_flag_still_degrades_intraday_state() -> None:
+    base = _snapshot()
+    bars_15m = tuple(
+        _bar(
+            index,
+            "15m",
+            quality_flags=("MISSING_BAR",) if index == 0 else (),
+        )
+        for index in range(40)
+    )
+    state = StockRadarTechnicalStateService().evaluate(
+        replace(base, bars_15m=bars_15m),
+        daily=_daily(),
+    )
+
+    assert state.technical.intraday.quality.status == "partial"
+    assert state.technical.intraday.confidence <= 0.65
+    assert "15m_missing_bar" in state.technical.risk_flags
 
 
 def test_missing_daily_data_degrades_without_inventing_daily_state() -> None:
