@@ -34,6 +34,7 @@ _SUPPORTED_INTERVAL_MINUTES = frozenset({15, 60})
 # identity remains authoritative in PR #40 CN_REALTIME_SOURCE_LINEAGE.
 _CN_INTRADAY_ENDPOINT_EXTENSIONS_MUTABLE = {
     "akshare_em": frozenset({"akshare.eastmoney_intraday"}),
+    "tencent": frozenset({"tencent.kline_intraday"}),
 }
 
 for _source_token in _CN_INTRADAY_ENDPOINT_EXTENSIONS_MUTABLE:
