@@ -12,14 +12,18 @@ def _write(path, payload):
     return str(path)
 
 
-def _state(symbol, score):
+def _state(symbol, score, *, timestamp_semantics_proven=False):
     return {
         "status": "RESEARCH_STATE",
         "technical": {
             "code": symbol,
             "research_score": score,
             "risk_flags": [
-                "cn_intraday_timestamp_semantics_unproven",
+                *(
+                    []
+                    if timestamp_semantics_proven
+                    else ["cn_intraday_timestamp_semantics_unproven"]
+                ),
                 "cn_intraday_currentness_unproven",
             ],
         },
@@ -30,13 +34,20 @@ def _state(symbol, score):
         },
         "providers_used": ["tencent"],
         "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
+        "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
+        "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
         "signal_permission": "record_only",
     }
 
 
-def _payload(*, emitted_at=NOW - timedelta(seconds=5), safe=True):
+def _payload(
+    *,
+    emitted_at=NOW - timedelta(seconds=5),
+    safe=True,
+    timestamp_semantics_proven=False,
+):
     return {
         "type": "cn_radar_research_heartbeat",
         "runtime_instance_id": "cn-radar-1",
@@ -59,13 +70,21 @@ def _payload(*, emitted_at=NOW - timedelta(seconds=5), safe=True):
             "source_emitted_at_utc": (NOW - timedelta(seconds=10)).isoformat(),
             "status": "PASS",
             "symbols": {
-                "159611": _state("159611", 65),
-                "159363": _state("159363", 45),
+                "159611": _state(
+                    "159611",
+                    65,
+                    timestamp_semantics_proven=timestamp_semantics_proven,
+                ),
+                "159363": _state(
+                    "159363",
+                    45,
+                    timestamp_semantics_proven=timestamp_semantics_proven,
+                ),
             },
             "research_state_symbols": ["159363", "159611"],
             "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
             "provider_lineages": ["eastmoney", "tencent"],
-            "intraday_timestamp_semantics_proven": False,
+            "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
             "intraday_currentness_proven": False,
             "research_only": True,
             "can_confirm_signal": False,
@@ -93,6 +112,27 @@ def test_reads_precomputed_cn_analysis_and_filters_symbols(tmp_path):
     assert result["read_latency_ms"] >= 0
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_qualified_bar_end_semantics_are_preserved_in_fast_analysis(tmp_path):
+    path = _write(
+        tmp_path / "cn-radar.json",
+        _payload(timestamp_semantics_proven=True),
+    )
+
+    result = read_cn_radar_analysis(["159611"], path=path, now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is False
+    state = result["symbols"]["159611"]
+    assert state["intraday_timestamp_semantics_proven"] is True
+    assert state["intraday_currentness_proven"] is False
+    assert "cn_intraday_timestamp_semantics_unproven" not in (
+        state["technical"]["risk_flags"]
+    )
+    assert "cn_intraday_currentness_unproven" in state["technical"]["risk_flags"]
+    assert state["signal_permission"] == "record_only"
 
 
 def test_no_filter_returns_all_research_states(tmp_path):

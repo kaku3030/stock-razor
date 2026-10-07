@@ -55,7 +55,7 @@ jobs:
           grep -q '"schema":"stock_razor_cn_eastmoney_observation_v1"' <<<"$out"
           grep -q '"provider_policy":"EASTMONEY_PRIMARY_TENCENT_FALLBACK"' <<<"$out"
           grep -q '"provider_lineages":\["eastmoney","tencent"\]' <<<"$out"
-          grep -q '"intraday_timestamp_semantics_proven":false' <<<"$out"
+          grep -q '"intraday_timestamp_semantics_proven":true' <<<"$out"
           grep -q '"intraday_currentness_proven":false' <<<"$out"
           grep -q '"radar_admission":"BLOCKED"' <<<"$out"
           grep -q '"live_trade":false' <<<"$out"

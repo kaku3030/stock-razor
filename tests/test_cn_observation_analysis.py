@@ -58,7 +58,20 @@ def _minute_rows(minutes, count=100):
     return rows
 
 
-def _frame(rows, timeframe):
+def _frame(rows, timeframe, *, qualified=False):
+    timestamp_semantic = "DAILY_DATE" if timeframe == "1d" else (
+        "BAR_END" if qualified else "UNKNOWN"
+    )
+    timestamp_qualification = None
+    if qualified and timeframe in {"15m", "60m"}:
+        timestamp_qualification = {
+            "status": "PASS",
+            "timestamp_semantic": "BAR_END",
+            "currentness_proven": False,
+            "continuity_proven": False,
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
     return {
         "status": "PASS",
         "error": None,
@@ -69,13 +82,14 @@ def _frame(rows, timeframe):
         "provider_lineage": "tencent",
         "fallback_from": "eastmoney",
         "fallback_reason": "CloudObservationError",
-        "timestamp_semantic": "DAILY_DATE" if timeframe == "1d" else "UNKNOWN",
+        "timestamp_semantic": timestamp_semantic,
+        "timestamp_qualification": timestamp_qualification,
         "currentness": "UNPROVEN",
         "adjustment": "NONE",
     }
 
 
-def _payload(*, safe=True, symbol_status="PASS"):
+def _payload(*, safe=True, symbol_status="PASS", timestamp_semantics_proven=False):
     return {
         "schema": "stock_razor_cn_eastmoney_observation_v1",
         "repo_sha": "a" * 40,
@@ -86,7 +100,7 @@ def _payload(*, safe=True, symbol_status="PASS"):
         "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
         "providers_used": ["tencent"],
         "provider_lineages": ["eastmoney", "tencent"],
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
         "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
@@ -100,10 +114,20 @@ def _payload(*, safe=True, symbol_status="PASS"):
                 "providers_used": ["tencent"],
                 "radar_admission": "BLOCKED",
                 "live_trade": False,
+                "intraday_timestamp_semantics_proven": timestamp_semantics_proven,
+                "intraday_currentness_proven": False,
                 "timeframes": {
                     "1d": _frame(_daily_rows(), "1d"),
-                    "60m": _frame(_minute_rows(60), "60m"),
-                    "15m": _frame(_minute_rows(15), "15m"),
+                    "60m": _frame(
+                        _minute_rows(60),
+                        "60m",
+                        qualified=timestamp_semantics_proven,
+                    ),
+                    "15m": _frame(
+                        _minute_rows(15),
+                        "15m",
+                        qualified=timestamp_semantics_proven,
+                    ),
                 },
             }
         },
@@ -137,6 +161,64 @@ def test_cn_analysis_preserves_provider_and_fallback_provenance():
     assert provenance["15m"]["fallback_reason"] == "CloudObservationError"
     assert provenance["15m"]["timestamp_semantic"] == "UNKNOWN"
     assert provenance["15m"]["currentness"] == "UNPROVEN"
+
+
+def test_qualified_bar_end_removes_only_timestamp_semantics_risk():
+    result = evaluate_cn_observation_payload(
+        _payload(timestamp_semantics_proven=True)
+    )
+
+    assert result["status"] == "PASS"
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is False
+    state = result["symbols"]["159611"]
+    assert state["intraday_timestamp_semantics_proven"] is True
+    assert state["intraday_currentness_proven"] is False
+    assert state["signal_permission"] == "record_only"
+    assert "cn_intraday_timestamp_semantics_unproven" not in state["technical"]["risk_flags"]
+    assert "cn_intraday_currentness_unproven" in state["technical"]["risk_flags"]
+    assert state["technical"]["hourly"]["quality"]["status"] == "partial"
+    assert state["technical"]["intraday"]["quality"]["status"] == "partial"
+    assert state["technical"]["hourly"]["confidence"] <= 0.65
+    assert state["technical"]["intraday"]["confidence"] <= 0.65
+    assert "1h_timestamp_semantics_unproven" not in (
+        state["technical"]["hourly"]["quality"]["warnings"]
+    )
+    assert "1h_currentness_unproven" in (
+        state["technical"]["hourly"]["quality"]["warnings"]
+    )
+    assert "15m_timestamp_semantics_unproven" not in (
+        state["technical"]["intraday"]["quality"]["warnings"]
+    )
+    assert "15m_currentness_unproven" in (
+        state["technical"]["intraday"]["quality"]["warnings"]
+    )
+
+
+def test_forged_root_bar_end_claim_cannot_launder_unqualified_frames():
+    payload = _payload()
+    payload["intraday_timestamp_semantics_proven"] = True
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "BLOCKED"
+    assert result["intraday_timestamp_semantics_proven"] is False
+    assert result["symbols"]["159611"]["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["reasons"] == [
+        "ANALYSIS_ERROR:CnObservationAnalysisError"
+    ]
+
+
+def test_bar_end_claim_with_failed_qualification_blocks_symbol():
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["symbols"]["159611"]["timeframes"]["15m"][
+        "timestamp_qualification"
+    ]["status"] = "BLOCKED"
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["status"] == "BLOCKED"
 
 
 def test_symbol_source_not_pass_is_blocked_without_analysis():

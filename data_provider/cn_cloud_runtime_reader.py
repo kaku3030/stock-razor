@@ -157,12 +157,15 @@ def read_cn_market_data(
             started_at,
             _fail("INVALID", error="UNSUPPORTED_SCHEMA", source_path=source_path),
         )
+    intraday_timestamp_semantics_proven = payload.get(
+        "intraday_timestamp_semantics_proven"
+    )
     if not (
-        payload.get("research_only") is True
+        isinstance(intraday_timestamp_semantics_proven, bool)
+        and payload.get("research_only") is True
         and payload.get("can_confirm_signal") is False
         and payload.get("radar_admission") == "BLOCKED"
         and payload.get("live_trade") is False
-        and payload.get("intraday_timestamp_semantics_proven") is False
         and payload.get("intraday_currentness_proven") is False
     ):
         return _finish(
@@ -224,6 +227,38 @@ def read_cn_market_data(
             "rows": [],
             "row_count": 0,
         })
+    symbol_timestamp_semantics_proven = item.get(
+        "intraday_timestamp_semantics_proven"
+    )
+    if symbol_timestamp_semantics_proven not in {True, False, None}:
+        return _finish(
+            started_at,
+            _fail("INVALID", error="SYMBOL_TIMESTAMP_SEMANTICS_INVALID"),
+        )
+    if frame in {"15m", "60m"} and frame_payload.get("timestamp_semantic") == "BAR_END":
+        qualification = frame_payload.get("timestamp_qualification")
+        if not (
+            isinstance(qualification, dict)
+            and qualification.get("status") == "PASS"
+            and qualification.get("timestamp_semantic") == "BAR_END"
+            and qualification.get("currentness_proven") is False
+            and qualification.get("radar_admission") == "BLOCKED"
+            and qualification.get("live_trade") is False
+        ):
+            return _finish(
+                started_at,
+                _fail("INVALID", error="TIMESTAMP_SEMANTICS_EVIDENCE_INVALID"),
+            )
+    if (
+        symbol_timestamp_semantics_proven is True
+        and frame in {"15m", "60m"}
+        and frame_payload.get("timestamp_semantic") != "BAR_END"
+    ):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="SYMBOL_TIMESTAMP_SEMANTICS_MISMATCH"),
+        )
+
     rows = frame_payload.get("rows")
     rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
     selected = rows[-limit:]
@@ -240,6 +275,11 @@ def read_cn_market_data(
         "emitted_at_utc": payload.get("emitted_at_utc"),
         "provider_policy": payload.get("provider_policy"),
         "provider_lineages": payload.get("provider_lineages"),
+        "intraday_timestamp_semantics_proven": intraday_timestamp_semantics_proven,
+        "intraday_currentness_proven": False,
+        "symbol_intraday_timestamp_semantics_proven": (
+            symbol_timestamp_semantics_proven is True
+        ),
         "symbol": normalized,
         "symbol_status": item.get("status"),
         "timeframe": frame,
@@ -248,6 +288,7 @@ def read_cn_market_data(
         "fallback_from": frame_payload.get("fallback_from"),
         "fallback_reason": frame_payload.get("fallback_reason"),
         "timestamp_semantic": frame_payload.get("timestamp_semantic"),
+        "timestamp_qualification": frame_payload.get("timestamp_qualification"),
         "currentness": frame_payload.get("currentness"),
         "total_row_count": len(rows),
         "row_count": len(selected),
