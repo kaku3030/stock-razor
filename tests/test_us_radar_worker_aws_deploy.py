@@ -54,6 +54,14 @@ def test_verify_requires_systemd_sandbox_and_research_only_contract():
     assert 'evaluation.get("source_bar_closure") in {"UNPROVEN", "PROVEN"}' in VERIFY
     assert 'evaluation.get("source_radar_admission") == "BLOCKED"' in VERIFY
     assert 'evaluation.get("source_live_trade") is False' in VERIFY
+    assert 'diagnostics.get("decision") == "BLOCKED"' in VERIFY
+    assert 'diagnostics.get("promotion_authorized") is False' in VERIFY
+    assert 'diagnostics.get("source_radar_admission") == "BLOCKED"' in VERIFY
+    assert 'diagnostics.get("source_live_trade") is False' in VERIFY
+    assert 'diagnostics.get("delivery_mode_realtime") is (' in VERIFY
+    assert 'diagnostics.get("bar_closure_proven") is (' in VERIFY
+    assert 'diagnostics.get("minimum_source_prerequisites_met") is (' in VERIFY
+    assert '"PROMOTION_NOT_AUTHORIZED" in diagnostic_reasons' in VERIFY
     assert "US_RADAR_WORKER_VERIFY=PASS" in VERIFY
 
 

@@ -34,6 +34,25 @@ assert evaluation.get("source_radar_admission") == "BLOCKED"
 assert evaluation.get("source_live_trade") is False
 assert evaluation.get("research_only") is True
 assert evaluation.get("can_confirm_signal") is False
+
+diagnostics = evaluation.get("admission_diagnostics") or {}
+assert diagnostics.get("decision") == "BLOCKED"
+assert diagnostics.get("promotion_authorized") is False
+assert diagnostics.get("source_radar_admission") == "BLOCKED"
+assert diagnostics.get("source_live_trade") is False
+assert diagnostics.get("delivery_mode_realtime") is (
+    evaluation.get("source_delivery_mode") == "REALTIME"
+)
+assert diagnostics.get("bar_closure_proven") is (
+    evaluation.get("source_bar_closure") == "PROVEN"
+)
+assert diagnostics.get("minimum_source_prerequisites_met") is (
+    diagnostics.get("delivery_mode_realtime") is True
+    and diagnostics.get("bar_closure_proven") is True
+)
+diagnostic_reasons = set(diagnostics.get("reasons") or [])
+assert "PROMOTION_NOT_AUTHORIZED" in diagnostic_reasons
+
 assert evaluation.get("status") in {"PASS", "UNCHANGED", "BLOCKED"}
 if evaluation.get("status") == "BLOCKED":
     reasons = set(evaluation.get("reasons") or [])
