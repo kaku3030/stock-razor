@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import threading
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -269,3 +270,31 @@ def test_http_json_retries_transient_disconnects(monkeypatch):
     assert payload == {"data": {"klines": []}}
     assert attempts == [2, 2, 2]
     assert sleeps == [0.25, 0.5]
+
+
+def test_symbol_timeframes_are_observed_concurrently(monkeypatch):
+    barrier = threading.Barrier(3, timeout=1.0)
+
+    def fake_frame(code, timeframe, **kwargs):
+        barrier.wait()
+        return {
+            "status": "PASS",
+            "error": None,
+            "row_count": 1,
+            "rows": [{"label": timeframe}],
+            "request_latency_ms": 1.0,
+            "provider_used": "eastmoney",
+            "provider_lineage": "eastmoney",
+            "fallback_from": None,
+            "fallback_reason": None,
+            "timestamp_semantic": "DAILY_DATE" if timeframe == "1d" else "UNKNOWN",
+            "currentness": "UNPROVEN",
+            "adjustment": "NONE",
+        }
+
+    monkeypatch.setattr(observer, "_frame_observation", fake_frame)
+
+    result = observer.observe_cn_cloud_symbol("512730", observed_at_utc=NOW)
+
+    assert list(result["timeframes"]) == ["1d", "60m", "15m"]
+    assert all(item["status"] == "PASS" for item in result["timeframes"].values())
