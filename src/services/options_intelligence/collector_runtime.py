@@ -74,7 +74,7 @@ class CollectorCycleResult:
         }
 
 
-def _safe_exception_code(exc: Exception) -> str:
+def safe_exception_code(exc: Exception) -> str:
     """Return a bounded, non-sensitive diagnostic code."""
 
     kind = type(exc).__name__
@@ -150,7 +150,7 @@ def run_options_collection_cycle(
                 source_contracts_total=0,
                 normalized_contracts=0,
                 fresh_contracts=0,
-                reasons=(f"SOURCE_FETCH_ERROR:{_safe_exception_code(exc)}",),
+                reasons=(f"SOURCE_FETCH_ERROR:{safe_exception_code(exc)}",),
             )
         else:
             try:
@@ -172,7 +172,7 @@ def run_options_collection_cycle(
                     normalized_contracts=0,
                     fresh_contracts=0,
                     reasons=(
-                        f"QUALIFICATION_ERROR:{_safe_exception_code(exc)}",
+                        f"QUALIFICATION_ERROR:{safe_exception_code(exc)}",
                     ),
                 )
         results.append(result)
