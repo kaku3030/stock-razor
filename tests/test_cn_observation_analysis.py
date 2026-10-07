@@ -178,3 +178,100 @@ def test_output_never_promotes_currentness_or_trading():
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
     assert result["symbols"]["159611"]["signal_permission"] == "record_only"
+
+
+def test_tencent_opening_auction_range_gap_is_soft_research_risk():
+    payload = _payload()
+    frames = payload["symbols"]["159611"]["timeframes"]
+
+    first_15m = next(
+        row for row in frames["15m"]["rows"] if row["label"].endswith("09:45")
+    )
+    first_15m["open"] = first_15m["low"] - 0.003
+    first_15m["quality_flags"] = ["INVALID_OHLC"]
+
+    first_60m = next(
+        row for row in frames["60m"]["rows"] if row["label"].endswith("10:30")
+    )
+    first_60m["open"] = first_60m["low"] - 0.003
+    first_60m["quality_flags"] = ["INVALID_OHLC"]
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "PASS"
+    state = result["symbols"]["159611"]
+    assert state["status"] == "RESEARCH_STATE"
+    assert "cn_opening_auction_range_gap" in state["technical"]["risk_flags"]
+    assert "OPENING_AUCTION_RANGE_GAP" in (
+        state["frame_provenance"]["15m"]["analysis_warnings"]
+    )
+    assert "OPENING_AUCTION_RANGE_GAP" in (
+        state["frame_provenance"]["60m"]["analysis_warnings"]
+    )
+
+
+def test_non_opening_invalid_ohlc_remains_hard_block():
+    payload = _payload()
+    row = payload["symbols"]["159611"]["timeframes"]["15m"]["rows"][-1]
+    row["open"] = row["low"] - 0.003
+    row["quality_flags"] = ["INVALID_OHLC"]
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["status"] == "BLOCKED"
+
+
+def test_opening_bar_with_close_outside_range_remains_hard_block():
+    payload = _payload()
+    row = next(
+        item
+        for item in payload["symbols"]["159611"]["timeframes"]["15m"]["rows"]
+        if item["label"].endswith("09:45")
+    )
+    row["open"] = row["low"] - 0.003
+    row["close"] = row["high"] + 0.01
+    row["quality_flags"] = ["INVALID_OHLC"]
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["status"] == "BLOCKED"
+
+
+def test_real_512730_tencent_opening_rows_are_soft_only_at_session_open():
+    payload = _payload()
+    symbol = payload["symbols"].pop("159611")
+    payload["symbols"]["512730"] = symbol
+
+    frames = symbol["timeframes"]
+    exact_cases = {
+        "15m": ("2026-08-19 09:45", 1.645, 1.656, 1.659, 1.648),
+        "60m": ("2026-08-19 10:30", 1.645, 1.659, 1.660, 1.648),
+    }
+    for timeframe, (label, open_, close, high, low) in exact_cases.items():
+        row = frames[timeframe]["rows"][0]
+        row.update({
+            "label": label,
+            "provider_label_raw": label.replace("-", "").replace(" ", "").replace(":", ""),
+            "open": open_,
+            "close": close,
+            "high": high,
+            "low": low,
+            "quality_flags": ["INVALID_OHLC"],
+            "provider": "tencent",
+        })
+        # Keep remaining rows strictly after the real opening label.
+        base = datetime.fromisoformat(label)
+        step = 15 if timeframe == "15m" else 60
+        for index, later in enumerate(frames[timeframe]["rows"][1:], start=1):
+            stamp = base + timedelta(minutes=step * index)
+            later["label"] = stamp.strftime("%Y-%m-%d %H:%M")
+            later["provider_label_raw"] = stamp.strftime("%Y%m%d%H%M")
+
+    result = evaluate_cn_observation_payload(payload)
+
+    assert result["status"] == "PASS"
+    state = result["symbols"]["512730"]
+    assert state["status"] == "RESEARCH_STATE"
+    assert "cn_opening_auction_range_gap" in state["technical"]["risk_flags"]
