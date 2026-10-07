@@ -90,6 +90,7 @@ def build_canonical_snapshot_export(
     emitted_at_utc: datetime,
     market_state_us: str,
     cache_session_us: str,
+    delivery_mode: str = "UNKNOWN",
     bar_closure: str = "UNPROVEN",
 ) -> dict:
     runtime = str(runtime_instance_id).strip()
@@ -100,6 +101,9 @@ def build_canonical_snapshot_export(
         raise ValueError("repo_sha must be an exact 40-character git SHA")
     if sequence < 0:
         raise ValueError("sequence must be non-negative")
+    normalized_delivery_mode = str(delivery_mode or "").strip().upper()
+    if normalized_delivery_mode not in {"UNKNOWN", "REALTIME"}:
+        raise ValueError("delivery_mode must be UNKNOWN or REALTIME")
     normalized_bar_closure = str(bar_closure or "").strip().upper()
     if normalized_bar_closure not in {"UNPROVEN", "PROVEN"}:
         raise ValueError("bar_closure must be UNPROVEN or PROVEN")
@@ -119,7 +123,7 @@ def build_canonical_snapshot_export(
         "emitted_at_utc": _iso(emitted_at_utc),
         "market_state_us": str(market_state_us or "UNKNOWN"),
         "cache_session_us": str(cache_session_us or "unknown"),
-        "delivery_mode": "UNKNOWN",
+        "delivery_mode": normalized_delivery_mode,
         "bar_closure": normalized_bar_closure,
         "radar_admission": "BLOCKED",
         "live_trade": False,
