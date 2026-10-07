@@ -325,3 +325,56 @@ def test_verify_gate_derives_delivery_from_fresh_quote_right_evidence():
     assert 'export.get("delivery_mode") == expected_delivery_mode' in VERIFY
     assert 'snapshot.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'snapshot.get("live_trade") is False' in VERIFY
+
+
+def test_installer_wires_bounded_same_context_research_warm_start():
+    runtime = _embedded_runtime_python()
+    assert "seed_futu_k1m_research_cache" in runtime
+    assert "ctx.request_history_kline(" in runtime
+    assert "ktype=ft.KLType.K_1M" in runtime
+    assert "autype=ft.AuType.NONE" in runtime
+    assert "max_count=1000" in runtime
+    assert "page_req_key=page_req_key" in runtime
+    assert "extended_time=False" in runtime
+    assert "session=ft.Session.RTH" in runtime
+    assert "lookback_days=10" in runtime
+    assert "max_pages=5" in runtime
+    assert runtime.count('ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)') == 1
+    assert "market_data.seed(" not in runtime
+    assert "market_data=market_data" in runtime
+    assert runtime.index("bridge.start(streams)") < runtime.index(
+        "warm_start_result=seed_futu_k1m_research_cache"
+    )
+    assert '"warm_start":warm_start_payload' in runtime
+    assert "warm_start_seeded_total > 0 and canonical_export_sequence == 0" in runtime
+    assert '"realtime_currentness_proven":False' in runtime
+    assert '"bar_closure_promotion_authorized":False' in runtime
+    assert '"radar_admission":"BLOCKED"' in runtime
+    assert '"live_trade":False' in runtime
+
+
+def test_installer_warm_start_failure_cannot_kill_live_acquisition():
+    runtime = _embedded_runtime_python()
+    assert 'except Exception as exc:\n    warm_start_payload={' in runtime
+    assert '"error":"WARM_START_EXCEPTION:"+type(exc).__name__' in runtime
+    assert '"status":"BLOCKED"' in runtime
+    assert "warm_start_seeded_total=0" in runtime
+    assert runtime.index("bridge.start(streams)") < runtime.index("try:\n    warm_start_result=")
+    assert runtime.index("warm_start_payload={") < runtime.index("while True:")
+
+
+def test_verify_gate_requires_full_research_warm_start_without_promotion():
+    assert 'warm_start = heartbeat.get("warm_start") or {}' in VERIFY
+    assert 'warm_start.get("status") == "PASS"' in VERIFY
+    assert 'warm_start.get("historical_query") is True' in VERIFY
+    assert 'warm_start.get("realtime_currentness_proven") is False' in VERIFY
+    assert 'warm_start.get("bar_closure_promotion_authorized") is False' in VERIFY
+    assert 'warm_start.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'warm_start.get("live_trade") is False' in VERIFY
+    assert 'int(item.get("planned_bar_count") or 0) == 390' in VERIFY
+    assert 'int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 390' in VERIFY
+    assert 'int(item.get("bar_count") or 0) >= 390' in VERIFY
+    assert 'len(frames.get("1m") or []) >= 390' in VERIFY
+    assert 'len(frames.get("5m") or []) > 0' in VERIFY
+    assert 'len(frames.get("15m") or []) > 0' in VERIFY
+    assert 'len(frames.get("1h") or []) > 0' in VERIFY
