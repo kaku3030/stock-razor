@@ -26,6 +26,7 @@ from src.services.live_feed.canonical_snapshot_export import build_canonical_sna
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
+from src.services.live_feed.futu_k1m_warm_start import historical_futu_k1m_to_bar
 from src.services.realtime_market_data import RealtimeMarketDataService
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
