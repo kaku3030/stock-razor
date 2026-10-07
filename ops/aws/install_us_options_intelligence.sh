@@ -79,6 +79,7 @@ from src.services.options_intelligence.collector import (
 )
 from src.services.options_intelligence.collector_runtime import (
     CollectorCycleResult,
+    _safe_exception_code,
     run_options_collection_cycle,
 )
 from src.services.options_intelligence.futu_opend_source import (
@@ -170,7 +171,7 @@ while True:
             "output_path": output_path,
             "packets_written": 0,
             "symbols": [],
-            "reasons": [f"COLLECTOR_CYCLE_ERROR:{type(exc).__name__}"],
+            "reasons": [f"COLLECTOR_CYCLE_ERROR:{_safe_exception_code(exc)}"],
             "research_only": True,
             "trading_authority": False,
             "live_trade": False,
