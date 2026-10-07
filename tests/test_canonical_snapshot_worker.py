@@ -63,7 +63,14 @@ def add_minutes(svc, *, count=90, symbol="US.AMD"):
         )
 
 
-def payload(*, count=90, emitted_at=None, cache_session="regular"):
+def payload(
+    *,
+    count=90,
+    emitted_at=None,
+    cache_session="regular",
+    delivery_mode="UNKNOWN",
+    bar_closure="UNPROVEN",
+):
     emitted = emitted_at or START + timedelta(minutes=count)
     svc = service(emitted)
     if count:
@@ -77,6 +84,8 @@ def payload(*, count=90, emitted_at=None, cache_session="regular"):
         emitted_at_utc=emitted,
         market_state_us="MORNING" if cache_session == "regular" else "CLOSED",
         cache_session_us=cache_session,
+        delivery_mode=delivery_mode,
+        bar_closure=bar_closure,
     )
     return result
 
@@ -133,6 +142,78 @@ def test_evaluator_produces_research_only_state_from_canonical_snapshot(tmp_path
     assert symbol.technical_state.can_confirm_signal is False
     assert symbol.technical_state.signal_permission is SignalPermission.NORMAL
     assert "timestamp_semantics_unverified" not in symbol.technical_state.technical.risk_flags
+
+
+def test_admission_diagnostics_explain_blocked_source_prerequisites(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    diagnostics = result.admission_diagnostics()
+    assert diagnostics["decision"] == "BLOCKED"
+    assert diagnostics["promotion_authorized"] is False
+    assert diagnostics["minimum_source_prerequisites_met"] is False
+    assert diagnostics["delivery_mode_realtime"] is False
+    assert diagnostics["bar_closure_proven"] is False
+    assert diagnostics["research_state_symbols"] == ["US.AMD"]
+    assert diagnostics["no_canonical_bar_symbols"] == []
+    assert diagnostics["normal_health_symbols"] == ["US.AMD"]
+    assert diagnostics["non_normal_health_symbols"] == []
+    assert diagnostics["reasons"] == [
+        "SOURCE_DELIVERY_MODE_NOT_REALTIME",
+        "SOURCE_BAR_CLOSURE_UNPROVEN",
+        "PROMOTION_NOT_AUTHORIZED",
+    ]
+    assert result.source_radar_admission == "BLOCKED"
+    assert result.source_live_trade is False
+    assert result.can_confirm_signal is False
+
+
+def test_minimum_source_prerequisites_do_not_authorize_radar_promotion(tmp_path):
+    body = payload(delivery_mode="REALTIME", bar_closure="PROVEN")
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: emitted).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    diagnostics = result.admission_diagnostics()
+    assert diagnostics["minimum_source_prerequisites_met"] is True
+    assert diagnostics["decision"] == "BLOCKED"
+    assert diagnostics["promotion_authorized"] is False
+    assert diagnostics["reasons"] == ["PROMOTION_NOT_AUTHORIZED"]
+    assert result.source_radar_admission == "BLOCKED"
+    assert result.source_live_trade is False
+    assert result.research_only is True
+    assert result.can_confirm_signal is False
+
+
+def test_source_prerequisites_cannot_launder_empty_canonical_cache(tmp_path):
+    body = payload(
+        count=0,
+        emitted_at=START,
+        cache_session="closed",
+        delivery_mode="REALTIME",
+        bar_closure="PROVEN",
+    )
+    result = CanonicalSnapshotRadarEvaluator(now=lambda: START).evaluate_file(
+        write_payload(tmp_path, body),
+        expected_repo_sha=SHA,
+    )
+
+    diagnostics = result.admission_diagnostics()
+    assert diagnostics["minimum_source_prerequisites_met"] is True
+    assert diagnostics["no_canonical_bar_symbols"] == ["US.AMD"]
+    assert diagnostics["normal_health_symbols"] == []
+    assert diagnostics["decision"] == "BLOCKED"
+    assert diagnostics["promotion_authorized"] is False
+    assert diagnostics["reasons"] == [
+        "SYMBOLS_WITHOUT_CANONICAL_BARS",
+        "PROMOTION_NOT_AUTHORIZED",
+    ]
 
 
 def test_empty_canonical_cache_returns_no_bars_without_inventing_state(tmp_path):
@@ -379,6 +460,8 @@ def test_evaluation_to_dict_is_json_serializable_and_remains_research_only(tmp_p
     assert decoded["research_only"] is True
     assert decoded["can_confirm_signal"] is False
     assert decoded["source_radar_admission"] == "BLOCKED"
+    assert decoded["admission_diagnostics"]["decision"] == "BLOCKED"
+    assert decoded["admission_diagnostics"]["promotion_authorized"] is False
     assert decoded["symbols"][0]["technical_state"]["research_only"] is True
     assert decoded["symbols"][0]["technical_state"]["can_confirm_signal"] is False
 
