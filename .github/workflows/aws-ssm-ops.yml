@@ -1496,7 +1496,7 @@ jobs:
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
-          allowed={'get_futures_runtime_health','get_market_snapshots','get_market_bars','get_livefeed_health','get_market_analysis'}; results={}
+          allowed={'get_futures_runtime_health','get_market_snapshots','get_market_bars','get_livefeed_health','get_market_analysis','get_cn_market_bars'}; results={}
           def safe(value):
               if isinstance(value,dict): return {k:('[REDACTED]' if any(x in k.lower() for x in ('token','session','secret','password','api_key','access_key')) else safe(v)) for k,v in value.items()}
               if isinstance(value,list): return [safe(v) for v in value]
@@ -1529,16 +1529,17 @@ jobs:
           if not ok(st,o):print('MCP_INITIALIZE_DETAIL='+json.dumps(safe(o))[:500]);raise SystemExit
           send({'jsonrpc':'2.0','method':'notifications/initialized'},sid); st,o,sid=send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}},sid)
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
-          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_5_OF_5='+('PASS' if len(names)==5 and set(names)==allowed else 'FAIL'))
+          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_6_OF_6='+('PASS' if len(names)==6 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
           def call(n,a,label=None):
               st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); key=n+(':'+label if label else ''); results[key]=z.get('result',z); print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL')); print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL')); print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(safe(results[key]),separators=(',',':'))[:3000])
-          if len(names)==5 and set(names)==allowed:
+          if len(names)==6 and set(names)==allowed:
               call('get_futures_runtime_health',args(by['get_futures_runtime_health']))
               call('get_livefeed_health',args(by['get_livefeed_health']))
               for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s),s)
               for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s),s)
               call('get_market_analysis',{'symbols':['AMD']},'AMD')
+              call('get_cn_market_bars',{'symbol':'512730','timeframe':'1d','limit':5},'512730')
           try:
               import futu as ft
               from datetime import datetime, timedelta
@@ -1626,12 +1627,13 @@ jobs:
           import urllib.request
 
           tunnel_id = sys.argv[1]
-          expected = {'get_futures_runtime_health', 'get_livefeed_health', 'get_market_snapshots', 'get_market_bars', 'get_market_analysis'}
+          expected = {'get_futures_runtime_health', 'get_livefeed_health', 'get_market_snapshots', 'get_market_bars', 'get_market_analysis', 'get_cn_market_bars'}
           requests = [
               ('get_livefeed_health', 'Call get_livefeed_health exactly once with valid read-only arguments.', expected),
               ('get_market_snapshots', 'Call get_market_snapshots exactly once for AMD with valid read-only arguments.', {'get_market_snapshots'}),
               ('get_market_bars', 'Call get_market_bars exactly once for AMD with valid read-only arguments.', {'get_market_bars'}),
               ('get_market_analysis', 'Call get_market_analysis exactly once for AMD with valid read-only arguments.', {'get_market_analysis'}),
+              ('get_cn_market_bars', 'Call get_cn_market_bars exactly once for 512730 daily bars with valid read-only arguments.', {'get_cn_market_bars'}),
           ]
           RETRY_AFTER_FALLBACK_SECONDS = 25
           RETRY_AFTER_MAX_SECONDS = 60
@@ -1757,7 +1759,7 @@ jobs:
                   if not isinstance(tools, list) or len(names) != len(set(names)) or not all(valid_tool_schema(tool) for tool in tools):
                       failures.append(expected_name + ':tool-discovery-schema')
                   elif discovered is None:
-                      if len(names) != 5 or set(names) != expected:
+                      if len(names) != 6 or set(names) != expected:
                           failures.append(expected_name + ':tool-discovery-incomplete')
                       else:
                           discovered = names
@@ -1772,7 +1774,7 @@ jobs:
                   failures.append(expected_name + ':call-name-or-output')
               calls.append(call.get('name'))
 
-          names_ok = isinstance(discovered, list) and len(discovered) == 5 and set(discovered) == expected
+          names_ok = isinstance(discovered, list) and len(discovered) == 6 and set(discovered) == expected
           if not names_ok:
               failures.append('tool-discovery-missing-or-mismatch')
           calls_ok = calls == [name for name, _, _ in requests] and not failures
