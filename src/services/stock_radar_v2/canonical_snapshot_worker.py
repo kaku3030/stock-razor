@@ -256,8 +256,10 @@ def load_canonical_snapshot_payload(payload: object) -> CanonicalSnapshotSource:
         raise CanonicalSnapshotContractError("sequence must be positive")
     emitted_at = _parse_time(payload.get("emitted_at_utc"), field_name="emitted_at_utc")
     delivery_mode = str(payload.get("delivery_mode") or "UNKNOWN").strip().upper()
-    if delivery_mode != "UNKNOWN":
-        raise CanonicalSnapshotContractError("source delivery_mode must remain UNKNOWN")
+    if delivery_mode not in {"UNKNOWN", "REALTIME"}:
+        raise CanonicalSnapshotContractError(
+            "source delivery_mode must be UNKNOWN or REALTIME"
+        )
     bar_closure = str(payload.get("bar_closure") or "UNPROVEN").strip().upper()
     if bar_closure not in {"UNPROVEN", "PROVEN"}:
         raise CanonicalSnapshotContractError("source bar_closure must be UNPROVEN or PROVEN")
