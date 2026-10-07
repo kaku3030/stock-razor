@@ -61,12 +61,28 @@ for symbol, item in symbols.items():
     assert frames["1d"].get("timestamp_semantic") == "DAILY_DATE"
     assert frames["60m"].get("timestamp_semantic") == "UNKNOWN"
     assert frames["15m"].get("timestamp_semantic") == "UNKNOWN"
+summary = {}
+for symbol, item in sorted(symbols.items()):
+    frames = item.get("timeframes") or {}
+    summary[symbol] = {
+        "status": item.get("status"),
+        "providers_used": item.get("providers_used") or [],
+        "timeframes": {
+            timeframe: {
+                "provider": frames[timeframe].get("provider_used"),
+                "row_count": int(frames[timeframe].get("row_count") or 0),
+                "latest": (frames[timeframe].get("rows") or [{}])[-1].get("label"),
+                "latency_ms": frames[timeframe].get("request_latency_ms"),
+                "fallback_from": frames[timeframe].get("fallback_from"),
+            }
+            for timeframe in ("1d", "60m", "15m")
+        },
+    }
+print("CN_EASTMONEY_SUMMARY=" + json.dumps(summary, separators=(",", ":"), ensure_ascii=True))
 PY
     then
       systemctl is-enabled "$service"
       systemctl is-active "$service"
-      cat "$status"
-      printf '\n'
       echo "CN_EASTMONEY_CLOUD_VERIFY=PASS"
       echo "RADAR_ADMISSION=BLOCKED"
       echo "LIVE_TRADE=NO"
