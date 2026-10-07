@@ -61,6 +61,7 @@ from src.services.live_feed.futu_k1m_currentness import (
     summarize_futu_k1m_currentness,
 )
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_k1m_warm_start import build_futu_k1m_warm_start_plan
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.realtime_market_data import RealtimeMarketDataService
