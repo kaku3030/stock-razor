@@ -14,6 +14,11 @@ from src.technical.models import MultiTimeframeTechnicalResult, TimeframeState
 from src.technical.technical_analyzer import TechnicalAnalyzer
 
 
+LATEST_ONLY_QUALITY_FLAGS = frozenset(
+    {"stale", "historical_query", "delayed_feed", "partial_bar"}
+)
+
+
 @dataclass(frozen=True)
 class StockRadarTechnicalState:
     symbol: str
@@ -105,14 +110,27 @@ def _latest_is_partial(bars: Sequence[Bar]) -> bool:
 def _apply_bar_quality(state: TimeframeState, bars: Sequence[Bar]) -> TimeframeState:
     if not bars:
         return state
-    flags = tuple(
-        dict.fromkeys(
-            str(flag).strip().lower()
-            for bar in bars
-            for flag in bar.quality_flags
-            if str(flag).strip()
-        )
-    )
+
+    # Currentness/availability flags are temporal. A historical query or stale
+    # observation on an older bar must not permanently poison the current
+    # timeframe state once a newer clean bar exists. Structural integrity
+    # flags still propagate across the full lookback because they can distort
+    # the indicator input itself.
+    persistent_flags = [
+        str(flag).strip().lower()
+        for bar in bars
+        for flag in bar.quality_flags
+        if str(flag).strip()
+        and str(flag).strip().lower() not in LATEST_ONLY_QUALITY_FLAGS
+    ]
+    latest_flags = [
+        str(flag).strip().lower()
+        for flag in bars[-1].quality_flags
+        if str(flag).strip()
+        and str(flag).strip().lower() in LATEST_ONLY_QUALITY_FLAGS
+    ]
+    flags = tuple(dict.fromkeys([*persistent_flags, *latest_flags]))
+
     warnings = list(dict.fromkeys([*state.quality.warnings, *[f"{state.timeframe}_{flag}" for flag in flags]]))
     partial = _latest_is_partial(bars) or bool(flags)
     quality = replace(
