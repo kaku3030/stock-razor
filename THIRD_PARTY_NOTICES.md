@@ -33,3 +33,13 @@ The fixture is used only for deterministic historical-replay and
 point-in-time source-authority tests. It does not grant or imply live market
 data rights, provider Currentness semantics, routing authority, or trading
 authority.
+
+## KLineChart
+
+- Project: KLineChart
+- Source: https://github.com/klinecharts/KLineChart
+- Dependency: npm package klinecharts, v10.x
+- License: Apache License 2.0
+- Integration scope: apps/dsa-web rendering layer only
+
+STOCK RAZOR does not treat KLineChart as a market-data source or execution authority. Canonical bars remain owned and qualified by backend data-plane components.
