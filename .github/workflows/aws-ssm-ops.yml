@@ -1757,7 +1757,7 @@ jobs:
                   if not isinstance(tools, list) or len(names) != len(set(names)) or not all(valid_tool_schema(tool) for tool in tools):
                       failures.append(expected_name + ':tool-discovery-schema')
                   elif discovered is None:
-                      if len(names) != 3 or set(names) != expected:
+                      if len(names) != 5 or set(names) != expected:
                           failures.append(expected_name + ':tool-discovery-incomplete')
                       else:
                           discovered = names
