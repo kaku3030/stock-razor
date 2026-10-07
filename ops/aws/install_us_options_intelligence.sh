@@ -80,6 +80,7 @@ from src.services.options_intelligence.collector import (
 from src.services.options_intelligence.collector_runtime import (
     CollectorCycleResult,
     run_options_collection_cycle,
+    safe_exception_code,
 )
 from src.services.options_intelligence.futu_opend_source import (
     FutuOpenDOptionsSource,
@@ -131,6 +132,7 @@ while True:
     sequence += 1
     now = datetime.now(timezone.utc)
     session = resolve_us_options_session_context(now)
+    stage = "source_construct"
     try:
         source = FutuOpenDOptionsSource(
             host=opend_host,
@@ -139,7 +141,9 @@ while True:
             snapshot_batch_size=200,
         )
         if session.status == "READY":
+            stage = "opend_context_init"
             with source:
+                stage = "collection_cycle"
                 result = run_options_collection_cycle(
                     source,
                     symbols,
@@ -150,6 +154,7 @@ while True:
                     output_path=output_path,
                 )
         else:
+            stage = "blocked_phase_cycle"
             result = run_options_collection_cycle(
                 source,
                 symbols,
@@ -159,6 +164,7 @@ while True:
                 sequence=sequence,
                 output_path=output_path,
             )
+        stage = "serialize_cycle"
         cycle_payload = result.to_dict()
     except Exception as exc:
         cycle_payload = {
@@ -170,7 +176,7 @@ while True:
             "output_path": output_path,
             "packets_written": 0,
             "symbols": [],
-            "reasons": [f"COLLECTOR_CYCLE_ERROR:{type(exc).__name__}"],
+            "reasons": [f"COLLECTOR_RUNTIME_ERROR:{stage}:{safe_exception_code(exc)}"],
             "research_only": True,
             "trading_authority": False,
             "live_trade": False,

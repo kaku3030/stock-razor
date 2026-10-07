@@ -157,3 +157,20 @@ def test_workflow_requires_network_sandbox_enforcement_before_deployment_pass():
     assert WORKFLOW.index("NETWORK_SANDBOX_ENFORCEMENT=PASS") < WORKFLOW.index(
         "US_OPTIONS_INTELLIGENCE_AWS_DEPLOYMENT=PASS"
     )
+
+
+def test_runtime_heartbeat_reports_bounded_stage_aware_outer_failures():
+    source = _embedded_source(
+        INSTALLER,
+        'cat >"$INSTALL_ROOT/run.py" <<\'PY\'',
+        "\nPY\n",
+    )
+    assert 'stage = "source_construct"' in source
+    assert 'stage = "opend_context_init"' in source
+    assert 'stage = "collection_cycle"' in source
+    assert 'stage = "blocked_phase_cycle"' in source
+    assert 'stage = "serialize_cycle"' in source
+    assert "safe_exception_code" in source
+    assert "COLLECTOR_RUNTIME_ERROR:{stage}:{safe_exception_code(exc)}" in source
+    assert "repr(exc)" not in source
+    assert "str(exc)" not in source
