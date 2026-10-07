@@ -140,24 +140,25 @@ the actual AWS host before deployment admission.
 
 ## Admission state
 
-- local unit tests: PASS
+- GEX Runtime V0.2 / PR #349: MERGED into canonical main
+- exact-head local focused tests: PASS (110/110)
 - real local OpenD read-only smoke: PASS
 - live-trade authority: NO
+- AWS verifier / deploy workflow: IMPLEMENTED, NOT_RUN
 - AWS deployment: NOT_RUN
 - AWS localhost-only sandbox: UNVERIFIED
-- Radar sidecar enablement: BLOCKED until Runtime V0.2 is merged and collector
-  cloud qualification passes
+- Radar sidecar enablement: BLOCKED until collector cloud qualification passes
 
 ## Next gates
 
-1. Merge GEX Runtime V0.2 (#349) after Code Owner approval.
-2. Rebase this collector branch onto the resulting main.
-3. Run exact-head collector tests.
-4. Add AWS verifier for systemd sandbox, heartbeat and sidecar contract.
-5. Deploy collector with US.QQQ only.
-6. Prove no non-loopback network access.
-7. Measure one-minute cycle latency and provider request volume.
-8. Repeat during regular option session after 09:30 ET.
-9. Keep OI_ASOF UNKNOWN until a provider-semantic rule is independently
+1. Run required GitHub CI with this PR based directly on main.
+2. Obtain Code Owner approval and merge only on an exact green HEAD.
+3. Deploy the collector with US.QQQ only through the manual workflow.
+4. Prove loopback OpenD access and non-loopback EPERM/EACCES under the
+   configured systemd IP policy.
+5. Verify cloud heartbeat and atomic sidecar provenance/currentness.
+6. Measure one-minute cycle latency and provider request volume.
+7. Repeat qualification during the regular option session after 09:30 ET.
+8. Keep OI_ASOF UNKNOWN until a provider-semantic rule is independently
    justified.
-10. Only then enable the Radar options-context slot.
+9. Only then enable the Radar options-context slot.
