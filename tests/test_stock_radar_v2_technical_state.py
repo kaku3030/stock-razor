@@ -120,13 +120,15 @@ def test_old_temporal_quality_flags_do_not_poison_current_intraday_state() -> No
         )
         for index in range(40)
     )
-    state = StockRadarTechnicalStateService().evaluate(
+    service = StockRadarTechnicalStateService()
+    clean = service.evaluate(base, daily=_daily())
+    state = service.evaluate(
         replace(base, bars_15m=bars_15m),
         daily=_daily(),
     )
 
     assert state.technical.intraday.quality.status != "partial"
-    assert state.technical.intraday.confidence > 0.65
+    assert state.technical.intraday.confidence == clean.technical.intraday.confidence
     assert "15m_historical_query" not in state.technical.risk_flags
     assert "15m_stale" not in state.technical.risk_flags
     assert "15m_delayed_feed" not in state.technical.risk_flags
