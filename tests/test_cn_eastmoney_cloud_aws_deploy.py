@@ -51,5 +51,7 @@ def test_workflow_deploys_exact_main_over_ssm_only():
     assert "install_cn_eastmoney_observer.sh" in WORKFLOW
     assert "verify_cn_eastmoney_observer.sh" in WORKFLOW
     assert "EASTMONEY_PRIMARY_TENCENT_FALLBACK" in WORKFLOW
+    assert '\"intraday_timestamp_semantics_proven\":true' in WORKFLOW
+    assert '\"intraday_timestamp_semantics_proven\":false' not in WORKFLOW
     assert "CN_EASTMONEY_CLOUD_DEPLOYMENT=PASS" in WORKFLOW
     assert "LIVE_TRADE=NO" in WORKFLOW
