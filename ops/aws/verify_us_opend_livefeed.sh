@@ -9,6 +9,7 @@ for _ in $(seq 1 18); do
   if systemctl is-active --quiet stock-razor-us-livefeed.service && [[ -s "$status" ]] && [[ -s "$snapshot" ]]; then
     if "$python_bin" - "$status" "$snapshot" "$expected_sha" <<'PY'
 import json
+import math
 import sys
 
 status_path, snapshot_path, expected_sha = sys.argv[1:]
@@ -46,7 +47,30 @@ snapshot_sequence = int(snapshot.get("sequence") or -1)
 assert snapshot_sequence == int(export.get("sequence") or -2)
 assert snapshot_sequence > 0
 assert export.get("last_write_utc")
-assert snapshot.get("delivery_mode") == "UNKNOWN"
+
+quote_right = heartbeat.get("quote_right_evidence") or {}
+assert quote_right.get("query_status") in {"UNKNOWN", "PASS", "BLOCKED"}
+assert quote_right.get("normalized_quote_right")
+assert quote_right.get("delivery_mode") in {"UNKNOWN", "REALTIME"}
+age = quote_right.get("age_seconds")
+max_age = quote_right.get("max_age_seconds")
+realtime_rights = {"LV1", "LEVEL1", "LV2", "LEVEL2", "LV3", "LEVEL3"}
+fresh_realtime = (
+    quote_right.get("query_status") == "PASS"
+    and quote_right.get("normalized_quote_right") in realtime_rights
+    and isinstance(age, (int, float))
+    and math.isfinite(age)
+    and age >= 0
+    and isinstance(max_age, (int, float))
+    and math.isfinite(max_age)
+    and max_age > 0
+    and age <= max_age
+)
+expected_delivery_mode = "REALTIME" if fresh_realtime else "UNKNOWN"
+assert quote_right.get("delivery_mode") == expected_delivery_mode
+assert heartbeat.get("delivery_mode") == expected_delivery_mode
+assert snapshot.get("delivery_mode") == expected_delivery_mode
+assert export.get("delivery_mode") == expected_delivery_mode
 assert snapshot.get("bar_closure") == expected_bar_closure
 assert export.get("bar_closure") == expected_bar_closure
 assert snapshot.get("radar_admission") == "BLOCKED"
