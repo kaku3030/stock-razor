@@ -82,6 +82,46 @@ def test_next_session_progress_can_close_prior_session_final_minute():
     assert result.unresolved_tail.time_key == "2026-10-07 09:31:00"
 
 
+def test_full_390_row_session_still_leaves_1600_unresolved():
+    rows = []
+    start = datetime(2026, 10, 6, 9, 31)
+    for index in range(390):
+        stamp = start + __import__("datetime").timedelta(minutes=index)
+        rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
+
+    result = normalize_futu_k1m_history_rows(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert result.rows_seen == 390
+    assert len(result.bars) == 389
+    assert result.bars[-1].bar_end == datetime(2026, 10, 6, 19, 59, tzinfo=timezone.utc)
+    assert result.unresolved_tail.time_key == "2026-10-06 16:00:00"
+    assert result.can_promote is False
+    assert result.radar_admission == "BLOCKED"
+
+
+def test_next_session_first_label_can_close_all_390_prior_session_rows():
+    rows = []
+    start = datetime(2026, 10, 6, 9, 31)
+    for index in range(390):
+        stamp = start + __import__("datetime").timedelta(minutes=index)
+        rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
+    rows.append(row("2026-10-07 09:31:00"))
+
+    result = normalize_futu_k1m_history_rows(
+        rows,
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+
+    assert len(result.bars) == 390
+    assert result.bars[-1].bar_end == datetime(2026, 10, 6, 20, 0, tzinfo=timezone.utc)
+    assert result.unresolved_tail.time_key == "2026-10-07 09:31:00"
+
+
 def test_winter_time_key_uses_dst_aware_eastern_binding():
     result = normalize_futu_k1m_history_rows(
         [
