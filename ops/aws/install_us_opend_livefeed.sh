@@ -25,6 +25,7 @@ from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
+from src.services.live_feed.futu_k1m_warm_start import build_futu_k1m_warm_start_plan
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
@@ -32,7 +33,8 @@ PY
 
 cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json, os, socket, threading, time, uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import futu as ft
 from data_provider.futu_k1m_streaming_adapter import (
     FutuK1MStreamingAdapter,
@@ -85,6 +87,101 @@ market_data=RealtimeMarketDataService(
     provider_health_provider=lambda: blocked_provider_health,
     max_minutes=480,
 )
+
+warm_start_lookback_days=10
+warm_start_max_pages=4
+warm_start_payload={}
+warm_start_total_seeded=0
+def fetch_warm_start_history(code):
+    local_today=datetime.now(ZoneInfo("America/New_York")).date()
+    start=(local_today-timedelta(days=warm_start_lookback_days)).isoformat()
+    end=local_today.isoformat()
+    rows=[]
+    page_req_key=None
+    for page_index in range(warm_start_max_pages):
+        ret,data,next_key=ctx.request_history_kline(
+            code,
+            start=start,
+            end=end,
+            ktype=ft.KLType.K_1M,
+            autype=ft.AuType.NONE,
+            max_count=1000,
+            page_req_key=page_req_key,
+            extended_time=False,
+        )
+        if ret != ft.RET_OK:
+            return (),{
+                "status":"BLOCKED",
+                "reason":"HISTORY_QUERY_FAILED",
+                "page_index":page_index,
+            }
+        if not hasattr(data,"to_dict"):
+            return (),{
+                "status":"BLOCKED",
+                "reason":"HISTORY_QUERY_INVALID_ROWS",
+                "page_index":page_index,
+            }
+        rows.extend(data.to_dict("records"))
+        if not next_key:
+            return tuple(rows),{
+                "status":"PASS",
+                "reason":"BOUNDED_HISTORY_QUERY_COMPLETE",
+                "pages":page_index+1,
+            }
+        page_req_key=next_key
+    return (),{
+        "status":"BLOCKED",
+        "reason":"HISTORY_QUERY_PAGE_LIMIT_REACHED",
+        "pages":warm_start_max_pages,
+    }
+
+for code in CODES:
+    try:
+        history_rows,query_evidence=fetch_warm_start_history(code)
+        plan=build_futu_k1m_warm_start_plan(
+            history_rows,
+            received_at=datetime.now(timezone.utc),
+            expected_symbol=code,
+        )
+        seeded=0
+        if query_evidence["status"]=="PASS" and plan.research_cache_seed_eligible:
+            seeded=sum(1 for bar in plan.bars if market_data.ingest(bar))
+        warm_start_total_seeded+=seeded
+        warm_start_payload[code]={
+            **plan.to_dict(),
+            "query_status":query_evidence["status"],
+            "query_reason":query_evidence["reason"],
+            "query_pages":query_evidence.get("pages"),
+            "query_row_count":len(history_rows),
+            "bars_ingested":seeded,
+        }
+    except Exception as exc:
+        warm_start_payload[code]={
+            "status":"BLOCKED",
+            "reason":"WARM_START_EXCEPTION:"+type(exc).__name__,
+            "bar_count":0,
+            "research_cache_seed_eligible":False,
+            "historical_query":True,
+            "realtime_currentness_proven":False,
+            "bar_closure_promotion_authorized":False,
+            "radar_admission":"BLOCKED",
+            "live_trade":False,
+            "query_status":"BLOCKED",
+            "query_reason":"WARM_START_EXCEPTION",
+            "query_pages":None,
+            "query_row_count":0,
+            "bars_ingested":0,
+        }
+warm_start_pass_count=sum(
+    1 for item in warm_start_payload.values()
+    if item.get("status")=="PASS" and item.get("bars_ingested")==390
+)
+warm_start_status=(
+    "PASS" if warm_start_pass_count==len(CODES)
+    else "PARTIAL" if warm_start_pass_count>0
+    else "BLOCKED"
+)
+
 closure_pipeline=FutuK1MClosurePipeline(max_pending_closed=1024)
 closure_qualification_tracker=FutuK1MClosureQualificationTracker(
     required_consecutive_boundaries=3
@@ -374,6 +471,17 @@ try:
           "bar_closure_evidence_state":bar_closure_evidence_state,
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
+          "historical_warm_start":{
+            "status":warm_start_status,
+            "symbols":warm_start_payload,
+            "seeded_symbol_count":warm_start_pass_count,
+            "total_bars_ingested":warm_start_total_seeded,
+            "research_only":True,
+            "realtime_currentness_proven":False,
+            "bar_closure_promotion_authorized":False,
+            "radar_admission":"BLOCKED",
+            "live_trade":False,
+          },
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
               "status":canonical_export_status,
