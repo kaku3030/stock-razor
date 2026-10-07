@@ -31,12 +31,15 @@ def test_cn_radar_runtime_precomputes_only_on_source_sequence_change():
     assert '"live_trade": False' in INSTALL
 
 
-def test_cn_radar_verifier_requires_qualified_bar_end_and_currentness_warning():
+def test_cn_radar_verifier_requires_qualified_bar_end_and_governed_currentness():
     assert 'evaluation.get("status") == "PASS"' in VERIFY
     assert 'item.get("signal_permission") == "record_only"' in VERIFY
     assert 'evaluation.get("intraday_timestamp_semantics_proven") is True' in VERIFY
     assert 'item.get("intraday_timestamp_semantics_proven") is True' in VERIFY
     assert '"cn_intraday_timestamp_semantics_unproven" not in risk_flags' in VERIFY
+    assert 'isinstance(evaluation.get("intraday_currentness_proven"), bool)' in VERIFY
+    assert 'if item.get("intraday_currentness_proven") is True:' in VERIFY
+    assert '"cn_intraday_currentness_unproven" not in risk_flags' in VERIFY
     assert '"cn_intraday_currentness_unproven" in risk_flags' in VERIFY
     assert 'set(frames) == {"1d", "60m", "15m"}' in VERIFY
     assert 'systemctl show "$service" -p PrivateNetwork' in VERIFY

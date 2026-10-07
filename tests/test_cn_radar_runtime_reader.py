@@ -135,6 +135,43 @@ def test_qualified_bar_end_semantics_are_preserved_in_fast_analysis(tmp_path):
     assert state["signal_permission"] == "record_only"
 
 
+def test_proven_currentness_is_preserved_but_stays_record_only(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["evaluation"]["intraday_currentness_proven"] = True
+    for state in payload["evaluation"]["symbols"].values():
+        state["intraday_currentness_proven"] = True
+        state["technical"]["risk_flags"] = [
+            flag
+            for flag in state["technical"]["risk_flags"]
+            if flag != "cn_intraday_currentness_unproven"
+        ]
+
+    path = _write(tmp_path / "cn-radar.json", payload)
+    result = read_cn_radar_analysis(["159611"], path=path, now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["intraday_currentness_proven"] is True
+    assert result["symbols"]["159611"]["intraday_currentness_proven"] is True
+    assert result["symbols"]["159611"]["signal_permission"] == "record_only"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_currentness_cannot_launder_signal_permission(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    payload["evaluation"]["intraday_currentness_proven"] = True
+    for state in payload["evaluation"]["symbols"].values():
+        state["intraday_currentness_proven"] = True
+    payload["evaluation"]["symbols"]["159611"]["signal_permission"] = "trade"
+
+    path = _write(tmp_path / "cn-radar.json", payload)
+    result = read_cn_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["ok"] is False
+    assert result["status"] == "INVALID"
+    assert result["error"] == "RESEARCH_STATE_SAFETY_CONTRACT_VIOLATION"
+
+
 def test_no_filter_returns_all_research_states(tmp_path):
     path = _write(tmp_path / "cn-radar.json", _payload())
 
