@@ -3,20 +3,23 @@ set -euo pipefail
 expected_sha="${1:?expected sha required}"
 status=/run/stock-razor-us-livefeed/latest-heartbeat.json
 snapshot=/run/stock-razor-us-livefeed/canonical-market-snapshot.json
+daily=/run/stock-razor-us-livefeed/daily-history.json
 python_bin=/opt/stock-razor-opend-client/venv/bin/python
 
 for _ in $(seq 1 18); do
-  if systemctl is-active --quiet stock-razor-us-livefeed.service && [[ -s "$status" ]] && [[ -s "$snapshot" ]]; then
-    if "$python_bin" - "$status" "$snapshot" "$expected_sha" <<'PY'
+  if systemctl is-active --quiet stock-razor-us-livefeed.service && [[ -s "$status" ]] && [[ -s "$snapshot" ]] && [[ -s "$daily" ]]; then
+    if "$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" <<'PY'
 import json
 import math
 import sys
 
-status_path, snapshot_path, expected_sha = sys.argv[1:]
+status_path, snapshot_path, daily_path, expected_sha = sys.argv[1:]
 with open(status_path, encoding="utf-8") as handle:
     heartbeat = json.load(handle)
 with open(snapshot_path, encoding="utf-8") as handle:
     snapshot = json.load(handle)
+with open(daily_path, encoding="utf-8") as handle:
+    daily = json.load(handle)
 
 export = heartbeat.get("canonical_snapshot_export") or {}
 assert heartbeat.get("repo_sha") == expected_sha
@@ -42,6 +45,49 @@ for symbol, item in warm_symbols.items():
     assert int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170
     assert item.get("closure_anchor_time_key")
 assert int(warm_start.get("seeded_total") or 0) + int(warm_start.get("unchanged_total") or 0) == 1170 * len(expected_symbols)
+
+daily_summary = heartbeat.get("daily_history") or {}
+assert daily_summary.get("status") == "PASS"
+assert daily_summary.get("path") == daily_path
+assert int(daily_summary.get("required_rows") or 0) == 120
+assert daily_summary.get("same_opend_context_required") is True
+assert daily_summary.get("historical_query") is True
+assert daily_summary.get("currentness_proven") is False
+assert daily_summary.get("bar_closure_promotion_authorized") is False
+assert daily_summary.get("radar_admission") == "BLOCKED"
+assert daily_summary.get("live_trade") is False
+daily_summary_symbols = daily_summary.get("symbols") or {}
+assert set(daily_summary_symbols) == expected_symbols
+for symbol, item in daily_summary_symbols.items():
+    assert item.get("status") == "PASS"
+    assert int(item.get("row_count") or 0) == 120
+    assert item.get("latest_date")
+
+assert daily.get("schema") == "stock_razor_futu_us_daily_history_v1"
+assert daily.get("repo_sha") == expected_sha
+assert daily.get("runtime_instance_id") == heartbeat.get("runtime_instance_id")
+assert daily.get("status") == "PASS"
+assert int(daily.get("required_rows") or 0) == 120
+assert daily.get("same_opend_context_required") is True
+assert daily.get("historical_query") is True
+assert daily.get("currentness_proven") is False
+assert daily.get("bar_closure_promotion_authorized") is False
+assert daily.get("research_only") is True
+assert daily.get("can_confirm_signal") is False
+assert daily.get("radar_admission") == "BLOCKED"
+assert daily.get("live_trade") is False
+daily_symbols = daily.get("symbols") or {}
+assert set(daily_symbols) == expected_symbols
+for symbol, item in daily_symbols.items():
+    assert item.get("status") == "PASS"
+    assert int(item.get("row_count") or 0) == 120
+    assert len(item.get("rows") or []) == 120
+    assert item.get("completed_prior_session_only") is True
+    assert item.get("historical_query") is True
+    assert item.get("currentness_proven") is False
+    assert item.get("bar_closure_promotion_authorized") is False
+    assert item.get("radar_admission") == "BLOCKED"
+    assert item.get("live_trade") is False
 
 canonical_cache = heartbeat.get("canonical_cache") or {}
 assert set(canonical_cache) == expected_symbols
