@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Callable, Mapping, Protocol, Sequence
 
 from .futu_k1m_history import FUTU_US_KLINE_TIMEZONE
-from .futu_k1m_warm_start import build_futu_k1m_warm_start_plan
+from .futu_k1m_warm_start import build_futu_k1m_warm_start_selection
 
 
 class MinuteBarIngestor(Protocol):
@@ -30,10 +30,14 @@ class FutuK1MSymbolWarmStartResult:
     unchanged_count: int
     closure_anchor_time_key: str | None
     reasons: tuple[str, ...] = ()
+    session_dates: tuple[str, ...] = ()
+    closure_anchor_time_keys: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         payload = asdict(self)
         payload["reasons"] = list(self.reasons)
+        payload["session_dates"] = list(self.session_dates)
+        payload["closure_anchor_time_keys"] = list(self.closure_anchor_time_keys)
         return payload
 
 
@@ -45,6 +49,7 @@ class FutuK1MRuntimeWarmStartResult:
     unchanged_total: int
     lookback_days: int
     max_pages: int
+    required_sessions: int
     purpose: str = field(default="RESEARCH_CACHE_WARM_START", init=False)
     historical_query: bool = field(default=True, init=False)
     realtime_currentness_proven: bool = field(default=False, init=False)
@@ -69,18 +74,18 @@ def seed_futu_k1m_research_cache(
     received_at: datetime,
     lookback_days: int = 10,
     max_pages: int = 5,
+    required_sessions: int = 3,
     session_end_date: date | None = None,
 ) -> FutuK1MRuntimeWarmStartResult:
-    """Populate only research cache from closure-proven same-OpenD history.
+    """Populate research cache from several closure-proven same-OpenD sessions.
 
     The fetcher is supplied by the runtime so this module remains provider-SDK
-    free.  Each symbol is isolated: query/qualification/ingest failure blocks
-    that symbol but never creates a second provider path or terminates the live
-    acquisition runtime.
+    free. Each symbol is isolated. A symbol seeds only when the full requested
+    number of sessions qualifies; partial selections are never partially
+    ingested.
 
-    A PASS/PARTIAL result is cache population evidence only. Historical facts
-    never promote realtime currentness, live closure qualification, Radar
-    admission, or execution.
+    Historical facts never promote realtime currentness, live closure
+    qualification, Radar admission, or execution.
     """
 
     if received_at.tzinfo is None or received_at.utcoffset() is None:
@@ -89,6 +94,8 @@ def seed_futu_k1m_research_cache(
         raise ValueError("lookback_days must be at least 2")
     if max_pages <= 0:
         raise ValueError("max_pages must be positive")
+    if required_sessions <= 0:
+        raise ValueError("required_sessions must be positive")
 
     normalized_symbols = tuple(
         dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip())
@@ -133,65 +140,65 @@ def seed_futu_k1m_research_cache(
 
         if query_reason is not None:
             results.append(
-                FutuK1MSymbolWarmStartResult(
-                    status="BLOCKED",
-                    symbol=symbol,
-                    session_date=None,
-                    query_pages=pages,
+                _blocked_symbol(
+                    symbol,
+                    pages=pages,
                     rows_seen=len(rows),
-                    planned_bar_count=0,
-                    seeded_count=0,
-                    unchanged_count=0,
-                    closure_anchor_time_key=None,
                     reasons=(query_reason,),
                 )
             )
             continue
 
         try:
-            plan = build_futu_k1m_warm_start_plan(
+            selection = build_futu_k1m_warm_start_selection(
                 rows,
                 received_at=received_at,
                 expected_symbol=symbol,
+                requested_sessions=required_sessions,
             )
         except Exception as exc:
             results.append(
-                FutuK1MSymbolWarmStartResult(
-                    status="BLOCKED",
-                    symbol=symbol,
-                    session_date=None,
-                    query_pages=pages,
+                _blocked_symbol(
+                    symbol,
+                    pages=pages,
                     rows_seen=len(rows),
-                    planned_bar_count=0,
-                    seeded_count=0,
-                    unchanged_count=0,
-                    closure_anchor_time_key=None,
                     reasons=(f"WARM_START_PLAN_EXCEPTION:{type(exc).__name__}",),
                 )
             )
             continue
 
-        if not plan.research_cache_seed_eligible:
+        if not selection.research_cache_seed_eligible:
+            latest = selection.plans[0] if selection.plans else None
             results.append(
                 FutuK1MSymbolWarmStartResult(
                     status="BLOCKED",
                     symbol=symbol,
-                    session_date=plan.session_date,
+                    session_date=latest.session_date if latest is not None else None,
                     query_pages=pages,
                     rows_seen=len(rows),
                     planned_bar_count=0,
                     seeded_count=0,
                     unchanged_count=0,
-                    closure_anchor_time_key=plan.closure_anchor_time_key,
-                    reasons=plan.reasons,
+                    closure_anchor_time_key=(
+                        latest.closure_anchor_time_key if latest is not None else None
+                    ),
+                    reasons=selection.reasons,
+                    session_dates=selection.session_dates,
+                    closure_anchor_time_keys=selection.closure_anchor_time_keys,
                 )
             )
             continue
 
+        ordered_plans = tuple(reversed(selection.plans))
+        planned_bars = tuple(
+            bar
+            for plan in ordered_plans
+            for bar in plan.bars
+        )
         seeded = 0
         unchanged = 0
         try:
-            for bar in plan.bars:
+            for bar in planned_bars:
                 if market_data.ingest(bar):
                     seeded += 1
                 else:
@@ -201,14 +208,16 @@ def seed_futu_k1m_research_cache(
                 FutuK1MSymbolWarmStartResult(
                     status="BLOCKED",
                     symbol=symbol,
-                    session_date=plan.session_date,
+                    session_date=selection.plans[0].session_date,
                     query_pages=pages,
                     rows_seen=len(rows),
-                    planned_bar_count=len(plan.bars),
+                    planned_bar_count=len(planned_bars),
                     seeded_count=seeded,
                     unchanged_count=unchanged,
-                    closure_anchor_time_key=plan.closure_anchor_time_key,
+                    closure_anchor_time_key=selection.plans[0].closure_anchor_time_key,
                     reasons=(f"CACHE_INGEST_EXCEPTION:{type(exc).__name__}",),
+                    session_dates=selection.session_dates,
+                    closure_anchor_time_keys=selection.closure_anchor_time_keys,
                 )
             )
             continue
@@ -217,14 +226,16 @@ def seed_futu_k1m_research_cache(
             FutuK1MSymbolWarmStartResult(
                 status="PASS",
                 symbol=symbol,
-                session_date=plan.session_date,
+                session_date=selection.plans[0].session_date,
                 query_pages=pages,
                 rows_seen=len(rows),
-                planned_bar_count=len(plan.bars),
+                planned_bar_count=len(planned_bars),
                 seeded_count=seeded,
                 unchanged_count=unchanged,
-                closure_anchor_time_key=plan.closure_anchor_time_key,
+                closure_anchor_time_key=selection.plans[0].closure_anchor_time_key,
                 reasons=(),
+                session_dates=selection.session_dates,
+                closure_anchor_time_keys=selection.closure_anchor_time_keys,
             )
         )
 
@@ -237,5 +248,26 @@ def seed_futu_k1m_research_cache(
         unchanged_total=sum(item.unchanged_count for item in results),
         lookback_days=lookback_days,
         max_pages=max_pages,
+        required_sessions=required_sessions,
     )
 
+
+def _blocked_symbol(
+    symbol: str,
+    *,
+    pages: int,
+    rows_seen: int,
+    reasons: tuple[str, ...],
+) -> FutuK1MSymbolWarmStartResult:
+    return FutuK1MSymbolWarmStartResult(
+        status="BLOCKED",
+        symbol=symbol,
+        session_date=None,
+        query_pages=pages,
+        rows_seen=rows_seen,
+        planned_bar_count=0,
+        seeded_count=0,
+        unchanged_count=0,
+        closure_anchor_time_key=None,
+        reasons=reasons,
+    )

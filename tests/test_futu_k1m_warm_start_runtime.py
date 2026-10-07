@@ -1,8 +1,10 @@
-﻿from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
+from data_provider.market_data_adapter import evaluate_health
 from src.services.live_feed.futu_k1m_warm_start_runtime import (
     seed_futu_k1m_research_cache,
 )
+from src.services.realtime_market_data import RealtimeMarketDataService
 
 
 NOW = datetime(2026, 10, 7, 5, 0, tzinfo=timezone.utc)
@@ -29,6 +31,15 @@ def _session(day: str, symbol: str):
     return rows
 
 
+def _three_sessions_with_anchor(symbol: str):
+    return [
+        *_session("2026-10-02", symbol),
+        *_session("2026-10-05", symbol),
+        *_session("2026-10-06", symbol),
+        dict(_session("2026-10-07", symbol)[0]),
+    ]
+
+
 class _Cache:
     def __init__(self):
         self.bars = {}
@@ -40,17 +51,19 @@ class _Cache:
         return old != bar
 
 
-def test_runtime_warm_start_pages_then_seeds_one_complete_session():
+def test_runtime_warm_start_pages_then_seeds_three_complete_sessions():
     symbol = "US.AMD"
-    rows = [*_session("2026-10-05", symbol), *_session("2026-10-06", symbol)]
+    rows = _three_sessions_with_anchor(symbol)
     calls = []
 
     def fetch_page(code, start, end, page_key):
         calls.append((code, start, end, page_key))
         if page_key is None:
             return rows[:500], b"page-2"
-        assert page_key == b"page-2"
-        return rows[500:], None
+        if page_key == b"page-2":
+            return rows[500:1000], b"page-3"
+        assert page_key == b"page-3"
+        return rows[1000:], None
 
     cache = _Cache()
     result = seed_futu_k1m_research_cache(
@@ -61,16 +74,24 @@ def test_runtime_warm_start_pages_then_seeds_one_complete_session():
     )
 
     assert result.status == "PASS"
-    assert result.seeded_total == 390
-    assert len(cache.bars) == 390
+    assert result.required_sessions == 3
+    assert result.seeded_total == 1170
+    assert len(cache.bars) == 1170
     item = result.symbols[0]
     assert item.status == "PASS"
-    assert item.session_date == "2026-10-05"
-    assert item.query_pages == 2
-    assert item.planned_bar_count == 390
-    assert item.closure_anchor_time_key == "2026-10-06 09:31:00"
+    assert item.session_date == "2026-10-06"
+    assert item.session_dates == ("2026-10-02", "2026-10-05", "2026-10-06")
+    assert item.query_pages == 3
+    assert item.planned_bar_count == 1170
+    assert item.closure_anchor_time_key == "2026-10-07 09:31:00"
+    assert item.closure_anchor_time_keys == (
+        "2026-10-05 09:31:00",
+        "2026-10-06 09:31:00",
+        "2026-10-07 09:31:00",
+    )
     assert calls[0][3] is None
     assert calls[1][3] == b"page-2"
+    assert calls[2][3] == b"page-3"
 
 
 def test_page_limit_blocks_without_partial_seed():
@@ -95,7 +116,7 @@ def test_page_limit_blocks_without_partial_seed():
 
 
 def test_one_symbol_failure_is_partial_and_does_not_kill_other_seed():
-    amd = [*_session("2026-10-05", "US.AMD"), *_session("2026-10-06", "US.AMD")]
+    amd = _three_sessions_with_anchor("US.AMD")
 
     def fetch_page(code, start, end, page_key):
         if code == "US.NVDA":
@@ -111,7 +132,7 @@ def test_one_symbol_failure_is_partial_and_does_not_kill_other_seed():
     )
 
     assert result.status == "PARTIAL"
-    assert result.seeded_total == 390
+    assert result.seeded_total == 1170
     assert result.symbols[0].status == "PASS"
     assert result.symbols[1].status == "BLOCKED"
     assert result.symbols[1].reasons == ("HISTORY_QUERY_EXCEPTION:RuntimeError",)
@@ -134,9 +155,33 @@ def test_no_provider_anchor_never_partially_seeds_latest_session():
     assert cache.bars == {}
 
 
+def test_two_proven_sessions_do_not_partially_seed_three_session_contract():
+    symbol = "US.AMD"
+    rows = [
+        *_session("2026-10-05", symbol),
+        *_session("2026-10-06", symbol),
+        dict(_session("2026-10-07", symbol)[0]),
+    ]
+
+    cache = _Cache()
+    result = seed_futu_k1m_research_cache(
+        [symbol],
+        fetch_page=lambda *args: (rows, None),
+        market_data=cache,
+        received_at=NOW,
+    )
+
+    assert result.status == "BLOCKED"
+    assert result.seeded_total == 0
+    assert cache.bars == {}
+    assert result.symbols[0].reasons[0] == (
+        "INSUFFICIENT_CLOSURE_PROVEN_SESSIONS:2/3"
+    )
+
+
 def test_runtime_warm_start_result_remains_research_only():
     symbol = "US.AMD"
-    rows = [*_session("2026-10-05", symbol), *_session("2026-10-06", symbol)]
+    rows = _three_sessions_with_anchor(symbol)
 
     result = seed_futu_k1m_research_cache(
         [symbol],
@@ -147,9 +192,44 @@ def test_runtime_warm_start_result_remains_research_only():
     payload = result.to_dict()
 
     assert payload["status"] == "PASS"
+    assert payload["required_sessions"] == 3
+    assert payload["seeded_total"] == 1170
     assert payload["historical_query"] is True
     assert payload["realtime_currentness_proven"] is False
     assert payload["bar_closure_promotion_authorized"] is False
     assert payload["radar_admission"] == "BLOCKED"
     assert payload["live_trade"] is False
 
+
+def test_three_session_seed_produces_hourly_ready_canonical_aggregates():
+    symbol = "US.AMD"
+    rows = _three_sessions_with_anchor(symbol)
+    provider_health = evaluate_health(
+        freshness=1,
+        completeness=1,
+        timestamp=1,
+        provider=1,
+        continuity=1,
+        cross_check=1,
+    )
+    service = RealtimeMarketDataService(
+        None,
+        session_status_provider=lambda _market: "closed",
+        provider_health_provider=lambda: provider_health,
+        max_minutes=1600,
+        now=lambda: NOW,
+    )
+
+    result = seed_futu_k1m_research_cache(
+        [symbol],
+        fetch_page=lambda *args: (rows, None),
+        market_data=service,
+        received_at=NOW,
+    )
+    snapshot = service.snapshot(symbol, as_of=NOW)
+
+    assert result.status == "PASS"
+    assert len(snapshot.minute_bars) == 1170
+    assert len(snapshot.bars_5m) == 234
+    assert len(snapshot.bars_15m) == 78
+    assert len(snapshot.bars_1h) == 21

@@ -85,7 +85,7 @@ market_data=RealtimeMarketDataService(
     None,
     session_status_provider=lambda _market: futu_us_market_state_to_session(market_state_us),
     provider_health_provider=lambda: blocked_provider_health,
-    max_minutes=480,
+    max_minutes=1600,
 )
 closure_pipeline=FutuK1MClosurePipeline(max_pending_closed=1024)
 closure_qualification_tracker=FutuK1MClosureQualificationTracker(
@@ -143,6 +143,7 @@ try:
         received_at=datetime.now(timezone.utc),
         lookback_days=10,
         max_pages=5,
+        required_sessions=3,
     )
     warm_start_payload=warm_start_result.to_dict()
     warm_start_seeded_total=warm_start_result.seeded_total
@@ -155,6 +156,7 @@ except Exception as exc:
         "unchanged_total":0,
         "lookback_days":10,
         "max_pages":5,
+        "required_sessions":3,
         "purpose":"RESEARCH_CACHE_WARM_START",
         "historical_query":True,
         "realtime_currentness_proven":False,
