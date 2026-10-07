@@ -16,6 +16,10 @@ from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from src.services.a_share_intraday_grid_qualification import (
+    qualify_intraday_end_label_grid,
+)
+
 
 EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 TENCENT_MINUTE_URL = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
@@ -358,6 +362,22 @@ def _frame_observation(
                 f"{primary_error}|TENCENT:{type(fallback_exc).__name__}"
             )
     status = "PASS" if rows else "BLOCKED"
+    timestamp_semantic = "DAILY_DATE" if timeframe == "1d" else "UNKNOWN"
+    timestamp_qualification = None
+    if (
+        rows
+        and provider_used == "tencent"
+        and timeframe in {"15m", "60m"}
+    ):
+        qualification = qualify_intraday_end_label_grid(
+            [row["label"] for row in rows],
+            source_token="tencent",
+            endpoint_id="tencent.kline_intraday",
+            interval_minutes=int(timeframe[:-1]),
+        )
+        timestamp_qualification = qualification.to_dict()
+        if qualification.status == "PASS":
+            timestamp_semantic = qualification.timestamp_semantic.value
     return {
         "status": status,
         "error": None if rows else fallback_reason,
@@ -368,7 +388,8 @@ def _frame_observation(
         "provider_lineage": provider_lineage,
         "fallback_from": fallback_from,
         "fallback_reason": fallback_reason,
-        "timestamp_semantic": "DAILY_DATE" if timeframe == "1d" else "UNKNOWN",
+        "timestamp_semantic": timestamp_semantic,
+        "timestamp_qualification": timestamp_qualification,
         "currentness": "UNPROVEN",
         "adjustment": "NONE",
     }
@@ -423,7 +444,10 @@ def observe_cn_cloud_symbol(
         "providers_used": providers_used,
         "observed_at_utc": now.astimezone(timezone.utc).isoformat(),
         "timeframes": frames,
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": all(
+            frames[timeframe]["timestamp_semantic"] == "BAR_END"
+            for timeframe in ("15m", "60m")
+        ),
         "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
@@ -490,7 +514,10 @@ def build_cn_cloud_observation(
         "provider_policy": "EASTMONEY_PRIMARY_TENCENT_FALLBACK",
         "providers_used": providers_used,
         "provider_lineages": ["eastmoney", "tencent"],
-        "intraday_timestamp_semantics_proven": False,
+        "intraday_timestamp_semantics_proven": all(
+            item["intraday_timestamp_semantics_proven"]
+            for item in results.values()
+        ),
         "intraday_currentness_proven": False,
         "research_only": True,
         "can_confirm_signal": False,
