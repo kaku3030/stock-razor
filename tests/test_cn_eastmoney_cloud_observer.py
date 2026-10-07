@@ -32,6 +32,37 @@ def _eastmoney_rows(prefix="2026-10-06"):
     ]
 
 
+def _qualified_tencent_payload(symbol, timeframe):
+    api_symbol = tencent_symbol(symbol)
+    if timeframe == "1d":
+        return _tencent_payload(symbol, timeframe)
+    expected = {
+        "15m": [
+            "0945", "1000", "1015", "1030",
+            "1045", "1100", "1115", "1130",
+            "1315", "1330", "1345", "1400",
+            "1415", "1430", "1445", "1500",
+        ],
+        "60m": ["1030", "1130", "1400", "1500"],
+    }[timeframe]
+    rows = []
+    for day in ("20260928", "20260929", "20260930"):
+        for index, hhmm in enumerate(expected):
+            price = 10 + index / 100
+            rows.append([
+                day + hhmm,
+                f"{price:.2f}",
+                f"{price + 0.02:.2f}",
+                f"{price + 0.04:.2f}",
+                f"{price - 0.03:.2f}",
+                f"{1000 + index:.3f}",
+                {},
+                "1.0",
+            ])
+    key = f"m{timeframe[:-1]}"
+    return {"code": 0, "data": {api_symbol: {key: rows}}}
+
+
 def _tencent_payload(symbol, timeframe):
     api_symbol = tencent_symbol(symbol)
     if timeframe == "1d":
@@ -171,6 +202,72 @@ def test_eastmoney_failure_uses_independent_tencent_fallback():
         assert frame["fallback_reason"] == "RuntimeError"
         assert frame["rows"]
         assert frame["rows"][-1]["volume_unit"] == "HAND"
+
+
+def test_qualified_tencent_intraday_promotes_bar_end_without_currentness():
+    def eastmoney(_url):
+        raise RuntimeError("primary unavailable")
+
+    def tencent(url):
+        if "day" in url:
+            frame = "1d"
+        elif "m60" in url:
+            frame = "60m"
+        else:
+            frame = "15m"
+        return _qualified_tencent_payload("159611", frame)
+
+    result = observe_cn_cloud_symbol(
+        "159611",
+        observed_at_utc=NOW,
+        eastmoney_fetch_json=eastmoney,
+        tencent_fetch_json=tencent,
+    )
+
+    assert result["status"] == "PASS"
+    assert result["intraday_timestamp_semantics_proven"] is True
+    assert result["intraday_currentness_proven"] is False
+    for timeframe in ("15m", "60m"):
+        frame = result["timeframes"][timeframe]
+        assert frame["provider_used"] == "tencent"
+        assert frame["timestamp_semantic"] == "BAR_END"
+        qualification = frame["timestamp_qualification"]
+        assert qualification["status"] == "PASS"
+        assert qualification["timestamp_semantic"] == "BAR_END"
+        assert len(qualification["complete_session_dates"]) == 3
+        assert qualification["currentness_proven"] is False
+        assert qualification["continuity_proven"] is False
+        assert qualification["radar_admission"] == "BLOCKED"
+        assert qualification["live_trade"] is False
+        assert frame["currentness"] == "UNPROVEN"
+
+
+def test_partial_tencent_grid_remains_unknown():
+    def eastmoney(_url):
+        raise RuntimeError("primary unavailable")
+
+    def tencent(url):
+        if "day" in url:
+            frame = "1d"
+        elif "m60" in url:
+            frame = "60m"
+        else:
+            frame = "15m"
+        return _tencent_payload("159611", frame)
+
+    result = observe_cn_cloud_symbol(
+        "159611",
+        observed_at_utc=NOW,
+        eastmoney_fetch_json=eastmoney,
+        tencent_fetch_json=tencent,
+    )
+
+    assert result["intraday_timestamp_semantics_proven"] is False
+    for timeframe in ("15m", "60m"):
+        frame = result["timeframes"][timeframe]
+        assert frame["timestamp_semantic"] == "UNKNOWN"
+        assert frame["timestamp_qualification"]["status"] == "BLOCKED"
+        assert frame["currentness"] == "UNPROVEN"
 
 
 def test_both_sources_failure_blocks_only_affected_timeframe():

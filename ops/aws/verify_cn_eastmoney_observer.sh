@@ -21,7 +21,7 @@ assert payload.get("repo_sha") == expected_sha
 assert int(payload.get("sequence") or 0) > 0
 assert payload.get("provider_policy") == "EASTMONEY_PRIMARY_TENCENT_FALLBACK"
 assert set(payload.get("provider_lineages") or []) == {"eastmoney", "tencent"}
-assert payload.get("intraday_timestamp_semantics_proven") is False
+assert isinstance(payload.get("intraday_timestamp_semantics_proven"), bool)
 assert payload.get("intraday_currentness_proven") is False
 assert payload.get("research_only") is True
 assert payload.get("can_confirm_signal") is False
@@ -59,8 +59,29 @@ for symbol, item in symbols.items():
             assert frame.get("fallback_from") == "eastmoney"
             assert frame.get("fallback_reason")
     assert frames["1d"].get("timestamp_semantic") == "DAILY_DATE"
-    assert frames["60m"].get("timestamp_semantic") == "UNKNOWN"
-    assert frames["15m"].get("timestamp_semantic") == "UNKNOWN"
+    intraday_proven = True
+    for timeframe in ("60m", "15m"):
+        frame = frames[timeframe]
+        if frame.get("provider_used") == "tencent":
+            qualification = frame.get("timestamp_qualification") or {}
+            assert qualification.get("status") == "PASS"
+            assert qualification.get("timestamp_semantic") == "BAR_END"
+            assert qualification.get("currentness_proven") is False
+            assert qualification.get("continuity_proven") is False
+            assert qualification.get("radar_admission") == "BLOCKED"
+            assert qualification.get("live_trade") is False
+            assert frame.get("timestamp_semantic") == "BAR_END"
+        else:
+            intraday_proven = False
+            assert frame.get("timestamp_semantic") == "UNKNOWN"
+            assert frame.get("timestamp_qualification") is None
+    assert item.get("intraday_timestamp_semantics_proven") is intraday_proven
+    assert item.get("intraday_currentness_proven") is False
+
+assert payload.get("intraday_timestamp_semantics_proven") is all(
+    item.get("intraday_timestamp_semantics_proven") is True
+    for item in symbols.values()
+)
 
 summary = {
     "schema": payload.get("schema"),
@@ -83,6 +104,9 @@ summary = {
                     "provider_lineage": frame.get("provider_lineage"),
                     "row_count": frame.get("row_count"),
                     "timestamp_semantic": frame.get("timestamp_semantic"),
+                    "timestamp_qualification_status": (
+                        (frame.get("timestamp_qualification") or {}).get("status")
+                    ),
                     "currentness": frame.get("currentness"),
                     "fallback_from": frame.get("fallback_from"),
                     "latest_label": ((frame.get("rows") or [{}])[-1]).get("label"),
