@@ -63,6 +63,10 @@ class ObservedProviderValue:
     value: object
     provenance: EvidenceProvenance
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.provenance, EvidenceProvenance):
+            raise TypeError("provenance must be EvidenceProvenance")
+
 
 @dataclass(frozen=True)
 class ProviderRuntimeObservation:
@@ -76,10 +80,26 @@ class ProviderRuntimeObservation:
             raise ValueError("provider_id must not contain outer whitespace")
         if not self.fields:
             raise ValueError("fields must not be empty")
+
+        invalid_keys = [name for name in self.fields if not isinstance(name, str)]
+        if invalid_keys:
+            raise ValueError("runtime evidence field names must be strings")
+
         unknown = sorted(set(self.fields) - _RUNTIME_FIELDS)
         if unknown:
             raise ValueError(
                 "unsupported runtime evidence field(s): " + ", ".join(unknown)
+            )
+
+        invalid_values = [
+            name
+            for name, observed in self.fields.items()
+            if not isinstance(observed, ObservedProviderValue)
+        ]
+        if invalid_values:
+            raise TypeError(
+                "runtime evidence values must be ObservedProviderValue: "
+                + ", ".join(sorted(invalid_values))
             )
 
 
