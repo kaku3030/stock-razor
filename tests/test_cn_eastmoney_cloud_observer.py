@@ -268,4 +268,4 @@ def test_http_json_retries_transient_disconnects(monkeypatch):
 
     assert payload == {"data": {"klines": []}}
     assert attempts == [2, 2, 2]
-    assert sleeps == [0.5, 1.0]
+    assert sleeps == [0.25, 0.5]
