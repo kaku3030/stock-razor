@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -86,7 +86,7 @@ def test_full_390_row_session_still_leaves_1600_unresolved():
     rows = []
     start = datetime(2026, 10, 6, 9, 31)
     for index in range(390):
-        stamp = start + __import__("datetime").timedelta(minutes=index)
+        stamp = start + timedelta(minutes=index)
         rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
 
     result = normalize_futu_k1m_history_rows(
@@ -107,7 +107,7 @@ def test_next_session_first_label_can_close_all_390_prior_session_rows():
     rows = []
     start = datetime(2026, 10, 6, 9, 31)
     for index in range(390):
-        stamp = start + __import__("datetime").timedelta(minutes=index)
+        stamp = start + timedelta(minutes=index)
         rows.append(row(stamp.strftime("%Y-%m-%d %H:%M:%S")))
     rows.append(row("2026-10-07 09:31:00"))
 
