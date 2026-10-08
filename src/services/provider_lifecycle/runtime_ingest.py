@@ -978,3 +978,259 @@ def ingest_alpaca_runtime_events(
             repo_sha=repo_sha,
         )
     )
+
+
+_NEGATIVE_PROBE_SCHEMA = "stock_razor_provider_negative_probe_v1"
+_NEGATIVE_PROBE_PROVIDERS = frozenset({
+    "openai",
+    "anthropic",
+    "tavily",
+    "twelve_data",
+    "eodhd",
+    "aws",
+})
+_NEGATIVE_PROBE_CONDITIONS = frozenset({
+    "AUTH_FAILED",
+    "EXPIRED_OR_INVALID",
+    "INSUFFICIENT_QUOTA",
+    "CREDIT_BALANCE_EXHAUSTED",
+    "RATE_LIMITED",
+    "PROVIDER_FAILED",
+})
+_FORBIDDEN_NEGATIVE_PROBE_KEYS = frozenset({
+    "api_key",
+    "authorization",
+    "headers",
+    "request_headers",
+    "response_body",
+    "raw_response",
+    "error_message",
+    "message",
+    "detail",
+})
+_NEGATIVE_PROBE_ALLOWED_KEYS = frozenset({
+    "schema",
+    "provider_id",
+    "condition",
+    "observed_at_utc",
+    "runtime_instance_id",
+    "repo_sha",
+    "probe_source",
+    "http_status",
+    "error_code",
+    "error_type",
+    "research_only",
+    "radar_admission",
+    "live_trade",
+})
+
+
+def _optional_http_status(value: object) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ProviderRuntimeIngestError("http_status must be an integer")
+    if value < 100 or value > 599:
+        raise ProviderRuntimeIngestError("http_status must be between 100 and 599")
+    return value
+
+
+def _safe_probe_token(
+    value: object,
+    field_name: str,
+    *,
+    required: bool = False,
+) -> str | None:
+    if value is None:
+        if required:
+            raise ProviderRuntimeIngestError(f"{field_name} is required")
+        return None
+    token = _text(value, field_name)
+    if len(token) > 80:
+        raise ProviderRuntimeIngestError(
+            f"{field_name} must not exceed 80 characters"
+        )
+    if any(
+        not (character.isalnum() or character in "._:-")
+        for character in token
+    ):
+        raise ProviderRuntimeIngestError(
+            f"{field_name} must be a sanitized token"
+        )
+    return token
+
+
+def build_negative_provider_probe_observation(
+    payload: Mapping[str, object],
+) -> ProviderRuntimeObservation:
+    """Translate one sanitized negative provider probe into lifecycle evidence.
+
+    This contract is intentionally negative-only. It cannot prove HEALTHY,
+    credential validity, quota headroom, Data Admission, Radar Admission, or
+    execution readiness.
+    """
+
+    if not isinstance(payload, Mapping):
+        raise ProviderRuntimeIngestError("negative provider probe must be a mapping")
+    if payload.get("schema") != _NEGATIVE_PROBE_SCHEMA:
+        raise ProviderRuntimeIngestError("unexpected negative provider probe schema")
+
+    invalid_keys = [key for key in payload if not isinstance(key, str)]
+    if invalid_keys:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe field names must be strings"
+        )
+    unknown_keys = sorted(set(payload) - _NEGATIVE_PROBE_ALLOWED_KEYS)
+    if unknown_keys:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe contains unsupported field(s): "
+            + ", ".join(unknown_keys)
+        )
+
+    forbidden_present = sorted(
+        key for key in _FORBIDDEN_NEGATIVE_PROBE_KEYS if key in payload
+    )
+    if forbidden_present:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe contains forbidden raw/sensitive field(s): "
+            + ", ".join(forbidden_present)
+        )
+
+    if payload.get("research_only") is not True:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe must remain research_only"
+        )
+    if payload.get("radar_admission") != "BLOCKED":
+        raise ProviderRuntimeIngestError(
+            "negative provider probe must preserve RADAR_ADMISSION=BLOCKED"
+        )
+    if payload.get("live_trade") is not False:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe must preserve LIVE_TRADE=NO"
+        )
+
+    provider_id = _text(payload.get("provider_id"), "provider_id")
+    if provider_id != provider_id.lower():
+        raise ProviderRuntimeIngestError("provider_id must be lowercase")
+    if provider_id not in _NEGATIVE_PROBE_PROVIDERS:
+        raise ProviderRuntimeIngestError(
+            f"provider_id is not eligible for generic negative probe ingest: {provider_id}"
+        )
+
+    runtime_id = _text(payload.get("runtime_instance_id"), "runtime_instance_id")
+    repo_sha = _exact_sha(payload.get("repo_sha"))
+    observed_at = _parse_aware_timestamp(
+        payload.get("observed_at_utc"),
+        "observed_at_utc",
+    )
+    probe_source = _safe_probe_token(
+        payload.get("probe_source"),
+        "probe_source",
+        required=True,
+    )
+    assert probe_source is not None
+    if probe_source != probe_source.lower():
+        raise ProviderRuntimeIngestError("probe_source must be lowercase")
+    condition = _text(payload.get("condition"), "condition").upper()
+    if condition not in _NEGATIVE_PROBE_CONDITIONS:
+        raise ProviderRuntimeIngestError(
+            f"unsupported negative provider condition: {condition}"
+        )
+
+    http_status = _optional_http_status(payload.get("http_status"))
+    error_code = _safe_probe_token(payload.get("error_code"), "error_code")
+    error_type = _safe_probe_token(payload.get("error_type"), "error_type")
+
+    credential_status: str | None = None
+    billing_status: str | None = None
+    if condition == "AUTH_FAILED":
+        health_state = ProviderHealthState.FAILED
+        credential_status = "AUTH_FAILED"
+    elif condition == "EXPIRED_OR_INVALID":
+        health_state = ProviderHealthState.EXPIRED
+        credential_status = "EXPIRED_OR_INVALID"
+    elif condition == "INSUFFICIENT_QUOTA":
+        health_state = ProviderHealthState.EXHAUSTED
+        billing_status = "INSUFFICIENT_QUOTA"
+    elif condition == "CREDIT_BALANCE_EXHAUSTED":
+        health_state = ProviderHealthState.EXHAUSTED
+        billing_status = "CREDIT_BALANCE_EXHAUSTED"
+    elif condition == "RATE_LIMITED":
+        health_state = ProviderHealthState.RATE_LIMITED
+    else:
+        health_state = ProviderHealthState.FAILED
+
+    reason_parts = [condition]
+    if error_code is not None:
+        reason_parts.append(f"CODE={error_code}")
+    if error_type is not None:
+        reason_parts.append(f"TYPE={error_type}")
+    if http_status is not None:
+        reason_parts.append(f"HTTP={http_status}")
+    failure_reason = "|".join(reason_parts)[:240]
+
+    capabilities = MappingProxyType({
+        "negative_probe_schema": _NEGATIVE_PROBE_SCHEMA,
+        "negative_evidence_only": True,
+        "probe_source": probe_source,
+        "condition": condition,
+        "http_status": http_status,
+        "error_code": error_code,
+        "error_type": error_type,
+        "research_only": True,
+        "data_admission": "NOT_EVALUATED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    })
+
+    def observed(
+        field_name: str,
+        value: object,
+    ) -> ObservedProviderValue:
+        return ObservedProviderValue(
+            value=value,
+            provenance=EvidenceProvenance(
+                observed_at=observed_at,
+                source=f"provider_negative_probe:{probe_source}",
+                runtime_id=runtime_id,
+                repo_sha=repo_sha,
+                error_code=condition,
+                evidence_id=(
+                    f"provider-negative:{provider_id}:{runtime_id}:"
+                    f"{observed_at.isoformat()}:{field_name}"
+                ),
+            ),
+        )
+
+    fields: dict[str, ObservedProviderValue] = {
+        "health_state": observed("health_state", health_state),
+        "last_failure": observed("last_failure", observed_at),
+        "failure_reason": observed("failure_reason", failure_reason),
+        "capabilities": observed("capabilities", capabilities),
+    }
+    if credential_status is not None:
+        fields["credential_status"] = observed(
+            "credential_status",
+            credential_status,
+        )
+    if billing_status is not None:
+        fields["billing_status"] = observed(
+            "billing_status",
+            billing_status,
+        )
+
+    return ProviderRuntimeObservation(
+        provider_id=provider_id,
+        fields=fields,
+    )
+
+
+def ingest_negative_provider_probe(
+    observer: ProviderRuntimeObserver,
+    payload: Mapping[str, object],
+) -> RuntimeProviderSnapshot:
+    """Ingest one sanitized negative provider probe."""
+
+    return observer.ingest(
+        build_negative_provider_probe_observation(payload)
+    )
