@@ -144,3 +144,44 @@ def test_invalid_symbol_rejected_fail_closed(tmp_path):
     assert result["error"] == "INVALID_SYMBOL"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_us_radar_reader_exposes_completed_analysis_telemetry(tmp_path):
+    payload = _payload()
+    payload["radar_analysis_performed"] = True
+    payload["radar_analysis_latency_ms"] = 214.5
+    payload["data_to_radar_latency_ms"] = 612.0
+    path = _write(tmp_path / "radar.json", payload)
+
+    result = read_us_radar_analysis(["AMD"], path=path, now_utc=NOW)
+
+    assert result["status"] == "PASS"
+    assert result["radar_analysis_performed"] is True
+    assert result["radar_analysis_latency_ms"] == 214.5
+    assert result["data_to_radar_latency_ms"] == 612.0
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_us_radar_reader_allows_legacy_missing_telemetry_as_unknown(tmp_path):
+    path = _write(tmp_path / "radar.json", _payload())
+
+    result = read_us_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["status"] == "PASS"
+    assert result["radar_analysis_performed"] is None
+    assert result["radar_analysis_latency_ms"] is None
+    assert result["data_to_radar_latency_ms"] is None
+
+
+def test_us_radar_reader_rejects_inconsistent_telemetry(tmp_path):
+    payload = _payload()
+    payload["radar_analysis_performed"] = False
+    payload["radar_analysis_latency_ms"] = 0.1
+    path = _write(tmp_path / "radar.json", payload)
+
+    result = read_us_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["status"] == "INVALID"
+    assert result["error"] == "RADAR_TELEMETRY_INCONSISTENT"
+    assert result["radar_admission"] == "BLOCKED"
