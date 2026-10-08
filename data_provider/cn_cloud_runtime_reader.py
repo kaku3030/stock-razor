@@ -336,6 +336,19 @@ def read_cn_market_data(
             _fail("INVALID", error="ROOT_CURRENTNESS_MISMATCH"),
         )
 
+    provider_request_latency_ms = frame_payload.get("request_latency_ms")
+    if (
+        provider_request_latency_ms is not None
+        and (
+            isinstance(provider_request_latency_ms, bool)
+            or not isinstance(provider_request_latency_ms, (int, float))
+            or provider_request_latency_ms < 0
+        )
+    ):
+        return _finish(
+            started_at,
+            _fail("INVALID", error="PROVIDER_REQUEST_LATENCY_INVALID"),
+        )
     rows = frame_payload.get("rows")
     rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
     selected = rows[-limit:]
@@ -363,6 +376,11 @@ def read_cn_market_data(
         "timeframe": frame,
         "provider_used": frame_payload.get("provider_used"),
         "provider_lineage": frame_payload.get("provider_lineage"),
+        "provider_request_latency_ms": (
+            float(provider_request_latency_ms)
+            if provider_request_latency_ms is not None
+            else None
+        ),
         "fallback_from": frame_payload.get("fallback_from"),
         "fallback_reason": frame_payload.get("fallback_reason"),
         "timestamp_semantic": frame_payload.get("timestamp_semantic"),
