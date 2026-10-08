@@ -188,3 +188,12 @@ def test_options_context_keeps_radar_network_isolated_and_context_only():
     assert "PrivateNetwork=true" in INSTALLER
     assert "futu-api" not in INSTALLER
     assert "alpaca" not in INSTALLER.lower()
+
+
+def test_us_radar_worker_emits_truthful_runtime_latency_telemetry():
+    assert "analysis_started = time.perf_counter()" in INSTALLER
+    assert 'radar_analysis_performed = evaluation.status == "PASS"' in INSTALLER
+    assert '"radar_analysis_performed": radar_analysis_performed' in INSTALLER
+    assert '"radar_analysis_latency_ms": radar_analysis_latency_ms' in INSTALLER
+    assert '"data_to_radar_latency_ms": data_to_radar_latency_ms' in INSTALLER
+    assert '"emitted_at_utc": completed_at.isoformat()' in INSTALLER
