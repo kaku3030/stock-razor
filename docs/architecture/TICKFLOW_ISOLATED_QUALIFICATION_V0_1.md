@@ -27,12 +27,23 @@ chat transcripts or repo files. The SDK reads `TICKFLOW_API_KEY` from its
 runtime environment. Use a secret manager or user-scoped secure store outside
 repo and do not assume entitlement until successful paid API queries.
 
+Clean Windows environments require `tzdata`: Python's
+`zoneinfo.ZoneInfo("Asia/Shanghai")` is evaluated when TickFlow is imported,
+and `pip check` alone may miss this runtime dependency. A real Windows
+isolation attempt reproduced `ZoneInfoNotFoundError`; installing
+`tzdata==2026.3` into **that dedicated venv only** resolved it. The
+reproducible dependency pins live at
+`ops/requirements/tickflow-isolated-v0.1.txt`.
+
 Create a dedicated **external** Python virtual environment; never install to
 production Radar or AWS runtime before network/credential/licensing review.
-Pin SDK to a reviewed exact version (initial review: `0.1.25`), not
+Pin SDK to a reviewed exact version (`0.1.25`), not
 `pip install --upgrade` and do not install unreviewed binaries.
 
-Commands from repository root, with the isolated environment activated:
+Install from `ops/requirements/tickflow-isolated-v0.1.txt` into the
+dedicated venv with `python -m pip install -r ...`; do not use global
+Python's site-packages. Commands from repository root, with the
+isolated environment activated:
 
 ```sh
 python scripts/probe_tickflow_isolated.py --mode metadata
