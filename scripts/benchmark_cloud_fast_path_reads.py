@@ -15,6 +15,9 @@ from data_provider.us_canonical_runtime_reader import (
 )
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 from src.services.cloud_fast_path_metrics import FastPathSample, summarize_fast_path
+from src.services.live_feed.futu_k1m_currentness import (
+    futu_us_market_state_to_session,
+)
 
 
 def _number(payload: dict, key: str) -> float | None:
@@ -50,13 +53,14 @@ def benchmark_us(symbols: list[str], iterations: int) -> list[FastPathSample]:
             observed_at=datetime.now(timezone.utc),
             provider="futu-opend",
             provider_latency_ms=None,
-            provider_callback_processing_latency_ms=_number(
-                health, "provider_callback_latency_ms"
-            ),
+            # This is repeated telemetry from a cached heartbeat, not a
+            # separately observed callback in each read iteration.
+            provider_callback_processing_latency_ms=None,
             canonical_latency_ms=_number(canonical, "read_latency_ms"),
-            radar_analysis_latency_ms=_number(radar, "radar_analysis_latency_ms"),
+            # Read-only cache polling did not trigger this analysis cycle.
+            radar_analysis_latency_ms=None,
             radar_read_latency_ms=_number(radar, "read_latency_ms"),
-            data_to_radar_latency_ms=_number(radar, "data_to_radar_latency_ms"),
+            data_to_radar_latency_ms=None,
             mcp_latency_ms=None,
             chatgpt_access_latency_ms=None,
             e2e_latency_ms=None,
@@ -93,11 +97,6 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
             if canonical_latencies and all(value is not None for value in canonical_latencies)
             else None
         )
-        provider_latencies = [
-            value
-            for payload in canonical_rows
-            if (value := _number(payload, "provider_request_latency_ms")) is not None
-        ]
         providers = {
             str(payload.get("provider_used")).strip()
             for payload in canonical_rows
@@ -122,17 +121,16 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
                 else ("mixed" if providers else None)
             ),
             provider_latency_ms=None,
-            provider_request_path_latency_ms=(
-                max(provider_latencies)
-                if len(provider_latencies) == len(canonical_rows)
-                else None
-            ),
+            # Cached observer records do not represent a provider request
+            # executed in *this* read-only benchmark iteration.
+            provider_request_path_latency_ms=None,
             canonical_latency_ms=(
                 round(canonical_latency, 3) if canonical_latency is not None else None
             ),
-            radar_analysis_latency_ms=_number(radar, "radar_analysis_latency_ms"),
+            # Read-only cache polling did not trigger this analysis cycle.
+            radar_analysis_latency_ms=None,
             radar_read_latency_ms=_number(radar, "read_latency_ms"),
-            data_to_radar_latency_ms=_number(radar, "data_to_radar_latency_ms"),
+            data_to_radar_latency_ms=None,
             mcp_latency_ms=None,
             chatgpt_access_latency_ms=None,
             e2e_latency_ms=None,
@@ -193,6 +191,9 @@ def cn_symbol_read_diagnostics(symbols: list[str], timeframe: str) -> dict:
             "source_age_seconds": (
                 _number(row, "source_age_seconds")
             ),
+            "cached_last_provider_request_path_latency_ms": _number(
+                row, "provider_request_latency_ms"
+            ),
             "observed_row_count": (
                 source_count
                 if isinstance(source_count, int)
@@ -221,16 +222,18 @@ def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
         "PASS", "HEALTHY", "STALE", "DEGRADED", "BLOCKED",
         "INVALID", "NO_DATA", "UNKNOWN",
     })
-    market_states = frozenset({
-        "OPEN", "CLOSED", "PRE_MARKET", "AFTER_HOURS",
-        "EXTENDED_HOURS", "UNKNOWN",
-    })
     delivery_modes = frozenset({"REALTIME", "DELAYED", "UNPROVEN", "UNKNOWN"})
     closure_modes = frozenset({"PROVEN", "UNPROVEN", "UNKNOWN"})
 
     health = read_us_livefeed_health()
     canonical = read_us_market_snapshots(symbols)
     radar = read_us_radar_analysis(symbols)
+    raw_market_state = health.get("market_state_us")
+    market_session = futu_us_market_state_to_session(raw_market_state)
+    market_state = (
+        str(raw_market_state).strip().upper()
+        if market_session != "unknown" else "UNKNOWN"
+    )
     source_symbols = canonical.get("symbols")
     source_symbols = source_symbols if isinstance(source_symbols, dict) else {}
     coverage = {}
@@ -268,9 +271,8 @@ def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
     return {
         "scope": "US_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION",
         "livefeed_status": _allow_status(health.get("status"), statuses),
-        "market_state_us": _allow_status(
-            health.get("market_state_us"), market_states
-        ),
+        "market_state_us": market_state,
+        "market_session": market_session,
         "delivery_mode": _allow_status(health.get("delivery_mode"), delivery_modes),
         "bar_closure": _allow_status(health.get("bar_closure"), closure_modes),
         "realtime_delivery_evidence": health.get("realtime_delivery_evidence") is True,
@@ -286,6 +288,18 @@ def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
         "radar_status": _allow_status(radar.get("status"), statuses),
         "radar_poll_status": _allow_status(radar.get("poll_status"), statuses),
         "radar_source_age_seconds": _number(radar, "source_age_seconds"),
+        # One cached diagnostic observation; NEVER counted as 30 distinct
+        # callback, provider request, Radar compute, or Data->Radar samples.
+        "cached_last_callback_processing_latency_ms": _number(
+            health, "provider_callback_latency_ms"
+        ),
+        "cached_last_radar_analysis_latency_ms": _number(
+            radar, "radar_analysis_latency_ms"
+        ),
+        "cached_last_data_to_radar_latency_ms": _number(
+            radar, "data_to_radar_latency_ms"
+        ),
+        "cached_worker_telemetry_unique_event_qualified": False,
         "symbols": coverage,
         "data_qualification": "NOT_VERIFIED",
         "radar_admission": "BLOCKED",
