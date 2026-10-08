@@ -114,3 +114,13 @@ def test_empty_window_is_insufficient_evidence():
     summary = summarize_fast_path([])
     assert summary["status"] == "INSUFFICIENT_EVIDENCE"
     assert summary["radar_admission"] == "BLOCKED"
+
+
+def test_missing_retry_and_fallback_evidence_is_not_zero():
+    summary = summarize_fast_path([sample(retry_count=None, fallback_count=None)])
+    assert summary["retry_rate"] is None
+    assert summary["retry_rate_sample_count"] == 0
+    assert summary["retry_rate_missing_count"] == 1
+    assert summary["fallback_rate"] is None
+    assert summary["fallback_rate_sample_count"] == 0
+    assert summary["fallback_rate_missing_count"] == 1
