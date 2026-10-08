@@ -140,11 +140,23 @@ while True:
         if options_result.status == "PASS":
             options_contexts = options_result.by_symbol()
 
+    analysis_started = time.perf_counter()
     evaluation = worker.poll_file(
         source_path,
         daily_frames=daily_frames,
         options_contexts=options_contexts,
     )
+    poll_elapsed_ms = round((time.perf_counter() - analysis_started) * 1000, 3)
+    radar_analysis_performed = evaluation.status == "PASS"
+    radar_analysis_latency_ms = poll_elapsed_ms if radar_analysis_performed else None
+    completed_at = datetime.now(timezone.utc)
+    data_to_radar_latency_ms = None
+    if radar_analysis_performed and evaluation.source_emitted_at is not None:
+        source_emitted = evaluation.source_emitted_at.astimezone(timezone.utc)
+        data_to_radar_latency_ms = round(
+            max(0.0, (completed_at - source_emitted).total_seconds()) * 1000,
+            3,
+        )
     evaluation_payload = evaluation.to_dict()
     cycle += 1
     payload = {
@@ -154,7 +166,7 @@ while True:
         "expected_source_repo_sha": expected_source_repo_sha,
         "host_id": host_id,
         "sequence": cycle,
-        "emitted_at_utc": now.isoformat(),
+        "emitted_at_utc": completed_at.isoformat(),
         "source_path": source_path,
         "daily_history_path": daily_history_path,
         "daily_history": daily_history,
@@ -165,6 +177,9 @@ while True:
             "read": options_result.to_dict() if options_result is not None else None,
         },
         "poll_status": evaluation.status,
+        "radar_analysis_performed": radar_analysis_performed,
+        "radar_analysis_latency_ms": radar_analysis_latency_ms,
+        "data_to_radar_latency_ms": data_to_radar_latency_ms,
         "evaluation": evaluation_payload,
         "research_only": True,
         "can_confirm_signal": False,
