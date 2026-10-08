@@ -199,6 +199,14 @@ def test_us_radar_worker_emits_truthful_runtime_latency_telemetry():
     assert '"emitted_at_utc": completed_at.isoformat()' in INSTALLER
 
 
+def test_us_radar_worker_uses_subsecond_pickup_poll_without_changing_admission():
+    assert 'os.environ.get("STOCK_RAZOR_US_RADAR_POLL_SECONDS", "0.25")' in INSTALLER
+    assert 'poll_seconds = max(0.1,' in INSTALLER
+    assert 'Environment=STOCK_RAZOR_US_RADAR_POLL_SECONDS=0.25' in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
+
+
 def test_us_radar_verifier_requires_runtime_latency_telemetry_consistency():
     assert 'radar_analysis_performed = payload.get("radar_analysis_performed")' in VERIFY
     assert 'radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")' in VERIFY
