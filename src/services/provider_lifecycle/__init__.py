@@ -1,5 +1,23 @@
 """Provider lifecycle, cost guard, and fail-closed fallback contracts."""
 
+from .alert_engine import (
+    ProviderAlertEngine,
+    ProviderAlertEvaluation,
+    ProviderAlertTransition,
+    ProviderAlertTransitionState,
+    StaleProviderAlertEvidenceError,
+)
+from .notification_gateway import (
+    NotificationDispatcher,
+    ProviderNotificationDispatch,
+    ProviderNotificationGateway,
+)
+from .shadow_validation import (
+    ProviderAlertShadowBatch,
+    ProviderAlertShadowEvent,
+    ProviderAlertShadowSummary,
+    ProviderAlertShadowValidator,
+)
 from .contract import (
     CostAction,
     CostGuardDecision,
@@ -53,6 +71,17 @@ __all__ = [
     "GuardSeverity",
     "ObservedProviderValue",
     "ProviderAlert",
+    "ProviderAlertEngine",
+    "ProviderAlertEvaluation",
+    "ProviderAlertTransition",
+    "ProviderAlertTransitionState",
+    "ProviderAlertShadowBatch",
+    "ProviderAlertShadowEvent",
+    "ProviderAlertShadowSummary",
+    "ProviderAlertShadowValidator",
+    "NotificationDispatcher",
+    "ProviderNotificationDispatch",
+    "ProviderNotificationGateway",
     "ProviderDefinition",
     "ProviderGuardAssessment",
     "ProviderHealthState",
@@ -62,6 +91,7 @@ __all__ = [
     "ProviderRuntimeObservation",
     "ProviderRuntimeObserver",
     "RuntimeProviderSnapshot",
+    "StaleProviderAlertEvidenceError",
     "assess_provider",
     "build_alpaca_observation_from_runtime_events",
     "build_cn_provider_observations_from_cloud_snapshot",
