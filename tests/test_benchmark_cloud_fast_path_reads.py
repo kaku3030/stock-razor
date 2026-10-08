@@ -24,10 +24,10 @@ def test_us_callback_latency_is_not_laundered_into_provider_network_latency(monk
     row = benchmark.benchmark_us(["AMD"], 1)[0]
     assert row.provider == "futu-opend"
     assert row.provider_latency_ms is None
-    assert row.provider_callback_processing_latency_ms == 2.75
+    assert row.provider_callback_processing_latency_ms is None
     assert row.canonical_latency_ms == 6
-    assert row.radar_analysis_latency_ms == 80
-    assert row.data_to_radar_latency_ms == 200
+    assert row.radar_analysis_latency_ms is None
+    assert row.data_to_radar_latency_ms is None
     assert row.retry_count is None
     assert row.fallback_count is None
     assert row.mcp_latency_ms is None
@@ -81,7 +81,7 @@ def test_cn_provider_request_path_cannot_impersonate_network_latency(monkeypatch
     row = benchmark.benchmark_cn(["159611"], "15m", 1)[0]
     assert row.provider == "tencent"
     assert row.provider_latency_ms is None
-    assert row.provider_request_path_latency_ms == 1300
+    assert row.provider_request_path_latency_ms is None
     assert row.fallback_count == 1
     assert row.fallback_provider == "tencent"
     assert row.radar_admission == "BLOCKED"
@@ -221,7 +221,7 @@ def test_us_cloud_diagnostics_distinguish_closed_market_and_missing_symbols(monk
     assert result["radar_admission"] == "BLOCKED"
     import json
     encoded=json.dumps(result)
-    for secret in ("DO_NOT_PRINT", "SECRET_ERROR", "close", "101.25"):
+    for secret in ("DO_NOT_PRINT", "SECRET_ERROR", '"close":', "101.25"):
         assert secret not in encoded
 
 
@@ -278,3 +278,96 @@ def test_us_diagnostics_accept_prefixed_and_bare_tickers_consistently(monkeypatc
     assert result["symbols"]["US.QQQ"]["any_bars_observed"] is False
     assert result["symbols"]["NVDA"]["symbol_present"] is False
     assert result["radar_admission"] == "BLOCKED"
+
+
+
+def test_cache_reads_cannot_replicate_worker_event_latencies_as_p95(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_us_livefeed_health",
+        lambda: {
+            "status": "HEALTHY", "provider_callback_latency_ms": 1.9
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_market_snapshots",
+        lambda symbols: {"status": "PASS", "read_latency_ms": 0.04},
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_radar_analysis",
+        lambda symbols: {
+            "status": "PASS", "read_latency_ms": 0.07,
+            "radar_analysis_latency_ms": 180, "data_to_radar_latency_ms": 15000,
+        },
+    )
+    us = benchmark.summarize_fast_path(benchmark.benchmark_us(["AMD"], 30))
+    assert us["metrics"]["canonical_latency_ms"]["sample_count"] == 30
+    assert us["metrics"]["radar_read_latency_ms"]["sample_count"] == 30
+    for field in (
+        "provider_callback_processing_latency_ms",
+        "radar_analysis_latency_ms",
+        "data_to_radar_latency_ms",
+        "provider_latency_ms",
+    ):
+        assert us["metrics"][field]["sample_count"] == 0
+        assert us["metrics"][field]["p95_ms"] is None
+    assert us["status"] == "INCOMPLETE_EVIDENCE"
+
+    monkeypatch.setattr(
+        benchmark, "read_cn_market_data",
+        lambda symbol, **kw: {
+            "status": "PASS", "provider_used": "tencent",
+            "read_latency_ms": 0.6, "provider_request_latency_ms": 2985,
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_cn_radar_analysis",
+        lambda symbols: {
+            "status": "PASS", "read_latency_ms": 0.09,
+            "radar_analysis_latency_ms": 2908, "data_to_radar_latency_ms": 15593,
+        },
+    )
+    cn = benchmark.summarize_fast_path(benchmark.benchmark_cn(["159611"], "15m", 30))
+    assert cn["metrics"]["canonical_latency_ms"]["sample_count"] == 30
+    for field in (
+        "provider_request_path_latency_ms", "radar_analysis_latency_ms",
+        "data_to_radar_latency_ms",
+    ):
+        assert cn["metrics"][field]["sample_count"] == 0
+        assert cn["metrics"][field]["p50_ms"] is None
+    assert cn["status"] == "INCOMPLETE_EVIDENCE"
+
+
+def test_futu_market_state_and_cached_telemetry_are_not_promoted(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_us_livefeed_health",
+        lambda: {
+            "status": "HEALTHY",
+            "market_state_us": "PRE_MARKET_BEGIN",
+            "provider_callback_latency_ms": 1.904,
+            "api_key": "SECRET_VALUE",
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_market_snapshots",
+        lambda symbols: {"status": "STALE", "symbols": {}},
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_radar_analysis",
+        lambda symbols: {
+            "status": "PASS", "poll_status": "BLOCKED",
+            "radar_analysis_latency_ms": 2908,
+            "data_to_radar_latency_ms": 15593,
+            "symbols": {"US.AMD": {"close": "PRIVATE"}},
+        },
+    )
+    d = benchmark.us_cloud_read_diagnostics(["AMD"])
+    assert d["market_state_us"] == "PRE_MARKET_BEGIN"
+    assert d["market_session"] == "premarket"
+    assert d["cached_last_callback_processing_latency_ms"] == 1.904
+    assert d["cached_last_radar_analysis_latency_ms"] == 2908
+    assert d["cached_last_data_to_radar_latency_ms"] == 15593
+    assert d["cached_worker_telemetry_unique_event_qualified"] is False
+    assert d["radar_admission"] == "BLOCKED"
+    import json
+    assert "SECRET_VALUE" not in json.dumps(d)
+    assert "PRIVATE" not in json.dumps(d)

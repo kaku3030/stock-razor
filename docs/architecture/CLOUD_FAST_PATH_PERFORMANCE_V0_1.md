@@ -250,3 +250,30 @@ It MUST NOT:
 The first implementation change should be a unified performance-measurement contract and benchmark harness over the existing path, not a parallel data system.
 
 Only after measurement identifies the dominant latency contributors should implementation optimization PRs be prioritized.
+
+## Repeated cache samples are not repeated provider events (V0.2)
+
+The 30-iteration AWS read benchmark invokes existing cached readers. In prior
+reports it repeated a single worker's last callback-processing duration,
+REST provider-request duration, Radar compute duration, and Data-to-Radar
+elapsed time 30 times. Reporting those duplicated cached values as P50/P95/P99
+would incorrectly suggest 30 independent market events.
+
+The read benchmark now **samples only work performed on each iteration**:
+canonical cache read and Radar-cache read durations. The repeated worker
+telemetry fields remain `null` in the `FastPathSample` histogram, with
+`sample_count=0` and `missing_count=30`; provider RTT, Radar compute,
+Data-to-Radar and E2E are still NOT_VERIFIED. This does not erase existing
+worker telemetry: US read diagnostics surface one `cached_last_*` observation
+for callback processing, Radar analysis and Data-to-Radar, marked
+`cached_worker_telemetry_unique_event_qualified=false`. CN per-symbol
+diagnostics likewise expose a *single* prior cached REST-request duration,
+not a percentile series.
+
+US market-state diagnostics now use the shared Futu session mapping, so
+`PRE_MARKET_BEGIN` is `premarket`, rather than `UNKNOWN`. This is
+classification only; it does not promote source currentness.
+
+A future valid latency distribution must join distinct source-event IDs and
+timing windows with Canonical and Radar analysis executions. Merely reading the
+same cached metrics repeatedly is not an acceptable shortcut to <1s SLO.
