@@ -93,7 +93,7 @@ jobs:
                 printf '%s\n' "$report" | grep -Fx 'TICKFLOW_CLOUD_ISOLATED_SMOKE_EXECUTED=YES'
                 printf '%s\n' "$report" | grep -Fx 'TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED'
                 printf '%s\n' "$report" | grep -Fx 'LIVE_TRADE=NO'
-                summary="$(printf '%s\n' "$report" | grep -E '^\\{' | tail -n1)"
+                summary="$(printf '%s\n' "$report" | grep -E '^[{]' | tail -n1)"
                 printf '%s' "$summary" | python3 -c '
           import json,sys
           data=json.load(sys.stdin)
