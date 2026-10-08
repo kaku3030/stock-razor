@@ -65,6 +65,20 @@ jobs:
           assert summary["radar_admission"] == "BLOCKED"
           assert summary["live_trade"] is False
           assert summary["can_confirm_signal"] is False
+          diagnostics=data.get("cn_symbol_read_diagnostics")
+          if data["samples"] and data["samples"][0]["market"] == "cn":
+             assert isinstance(diagnostics,dict)
+             assert diagnostics.get("scope") == "CN_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"
+             assert diagnostics.get("radar_admission") == "BLOCKED"
+             assert diagnostics.get("data_qualification") == "NOT_VERIFIED"
+             assert diagnostics.get("live_trade") is False
+             assert set(diagnostics.get("symbols",{})) == {"159611","518880"}
+             assert all(
+                row.get("radar_admission") == "BLOCKED"
+                and row.get("can_confirm_signal") is False
+                and row.get("live_trade") is False
+                for row in diagnostics["symbols"].values()
+             )
           selected=("provider_latency_ms","provider_callback_processing_latency_ms",
                     "provider_request_path_latency_ms","canonical_latency_ms",
                     "radar_analysis_latency_ms","radar_read_latency_ms",
@@ -74,6 +88,8 @@ jobs:
              "status":summary["status"],
              "runtime_repo_sha":os.environ.get("DEPLOYED_SHA"),
              "sample_count":summary["sample_count"],
+             "read_success_rate":summary["success_rate"],
+             "cn_symbol_read_diagnostics":diagnostics,
              "measurement_scope":"REPEATED_READ_DIAGNOSTICS_ONLY",
              "percentiles_not_provider_slo":True,
              "metrics":{key:summary["metrics"].get(key) for key in selected},
