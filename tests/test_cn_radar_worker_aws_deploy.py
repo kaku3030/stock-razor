@@ -72,3 +72,9 @@ def test_cn_radar_verifier_requires_runtime_latency_telemetry_consistency():
     assert 'assert payload.get("poll_status") == "PASS"' in VERIFY
     assert 'assert radar_analysis_latency_ms is None' in VERIFY
     assert 'assert data_to_radar_latency_ms is None' in VERIFY
+
+
+def test_cn_radar_worker_does_not_clamp_future_source_to_fake_zero_latency():
+    assert "source_delta_ms >= 0" in INSTALL
+    assert "data_to_radar_latency_ms = round(source_delta_ms, 3)" in INSTALL
+    assert "source_age_seconds = (" in INSTALL
