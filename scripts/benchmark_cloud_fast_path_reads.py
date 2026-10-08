@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+from math import isfinite
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.us_canonical_runtime_reader import (
@@ -18,7 +19,7 @@ from src.services.cloud_fast_path_metrics import FastPathSample, summarize_fast_
 
 def _number(payload: dict, key: str) -> float | None:
     value = payload.get(key)
-    if isinstance(value, (int, float)) and value >= 0:
+    if not isinstance(value, bool) and isinstance(value, (int, float)) and isfinite(value) and value >= 0:
         return float(value)
     return None
 
@@ -27,7 +28,7 @@ def _source_age_ms(*payloads: dict) -> float | None:
     values = []
     for payload in payloads:
         age = payload.get("source_age_seconds")
-        if isinstance(age, (int, float)) and age >= 0:
+        if not isinstance(age, bool) and isinstance(age, (int, float)) and isfinite(age) and age >= 0:
             values.append(float(age) * 1000)
     return max(values) if values else None
 
@@ -48,7 +49,10 @@ def benchmark_us(symbols: list[str], iterations: int) -> list[FastPathSample]:
             market="us",
             observed_at=datetime.now(timezone.utc),
             provider="futu-opend",
-            provider_latency_ms=_number(health, "provider_callback_latency_ms"),
+            provider_latency_ms=None,
+            provider_callback_processing_latency_ms=_number(
+                health, "provider_callback_latency_ms"
+            ),
             canonical_latency_ms=_number(canonical, "read_latency_ms"),
             radar_analysis_latency_ms=_number(radar, "radar_analysis_latency_ms"),
             radar_read_latency_ms=_number(radar, "read_latency_ms"),
@@ -81,9 +85,13 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
             for symbol in symbols
         ]
         radar = read_cn_radar_analysis(symbols)
-        canonical_latency = sum(
-            _number(payload, "read_latency_ms") or 0.0
-            for payload in canonical_rows
+        canonical_latencies = [
+            _number(payload, "read_latency_ms") for payload in canonical_rows
+        ]
+        canonical_latency = (
+            sum(canonical_latencies)
+            if canonical_latencies and all(value is not None for value in canonical_latencies)
+            else None
         )
         provider_latencies = [
             value
@@ -113,10 +121,15 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
                 if len(providers) == 1
                 else ("mixed" if providers else None)
             ),
-            provider_latency_ms=(
-                max(provider_latencies) if provider_latencies else None
+            provider_latency_ms=None,
+            provider_request_path_latency_ms=(
+                max(provider_latencies)
+                if len(provider_latencies) == len(canonical_rows)
+                else None
             ),
-            canonical_latency_ms=round(canonical_latency, 3),
+            canonical_latency_ms=(
+                round(canonical_latency, 3) if canonical_latency is not None else None
+            ),
             radar_analysis_latency_ms=_number(radar, "radar_analysis_latency_ms"),
             radar_read_latency_ms=_number(radar, "read_latency_ms"),
             data_to_radar_latency_ms=_number(radar, "data_to_radar_latency_ms"),
@@ -126,7 +139,9 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
             freshness_ms=_source_age_ms(*all_payloads),
             success=_status_success(*all_payloads),
             retry_count=None,
-            fallback_count=len(fallback_rows),
+            # Positive fallback evidence is countable; a missing fallback field
+            # alone does not prove that fallback_count == 0.
+            fallback_count=len(fallback_rows) if fallback_rows else None,
             fallback_provider=(
                 next(iter(fallback_providers))
                 if len(fallback_providers) == 1
