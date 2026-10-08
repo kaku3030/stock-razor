@@ -1,6 +1,6 @@
 # STOCK RAZOR Provider Notification Gateway V0.1
 
-Status: STACKED IMPLEMENTATION / RESEARCH-ONLY  
+Status: MAINLINE CI CANDIDATE / RESEARCH-ONLY  
 Governance: `RADAR_ADMISSION=BLOCKED`, `LIVE_TRADE=NO`
 
 ## Objective
@@ -64,6 +64,6 @@ V0.1 does not:
 ## Stacked-development note
 
 This implementation is developed above Provider Alert Engine V0.1. It is not
-eligible to merge until prerequisites are merged and the final diff is rebuilt
-from current canonical `main` with fresh exact-head CI and fresh Code Owner
-approval.
+eligible to merge only when the final diff is based on current canonical `main`,
+required CI/tests are fresh and green on the exact head, and no safety gate is
+failed or UNKNOWN. Human approval and Code Owner approval are not merge gates.
