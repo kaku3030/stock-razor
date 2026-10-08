@@ -238,3 +238,22 @@ def test_us_radar_verifier_requires_runtime_latency_telemetry_consistency():
 def test_us_radar_worker_does_not_clamp_future_source_to_fake_zero_latency():
     assert "elapsed_ms >= 0 else None" in INSTALLER
     assert "max(0.0, (completed_at - source_emitted).total_seconds())" not in INSTALLER
+
+
+def test_us_radar_status_stays_atomic_fresh_while_journal_uses_bounded_compact_audit():
+    assert "last_logged_poll_status = None" in INSTALLER
+    assert "publish(payload)" in INSTALLER
+    assert "radar_analysis_performed" in INSTALLER
+    assert "evaluation.status != last_logged_poll_status" in INSTALLER
+    assert "cycle % 40 == 0" in INSTALLER
+    assert '"type": "us_radar_worker_compact_audit"' in INSTALLER
+    assert '"log_scope": "SUMMARY_ONLY_FULL_STATE_IN_ATOMIC_STATUS_FILE"' in INSTALLER
+    assert '"source_sequence": evaluation.source_sequence' in INSTALLER
+    assert '"data_to_radar_latency_ms": data_to_radar_latency_ms' in INSTALLER
+    assert '"worker_phase_timing": payload["worker_phase_timing"]' in INSTALLER
+    assert "print(json.dumps(audit," in INSTALLER
+    assert "print(json.dumps(payload," not in INSTALLER
+    assert '"research_only": True' in INSTALLER
+    assert '"can_confirm_signal": False' in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
