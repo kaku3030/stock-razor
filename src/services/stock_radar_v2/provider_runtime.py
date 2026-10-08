@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable, Sequence
 
 import pandas as pd
@@ -87,9 +88,13 @@ class StockRadarProviderRuntime:
             now=lambda: effective_as_of,
         )
         states: list[StockRadarTechnicalState] = []
+        read_only_facts: list[dict[str, Any]] = []
         failures: list[RuntimeDiagnostic] = []
         warnings: list[RuntimeDiagnostic] = []
+        timing: list[dict[str, Any]] = []
         for symbol in normalized_symbols:
+            started = perf_counter()
+            data_fetch_started = started
             try:
                 seeded = realtime.seed(
                     symbol,
@@ -101,11 +106,31 @@ class StockRadarProviderRuntime:
                     raise LookupError("provider returned no normalized 1m bars")
                 snapshot = realtime.snapshot(symbol, as_of=effective_as_of)
                 _require_market(snapshot, normalized_market)
+                if getattr(self._intraday_adapter, "supports_direct_timeframes", False):
+                    direct_15m = self._intraday_adapter.get_bars(
+                        symbol,
+                        "15m",
+                        end=effective_as_of,
+                        limit=max(60, self._config.minute_history_limit // 15),
+                    )
+                    direct_1h = self._intraday_adapter.get_bars(
+                        symbol,
+                        "60m",
+                        end=effective_as_of,
+                        limit=max(60, self._config.minute_history_limit // 15),
+                    )
+                    snapshot = replace(
+                        snapshot,
+                        bars_15m=tuple(direct_15m),
+                        bars_1h=tuple(direct_1h),
+                    )
+                data_fetch_ms = None
             except Exception as exc:
                 failures.append(_diagnostic(symbol, "intraday_history", exc))
                 continue
 
             daily = pd.DataFrame()
+            daily_bars: list[Bar] = []
             try:
                 daily_bars = self._daily_adapter.get_bars(
                     symbol,
@@ -127,8 +152,33 @@ class StockRadarProviderRuntime:
             except Exception as exc:
                 warnings.append(_diagnostic(symbol, "daily_history", exc))
 
+            analysis_started = perf_counter()
             try:
-                states.append(self._state_service.evaluate(snapshot, daily=daily))
+                data_fetch_ms = round((perf_counter() - data_fetch_started) * 1000, 3)
+                quote = None
+                try:
+                    quote = self._intraday_adapter.get_latest_quote(symbol)
+                except Exception:
+                    # A quote is optional for the historical Radar run; the
+                    # export keeps currentness UNKNOWN when it is unavailable.
+                    pass
+                state = self._state_service.evaluate(snapshot, daily=daily)
+                analysis_ms = round((perf_counter() - analysis_started) * 1000, 3)
+                timing.append({
+                    "symbol": symbol,
+                    "data_fetch_ms": data_fetch_ms or 0.0,
+                    "analysis_ms": analysis_ms,
+                    "total_ms": round((perf_counter() - started) * 1000, 3),
+                })
+                read_only_facts.append(
+                    _read_only_fact(
+                        snapshot,
+                        daily_bars,
+                        quote=quote,
+                        timing=timing[-1],
+                    )
+                )
+                states.append(state)
             except Exception as exc:
                 failures.append(_diagnostic(symbol, "technical_state", exc))
 
@@ -141,6 +191,9 @@ class StockRadarProviderRuntime:
             "warnings": [item.to_dict() for item in warnings],
             "intraday_adapter": type(self._intraday_adapter).__name__,
             "daily_adapter": type(self._daily_adapter).__name__,
+            "timing": timing,
+            "data_fetch_ms_total": round(sum(item["data_fetch_ms"] for item in timing), 3),
+            "analysis_ms_total": round(sum(item["analysis_ms"] for item in timing), 3),
         }
         report = self._radar.publish(
             market=normalized_market,
@@ -148,6 +201,7 @@ class StockRadarProviderRuntime:
             states=states,
             output_dir=output_dir,
             runtime_metadata=runtime_metadata,
+            read_only_facts=read_only_facts,
         )
         return report
 
@@ -186,3 +240,63 @@ def _bars_frame(bars: Sequence[Bar]) -> pd.DataFrame:
             for bar in bars
         ]
     )
+
+
+def _read_only_fact(
+    snapshot: MarketDataSnapshot,
+    daily_bars: Sequence[Bar],
+    *,
+    quote: Any = None,
+    timing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize normalized facts for the existing ChatGPT/main-control export."""
+
+    def bar_payload(bar: Bar) -> dict[str, Any]:
+        return {
+            "symbol": bar.symbol,
+            "timeframe": "60m" if bar.timeframe == "1h" else bar.timeframe,
+            "bob": bar.bar_start.isoformat(),
+            "eob": bar.bar_end.isoformat(),
+            "open": bar.open,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "volume": bar.volume,
+            "amount": bar.amount,
+            "provider": bar.provider,
+            "freshness_ms": bar.freshness_ms,
+            "currentness": "OBSERVED_CLOSED" if bar.is_closed and bar.is_complete else "UNKNOWN",
+            "quality": list(bar.quality_flags),
+            "status": bar.health.signal_permission.value if bar.health else "UNKNOWN",
+        }
+
+    current = None
+    if quote is not None:
+        current = {
+            "symbol": quote.symbol,
+            "price": quote.price,
+            "provider": quote.provider,
+            "source_timestamp": quote.source_timestamp.isoformat(),
+            "received_at": quote.received_at.isoformat(),
+            "freshness_ms": max(
+                0,
+                int((quote.received_at - quote.source_timestamp).total_seconds() * 1000),
+            ),
+            "currentness": "OBSERVED" if "MISSING_SOURCE_TIMESTAMP" not in quote.quality_flags else "UNKNOWN",
+            "quality": list(quote.quality_flags),
+            "status": quote.health.signal_permission.value if quote.health else "UNKNOWN",
+        }
+    return {
+        "symbol": snapshot.symbol,
+        "market": "cn" if snapshot.symbol.endswith((".SH", ".SZ")) else "unknown",
+        "provider": snapshot.provider or "UNKNOWN",
+        "queried_at": snapshot.as_of.isoformat(),
+        "health": snapshot.health.signal_permission.value,
+        "timing": dict(timing or {}),
+        "current": current,
+        "bars": [
+            *[bar_payload(bar) for bar in snapshot.bars_15m],
+            *[bar_payload(bar) for bar in snapshot.bars_1h],
+            *[bar_payload(bar) for bar in daily_bars],
+        ],
+    }

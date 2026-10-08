@@ -28,6 +28,7 @@ class StockRadarTechnicalStateRadar:
         states: Sequence[StockRadarTechnicalState],
         output_dir: str | Path,
         runtime_metadata: Mapping[str, Any] | None = None,
+        read_only_facts: Sequence[Mapping[str, Any]] | None = None,
     ) -> dict[str, Any]:
         market = market.strip().lower()
         run_id = run_id.strip()
@@ -52,6 +53,13 @@ class StockRadarTechnicalStateRadar:
         }
         if runtime_metadata is not None:
             payload["runtime"] = dict(runtime_metadata)
+        if read_only_facts is not None:
+            payload["read_only_export"] = {
+                "schema": "stock-razor-read-only-market-facts-v1",
+                "research_only": True,
+                "trading_capability": False,
+                "facts": [dict(item) for item in read_only_facts],
+            }
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
         stem = output / f"{market}_stock_radar_technical_state_radar"
@@ -70,10 +78,17 @@ class StockRadarTechnicalStateRadar:
             ),
             encoding="utf-8",
         )
+        readonly_path = output / f"{market}_stock_radar_read_only_market_facts.json"
+        if read_only_facts is not None:
+            readonly_path.write_text(
+                json.dumps(payload["read_only_export"], ensure_ascii=False, indent=2, sort_keys=True, default=str),
+                encoding="utf-8",
+            )
         return {
             **payload,
             "json_path": str(json_path),
             "markdown_path": str(markdown_path),
+            "read_only_export_path": str(readonly_path) if read_only_facts is not None else None,
         }
 
 

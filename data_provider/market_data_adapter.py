@@ -124,6 +124,10 @@ def evaluate_health(
         "NEGATIVE_VOLUME",
         "TIMESTAMP_MISMATCH",
         "TIMESTAMP_SEMANTICS_UNVERIFIED",
+        "MISSING_OHLCV",
+        "MISSING_TIMESTAMP",
+        "DUPLICATE_TIMESTAMP",
+        "NON_MONOTONIC_TIMESTAMP",
     }
     degraded_flags = {"MISSING_BAR", "MISSING_SOURCE_TIMESTAMP", "PARTIAL_BAR", "STALE"}
     score = round(
