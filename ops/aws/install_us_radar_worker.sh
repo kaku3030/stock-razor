@@ -153,9 +153,10 @@ while True:
     data_to_radar_latency_ms = None
     if radar_analysis_performed and evaluation.source_emitted_at is not None:
         source_emitted = evaluation.source_emitted_at.astimezone(timezone.utc)
-        data_to_radar_latency_ms = round(
-            max(0.0, (completed_at - source_emitted).total_seconds()) * 1000,
-            3,
+        elapsed_ms = (completed_at - source_emitted).total_seconds() * 1000
+        # A future source timestamp cannot be mistaken for 0ms latency.
+        data_to_radar_latency_ms = (
+            round(elapsed_ms, 3) if elapsed_ms >= 0 else None
         )
     evaluation_payload = evaluation.to_dict()
     cycle += 1
