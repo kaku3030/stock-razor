@@ -1,0 +1,6 @@
+# External research-only TickFlow SDK; dedicated venv, never production Radar.
+# Pin vetted versions; do not auto-upgrade or install into deployed services.
+tickflow==0.1.25
+# TickFlow imports ZoneInfo("Asia/Shanghai"); clean Windows Python venvs
+# need a timezone database even though pip check may report dependencies healthy.
+tzdata==2026.3; platform_system == "Windows"
