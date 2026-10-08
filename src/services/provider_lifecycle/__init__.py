@@ -30,6 +30,11 @@ from .notification_gateway import (
     ProviderNotificationPolicyError,
     format_provider_notification,
 )
+from .shadow_validation import (
+    ProviderShadowAlertResult,
+    ProviderShadowAlertValidator,
+    ProviderShadowNotificationPlan,
+)
 from .observer import (
     EvidenceConflictError,
     EvidenceProvenance,
@@ -83,6 +88,9 @@ __all__ = [
     "ProviderRuntimeIngestError",
     "ProviderRuntimeObservation",
     "ProviderRuntimeObserver",
+    "ProviderShadowAlertResult",
+    "ProviderShadowAlertValidator",
+    "ProviderShadowNotificationPlan",
     "RuntimeProviderSnapshot",
     "StaleProviderAlertEvidenceError",
     "assess_provider",
