@@ -80,6 +80,7 @@ from src.services.stock_radar_v2.daily_history_reader import (
 )
 from src.services.stock_radar_v2.options_context_reader import RadarOptionsContextReader
 from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
+from src.services.stock_radar_v2.export_latency_ledger import CanonicalExportLatencyLedger
 
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().lower()
@@ -132,6 +133,7 @@ worker = CanonicalSnapshotRadarWorker(
     evaluator=evaluator,
 )
 cycle = 0
+latency_ledger = CanonicalExportLatencyLedger()
 last_logged_poll_status = None
 
 
@@ -186,6 +188,18 @@ while True:
         data_to_radar_latency_ms = (
             round(elapsed_ms, 3) if elapsed_ms >= 0 else None
         )
+    # Only genuinely new, validated Canonical export sequences yield a
+    # latency observation. Repeated 250ms reads are never independent events.
+    if radar_analysis_performed:
+        latency_ledger.observe(
+            source_repo_sha=expected_source_repo_sha,
+            source_runtime_id=evaluation.runtime_instance_id,
+            source_sequence=evaluation.source_sequence,
+            export_to_radar_ms=data_to_radar_latency_ms,
+            analysis_ms=radar_analysis_latency_ms,
+            observed_at=completed_at,
+        )
+    stage_latency = latency_ledger.summary(as_of=completed_at)
     evaluation_payload = evaluation.to_dict()
     cycle += 1
     payload = {
@@ -209,6 +223,7 @@ while True:
         "radar_analysis_performed": radar_analysis_performed,
         "radar_analysis_latency_ms": radar_analysis_latency_ms,
         "data_to_radar_latency_ms": data_to_radar_latency_ms,
+        "canonical_sequence_stage_latency": stage_latency,
         # Read-only phase timings. These are one worker cycle, NOT independent
         # Provider->Radar samples or an E2E latency distribution.
         "worker_phase_timing": {
@@ -252,6 +267,7 @@ while True:
             "radar_analysis_performed": radar_analysis_performed,
             "radar_analysis_latency_ms": radar_analysis_latency_ms,
             "data_to_radar_latency_ms": data_to_radar_latency_ms,
+            "canonical_sequence_stage_latency": stage_latency,
             "worker_phase_timing": payload["worker_phase_timing"],
             "research_only": True,
             "can_confirm_signal": False,

@@ -257,3 +257,18 @@ def test_us_radar_status_stays_atomic_fresh_while_journal_uses_bounded_compact_a
     assert '"can_confirm_signal": False' in INSTALLER
     assert '"radar_admission": "BLOCKED"' in INSTALLER
     assert '"live_trade": False' in INSTALLER
+
+
+def test_radar_latency_histogram_uses_distinct_validated_canonical_sequences_only():
+    assert "CanonicalExportLatencyLedger" in INSTALLER
+    assert "latency_ledger = CanonicalExportLatencyLedger()" in INSTALLER
+    assert "if radar_analysis_performed:" in INSTALLER
+    assert "latency_ledger.observe(" in INSTALLER
+    assert "source_runtime_id=evaluation.runtime_instance_id" in INSTALLER
+    assert "source_sequence=evaluation.source_sequence" in INSTALLER
+    assert "export_to_radar_ms=data_to_radar_latency_ms" in INSTALLER
+    assert "analysis_ms=radar_analysis_latency_ms" in INSTALLER
+    assert '"canonical_sequence_stage_latency": stage_latency' in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
+    assert '"end_to_end_distribution": "NOT_VERIFIED"' in INSTALLER
