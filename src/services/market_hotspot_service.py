@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import copy
+import queue
 import threading
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from datetime import date
@@ -47,6 +48,9 @@ class MarketHotspotService:
     _ranking_fetch_detached_futures: Set[Future] = set()
     _ranking_fetch_retry_after: Dict[Hashable, Tuple[Future, float]] = {}
     _ranking_fetch_futures_lock = threading.Lock()
+    _ranking_worker_queue: "queue.Queue[Tuple[Future, Callable[[], Any]]]" = queue.Queue()
+    _ranking_worker_threads: List[threading.Thread] = []
+    _ranking_worker_init_lock = threading.Lock()
 
     def __init__(
         self,
@@ -72,6 +76,7 @@ class MarketHotspotService:
             Dict[str, Any],
         ] = {}
         self._hotspots_cache_lock = threading.Lock()
+        self._ensure_ranking_workers()
 
     def get_hotspots(
         self,
@@ -456,8 +461,8 @@ class MarketHotspotService:
         inflight_key: Hashable,
         task_name: str,
     ) -> Future:
+        cls._ensure_ranking_workers()
         submitted: Future
-        worker: threading.Thread
         with cls._ranking_fetch_futures_lock:
             retry_entry = cls._ranking_fetch_retry_after.get(inflight_key)
             now = time.monotonic()
@@ -491,20 +496,41 @@ class MarketHotspotService:
             future.add_done_callback(
                 lambda done_future: cls._forget_ranking_fetch(inflight_key, done_future)
             )
-            worker = threading.Thread(
-                target=cls._run_ranking_fetch,
-                args=(future, task),
-                daemon=True,
-                name=f"market-hotspot-{task_name}",
-            )
             submitted = future
         try:
-            worker.start()
+            cls._ranking_worker_queue.put_nowait((submitted, task))
         except BaseException as exc:
             cls._drop_unstarted_ranking_fetch(inflight_key, submitted)
             submitted.set_exception(exc)
             raise
         return submitted
+
+    @classmethod
+    def _ensure_ranking_workers(cls) -> None:
+        with cls._ranking_worker_init_lock:
+            cls._ranking_worker_threads = [
+                worker
+                for worker in cls._ranking_worker_threads
+                if worker.is_alive()
+            ]
+            missing = RANKING_FETCH_MAX_WORKERS - len(cls._ranking_worker_threads)
+            for _ in range(max(0, missing)):
+                worker = threading.Thread(
+                    target=cls._ranking_worker_loop,
+                    daemon=True,
+                    name="market-hotspot-worker",
+                )
+                worker.start()
+                cls._ranking_worker_threads.append(worker)
+
+    @classmethod
+    def _ranking_worker_loop(cls) -> None:
+        while True:
+            future, task = cls._ranking_worker_queue.get()
+            try:
+                cls._run_ranking_fetch(future, task)
+            finally:
+                cls._ranking_worker_queue.task_done()
 
     @classmethod
     def _forget_ranking_fetch(cls, inflight_key: Hashable, future: Future) -> None:
