@@ -476,7 +476,7 @@ def test_event_aware_loop_fails_closed_on_market_state_rpc_exception():
 
 def test_livefeed_callback_wakes_the_single_writer_without_provider_rpc_in_callback():
     runtime = _embedded_runtime_python()
-    handler = runtime.split("def on_event_accepted(event):", 1)[1].split("\\nbridge=", 1)[0]
+    handler = runtime.split("def on_event_accepted(event):", 1)[1].split("\nbridge=", 1)[0]
     assert "data_wakeup.notify()" in handler
     assert "ctx.get_global_state()" not in handler
     assert "ctx.get_user_info(" not in handler

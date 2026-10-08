@@ -1,4 +1,4 @@
-from threading import Thread
+from threading import Event, Thread
 from time import monotonic
 
 from src.services.live_feed.producer_wakeup import DataArrivalWake
@@ -19,16 +19,29 @@ def test_no_new_event_waits_for_bounded_health_deadline():
 def test_notify_short_circuits_long_health_wait():
     wake = DataArrivalWake()
     observed = []
+    count_checked = Event()
+
+    def counted():
+        # wait_when_unchanged has cleared its flag BEFORE checking count.
+        count_checked.set()
+        return 3
+
     def runner():
         observed.append(wake.wait_when_unchanged(
-            lambda: 3, last_processed_count=3, max_wait_seconds=2.0
+            counted, last_processed_count=3, max_wait_seconds=2.0
         ))
+
     thread = Thread(target=runner)
     thread.start()
-    wake.notify()
-    thread.join(timeout=2.0)
-    assert not thread.is_alive()
-    assert observed == [True]
+    try:
+        assert count_checked.wait(timeout=1.0)
+        wake.notify()
+        thread.join(timeout=1.0)
+        assert not thread.is_alive()
+        assert observed == [True]
+    finally:
+        wake.notify()
+        thread.join(timeout=2.0)
 
 
 def test_double_check_catches_event_between_clear_and_wait():
