@@ -80,6 +80,7 @@
 | [Provider Alert Engine V0.1](architecture/PROVIDER_ALERT_ENGINE_V0_1.md) | 将 Provider Guard assessment 转为 OPEN/UPDATED/RESOLVED typed transitions；UNKNOWN/HEALTHY 不发 generic alert，specific guard code 优先去重，旧 evidence fail-closed |
 | [Provider Notification Gateway V0.1](architecture/PROVIDER_NOTIFICATION_GATEWAY_V0_1.md) | 将 typed Provider Alert transitions 接入现有 route_type=alert 通知栈；复用 dedup/cooldown/渠道诊断，发送失败不反写 Provider/Radar/Execution 状态 |
 | [Provider Shadow Alert Validation V0.1](architecture/PROVIDER_SHADOW_ALERT_VALIDATION_V0_1.md) | 以真实 Alert Engine + Notification Gateway 配合内存 shadow sink 验证 OPEN/UPDATED/RESOLVED 与通知参数；外部通知计数恒为 0，不构成 Provider/Data/Radar/Execution PASS |
+| [Provider Shadow Runtime Pipeline V0.1](architecture/PROVIDER_SHADOW_RUNTIME_PIPELINE_V0_1.md) | 将 OpenD/CN/Alpaca/Negative Probe 真实 evidence builder 串到共享 Observer + Shadow Validator；写入前预检 evidence time，零 I/O、零通知、零交易 |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
 
 ## 多语言
