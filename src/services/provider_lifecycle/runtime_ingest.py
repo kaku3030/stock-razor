@@ -346,6 +346,15 @@ def build_cn_provider_observations_from_cloud_snapshot(
             f"unsupported CN observer status: {observer_status}"
         )
 
+    for field_name in (
+        "intraday_timestamp_semantics_proven",
+        "intraday_currentness_proven",
+    ):
+        if not isinstance(payload.get(field_name), bool):
+            raise ProviderRuntimeIngestError(
+                f"{field_name} must be a boolean"
+            )
+
     lineages = _string_tuple(payload.get("provider_lineages"), "provider_lineages")
     if set(lineages) != {"eastmoney", "tencent"} or len(lineages) != 2:
         raise ProviderRuntimeIngestError(
@@ -467,7 +476,15 @@ def build_cn_provider_observations_from_cloud_snapshot(
                 eastmoney_reasons.append(
                     fallback_reason or "FALLBACK_FROM_EASTMONEY"
                 )
-                if str(frame.get("currentness") or "UNPROVEN").strip().upper() == "PROVEN":
+                currentness = _text(
+                    frame.get("currentness") or "UNPROVEN",
+                    f"{frame_id}.currentness",
+                ).upper()
+                if currentness not in {"PROVEN", "UNPROVEN"}:
+                    raise ProviderRuntimeIngestError(
+                        f"{frame_id}.currentness must be PROVEN or UNPROVEN"
+                    )
+                if currentness == "PROVEN":
                     tencent_currentness.append(frame_id)
                 continue
 
@@ -521,12 +538,12 @@ def build_cn_provider_observations_from_cloud_snapshot(
         "observer_status": observer_status,
         "symbol_count": len(symbols),
         "frame_count": frame_count,
-        "intraday_timestamp_semantics_proven": bool(
-            payload.get("intraday_timestamp_semantics_proven") is True
-        ),
-        "intraday_currentness_proven": bool(
-            payload.get("intraday_currentness_proven") is True
-        ),
+        "intraday_timestamp_semantics_proven": payload[
+            "intraday_timestamp_semantics_proven"
+        ],
+        "intraday_currentness_proven": payload[
+            "intraday_currentness_proven"
+        ],
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
