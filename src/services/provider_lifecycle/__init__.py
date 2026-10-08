@@ -1,5 +1,12 @@
 """Provider lifecycle, cost guard, and fail-closed fallback contracts."""
 
+from .alerts import (
+    NotificationServiceProviderGuardSink,
+    ProviderGuardAlertEngine,
+    ProviderGuardNotification,
+    format_provider_guard_notification,
+    provider_guard_structured_payload,
+)
 from .contract import (
     CostAction,
     CostGuardDecision,
@@ -51,10 +58,13 @@ __all__ = [
     "FallbackAssessment",
     "FallbackQualityChecks",
     "GuardSeverity",
+    "NotificationServiceProviderGuardSink",
     "ObservedProviderValue",
     "ProviderAlert",
     "ProviderDefinition",
     "ProviderGuardAssessment",
+    "ProviderGuardAlertEngine",
+    "ProviderGuardNotification",
     "ProviderHealthState",
     "ProviderLifecycleRecord",
     "ProviderRole",
@@ -70,8 +80,10 @@ __all__ = [
     "evaluate_cost_action",
     "evaluate_fallback",
     "get_provider_definition",
+    "format_provider_guard_notification",
     "ingest_alpaca_runtime_events",
     "ingest_cn_cloud_observation",
     "ingest_moomoo_opend_livefeed_heartbeat",
     "ingest_negative_provider_probe",
+    "provider_guard_structured_payload",
 ]
