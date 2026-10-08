@@ -142,6 +142,7 @@ def build_probe(
     client_factory: Any = None,
     sdk_version: str | None = None,
     credential_present: bool | None = None,
+    location: str = "LOCAL_ISOLATE",
 ) -> dict:
     """Requires explicit mode premium; never reads or returns the actual key."""
     if mode not in {"metadata", "free", "premium"}:
@@ -152,13 +153,15 @@ def build_probe(
         raise ValueError("invalid WebSocket duration")
 
     symbols = validate_symbols(list(symbols))
+    if location not in {"LOCAL_ISOLATE", "AWS_TOKYO_SSM_ISOLATE"}:
+        raise ValueError("unsupported location")
     credential_present = bool(os.environ.get("TICKFLOW_API_KEY")) if credential_present is None else credential_present
     result = {
         "schema": "stock_razor_tickflow_isolated_probe_v0_1",
         "observed_at_utc": _utc(),
         "mode": mode,
         "provider": "TICKFLOW_SDK",
-        "location": "LOCAL_ISOLATE",
+        "location": location,
         "sdk_version": sdk_version,
         "api_key_present": credential_present,
         "symbols": list(symbols),
@@ -253,13 +256,14 @@ def main() -> int:
     parser.add_argument("--mode", choices=("metadata", "free", "premium"), default="metadata")
     parser.add_argument("--symbols", nargs="+", default=list(DEFAULT_SYMBOLS))
     parser.add_argument("--ws-seconds", type=float, default=0)
+    parser.add_argument("--location", choices=("LOCAL_ISOLATE", "AWS_TOKYO_SSM_ISOLATE"), default="LOCAL_ISOLATE")
     args = parser.parse_args()
     try:
         symbols = validate_symbols(args.symbols)
         version = importlib.metadata.version("tickflow")
         result = build_probe(mode=args.mode, symbols=symbols,
                              ws_seconds=args.ws_seconds,
-                             sdk_version=version)
+                             sdk_version=version, location=args.location)
     except (ValueError, importlib.metadata.PackageNotFoundError) as exc:
         # Avoid exception text; the failure class alone is enough.
         result = {
