@@ -190,7 +190,7 @@ def test_us_cloud_diagnostics_distinguish_closed_market_and_missing_symbols(monk
             "source_age_seconds": 600.0,
             "data_available": True,
             "symbols": {
-                "AMD": {
+                "US.AMD": {
                     "counts": {"1m": 20, "5m": 4, "15m": 1, "1h": 0},
                     "latest": {"1m": {"close": 101.25}},
                 },
@@ -213,6 +213,7 @@ def test_us_cloud_diagnostics_distinguish_closed_market_and_missing_symbols(monk
     assert result["canonical_snapshot_status"] == "STALE"
     assert result["radar_poll_status"] == "BLOCKED"
     assert result["symbols"]["AMD"]["bar_counts"]["1m"] == 20
+    assert result["symbols"]["AMD"]["symbol_present"] is True
     assert result["symbols"]["AMD"]["any_bars_observed"] is True
     assert result["symbols"]["NVDA"]["symbol_present"] is False
     assert result["symbols"]["NVDA"]["any_bars_observed"] is False
@@ -233,7 +234,7 @@ def test_us_diagnostics_reject_unrecognized_status_and_bad_counts(monkeypatch):
         benchmark, "read_us_market_snapshots",
         lambda symbols: {
             "status": "PASS",
-            "symbols": {"QQQ": {"counts": {
+            "symbols": {"US.QQQ": {"counts": {
                 "1m": True, "5m": -1, "15m": "2", "1h": 0
             }}},
         },
@@ -251,3 +252,29 @@ def test_us_diagnostics_reject_unrecognized_status_and_bad_counts(monkeypatch):
     }
     assert out["symbols"]["QQQ"]["any_bars_observed"] is False
     assert out["can_confirm_signal"] is False
+
+
+def test_us_diagnostics_accept_prefixed_and_bare_tickers_consistently(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_us_livefeed_health", lambda: {"status": "HEALTHY"}
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_market_snapshots",
+        lambda symbols: {
+            "status": "PASS",
+            "symbols": {
+                "US.AMD": {"counts": {"1m": 1, "5m": 0, "15m": 0, "1h": 0}},
+                "US.QQQ": {"counts": {"1m": 0, "5m": 0, "15m": 0, "1h": 0}},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_radar_analysis", lambda symbols: {"status": "BLOCKED"}
+    )
+    result=benchmark.us_cloud_read_diagnostics(["AMD", "US.QQQ", "NVDA"])
+    assert result["symbols"]["AMD"]["symbol_present"] is True
+    assert result["symbols"]["AMD"]["bar_counts"]["1m"] == 1
+    assert result["symbols"]["US.QQQ"]["symbol_present"] is True
+    assert result["symbols"]["US.QQQ"]["any_bars_observed"] is False
+    assert result["symbols"]["NVDA"]["symbol_present"] is False
+    assert result["radar_admission"] == "BLOCKED"
