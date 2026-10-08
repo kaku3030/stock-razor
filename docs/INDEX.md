@@ -78,6 +78,7 @@
 | [TickFlow Isolated CN Qualification V0.1](architecture/TICKFLOW_ISOLATED_QUALIFICATION_V0_1.md) | TickFlow 官方 SDK 低配额隔离验活、凭证隔离、WS 证据边界与次日云端/电脑实盘资格标准 |
 | [TickFlow AWS Tokyo Isolated Smoke V0.1](architecture/TICKFLOW_AWS_ISOLATED_SMOKE_V0_1.md) | 东京 AWS 独立隔离 SDK/历史免费接口验活，SSM SHA256 固定、密钥隔离；正式实时资格仍 BLOCKED |
 | [Data Fabric Source Arbiter Policy V0.1](architecture/DATA_FABRIC_SOURCE_ARBITER_POLICY_V0_1.md) | 美股/A股统一的 Fastest Qualified Source 研究规则（仅 shadow proposal）；严禁未经资格的 canonical 写入或交易权限提升 |
+| [AWS Data Fabric Source Arbiter Shadow Witness V0.1](architecture/DATA_FABRIC_AWS_SHADOW_WITNESS_V0_1.md) | 现有云端 US/CN 缓存只读核对，记录真实 Provider 来源与缺失资格，绝不直接切换 canonical 或产生交易 |
 | [Provider Lifecycle / Cost Guard V0.1](architecture/PROVIDER_LIFECYCLE_COST_GUARD_V0_1.md) | Self-Survival Layer：Provider 生命周期、额度/费用、凭据、fallback 质量门禁、主动提醒与禁止自动付费合同 |
 | [Runtime Provider Observer / Evidence Provenance V0.1](architecture/PROVIDER_RUNTIME_OBSERVER_V0_1.md) | 运行时 provider 证据、field-level provenance、observed_at/source/error code/repo/runtime 追踪，以及 Provider Health 与 Data Admission 分离 |
 | [OpenD Runtime Evidence Ingest V0.1](architecture/PROVIDER_OPEND_RUNTIME_INGEST_V0_1.md) | 将现有云端 US OpenD heartbeat 保守映射为 Provider Lifecycle evidence；保留 exact SHA/runtime provenance，不把 REALTIME/closure 升级为 Data Admission 或 HEALTHY |
