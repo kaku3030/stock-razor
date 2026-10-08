@@ -8,6 +8,7 @@ import threading
 import time
 
 from src.services.market_hotspot_service import (
+    RANKING_FETCH_MAX_WORKERS,
     RANKING_FETCH_TIMEOUT_RETRY_DELAY_SECONDS,
     MarketHotspotService,
 )
@@ -366,6 +367,29 @@ def test_market_hotspot_service_fails_open_when_rankings_unavailable() -> None:
     assert context["data_quality"]["errors"]
     assert "industry_rankings" in context["data_quality"]["missing_fields"]
     assert "concept_rankings" in context["data_quality"]["missing_fields"]
+
+
+def test_market_hotspot_service_request_path_reuses_prewarmed_workers(
+    monkeypatch,
+) -> None:
+    service = MarketHotspotService(fetcher_manager=_FakeFetcherManager())
+    with MarketHotspotService._ranking_worker_init_lock:
+        alive_workers = [
+            worker
+            for worker in MarketHotspotService._ranking_worker_threads
+            if worker.is_alive()
+        ]
+    assert len(alive_workers) == RANKING_FETCH_MAX_WORKERS
+
+    def unexpected_start(_self) -> None:
+        raise AssertionError("request path must not start ranking worker threads")
+
+    monkeypatch.setattr(threading.Thread, "start", unexpected_start)
+    context = service.get_hotspots(market="cn", trade_date="2026-07-04")
+
+    assert context["status"] == "ok"
+    assert service.fetcher_manager.sector_calls == 1
+    assert service.fetcher_manager.concept_calls == 1
 
 
 def test_market_hotspot_service_bounds_ranking_fetches() -> None:
