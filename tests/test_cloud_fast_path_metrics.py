@@ -124,3 +124,27 @@ def test_missing_retry_and_fallback_evidence_is_not_zero():
     assert summary["fallback_rate"] is None
     assert summary["fallback_rate_sample_count"] == 0
     assert summary["fallback_rate_missing_count"] == 1
+
+
+@pytest.mark.parametrize("field", [
+    "provider_latency_ms",
+    "provider_callback_processing_latency_ms",
+    "provider_request_path_latency_ms",
+    "canonical_latency_ms",
+])
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), True])
+def test_nonfinite_or_boolean_latency_fails_closed(field, invalid):
+    with pytest.raises(ValueError):
+        sample(**{field: invalid})
+
+
+def test_callback_processing_latency_is_not_network_provider_latency():
+    item = sample(
+        provider_latency_ms=None,
+        provider_callback_processing_latency_ms=1.2,
+        provider_request_path_latency_ms=None,
+    )
+    summary = summarize_fast_path([item])
+    assert summary["metrics"]["provider_latency_ms"]["missing_count"] == 1
+    assert summary["metrics"]["provider_callback_processing_latency_ms"]["p50_ms"] == 1.2
+    assert summary["status"] == "INCOMPLETE_EVIDENCE"
