@@ -59,6 +59,7 @@ jobs:
           export PYTHONPATH="$repo"
           export STOCK_RAZOR_US_LIVEFEED_STATUS_PATH="/run/stock-razor-us-livefeed/latest-heartbeat.json"
           export STOCK_RAZOR_US_CANONICAL_SNAPSHOT_PATH="/run/stock-razor-us-livefeed/canonical-market-snapshot.json"
+          export STOCK_RAZOR_US_RADAR_STATUS_PATH="/run/stock-razor-us-radar/latest-research-state.json"
           export STOCK_RAZOR_CN_EASTMONEY_STATUS_PATH="/run/stock-razor-cn-eastmoney/latest-observation.json"
           report="$("$py" scripts/probe_cloud_source_arbiter_shadow.py 2>/dev/null)" || {
             echo 'CLOUD_SHADOW_PROBE_FAILED'
@@ -88,6 +89,9 @@ jobs:
           assert progress.get("us",{}).get("market_session") in {"regular","premarket","afterhours","overnight","closed","unknown"}
           assert "canonical_chain_classification" in progress.get("us",{})
           assert progress.get("us",{}).get("canonical_snapshot_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
+          assert progress.get("us",{}).get("radar_increment_proven") is False
+          assert progress.get("us",{}).get("radar_read_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
+          assert progress.get("us",{}).get("radar_canonical_alignment") in {"SOURCE_REPO_MISMATCH_UNQUALIFIED","UNKNOWN","SEQUENCE_EQUAL_UNQUALIFIED","RADAR_BEHIND_CANONICAL_UNQUALIFIED","RADAR_AHEAD_OR_RESTART_UNQUALIFIED"}
           assert len(p.get("entries",[])) == 4
           assert {x.get("market") for x in p["entries"]} == {"US","CN"}
           assert all(x.get("decision",{}).get("decision") == "BLOCKED"

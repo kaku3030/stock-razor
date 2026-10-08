@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] AWS US Cloud Shadow 只读双采样增加 Canonical↔Radar 缓存序列证据、runtime identity 连续性与重复轮询识别，保持 Radar increment、Source Qualification 及交易权限未验证/阻断。
+
 - [修复] AWS US Cloud OpenD Shadow 审计复用真实 Futu 交易时段枚举，区分服务心跳、Canonical 导出状态与过期缓存；诊断保持 UNKNOWN/BLOCKED、只读和零交易权限。
 
 - [修复] US OpenD persistent livefeed 通过现有 RuntimeBridge 记录 controller 接收事件，修复 heartbeat 的 event_count 与 last_push_utc 不更新问题；保持 UNKNOWN/BLOCKED/NO 保护边界。

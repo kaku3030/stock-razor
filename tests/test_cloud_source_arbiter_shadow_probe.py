@@ -318,3 +318,159 @@ def test_accepted_callbacks_without_snapshot_sequence_change_not_promoted():
         "ACCEPTED_COUNTER_ADVANCED_UNQUALIFIED"
     )
     assert result["unique_provider_event_delivery_qualified"] is False
+
+
+
+def test_us_radar_worker_poll_is_not_unique_event_increment():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    sha = "a" * 40
+
+    def sample(worker_cycle, source_sequence=12, canonical_sequence=12):
+        return _sample_progress_evidence(
+            us_health={
+                "status": "HEALTHY", "market_state_us": "MORNING",
+                "runtime_instance_id": "live-a", "sequence": worker_cycle,
+                "event_count": 40, "accepted_event_count": 38,
+                "canonical_export_status": "PASS",
+            },
+            us_snapshot={
+                "status": "PASS", "repo_sha": sha,
+                "runtime_instance_id": "canonical-a",
+                "sequence": canonical_sequence, "source_age_seconds": 4,
+            },
+            us_radar={
+                "status": "PASS", "poll_status": "PASS",
+                "runtime_instance_id": "radar-a", "sequence": worker_cycle,
+                "source_sequence": source_sequence,
+                "expected_source_repo_sha": sha,
+                "radar_analysis_performed": True,
+                "symbols": {"US.AMD": {"secret": "NEVER_EXPOSE_RADAR"}},
+            },
+            cn_reads=cn_rows(),
+        )
+
+    result = observe_source_progress(
+        sample(21), sample(22), interval_seconds=12,
+    )
+    u = result["us"]
+    assert u["radar_worker_poll_sequence"] == "ADVANCED"
+    assert u["radar_source_sequence_progress"] == "UNCHANGED"
+    assert u["radar_canonical_alignment"] == "SEQUENCE_EQUAL_UNQUALIFIED"
+    assert u["radar_increment_classification"] == "WORKER_POLL_ONLY_NOT_INCREMENTAL"
+    assert u["radar_analysis_performed"] is True
+    assert u["radar_increment_proven"] is False
+    assert "NEVER_EXPOSE_RADAR" not in json.dumps(result)
+
+
+def test_radar_source_progress_is_still_not_admission_or_latency_proof():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    sha = "c" * 40
+
+    def sample(canonical_seq, radar_seq):
+        return _sample_progress_evidence(
+            us_health={"status": "HEALTHY", "market_state_us": "MORNING"},
+            us_snapshot={
+                "status": "PASS", "repo_sha": sha,
+                "runtime_instance_id": "canonical-stable", "sequence": canonical_seq,
+            },
+            us_radar={
+                "status": "PASS", "sequence": radar_seq,
+                "runtime_instance_id": "worker-stable",
+                "source_sequence": radar_seq, "expected_source_repo_sha": sha,
+            },
+            cn_reads=cn_rows(),
+        )
+
+    progress = observe_source_progress(
+        sample(11, 11), sample(12, 12), interval_seconds=12,
+    )
+    u = progress["us"]
+    assert u["radar_source_sequence_progress"] == "ADVANCED"
+    assert u["radar_increment_classification"] == "SOURCE_SEQUENCE_ADVANCED_UNQUALIFIED"
+    assert u["radar_canonical_alignment"] == "SEQUENCE_EQUAL_UNQUALIFIED"
+    assert u["radar_increment_proven"] is False
+    assert progress["radar_admission"] == "BLOCKED"
+
+
+def test_radar_repo_mismatch_stale_or_absent_evidence_fail_closed():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    sha = "a" * 40
+    base = {
+        "status": "PASS", "sequence": 8, "repo_sha": sha,
+        "runtime_instance_id": "canonical-1",
+    }
+
+    def read(snapshot, radar):
+        return _sample_progress_evidence(
+            us_health={"market_state_us": "MORNING"},
+            us_snapshot=snapshot, us_radar=radar, cn_reads=cn_rows(),
+        )
+
+    mismatch = read(base, {
+        "status": "PASS", "source_sequence": 8,
+        "expected_source_repo_sha": "b" * 40,
+    })
+    out = observe_source_progress(mismatch, mismatch, interval_seconds=12)["us"]
+    assert out["radar_canonical_alignment"] == "SOURCE_REPO_MISMATCH_UNQUALIFIED"
+    assert out["radar_increment_proven"] is False
+
+    stale = read(base, {
+        "status": "STALE", "source_sequence": 8,
+        "expected_source_repo_sha": sha,
+    })
+    out = observe_source_progress(stale, stale, interval_seconds=12)["us"]
+    assert out["radar_canonical_alignment"] == "READ_SURFACE_NOT_FRESH_UNQUALIFIED"
+
+    missing = read(base, {"status": "UNAVAILABLE", "error": "TOKEN_DO_NOT_ECHO"})
+    out = observe_source_progress(missing, missing, interval_seconds=12)
+    assert out["us"]["radar_source_sequence_progress"] == "UNKNOWN"
+    assert out["us"]["radar_increment_proven"] is False
+    assert "TOKEN_DO_NOT_ECHO" not in json.dumps(out)
+
+
+def test_runtime_restart_and_session_change_cannot_look_like_normal_progress():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    sha = "a" * 40
+
+    def capture(runtime, phase, seq, accepted, worker_seq):
+        return _sample_progress_evidence(
+            us_health={
+                "status": "HEALTHY", "market_state_us": phase,
+                "runtime_instance_id": runtime, "sequence": seq,
+                "event_count": accepted, "accepted_event_count": accepted,
+            },
+            us_snapshot={
+                "status": "PASS", "runtime_instance_id": runtime,
+                "repo_sha": sha, "sequence": seq,
+            },
+            us_radar={
+                "status": "PASS", "runtime_instance_id": runtime,
+                "expected_source_repo_sha": sha,
+                "sequence": worker_seq, "source_sequence": seq,
+            },
+            cn_reads=cn_rows(),
+        )
+
+    before = capture("runtime-old", "MORNING", 4, 20, 10)
+    after = capture("runtime-new", "PRE_MARKET_BEGIN", 8, 30, 15)
+    result = observe_source_progress(before, after, interval_seconds=12)["us"]
+    assert result["accepted_event_counter"] == "RUNTIME_CHANGED_UNQUALIFIED"
+    assert result["canonical_snapshot_sequence"] == "RUNTIME_CHANGED_UNQUALIFIED"
+    assert result["radar_worker_poll_sequence"] == "RUNTIME_CHANGED_UNQUALIFIED"
+    assert result["radar_source_sequence_progress"] == "RUNTIME_CHANGED_UNQUALIFIED"
+    assert result["event_progress_classification"] == "RUNTIME_CHANGED_PROGRESS_UNQUALIFIED"
+    assert result["radar_increment_proven"] is False
+    assert "runtime-new" not in json.dumps(result)
+
+    same_runtime = capture("runtime-stable", "MORNING", 7, 30, 20)
+    later = capture("runtime-stable", "PRE_MARKET_BEGIN", 7, 30, 21)
+    r = observe_source_progress(same_runtime, later, interval_seconds=12)["us"]
+    assert r["event_progress_classification"] == "SESSION_TRANSITION_UNQUALIFIED"

@@ -114,3 +114,33 @@ provider RTT, latency P50/P95/P99, source entitlement, independent
 stream progress or automatic failover is inferred. This is only
 read-only evidence for distinguishing service liveness from bar freshness.
 All Data/Radar/Execution controls remain fail-closed.
+
+## Read-only US Canonical ↔ Radar sequence witness (V0.4)
+
+The same AWS two-sample shadow audit now reads the already-running **US Radar
+research heartbeat** through `read_us_radar_analysis` (no worker restart or
+new daemon). It records sanitized reader/poll status, worker heartbeat sequence,
+Radar-reported source sequence and an **unqualified** comparison against the
+Canonical snapshot sequence and SHA. Raw Runtime IDs and provider data are
+not emitted; only whether runtime identity stayed stable is reported.
+
+- `radar_worker_poll_sequence=ADVANCED` is **not** evidence of incremental
+  market analysis. Repeated polling of the same Canonical sequence yields
+  `WORKER_POLL_ONLY_NOT_INCREMENTAL`.
+- `radar_source_sequence_progress=ADVANCED` with stable source identity and
+  matching SHA yields `SOURCE_SEQUENCE_ADVANCED_UNQUALIFIED`. Equality of two
+  cached sequence numbers does not establish a unique exchange event or
+  event-to-Radar latency.
+- Missing, stale or mismatched repository evidence is classified explicitly,
+  without upgrading it to a matched/qualified source.
+- A changed runtime identity scopes counters as
+  `RUNTIME_CHANGED_UNQUALIFIED`. A session transition is not assumed to be
+  a normal idle interval.
+- `radar_increment_proven=false` remains invariant, independent of the
+  worker's `radar_analysis_performed` flag. Cache polls and precomputed
+  telemetry are not admitted as fresh Data→Radar latency distributions.
+
+This is diagnostics for the already-deployed worker on the fixed AWS SSM host.
+It does **not** create a Radar incremental event tracker, a measured provider
+network SLO, an event lineage chain, source authority, or a live execution
+path. Non-applicable/absent Radar caches remain fail-closed.
