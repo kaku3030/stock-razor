@@ -235,7 +235,13 @@ def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
     source_symbols = source_symbols if isinstance(source_symbols, dict) else {}
     coverage = {}
     for symbol in dict.fromkeys(symbols):
-        info = source_symbols.get(symbol)
+        # The canonical US reader normalizes bare tickers to "US.<ticker>".
+        # Lookup keys must follow that exact contract, or valid bars appear
+        # falsely absent in this diagnostic.
+        canonical_symbol = str(symbol or "").strip().upper()
+        if "." not in canonical_symbol:
+            canonical_symbol = "US." + canonical_symbol
+        info = source_symbols.get(canonical_symbol)
         info = info if isinstance(info, dict) else {}
         source_counts = info.get("counts")
         source_counts = source_counts if isinstance(source_counts, dict) else {}
@@ -250,7 +256,7 @@ def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
             for frame in ("1m", "5m", "15m", "1h")
         }
         coverage[symbol] = {
-            "symbol_present": symbol in source_symbols,
+            "symbol_present": canonical_symbol in source_symbols,
             "bar_counts": counts,
             "any_bars_observed": any(
                 value is not None and value > 0 for value in counts.values()
