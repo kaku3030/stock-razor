@@ -171,3 +171,14 @@ Runtime identity and SHA equality are necessary provenance checks but
 insufficient to prove data correctness or market-event continuity. Follow
 normal repository CI/exact-head gates before any repair and keep read-only
 `RADAR_ADMISSION=BLOCKED`, `LIVE_TRADE=NO`.
+
+## V0.6: Post-rebind shadow enum compatibility
+
+A 2026-10-08 AWS audit immediately after the official read-only US Radar
+worker redeploy failed with an SSM `Failed` result even though the worker's
+own deployment/verification workflow passed. The shadow parser rejected its
+existing `READ_SURFACE_NOT_FRESH_UNQUALIFIED` classification because the
+workflow's static allowlist omitted that legitimate fail-closed state.
+The enum is now included. This change does **not** make stale Canonical
+data, missing accepted callbacks or Radar incremental analysis PASS. Do not
+confuse successful audit completion with feed qualification.

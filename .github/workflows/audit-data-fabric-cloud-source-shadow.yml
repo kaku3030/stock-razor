@@ -97,7 +97,7 @@ jobs:
              "IDENTITY_UNKNOWN_OR_INCONSISTENT",
           }
           assert progress.get("us",{}).get("radar_read_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
-          assert progress.get("us",{}).get("radar_canonical_alignment") in {"SOURCE_REPO_MISMATCH_UNQUALIFIED","UNKNOWN","SEQUENCE_EQUAL_UNQUALIFIED","RADAR_BEHIND_CANONICAL_UNQUALIFIED","RADAR_AHEAD_OR_RESTART_UNQUALIFIED"}
+          assert progress.get("us",{}).get("radar_canonical_alignment") in {"SOURCE_REPO_MISMATCH_UNQUALIFIED","READ_SURFACE_NOT_FRESH_UNQUALIFIED","UNKNOWN","SEQUENCE_EQUAL_UNQUALIFIED","RADAR_BEHIND_CANONICAL_UNQUALIFIED","RADAR_AHEAD_OR_RESTART_UNQUALIFIED"}
           assert len(p.get("entries",[])) == 4
           assert {x.get("market") for x in p["entries"]} == {"US","CN"}
           assert all(x.get("decision",{}).get("decision") == "BLOCKED"
