@@ -434,3 +434,41 @@ def test_heartbeat_exposes_explicit_research_only_and_no_signal_confirmation():
     assert 'assert heartbeat.get("live_trade") is False' in VERIFY
     assert "OpenUSTradeContext" not in INSTALLER
     assert "OpenSecTradeContext" not in INSTALLER
+
+
+def test_event_aware_loop_shortens_closed_bar_pickup_without_extra_opend_rpc_calls():
+    runtime = _embedded_runtime_python()
+    assert "producer_poll_seconds=0.5" in runtime
+    assert "market_state_query_interval_seconds=5.0" in runtime
+    assert "time.sleep(producer_poll_seconds)" in runtime
+    assert "pending_data_event_count=data_event_count" in runtime
+    assert "with evidence_lock:" in runtime
+    assert "if not state_due and not event_due:" in runtime
+    assert "if state_due:" in runtime
+    assert runtime.index("if state_due:") < runtime.index("state_ret,state_data=ctx.get_global_state()")
+    assert runtime.count("ctx.get_global_state()") == 1
+    assert runtime.count("ctx.get_user_info([ft.UserInfoField.QOTRIGHT])") == 1
+    assert runtime.count("ctx=ft.OpenQuoteContext(host=\"127.0.0.1\",port=11111)") == 1
+    assert 'measurement_scope":"EVENT_AWARE_PRODUCER_LOOP_NOT_E2E_SLO"' in runtime
+    assert '"radar_admission":"BLOCKED"' in runtime
+    assert '"live_trade":False' in runtime
+
+
+def test_event_aware_loop_never_claims_unclosed_forming_bar_is_canonical_update():
+    runtime = _embedded_runtime_python()
+    assert "consumer_result=research_consumer.run_once(max_events=1000)" in runtime
+    assert "consumer_backlog_pending=(consumer_result.evidence_processed >= 1000)" in runtime
+    assert "consumer_result.bars_ingested == 0" in runtime
+    assert "consumer_result.stopped_reason is None" in runtime
+    assert "continue" in runtime.split("consumer_result.bars_ingested == 0", 1)[1].split("seq+=1", 1)[0]
+    assert "consumer_result.bars_ingested > 0" in runtime
+    assert "write_canonical_snapshot_export(canonical_snapshot_path,canonical_export)" in runtime
+    assert "market_state != last_export_market_state" in runtime
+
+
+def test_event_aware_loop_fails_closed_on_market_state_rpc_exception():
+    runtime = _embedded_runtime_python()
+    assert "except Exception:" in runtime.split("state_ret,state_data=ctx.get_global_state()", 1)[1].split("market_state_us=market_state", 1)[0]
+    assert 'market_state="UNKNOWN"' in runtime
+    assert "state_ret=-1" in runtime
+    assert '"market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED"' in runtime
