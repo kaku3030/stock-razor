@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from math import floor
+from math import floor, isfinite
 from typing import Iterable
 
 
@@ -20,6 +20,8 @@ DATA_TO_RADAR_SLO_MS = 1000.0
 
 _LATENCY_FIELDS = (
     "provider_latency_ms",
+    "provider_callback_processing_latency_ms",
+    "provider_request_path_latency_ms",
     "canonical_latency_ms",
     "radar_analysis_latency_ms",
     "radar_read_latency_ms",
@@ -36,6 +38,8 @@ class FastPathSample:
     observed_at: datetime
     provider: str | None = None
     provider_latency_ms: float | None = None
+    provider_callback_processing_latency_ms: float | None = None
+    provider_request_path_latency_ms: float | None = None
     canonical_latency_ms: float | None = None
     radar_analysis_latency_ms: float | None = None
     radar_read_latency_ms: float | None = None
@@ -45,8 +49,8 @@ class FastPathSample:
     e2e_latency_ms: float | None = None
     freshness_ms: float | None = None
     success: bool = False
-    retry_count: int = 0
-    fallback_count: int = 0
+    retry_count: int | None = None
+    fallback_count: int | None = None
     fallback_provider: str | None = None
     freshness_state: str = "UNKNOWN"
     data_completeness: str = "UNKNOWN"
@@ -67,10 +71,21 @@ class FastPathSample:
             raise ValueError("observed_at must be timezone-aware")
         for field in (*_LATENCY_FIELDS, "data_to_radar_latency_ms", "freshness_ms"):
             value = getattr(self, field)
-            if value is not None and (not isinstance(value, (int, float)) or value < 0):
-                raise ValueError(f"{field} must be non-negative or None")
-        if self.retry_count < 0 or self.fallback_count < 0:
-            raise ValueError("retry/fallback counts must be non-negative")
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                or value < 0
+            ):
+                raise ValueError(f"{field} must be finite, non-negative or None")
+        for field in ("retry_count", "fallback_count"):
+            value = getattr(self, field)
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+            ):
+                raise ValueError(f"{field} must be a non-negative integer or None")
         if self.radar_admission != "BLOCKED":
             raise ValueError("performance evidence cannot promote Radar admission")
         if self.live_trade:
@@ -179,8 +194,12 @@ def summarize_fast_path(samples: Iterable[FastPathSample]) -> dict:
         for field in (*_LATENCY_FIELDS, "data_to_radar_latency_ms", "freshness_ms")
     }
     successful = sum(sample.success for sample in rows)
-    retried = sum(sample.retry_count > 0 for sample in rows)
-    fallback = sum(sample.fallback_count > 0 for sample in rows)
+    retry_evidence = [
+        sample.retry_count for sample in rows if sample.retry_count is not None
+    ]
+    fallback_evidence = [
+        sample.fallback_count for sample in rows if sample.fallback_count is not None
+    ]
     markets = tuple(sorted({sample.market for sample in rows}))
     providers = tuple(sorted({sample.provider for sample in rows if sample.provider}))
 
@@ -196,6 +215,8 @@ def summarize_fast_path(samples: Iterable[FastPathSample]) -> dict:
             "freshness_ms",
         )
     )
+    if len(retry_evidence) != len(rows) or len(fallback_evidence) != len(rows):
+        required_evidence_missing = True
     status = "EVIDENCE_COMPLETE" if not required_evidence_missing else "INCOMPLETE_EVIDENCE"
 
     return {
@@ -204,8 +225,24 @@ def summarize_fast_path(samples: Iterable[FastPathSample]) -> dict:
         "markets": markets,
         "providers": providers,
         "success_rate": round(successful / len(rows), 6),
-        "retry_rate": round(retried / len(rows), 6),
-        "fallback_rate": round(fallback / len(rows), 6),
+        "retry_rate": (
+            round(sum(value > 0 for value in retry_evidence) / len(retry_evidence), 6)
+            if retry_evidence
+            else None
+        ),
+        "retry_rate_sample_count": len(retry_evidence),
+        "retry_rate_missing_count": len(rows) - len(retry_evidence),
+        "fallback_rate": (
+            round(
+                sum(value > 0 for value in fallback_evidence)
+                / len(fallback_evidence),
+                6,
+            )
+            if fallback_evidence
+            else None
+        ),
+        "fallback_rate_sample_count": len(fallback_evidence),
+        "fallback_rate_missing_count": len(rows) - len(fallback_evidence),
         "metrics": metrics,
         "slo": {
             "canonical_read_ms": CANONICAL_READ_SLO_MS,

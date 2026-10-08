@@ -282,3 +282,29 @@ def test_arbitrary_transport_claim_cannot_manufacture_connected_evidence():
             controller_generation=lambda: 1,
             transport_connected_evidence="TRUST_ME_CONNECTED",
         )
+
+
+def test_callback_latency_diagnostics_measure_processing_without_promoting_delivery():
+    ticks = iter([1.000, 1.002, 1.005])
+    ctx = Context()
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        ctx,
+        FT,
+        runtime_instance_id="r1",
+        controller_generation=lambda: 1,
+        monotonic=lambda: next(ticks),
+    )
+    adapter.register_event_sink(events.append)
+    adapter.start()
+
+    ctx.handler.on_recv_rsp(
+        Frame([{"code": "US.AAPL", "time_key": "2026-10-05 10:01:00"}])
+    )
+
+    diagnostics = adapter.diagnostics()
+    assert diagnostics["provider_callback_latency_sample_count"] == 1
+    assert diagnostics["provider_callback_latency_ms_last"] == pytest.approx(5.0)
+    assert diagnostics["provider_callback_latency_ms_max"] == pytest.approx(5.0)
+    assert diagnostics["provider_callback_latency_ms_mean"] == pytest.approx(5.0)
+    assert events[0].delivery_mode is DeliveryMode.UNKNOWN

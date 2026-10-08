@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from datetime import datetime, timezone
 import json
 import os
@@ -257,6 +259,30 @@ def read_us_livefeed_health(
     canonical_export = heartbeat.get("canonical_snapshot_export")
     canonical_export = canonical_export if isinstance(canonical_export, dict) else {}
     export_pass = canonical_export.get("status") == "PASS"
+    adapter_diagnostics = heartbeat.get("adapter_diagnostics")
+    adapter_diagnostics = (
+        adapter_diagnostics if isinstance(adapter_diagnostics, dict) else {}
+    )
+    provider_callback_latency_ms = adapter_diagnostics.get(
+        "provider_callback_latency_ms_last"
+    )
+    if (
+        provider_callback_latency_ms is not None
+        and (
+            isinstance(provider_callback_latency_ms, bool)
+            or not isinstance(provider_callback_latency_ms, (int, float))
+            or not isfinite(provider_callback_latency_ms)
+            or provider_callback_latency_ms < 0
+        )
+    ):
+        return _latency_payload(
+            started_at,
+            _fail(
+                "INVALID",
+                error="INVALID_PROVIDER_CALLBACK_LATENCY",
+                source_path=source_path,
+            ),
+        )
 
     snapshot, snapshot_meta = _snapshot_source(
         snapshot_path,
@@ -293,6 +319,14 @@ def read_us_livefeed_health(
         "last_push_utc": heartbeat.get("last_push_utc"),
         "event_count": heartbeat.get("event_count"),
         "accepted_event_count": heartbeat.get("accepted_event_count"),
+        "provider_callback_latency_ms": (
+            float(provider_callback_latency_ms)
+            if provider_callback_latency_ms is not None
+            else None
+        ),
+        "provider_callback_latency_sample_count": adapter_diagnostics.get(
+            "provider_callback_latency_sample_count"
+        ),
         "quote_right_evidence": heartbeat.get("quote_right_evidence"),
         "canonical_export_status": canonical_export.get("status"),
         "canonical_snapshot_status": snapshot_meta.get("status"),

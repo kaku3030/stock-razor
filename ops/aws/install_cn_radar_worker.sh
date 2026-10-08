@@ -94,7 +94,11 @@ while True:
     source_runtime_instance_id = None
     source_sequence = None
     source_emitted_at_utc = None
+    source_emitted = None
     source_age_seconds = None
+    radar_analysis_performed = False
+    radar_analysis_latency_ms = None
+    data_to_radar_latency_ms = None
 
     try:
         with open(source_path, encoding="utf-8") as handle:
@@ -118,12 +122,30 @@ while True:
             evaluation = last_evaluation
             poll_status = "UNCHANGED"
         else:
+            analysis_started = time.perf_counter()
             evaluation = evaluate_cn_observation_payload(source)
+            radar_analysis_latency_ms = round(
+                (time.perf_counter() - analysis_started) * 1000,
+                3,
+            )
+            radar_analysis_performed = True
             last_key = key
             last_evaluation = evaluation
             poll_status = "PASS"
     except Exception as exc:
         reasons.append(f"SOURCE_OR_ANALYSIS_ERROR:{type(exc).__name__}")
+
+    completed_at = datetime.now(timezone.utc)
+    if source_emitted is not None:
+        source_delta_ms = (
+            completed_at - source_emitted.astimezone(timezone.utc)
+        ).total_seconds() * 1000
+        # Do not turn a clock reversal into fake 0ms Data->Radar latency.
+        source_age_seconds = (
+            round(source_delta_ms / 1000, 6) if source_delta_ms >= 0 else None
+        )
+        if radar_analysis_performed and source_delta_ms >= 0:
+            data_to_radar_latency_ms = round(source_delta_ms, 3)
 
     payload = {
         "type": "cn_radar_research_heartbeat",
@@ -131,13 +153,16 @@ while True:
         "worker_repo_sha": worker_repo_sha,
         "host_id": host_id,
         "sequence": cycle,
-        "emitted_at_utc": now.isoformat(),
+        "emitted_at_utc": completed_at.isoformat(),
         "source_path": source_path,
         "source_repo_sha": source_repo_sha,
         "source_runtime_instance_id": source_runtime_instance_id,
         "source_sequence": source_sequence,
         "source_emitted_at_utc": source_emitted_at_utc,
         "source_age_seconds": source_age_seconds,
+        "radar_analysis_performed": radar_analysis_performed,
+        "radar_analysis_latency_ms": radar_analysis_latency_ms,
+        "data_to_radar_latency_ms": data_to_radar_latency_ms,
         "poll_status": poll_status,
         "evaluation": evaluation,
         "reasons": reasons,

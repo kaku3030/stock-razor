@@ -238,3 +238,45 @@ def test_second_read_hits_inode_mtime_cache(tmp_path):
 
     assert first["source_cache_hit"] is False
     assert second["source_cache_hit"] is True
+
+
+def test_cn_radar_reader_exposes_completed_analysis_telemetry(tmp_path):
+    payload = _payload()
+    payload["radar_analysis_performed"] = True
+    payload["radar_analysis_latency_ms"] = 184.25
+    payload["data_to_radar_latency_ms"] = 702.0
+    path = _write(tmp_path / "cn-radar.json", payload)
+
+    result = read_cn_radar_analysis(["159611"], path=path, now_utc=NOW)
+
+    assert result["status"] == "PASS"
+    assert result["radar_analysis_performed"] is True
+    assert result["radar_analysis_latency_ms"] == 184.25
+    assert result["data_to_radar_latency_ms"] == 702.0
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_cn_radar_reader_allows_legacy_missing_telemetry_as_unknown(tmp_path):
+    path = _write(tmp_path / "cn-radar.json", _payload())
+
+    result = read_cn_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["status"] == "PASS"
+    assert result["radar_analysis_performed"] is None
+    assert result["radar_analysis_latency_ms"] is None
+    assert result["data_to_radar_latency_ms"] is None
+
+
+def test_cn_radar_reader_rejects_incomplete_telemetry(tmp_path):
+    payload = _payload()
+    payload["radar_analysis_performed"] = True
+    payload["radar_analysis_latency_ms"] = 100.0
+    payload["data_to_radar_latency_ms"] = None
+    path = _write(tmp_path / "cn-radar.json", payload)
+
+    result = read_cn_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["status"] == "INVALID"
+    assert result["error"] == "RADAR_TELEMETRY_INCOMPLETE"
+    assert result["radar_admission"] == "BLOCKED"
