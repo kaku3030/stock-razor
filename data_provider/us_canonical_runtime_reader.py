@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from datetime import datetime, timezone
 import json
 import os
@@ -269,6 +271,7 @@ def read_us_livefeed_health(
         and (
             isinstance(provider_callback_latency_ms, bool)
             or not isinstance(provider_callback_latency_ms, (int, float))
+            or not isfinite(provider_callback_latency_ms)
             or provider_callback_latency_ms < 0
         )
     ):
