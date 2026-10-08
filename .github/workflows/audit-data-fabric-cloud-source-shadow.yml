@@ -77,6 +77,14 @@ jobs:
           assert p.get("live_trade") is False
           assert p.get("can_confirm_signal") is False
           assert p.get("data_qualification") == "NOT_VERIFIED"
+          progress=p.get("source_progress")
+          assert isinstance(progress,dict)
+          assert progress.get("measurement_scope") == "TWO_SEPARATE_AWS_CACHE_READS_NOT_PROVIDER_SLO"
+          assert progress.get("unique_provider_event_delivery_qualified") is False
+          assert progress.get("cloud_off_pc_independence") == "NOT_VERIFIED"
+          assert progress.get("radar_admission") == "BLOCKED"
+          assert set(progress.get("cn",{})) == {"159611","518880"}
+          assert "event_progress_classification" in progress.get("us",{})
           assert len(p.get("entries",[])) == 4
           assert {x.get("market") for x in p["entries"]} == {"US","CN"}
           assert all(x.get("decision",{}).get("decision") == "BLOCKED"
@@ -114,6 +122,7 @@ jobs:
           import json,sys
           p=json.load(sys.stdin)
           assert p.get("schema") == "stock_razor_data_fabric_aws_shadow_witness_v0_1"
+          assert p.get("source_progress",{}).get("unique_provider_event_delivery_qualified") is False
           assert p.get("source_arbiter_runtime_admission") == "BLOCKED"
           assert p.get("proposals_admitted") == 0
           assert p.get("canonical_writer_created") is False
