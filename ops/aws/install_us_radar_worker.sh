@@ -79,6 +79,7 @@ from src.services.stock_radar_v2.daily_history_reader import (
     load_futu_us_daily_history_frames,
 )
 from src.services.stock_radar_v2.options_context_reader import RadarOptionsContextReader
+from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
 
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().lower()
@@ -104,7 +105,27 @@ options_source_repo_sha = os.environ.get("STOCK_RAZOR_OPTIONS_SOURCE_REPO_SHA", 
 runtime_id = os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 host_id = socket.gethostname()
 
-evaluator = CanonicalSnapshotRadarEvaluator(max_active_age_seconds=120)
+class TimedTechnicalStateService(StockRadarTechnicalStateService):
+    """Observational timings only; never authorizes signals or trading."""
+
+    def __init__(self):
+        super().__init__()
+        self.symbol_compute_ms = {}
+
+    def evaluate(self, snapshot, *, daily=None):
+        started = time.perf_counter()
+        result = super().evaluate(snapshot, daily=daily)
+        self.symbol_compute_ms[snapshot.symbol] = round(
+            (time.perf_counter() - started) * 1000, 3
+        )
+        return result
+
+
+timed_technical = TimedTechnicalStateService()
+evaluator = CanonicalSnapshotRadarEvaluator(
+    technical_state_service=timed_technical,
+    max_active_age_seconds=120,
+)
 options_reader = RadarOptionsContextReader(max_age_seconds=120)
 worker = CanonicalSnapshotRadarWorker(
     expected_repo_sha=expected_source_repo_sha,
@@ -125,21 +146,27 @@ def publish(payload):
 
 
 while True:
-    now = datetime.now(timezone.utc)
+    cycle_started = time.perf_counter()
+    daily_started = time.perf_counter()
     daily_frames, daily_history = load_futu_us_daily_history_frames(
         daily_history_path,
         expected_repo_sha=expected_source_repo_sha,
     )
+    daily_load_ms = round((time.perf_counter() - daily_started) * 1000, 3)
     options_result = None
+    options_load_ms = None
     options_contexts = {}
     if options_context_enabled:
+        options_started = time.perf_counter()
         options_result = options_reader.read_file(
             options_context_path,
             expected_repo_sha=options_source_repo_sha,
         )
+        options_load_ms = round((time.perf_counter() - options_started) * 1000, 3)
         if options_result.status == "PASS":
             options_contexts = options_result.by_symbol()
 
+    timed_technical.symbol_compute_ms.clear()
     analysis_started = time.perf_counter()
     evaluation = worker.poll_file(
         source_path,
@@ -181,6 +208,19 @@ while True:
         "radar_analysis_performed": radar_analysis_performed,
         "radar_analysis_latency_ms": radar_analysis_latency_ms,
         "data_to_radar_latency_ms": data_to_radar_latency_ms,
+        # Read-only phase timings. These are one worker cycle, NOT independent
+        # Provider->Radar samples or an E2E latency distribution.
+        "worker_phase_timing": {
+            "daily_history_load_ms": daily_load_ms,
+            "options_context_load_ms": options_load_ms,
+            "canonical_poll_and_analysis_ms": poll_elapsed_ms,
+            "symbol_compute_ms": dict(timed_technical.symbol_compute_ms),
+            "pre_publish_total_ms": round(
+                (time.perf_counter() - cycle_started) * 1000, 3
+            ),
+            "market_event_sample_count": 0,
+            "end_to_end_distribution": "NOT_VERIFIED",
+        },
         "evaluation": evaluation_payload,
         "research_only": True,
         "can_confirm_signal": False,
