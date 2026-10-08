@@ -49,3 +49,13 @@ def test_cloud_benchmark_never_changes_running_services_or_trades():
         "place_order", "LIVE_TRADE=YES",
     ):
         assert unsafe not in WORKFLOW
+
+
+def test_cloud_benchmark_surfaces_cn_per_symbol_qualification_and_read_success():
+    assert 'diagnostics=data.get("cn_symbol_read_diagnostics")' in WORKFLOW
+    assert '"read_success_rate":summary["success_rate"]' in WORKFLOW
+    assert '"cn_symbol_read_diagnostics":diagnostics' in WORKFLOW
+    assert '"CN_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"' in WORKFLOW
+    assert '"data_qualification") == "NOT_VERIFIED"' in WORKFLOW
+    assert 'set(diagnostics.get("symbols",{})) == {"159611","518880"}' in WORKFLOW
+    assert 'row.get("can_confirm_signal") is False' in WORKFLOW
