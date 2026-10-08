@@ -90,6 +90,12 @@ jobs:
           assert "canonical_chain_classification" in progress.get("us",{})
           assert progress.get("us",{}).get("canonical_snapshot_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
           assert progress.get("us",{}).get("radar_increment_proven") is False
+          assert progress.get("us",{}).get("source_identity_classification") in {
+             "LIVEFEED_CANONICAL_IDENTITY_MISMATCH_UNQUALIFIED",
+             "RADAR_EXPECTED_SOURCE_STALE_UNQUALIFIED",
+             "IDENTITIES_MATCH_UNQUALIFIED",
+             "IDENTITY_UNKNOWN_OR_INCONSISTENT",
+          }
           assert progress.get("us",{}).get("radar_read_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
           assert progress.get("us",{}).get("radar_canonical_alignment") in {"SOURCE_REPO_MISMATCH_UNQUALIFIED","UNKNOWN","SEQUENCE_EQUAL_UNQUALIFIED","RADAR_BEHIND_CANONICAL_UNQUALIFIED","RADAR_AHEAD_OR_RESTART_UNQUALIFIED"}
           assert len(p.get("entries",[])) == 4

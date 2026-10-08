@@ -144,3 +144,30 @@ This is diagnostics for the already-deployed worker on the fixed AWS SSM host.
 It does **not** create a Radar incremental event tracker, a measured provider
 network SLO, an event lineage chain, source authority, or a live execution
 path. Non-applicable/absent Radar caches remain fail-closed.
+
+## V0.5: Read-only US cross-layer source identity triage
+
+The two-sample shadow probe now compares **in memory only** the livefeed
+heartbeat's source repository SHA and runtime identity against the Canonical
+snapshot, and both source SHAs against the Radar worker's
+`expected_source_repo_sha`. Public output reports only `true`, `false`,
+`null` and bounded classifications, never raw SHA or runtime IDs.
+
+- `LIVEFEED_CANONICAL_IDENTITY_MISMATCH_UNQUALIFIED`: the producer and
+  Canonical cache disagree; **do not rebind/restart the Radar worker** based
+  solely on either source.
+- `RADAR_EXPECTED_SOURCE_STALE_UNQUALIFIED`: livefeed heartbeat and
+  Canonical agree on both provenance dimensions but the Radar worker is
+  pinned to a different repository SHA. This is a repair candidate for
+  the existing guarded US Radar worker deploy workflow, not an automatic
+  redeployment instruction or source qualification.
+- `IDENTITIES_MATCH_UNQUALIFIED`: all four cross-layer source comparisons
+  match. Data freshness, callback entitlement, bar closure, Radar progress,
+  source qualification and execution permission remain independently blocked.
+- `IDENTITY_UNKNOWN_OR_INCONSISTENT`: absent, malformed or mixed
+  provenance does not become a successful match.
+
+Runtime identity and SHA equality are necessary provenance checks but
+insufficient to prove data correctness or market-event continuity. Follow
+normal repository CI/exact-head gates before any repair and keep read-only
+`RADAR_ADMISSION=BLOCKED`, `LIVE_TRADE=NO`.

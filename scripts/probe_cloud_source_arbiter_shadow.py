@@ -234,6 +234,27 @@ def _sample_progress_evidence(
         if valid_sha(worker_expected_sha) and valid_sha(canonical_sha)
         else None
     )
+    livefeed_sha = us_health.get("repo_sha")
+    livefeed_canonical_sha_match = (
+        livefeed_sha == canonical_sha
+        if valid_sha(livefeed_sha) and valid_sha(canonical_sha)
+        else None
+    )
+    radar_expected_livefeed_sha_match = (
+        worker_expected_sha == livefeed_sha
+        if valid_sha(worker_expected_sha) and valid_sha(livefeed_sha)
+        else None
+    )
+    livefeed_runtime = us_health.get("runtime_instance_id")
+    snapshot_runtime = us_snapshot.get("runtime_instance_id")
+    livefeed_canonical_runtime_match = (
+        livefeed_runtime == snapshot_runtime
+        if all(
+            isinstance(item, str) and bool(item.strip())
+            for item in (livefeed_runtime, snapshot_runtime)
+        )
+        else None
+    )
     # Use the existing OpenD session mapping; generic OPEN/PRE_MARKET enums
     # are not the provider's states and must never manufacture a session.
     raw_market_state = us_health.get("market_state_us")
@@ -264,6 +285,9 @@ def _sample_progress_evidence(
             "radar_worker_sequence": _count(radar.get("sequence")),
             "radar_source_sequence": _count(radar.get("source_sequence")),
             "radar_source_repo_matches_canonical": sha_binding,
+            "livefeed_canonical_repo_match": livefeed_canonical_sha_match,
+            "livefeed_canonical_runtime_match": livefeed_canonical_runtime_match,
+            "radar_expected_livefeed_repo_match": radar_expected_livefeed_sha_match,
             "radar_analysis_performed": (
                 radar.get("radar_analysis_performed")
                 if isinstance(radar.get("radar_analysis_performed"), bool)
@@ -362,6 +386,25 @@ def observe_source_progress(before: dict, after: dict, *, interval_seconds: floa
     us["radar_read_status"] = last.get("radar_read_status", "UNKNOWN")
     us["radar_poll_status"] = last.get("radar_poll_status", "UNKNOWN")
     us["radar_analysis_performed"] = last.get("radar_analysis_performed")
+    us["livefeed_canonical_repo_match"] = last.get("livefeed_canonical_repo_match")
+    us["livefeed_canonical_runtime_match"] = last.get("livefeed_canonical_runtime_match")
+    us["radar_expected_livefeed_repo_match"] = last.get("radar_expected_livefeed_repo_match")
+    if (last.get("livefeed_canonical_repo_match") is False
+            or last.get("livefeed_canonical_runtime_match") is False):
+        source_binding = "LIVEFEED_CANONICAL_IDENTITY_MISMATCH_UNQUALIFIED"
+    elif (last.get("livefeed_canonical_repo_match") is True
+          and last.get("livefeed_canonical_runtime_match") is True
+          and last.get("radar_expected_livefeed_repo_match") is False
+          and last.get("radar_source_repo_matches_canonical") is False):
+        source_binding = "RADAR_EXPECTED_SOURCE_STALE_UNQUALIFIED"
+    elif all(last.get(key) is True for key in (
+        "livefeed_canonical_repo_match", "livefeed_canonical_runtime_match",
+        "radar_expected_livefeed_repo_match", "radar_source_repo_matches_canonical",
+    )):
+        source_binding = "IDENTITIES_MATCH_UNQUALIFIED"
+    else:
+        source_binding = "IDENTITY_UNKNOWN_OR_INCONSISTENT"
+    us["source_identity_classification"] = source_binding
     canonical_seq = _count(last.get("canonical_sequence"))
     radar_source_seq = _count(last.get("radar_source_sequence"))
     sha_match = last.get("radar_source_repo_matches_canonical")
