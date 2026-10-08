@@ -267,6 +267,16 @@ quote_right_query_reason="NOT_QUERIED"
 last_quote_right_poll_monotonic=None
 startup_monotonic=time.monotonic()
 startup_callback_deadline_seconds=20
+# Event-aware userland drain: do not generate more Futu API calls than the
+# former five-second producer loop. The fast check reads only in-memory counts.
+producer_poll_seconds=0.5
+market_state_query_interval_seconds=5.0
+last_market_state_query_monotonic=None
+last_consumed_data_event_count=-1
+consumer_backlog_pending=False
+market_state="UNKNOWN"
+state_ret=-1
+idle_fastpath_skips=0
 def publish(payload):
     os.makedirs(os.path.dirname(status_path),exist_ok=True)
     tmp=status_path+".tmp"
@@ -275,16 +285,47 @@ def publish(payload):
     os.replace(tmp,status_path)
 try:
     while True:
-        time.sleep(5)
-        state_ret,state_data=ctx.get_global_state()
-        market_state=(str(state_data.get("market_us") or "UNKNOWN")
-                      if state_ret==ft.RET_OK and isinstance(state_data,dict) else "UNKNOWN")
+        time.sleep(producer_poll_seconds)
+        monotonic_now=time.monotonic()
+        with evidence_lock:
+            pending_data_event_count=data_event_count
+        state_due=(
+            last_market_state_query_monotonic is None
+            or monotonic_now-last_market_state_query_monotonic >= market_state_query_interval_seconds
+        )
+        event_due=(
+            pending_data_event_count != last_consumed_data_event_count
+            or consumer_backlog_pending
+        )
+        if not state_due and not event_due:
+            idle_fastpath_skips+=1
+            continue
+        if state_due:
+            # No additional global-state RPCs; never infer PASS when it fails.
+            last_market_state_query_monotonic=monotonic_now
+            try:
+                state_ret,state_data=ctx.get_global_state()
+                market_state=(str(state_data.get("market_us") or "UNKNOWN")
+                              if state_ret==ft.RET_OK and isinstance(state_data,dict) else "UNKNOWN")
+            except Exception:
+                state_ret=-1
+                market_state="UNKNOWN"
         market_state_us=market_state
         cache_session=futu_us_market_state_to_session(market_state)
         snap=bridge.drain()
         consumer_result=research_consumer.run_once(max_events=1000)
+        last_consumed_data_event_count=pending_data_event_count
+        # Bounded catch-up: keep draining after a full 1000-evidence batch.
+        consumer_backlog_pending=(consumer_result.evidence_processed >= 1000)
+        if (
+            not state_due
+            and consumer_result.bars_ingested == 0
+            and consumer_result.stopped_reason is None
+        ):
+            # Forming K1M updates are not a qualified closed bar. Avoid
+            # heavyweight canonical reconstruction and noisy heartbeat logs.
+            continue
         seq+=1; now=datetime.now(timezone.utc)
-        monotonic_now=time.monotonic()
         if (
             last_quote_right_poll_monotonic is None
             or (monotonic_now-last_quote_right_poll_monotonic) >= quote_right_poll_seconds
@@ -501,6 +542,14 @@ try:
           "event_count":data_count,"accepted_event_count":accepted_count,
           "last_push_utc":push_utc,"market_state_us":market_state,
           "cache_session_us":cache_session,
+          "producer_loop_observation":{
+              "poll_seconds":producer_poll_seconds,
+              "market_state_query_interval_seconds":market_state_query_interval_seconds,
+              "idle_fastpath_skips":idle_fastpath_skips,
+              "last_seen_data_event_count":last_consumed_data_event_count,
+              "consumer_backlog_pending":consumer_backlog_pending,
+              "measurement_scope":"EVENT_AWARE_PRODUCER_LOOP_NOT_E2E_SLO",
+          },
           "market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED",
           "latest_k1m_time_keys":time_keys,"k1m_currentness":currentness_payload,
           "k1m_currentness_summary":currentness_summary,
