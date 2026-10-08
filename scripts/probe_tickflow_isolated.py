@@ -11,7 +11,6 @@ import argparse
 from datetime import datetime, timezone
 import importlib.metadata
 import json
-import math
 import os
 import re
 import time
@@ -167,8 +166,14 @@ def build_probe(
     if client_factory is None:
         try:
             from tickflow import TickFlow
-        except ImportError:
-            result["operations"].append(_skip("sdk_import", "SDK_NOT_INSTALLED"))
+        except Exception as exc:
+            # Includes Windows ZoneInfoNotFoundError when tzdata is absent.
+            # Never dump arbitrary SDK or package-manager exception bodies.
+            result["operations"].append({
+                "name": "sdk_import",
+                "operation": "FAILED",
+                "failure_class": type(exc).__name__,
+            })
             return result
         client_factory = TickFlow
     result["operations"].append({
