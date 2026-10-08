@@ -26,8 +26,14 @@ from .observer import (
 )
 from .runtime_ingest import (
     ProviderRuntimeIngestError,
+    build_alpaca_observation_from_runtime_events,
+    build_cn_provider_observations_from_cloud_snapshot,
     build_moomoo_opend_observation_from_livefeed_heartbeat,
+    build_negative_provider_probe_observation,
+    ingest_alpaca_runtime_events,
+    ingest_cn_cloud_observation,
     ingest_moomoo_opend_livefeed_heartbeat,
+    ingest_negative_provider_probe,
 )
 from .registry import (
     DEFAULT_PROVIDER_REGISTRY,
@@ -57,9 +63,15 @@ __all__ = [
     "ProviderRuntimeObserver",
     "RuntimeProviderSnapshot",
     "assess_provider",
+    "build_alpaca_observation_from_runtime_events",
+    "build_cn_provider_observations_from_cloud_snapshot",
     "build_moomoo_opend_observation_from_livefeed_heartbeat",
+    "build_negative_provider_probe_observation",
     "evaluate_cost_action",
     "evaluate_fallback",
     "get_provider_definition",
+    "ingest_alpaca_runtime_events",
+    "ingest_cn_cloud_observation",
     "ingest_moomoo_opend_livefeed_heartbeat",
+    "ingest_negative_provider_probe",
 ]
