@@ -207,3 +207,8 @@ def test_us_radar_verifier_requires_runtime_latency_telemetry_consistency():
     assert 'assert payload.get("poll_status") == "PASS"' in VERIFY
     assert 'assert radar_analysis_latency_ms is None' in VERIFY
     assert 'assert data_to_radar_latency_ms is None' in VERIFY
+
+
+def test_us_radar_worker_does_not_clamp_future_source_to_fake_zero_latency():
+    assert "elapsed_ms >= 0 else None" in INSTALLER
+    assert "max(0.0, (completed_at - source_emitted).total_seconds())" not in INSTALLER
