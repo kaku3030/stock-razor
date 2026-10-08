@@ -26,6 +26,26 @@ assert payload.get("can_confirm_signal") is False
 assert payload.get("radar_admission") == "BLOCKED"
 assert payload.get("live_trade") is False
 
+radar_analysis_performed = payload.get("radar_analysis_performed")
+radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")
+data_to_radar_latency_ms = payload.get("data_to_radar_latency_ms")
+assert isinstance(radar_analysis_performed, bool)
+if radar_analysis_performed:
+    assert payload.get("poll_status") == "PASS"
+    assert (
+        isinstance(radar_analysis_latency_ms, (int, float))
+        and not isinstance(radar_analysis_latency_ms, bool)
+        and radar_analysis_latency_ms >= 0
+    )
+    assert (
+        isinstance(data_to_radar_latency_ms, (int, float))
+        and not isinstance(data_to_radar_latency_ms, bool)
+        and data_to_radar_latency_ms >= 0
+    )
+else:
+    assert radar_analysis_latency_ms is None
+    assert data_to_radar_latency_ms is None
+
 daily_history = payload.get("daily_history") or {}
 assert daily_history.get("status") == "PASS"
 assert daily_history.get("historical_query") is True
