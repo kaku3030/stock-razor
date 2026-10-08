@@ -24,6 +24,15 @@ from .observer import (
     ProviderRuntimeObserver,
     RuntimeProviderSnapshot,
 )
+from .runtime_ingest import (
+    ProviderRuntimeIngestError,
+    build_alpaca_observation_from_runtime_events,
+    build_cn_provider_observations_from_cloud_snapshot,
+    build_moomoo_opend_observation_from_livefeed_heartbeat,
+    ingest_alpaca_runtime_events,
+    ingest_cn_cloud_observation,
+    ingest_moomoo_opend_livefeed_heartbeat,
+)
 from .registry import (
     DEFAULT_PROVIDER_REGISTRY,
     ProviderDefinition,
@@ -47,11 +56,18 @@ __all__ = [
     "ProviderHealthState",
     "ProviderLifecycleRecord",
     "ProviderRole",
+    "ProviderRuntimeIngestError",
     "ProviderRuntimeObservation",
     "ProviderRuntimeObserver",
     "RuntimeProviderSnapshot",
     "assess_provider",
+    "build_alpaca_observation_from_runtime_events",
+    "build_cn_provider_observations_from_cloud_snapshot",
+    "build_moomoo_opend_observation_from_livefeed_heartbeat",
     "evaluate_cost_action",
     "evaluate_fallback",
     "get_provider_definition",
+    "ingest_alpaca_runtime_events",
+    "ingest_cn_cloud_observation",
+    "ingest_moomoo_opend_livefeed_heartbeat",
 ]
