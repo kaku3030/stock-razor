@@ -269,3 +269,38 @@ def test_invalid_arguments_fail_closed_without_reading_provider(tmp_path):
         result["radar_admission"] == "BLOCKED" and result["live_trade"] is False
         for result in (bad_symbol, bad_timeframe, bad_limit)
     )
+
+
+def test_livefeed_health_exposes_safe_provider_callback_latency(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["adapter_diagnostics"] = {
+        "provider_callback_latency_ms_last": 4.25,
+        "provider_callback_latency_sample_count": 17,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+
+    assert result["status"] == "HEALTHY"
+    assert result["provider_callback_latency_ms"] == 4.25
+    assert result["provider_callback_latency_sample_count"] == 17
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_livefeed_health_rejects_malformed_provider_callback_latency(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["adapter_diagnostics"] = {
+        "provider_callback_latency_ms_last": -1,
+        "provider_callback_latency_sample_count": 1,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+
+    assert result["status"] == "INVALID"
+    assert result["error"] == "INVALID_PROVIDER_CALLBACK_LATENCY"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
