@@ -21,6 +21,13 @@ SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
 DEFAULT_SYMBOLS = ("159611.SZ", "518880.SH", "512730.SH")
 MAX_SYMBOLS = 5
+PREMIUM_AUTH_METHOD = "AWS_IAM_ROLE_WITH_SECRET_REFERENCE"
+PREMIUM_ALLOWED_INTERFACES = (
+    "quotes",
+    "klines",
+    "depth",
+    "websocket_quotes",
+)
 
 
 def validate_symbols(values: list[str]) -> tuple[str, ...]:
@@ -52,6 +59,65 @@ def _row_count(value: Any) -> int | None:
         # assumed to represent a specific count or data-qualification status.
         return None
     return None
+
+
+def evaluate_premium_execution_gate(
+    *,
+    auth_method: str,
+    requested_interfaces: tuple[str, ...],
+    credential_reference_available: bool | None,
+    iam_read_permission: str,
+    provider_entitlement: str,
+    provider_region_authorized: str,
+    concurrent_use_authorized: str,
+    websocket_authorized: str,
+    rate_limit_authorized: str,
+    data_qualification: str,
+) -> dict[str, Any]:
+    """Evaluate the Premium contract without reading a credential or calling SDK."""
+    if auth_method != PREMIUM_AUTH_METHOD:
+        raise ValueError("unsupported Premium authentication method")
+    requested = tuple(dict.fromkeys(requested_interfaces))
+    if not requested or any(item not in PREMIUM_ALLOWED_INTERFACES for item in requested):
+        raise ValueError("Premium interface is not allowed")
+
+    gates = {
+        "credential_reference": (
+            "PASS" if credential_reference_available is True
+            else "FAIL" if credential_reference_available is False
+            else "UNKNOWN"
+        ),
+        "iam_read_permission": iam_read_permission,
+        "provider_entitlement": provider_entitlement,
+        "provider_region_authorized": provider_region_authorized,
+        "concurrent_use_authorized": concurrent_use_authorized,
+        "websocket_authorized": websocket_authorized,
+        "rate_limit_authorized": rate_limit_authorized,
+        "data_qualification": data_qualification,
+    }
+    if any(value not in {"PASS", "FAIL", "UNKNOWN"} for value in gates.values()):
+        raise ValueError("Premium gate values must be PASS, FAIL, or UNKNOWN")
+
+    blocked_reasons = [
+        f"{name.upper()}_{value}"
+        for name, value in gates.items()
+        if value != "PASS"
+    ]
+    return {
+        "schema": "stock_razor_tickflow_aws_premium_contract_v0_1",
+        "auth_method": auth_method,
+        "requested_interfaces": list(requested),
+        "allowed_interfaces": list(PREMIUM_ALLOWED_INTERFACES),
+        "gates": gates,
+        "premium_execution": "ALLOWED" if not blocked_reasons else "BLOCKED",
+        "blocked_reasons": blocked_reasons,
+        "execution_scope": "READ_ONLY_PROBE_ONLY",
+        "network_execution": False,
+        "canonical_write": False,
+        "source_arbiter_admission": "BLOCKED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    }
 
 
 @contextmanager
@@ -145,7 +211,7 @@ def build_probe(
     location: str = "LOCAL_ISOLATE",
 ) -> dict:
     """Requires explicit mode premium; never reads or returns the actual key."""
-    if mode not in {"metadata", "free", "premium"}:
+    if mode not in {"metadata", "free", "premium", "premium-contract"}:
         raise ValueError("unsupported probe mode")
     if ws_seconds and mode != "premium":
         raise ValueError("WebSocket probe requires explicit premium mode")
@@ -178,6 +244,29 @@ def build_probe(
         "canonical_write": False,
         "order_execution": False,
     }
+    if mode == "premium-contract":
+        contract = evaluate_premium_execution_gate(
+            auth_method=PREMIUM_AUTH_METHOD,
+            requested_interfaces=PREMIUM_ALLOWED_INTERFACES,
+            credential_reference_available=False,
+            iam_read_permission="UNKNOWN",
+            provider_entitlement="UNKNOWN",
+            provider_region_authorized="UNKNOWN",
+            concurrent_use_authorized="UNKNOWN",
+            websocket_authorized="UNKNOWN",
+            rate_limit_authorized="UNKNOWN",
+            data_qualification="UNKNOWN",
+        )
+        result.update({
+            "premium_contract": contract,
+            "premium_execution": contract["premium_execution"],
+        })
+        result["operations"].append({
+            "name": "premium_execution_gate",
+            "operation": "BLOCKED",
+            "reason_codes": contract["blocked_reasons"],
+        })
+        return result
     is_official_sdk = client_factory is None
     if client_factory is None:
         try:
@@ -253,14 +342,20 @@ def build_probe(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("metadata", "free", "premium"), default="metadata")
+    parser.add_argument(
+        "--mode", choices=("metadata", "free", "premium", "premium-contract"),
+        default="metadata",
+    )
     parser.add_argument("--symbols", nargs="+", default=list(DEFAULT_SYMBOLS))
     parser.add_argument("--ws-seconds", type=float, default=0)
     parser.add_argument("--location", choices=("LOCAL_ISOLATE", "AWS_TOKYO_SSM_ISOLATE"), default="LOCAL_ISOLATE")
     args = parser.parse_args()
     try:
         symbols = validate_symbols(args.symbols)
-        version = importlib.metadata.version("tickflow")
+        version = (
+            None if args.mode == "premium-contract"
+            else importlib.metadata.version("tickflow")
+        )
         result = build_probe(mode=args.mode, symbols=symbols,
                              ws_seconds=args.ws_seconds,
                              sdk_version=version, location=args.location)

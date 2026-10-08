@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Read-only isolated cloud probe (no premium entitlement)"
+        description: "Read-only isolated cloud probe or Premium contract check"
         required: true
         type: choice
         default: metadata
         options:
           - metadata
           - free
+          - premium-contract
 
 permissions:
   id-token: write
@@ -53,7 +54,7 @@ jobs:
           PROBE_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          [[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free ]]
+          [[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free || "$PROBE_MODE" == premium-contract ]]
           script_sha="$(git rev-parse HEAD)"
           [[ "$script_sha" =~ ^[0-9a-f]{40}$ ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_cloud_isolated_smoke.sh | cut -d' ' -f1)"
@@ -99,12 +100,16 @@ jobs:
           data=json.load(sys.stdin)
           assert data.get("schema") == "stock_razor_tickflow_isolated_probe_v0_1"
           assert data.get("location") == "AWS_TOKYO_SSM_ISOLATE"
-          assert data.get("mode") in ("metadata","free")
+          assert data.get("mode") in ("metadata","free","premium-contract")
           assert data.get("data_qualification") == "NOT_VERIFIED"
           assert data.get("source_arbiter_admission") == "BLOCKED"
           assert data.get("radar_admission") == "BLOCKED"
           assert data.get("live_trade") is False
           assert data.get("can_confirm_signal") is False
+          if data.get("mode") == "premium-contract":
+              assert data.get("premium_execution") == "BLOCKED"
+              assert data.get("premium_contract", {}).get("network_execution") is False
+              assert data.get("premium_contract", {}).get("blocked_reasons")
           print(json.dumps(data,sort_keys=True))
           '
                 echo 'CLOUD_TICKFLOW_PREMIUM_ENTITLEMENT=NOT_VERIFIED'

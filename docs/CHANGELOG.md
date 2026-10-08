@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] AWS TickFlow 隔离探针新增 `premium-contract` fail-closed 合约检查；仅审计凭据引用、IAM、供应商授权、区域/并发、WebSocket、额度和数据资格门禁，不读取 secrets、不发起 Premium 请求，并保持 Radar/交易阻断。
+
 - [修复] AWS Source Arbiter Shadow 审计允许已存在的 READ_SURFACE_NOT_FRESH_UNQUALIFIED 诊断标签，防止 US Radar expected-source 重新绑定后将正常 fail-closed 状态误报为云端执行失败。
 
 - [诊断] US AWS Shadow 只读比对 LiveFeed、Canonical、Radar expected-source 的 commit/runtime 身份，区分生产源不一致与 Radar 旧版本 pin；仅输出布尔值并保持所有准入阻断。
