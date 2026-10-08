@@ -1080,12 +1080,6 @@ def build_negative_provider_probe_observation(
         raise ProviderRuntimeIngestError(
             "negative provider probe field names must be strings"
         )
-    unknown_keys = sorted(set(payload) - _NEGATIVE_PROBE_ALLOWED_KEYS)
-    if unknown_keys:
-        raise ProviderRuntimeIngestError(
-            "negative provider probe contains unsupported field(s): "
-            + ", ".join(unknown_keys)
-        )
 
     forbidden_present = sorted(
         key for key in _FORBIDDEN_NEGATIVE_PROBE_KEYS if key in payload
@@ -1094,6 +1088,13 @@ def build_negative_provider_probe_observation(
         raise ProviderRuntimeIngestError(
             "negative provider probe contains forbidden raw/sensitive field(s): "
             + ", ".join(forbidden_present)
+        )
+
+    unknown_keys = sorted(set(payload) - _NEGATIVE_PROBE_ALLOWED_KEYS)
+    if unknown_keys:
+        raise ProviderRuntimeIngestError(
+            "negative provider probe contains unsupported field(s): "
+            + ", ".join(unknown_keys)
         )
 
     if payload.get("research_only") is not True:
