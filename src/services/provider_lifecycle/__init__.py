@@ -7,6 +7,11 @@ from .alert_engine import (
     ProviderAlertTransitionState,
     StaleProviderAlertEvidenceError,
 )
+from .notification_gateway import (
+    NotificationDispatcher,
+    ProviderNotificationDispatch,
+    ProviderNotificationGateway,
+)
 from .contract import (
     CostAction,
     CostGuardDecision,
@@ -64,6 +69,9 @@ __all__ = [
     "ProviderAlertEvaluation",
     "ProviderAlertTransition",
     "ProviderAlertTransitionState",
+    "NotificationDispatcher",
+    "ProviderNotificationDispatch",
+    "ProviderNotificationGateway",
     "ProviderDefinition",
     "ProviderGuardAssessment",
     "ProviderHealthState",
