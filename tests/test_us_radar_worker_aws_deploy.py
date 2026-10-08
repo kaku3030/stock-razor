@@ -199,6 +199,24 @@ def test_us_radar_worker_emits_truthful_runtime_latency_telemetry():
     assert '"emitted_at_utc": completed_at.isoformat()' in INSTALLER
 
 
+def test_us_radar_worker_exposes_real_per_phase_compute_timings_without_e2e_claims():
+    """Worker cycle timing does not masquerade as unique provider-event E2E latency."""
+    assert "class TimedTechnicalStateService(StockRadarTechnicalStateService)" in INSTALLER
+    assert "technical_state_service=timed_technical" in INSTALLER
+    assert "timed_technical.symbol_compute_ms.clear()" in INSTALLER
+    assert '"daily_history_load_ms": daily_load_ms' in INSTALLER
+    assert '"options_context_load_ms": options_load_ms' in INSTALLER
+    assert '"canonical_poll_and_analysis_ms": poll_elapsed_ms' in INSTALLER
+    assert '"symbol_compute_ms": dict(timed_technical.symbol_compute_ms)' in INSTALLER
+    assert '"pre_publish_total_ms": round(' in INSTALLER
+    assert '"market_event_sample_count": 0' in INSTALLER
+    assert '"end_to_end_distribution": "NOT_VERIFIED"' in INSTALLER
+    assert '"research_only": True' in INSTALLER
+    assert '"can_confirm_signal": False' in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
+
+
 def test_us_radar_worker_uses_subsecond_pickup_poll_without_changing_admission():
     assert 'os.environ.get("STOCK_RAZOR_US_RADAR_POLL_SECONDS", "0.25")' in INSTALLER
     assert 'poll_seconds = max(0.1,' in INSTALLER
