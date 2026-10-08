@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from datetime import datetime, timezone
 import json
 import os
@@ -165,6 +167,7 @@ def read_us_radar_analysis(
             and (
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))
+                or not isfinite(value)
                 or value < 0
             )
         ):
