@@ -160,6 +160,61 @@ def benchmark_cn(symbols: list[str], timeframe: str, iterations: int) -> list[Fa
     return samples
 
 
+def _allow_status(value: object, allowed: frozenset[str]) -> str:
+    return value if isinstance(value, str) and value in allowed else "UNKNOWN"
+
+
+def cn_symbol_read_diagnostics(symbols: list[str], timeframe: str) -> dict:
+    """One bounded read per symbol; never output raw bars/errors/credentials.
+
+    This is a read-surface status check, not source qualification, provider
+    network measurement, continuity proof or Radar admission.
+    """
+    statuses = frozenset({"PASS", "STALE", "NO_DATA", "INVALID", "UNKNOWN", "BLOCKED"})
+    providers = frozenset({"eastmoney", "tencent"})
+    semantics = frozenset({"BAR_END", "BAR_START", "DAILY_DATE", "UNKNOWN"})
+    currentness = frozenset({"PROVEN", "UNPROVEN", "STALE", "UNKNOWN"})
+    result = {}
+    for symbol in dict.fromkeys(symbols):
+        row = read_cn_market_data(symbol, timeframe=timeframe, limit=1)
+        source_count = row.get("total_row_count")
+        result[symbol] = {
+            "read_status": _allow_status(row.get("status"), statuses),
+            "provider_used": _allow_status(row.get("provider_used"), providers),
+            "fallback_from": _allow_status(row.get("fallback_from"), providers),
+            "timestamp_semantic": _allow_status(row.get("timestamp_semantic"), semantics),
+            "symbol_timestamp_semantics_proven": (
+                row.get("symbol_intraday_timestamp_semantics_proven") is True
+            ),
+            "currentness": _allow_status(row.get("currentness"), currentness),
+            "symbol_currentness_proven": (
+                row.get("symbol_intraday_currentness_proven") is True
+            ),
+            "source_age_seconds": (
+                _number(row, "source_age_seconds")
+            ),
+            "observed_row_count": (
+                source_count
+                if isinstance(source_count, int)
+                and not isinstance(source_count, bool)
+                and source_count >= 0
+                else None
+            ),
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+            "can_confirm_signal": False,
+        }
+    return {
+        "scope": "CN_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION",
+        "timeframe": timeframe,
+        "requested_symbols": len(result),
+        "symbols": result,
+        "data_qualification": "NOT_VERIFIED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--market", choices=("us", "cn"), required=True)
@@ -175,8 +230,14 @@ def main() -> int:
     else:
         samples = benchmark_cn(args.symbols, args.timeframe, args.iterations)
 
+    source_diagnostics = (
+        cn_symbol_read_diagnostics(args.symbols, args.timeframe)
+        if args.market == "cn"
+        else None
+    )
     print(json.dumps({
         "schema": "stock_razor_cloud_fast_path_benchmark_v1",
+        "cn_symbol_read_diagnostics": source_diagnostics,
         "measurement_boundary": "RUNTIME_TELEMETRY_PLUS_READ_SURFACES",
         "missing_layers_are_not_inferred": True,
         "summary": summarize_fast_path(samples),
