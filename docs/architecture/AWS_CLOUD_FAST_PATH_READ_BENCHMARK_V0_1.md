@@ -67,3 +67,13 @@ values, raw errors, account data or credentials enter GitHub logs.
 `radar_admission=BLOCKED`, and `can_confirm_signal=false` continue to
 apply even if all component statuses are HEALTHY. A US market-session
 qualification with advancing 1m/5m/15m/1h source data is a separate step.
+
+### US symbol namespace
+
+The canonical US market reader returns cache keys with `US.` prefixes
+(e.g. `US.AMD`), even when the benchmark requests bare tickers
+(`AMD`). Coverage lookups MUST normalize requested tickers to this
+namespace before counting presence. An unnormalized lookup previously
+misreported present source symbols as absent; this error does not itself
+establish a provider failure or missing bar. Remaining source staleness,
+bar-closure and Radar admission checks remain independent.
