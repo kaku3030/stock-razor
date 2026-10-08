@@ -527,6 +527,7 @@ try:
           },
           "adapter_diagnostics":adapter.diagnostics(),
           "delivery_mode":delivery_mode_state,"bar_closure":bar_closure_state,
+          "research_only":True,"can_confirm_signal":False,
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
         if data_event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
