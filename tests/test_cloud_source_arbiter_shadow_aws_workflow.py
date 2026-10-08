@@ -71,3 +71,41 @@ def test_aws_shadow_binds_read_only_radar_cache_and_rejects_poll_as_increment():
     assert 'progress.get("us",{}).get("radar_increment_proven") is False' in WORKFLOW
     assert '"radar_canonical_alignment"' in WORKFLOW
     assert "CLOUD_SOURCE_ARBITER_PRODUCTION_ADMISSION=BLOCKED" in WORKFLOW
+
+
+
+def test_aws_shadow_alignment_allowlist_includes_stale_after_radar_rebind():
+    # Rebinding the read-only Radar worker to the actual Cloud LiveFeed source
+    # removes SHA mismatch, exposing an already-existing canonical-stale
+    # diagnostic class. The AWS policy must accept that class as unqualified.
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+
+    sha = "a" * 40
+    sample = _sample_progress_evidence(
+        us_health={
+            "status": "HEALTHY", "market_state_us": "PRE_MARKET_BEGIN",
+            "repo_sha": sha, "runtime_instance_id": "live",
+            "canonical_export_status": "PASS", "sequence": 1,
+            "event_count": 0, "accepted_event_count": 0,
+        },
+        us_snapshot={
+            "status": "STALE", "repo_sha": sha,
+            "runtime_instance_id": "live", "sequence": 10,
+            "source_age_seconds": 18000,
+        },
+        us_radar={
+            "status": "PASS", "runtime_instance_id": "research",
+            "expected_source_repo_sha": sha, "sequence": 14,
+            "source_sequence": 10, "poll_status": "BLOCKED",
+        },
+        cn_reads={},
+    )
+    out = observe_source_progress(sample, sample, interval_seconds=12)
+    label = out["us"]["radar_canonical_alignment"]
+    assert label == "READ_SURFACE_NOT_FRESH_UNQUALIFIED"
+    assert label in WORKFLOW
+    assert out["us"]["source_identity_classification"] == "IDENTITIES_MATCH_UNQUALIFIED"
+    assert out["radar_admission"] == "BLOCKED"
+    assert out["unique_provider_event_delivery_qualified"] is False

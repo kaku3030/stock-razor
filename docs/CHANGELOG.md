@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS Source Arbiter Shadow 审计允许已存在的 READ_SURFACE_NOT_FRESH_UNQUALIFIED 诊断标签，防止 US Radar expected-source 重新绑定后将正常 fail-closed 状态误报为云端执行失败。
+
 - [诊断] US AWS Shadow 只读比对 LiveFeed、Canonical、Radar expected-source 的 commit/runtime 身份，区分生产源不一致与 Radar 旧版本 pin；仅输出布尔值并保持所有准入阻断。
 
 - [修复] Cloud Fast Path 缓存重复读取不再将同一笔 Provider/Radar 历史耗时伪装为 30 次独立事件的 P50/P95/P99，同时补充 Futu 实际市场时段识别与一次性缓存遥测标注。
