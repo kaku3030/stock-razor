@@ -182,7 +182,7 @@ def test_closed_market_no_event_change_is_not_false_outage():
     assert result["us"]["event_progress_classification"] == "CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE"
     assert result["us"]["canonical_snapshot_sequence"] == "UNCHANGED"
     assert result["cn"]["518880"]["observer_poll_sequence"] == "UNCHANGED"
-    assert result["source_progress_qualified"] is not True if "source_progress_qualified" in result else True
+    assert result["unique_provider_event_delivery_qualified"] is False
 
 
 def test_counter_reset_and_missing_are_never_positive_feed_progress():
