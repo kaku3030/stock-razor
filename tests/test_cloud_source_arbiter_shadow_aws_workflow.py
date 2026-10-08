@@ -55,3 +55,11 @@ def test_ssm_parser_handles_sorted_json_any_first_key():
     assert "grep -E '^[{]' | tail -n1" in WORKFLOW
     assert "CLOUD_SOURCE_ARBITER_AUDIT_EXECUTED=YES" in WORKFLOW
     assert "CLOUD_SOURCE_ARBITER_AUDIT_FAILED" in WORKFLOW
+
+
+def test_cloud_shadow_requires_two_sample_progress_and_never_claims_feed_slo():
+    assert '"source_progress"' in WORKFLOW
+    assert '"TWO_SEPARATE_AWS_CACHE_READS_NOT_PROVIDER_SLO"' in WORKFLOW
+    assert '"unique_provider_event_delivery_qualified") is False' in WORKFLOW
+    assert '"cloud_off_pc_independence") == "NOT_VERIFIED"' in WORKFLOW
+    assert 'set(progress.get("cn",{})) == {"159611","518880"}' in WORKFLOW
