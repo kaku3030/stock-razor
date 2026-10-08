@@ -187,3 +187,33 @@ def test_provider_exceptions_are_class_only_not_secret_bodies():
     assert result["failure_class"] == "RuntimeError"
     assert "SHOULD_NOT_PRINT" not in json.dumps(result)
     assert result["operation"] == "FAILED"
+
+
+def test_sdk_chinese_console_notice_is_suppressed_and_no_payload_printed(capsys):
+    class NoisyFreeClient(FakeClient):
+        @classmethod
+        def free(cls):
+            print("免费数据提示：KEY_DO_NOT_LEAK")
+            return cls()
+
+    result = probe.build_probe(
+        mode="free", symbols=("159611.SZ",),
+        client_factory=NoisyFreeClient, credential_present=False,
+    )
+    assert result["operations"][-1]["operation"] == "COMPLETED"
+    assert capsys.readouterr().out == ""
+    assert "KEY_DO_NOT_LEAK" not in json.dumps(result)
+
+
+def test_operation_stdout_stderr_are_suppressed_even_on_failure(capsys):
+    import sys
+    def bad_provider():
+        print("KEY_DO_NOT_LEAK")
+        print("SECRET_FAILURE_BODY", file=sys.stderr)
+        raise RuntimeError("DO_NOT_PRINT_ERROR_BODY")
+    result = probe._operation("provider", bad_provider)
+    assert result["failure_class"] == "RuntimeError"
+    captured=capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert "DO_NOT_PRINT_ERROR_BODY" not in json.dumps(result)
