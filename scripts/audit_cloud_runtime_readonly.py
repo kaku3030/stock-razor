@@ -117,6 +117,7 @@ def component_snapshot(
         "radar_analysis_latency_ms": None,
         "data_to_radar_latency_ms": None,
         "research_only": None,
+        "safety_evidence": "UNKNOWN",
     }
     payload = read_json(path)
     if payload is None:
@@ -126,16 +127,26 @@ def component_snapshot(
         result["operational_state"] = "SCHEMA_MISMATCH"
         return result
 
-    # Fail closed on any absent or unsafe governance field.
+    # A collector heartbeat may predate research_only/can_confirm_signal
+    # fields. Report those as INCOMPLETE, never assume they are true/false.
     if not (
         payload.get("radar_admission") == "BLOCKED"
         and payload.get("live_trade") is False
-        and payload.get("can_confirm_signal") is False
-        and payload.get("research_only") is True
+        and payload.get("can_confirm_signal") is not True
+        and payload.get("research_only") is not False
     ):
         result["operational_state"] = "SAFETY_CONTRACT_INVALID"
+        result["safety_evidence"] = "INVALID"
         return result
-    result["research_only"] = True
+    result["research_only"] = (
+        True if payload.get("research_only") is True else None
+    )
+    result["safety_evidence"] = (
+        "COMPLETE"
+        if payload.get("research_only") is True
+        and payload.get("can_confirm_signal") is False
+        else "INCOMPLETE"
+    )
     observed = _parse_time(payload.get("emitted_at_utc"))
     if observed is None:
         result["operational_state"] = "TIMESTAMP_INVALID"
@@ -227,6 +238,9 @@ def audit_twice(
         "all_components_current": all(
             x["operational_state"] == "HEARTBEAT_CURRENT"
             for x in second.values()
+        ),
+        "all_safety_evidence_complete": all(
+            x["safety_evidence"] == "COMPLETE" for x in second.values()
         ),
         # Neither SSM nor sustained heartbeat progression proves off-PC
         # independence, currentness, data quality, or admission.
