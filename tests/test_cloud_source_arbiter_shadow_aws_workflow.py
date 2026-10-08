@@ -63,3 +63,11 @@ def test_cloud_shadow_requires_two_sample_progress_and_never_claims_feed_slo():
     assert '"unique_provider_event_delivery_qualified") is False' in WORKFLOW
     assert '"cloud_off_pc_independence") == "NOT_VERIFIED"' in WORKFLOW
     assert 'set(progress.get("cn",{})) == {"159611","518880"}' in WORKFLOW
+
+
+
+def test_aws_shadow_binds_read_only_radar_cache_and_rejects_poll_as_increment():
+    assert "STOCK_RAZOR_US_RADAR_STATUS_PATH=" in WORKFLOW
+    assert 'progress.get("us",{}).get("radar_increment_proven") is False' in WORKFLOW
+    assert '"radar_canonical_alignment"' in WORKFLOW
+    assert "CLOUD_SOURCE_ARBITER_PRODUCTION_ADMISSION=BLOCKED" in WORKFLOW

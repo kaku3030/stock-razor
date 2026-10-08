@@ -206,10 +206,34 @@ def _increment(previous: object, current: object) -> str:
     return "ADVANCED" if b > a else "UNCHANGED"
 
 
+def _runtime_continuity(before: object, after: object) -> str:
+    if not all(isinstance(v, str) and v.strip() for v in (before, after)):
+        return "UNKNOWN"
+    return "UNCHANGED" if before == after else "CHANGED"
+
+
+def _scoped_increment(before: object, after: object, continuity: str) -> str:
+    return "RUNTIME_CHANGED_UNQUALIFIED" if continuity == "CHANGED" else _increment(before, after)
+
+
 def _sample_progress_evidence(
     *,
     us_health: dict, us_snapshot: dict, cn_reads: dict,
+    us_radar: dict | None = None,
 ) -> dict:
+    # Read-only worker evidence: poll progress is not Radar incremental compute.
+    radar = us_radar if isinstance(us_radar, dict) else {}
+    worker_expected_sha = radar.get("expected_source_repo_sha")
+    canonical_sha = us_snapshot.get("repo_sha")
+    valid_sha = lambda value: (
+        isinstance(value, str) and len(value) == 40
+        and all(c in "0123456789abcdef" for c in value)
+    )
+    sha_binding = (
+        worker_expected_sha == canonical_sha
+        if valid_sha(worker_expected_sha) and valid_sha(canonical_sha)
+        else None
+    )
     # Use the existing OpenD session mapping; generic OPEN/PRE_MARKET enums
     # are not the provider's states and must never manufacture a session.
     raw_market_state = us_health.get("market_state_us")
@@ -223,6 +247,9 @@ def _sample_progress_evidence(
             "health_status": _safe_status(us_health.get("status")),
             "market_state": market_state if market_session != "unknown" else "UNKNOWN",
             "market_session": market_session,
+            "heartbeat_runtime_id": us_health.get("runtime_instance_id"),
+            "canonical_runtime_id": us_snapshot.get("runtime_instance_id"),
+            "radar_runtime_id": radar.get("runtime_instance_id"),
             "heartbeat_sequence": _count(us_health.get("sequence")),
             "received_events": _count(us_health.get("event_count")),
             "accepted_events": _count(us_health.get("accepted_event_count")),
@@ -231,6 +258,16 @@ def _sample_progress_evidence(
             "canonical_snapshot_status": _safe_status(us_snapshot.get("status")),
             "canonical_snapshot_age_seconds": _finite_number(
                 us_snapshot.get("source_age_seconds")
+            ),
+            "radar_read_status": _safe_status(radar.get("status")),
+            "radar_poll_status": _safe_status(radar.get("poll_status")),
+            "radar_worker_sequence": _count(radar.get("sequence")),
+            "radar_source_sequence": _count(radar.get("source_sequence")),
+            "radar_source_repo_matches_canonical": sha_binding,
+            "radar_analysis_performed": (
+                radar.get("radar_analysis_performed")
+                if isinstance(radar.get("radar_analysis_performed"), bool)
+                else None
             ),
         },
         "cn": {
@@ -257,22 +294,38 @@ def observe_source_progress(before: dict, after: dict, *, interval_seconds: floa
     if not isinstance(interval_seconds, (int, float)) or isinstance(interval_seconds, bool) or not 0 < interval_seconds <= 30:
         raise ValueError("interval must be (0,30] seconds")
     first, last = before.get("us", {}), after.get("us", {})
+    livefeed_identity = _runtime_continuity(
+        first.get("heartbeat_runtime_id"), last.get("heartbeat_runtime_id"),
+    )
+    canonical_identity = _runtime_continuity(
+        first.get("canonical_runtime_id"), last.get("canonical_runtime_id"),
+    )
+    radar_identity = _runtime_continuity(
+        first.get("radar_runtime_id"), last.get("radar_runtime_id"),
+    )
     us = {
+        "livefeed_runtime_continuity": livefeed_identity,
+        "canonical_runtime_continuity": canonical_identity,
+        "radar_runtime_continuity": radar_identity,
         "market_state": last.get("market_state", "UNKNOWN"),
         "market_session": last.get("market_session", "unknown"),
         "health": last.get("health_status", "UNKNOWN"),
-        "heartbeat_sequence": _increment(first.get("heartbeat_sequence"), last.get("heartbeat_sequence")),
-        "received_event_counter": _increment(first.get("received_events"), last.get("received_events")),
-        "accepted_event_counter": _increment(first.get("accepted_events"), last.get("accepted_events")),
-        "canonical_snapshot_sequence": _increment(first.get("canonical_sequence"), last.get("canonical_sequence")),
+        "heartbeat_sequence": _scoped_increment(first.get("heartbeat_sequence"), last.get("heartbeat_sequence"), livefeed_identity),
+        "received_event_counter": _scoped_increment(first.get("received_events"), last.get("received_events"), livefeed_identity),
+        "accepted_event_counter": _scoped_increment(first.get("accepted_events"), last.get("accepted_events"), livefeed_identity),
+        "canonical_snapshot_sequence": _scoped_increment(first.get("canonical_sequence"), last.get("canonical_sequence"), canonical_identity),
         "canonical_export_status": last.get("canonical_export_status", "UNKNOWN"),
         "canonical_snapshot_status": last.get("canonical_snapshot_status", "UNKNOWN"),
         "canonical_snapshot_age_seconds": last.get("canonical_snapshot_age_seconds"),
     }
-    if us["accepted_event_counter"] == "ADVANCED":
+    if us["accepted_event_counter"] == "RUNTIME_CHANGED_UNQUALIFIED":
+        status = "RUNTIME_CHANGED_PROGRESS_UNQUALIFIED"
+    elif us["accepted_event_counter"] == "ADVANCED":
         status = "ACCEPTED_COUNTER_ADVANCED_UNQUALIFIED"
     elif us["accepted_event_counter"] == "COUNTER_RESET_OR_REORDERED":
         status = "COUNTER_RESET_OR_REORDERED"
+    elif first.get("market_session") != last.get("market_session"):
+        status = "SESSION_TRANSITION_UNQUALIFIED"
     elif us["accepted_event_counter"] == "UNCHANGED" and us["market_session"] == "closed":
         status = "CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE"
     elif us["accepted_event_counter"] == "UNCHANGED" and us["market_session"] in {
@@ -297,6 +350,49 @@ def observe_source_progress(before: dict, after: dict, *, interval_seconds: floa
     else:
         chain = "CANONICAL_PROGRESSION_NOT_VERIFIED"
     us["canonical_chain_classification"] = chain
+
+    us["radar_worker_poll_sequence"] = _scoped_increment(
+        first.get("radar_worker_sequence"), last.get("radar_worker_sequence"),
+        radar_identity,
+    )
+    us["radar_source_sequence_progress"] = _scoped_increment(
+        first.get("radar_source_sequence"), last.get("radar_source_sequence"),
+        canonical_identity,
+    )
+    us["radar_read_status"] = last.get("radar_read_status", "UNKNOWN")
+    us["radar_poll_status"] = last.get("radar_poll_status", "UNKNOWN")
+    us["radar_analysis_performed"] = last.get("radar_analysis_performed")
+    canonical_seq = _count(last.get("canonical_sequence"))
+    radar_source_seq = _count(last.get("radar_source_sequence"))
+    sha_match = last.get("radar_source_repo_matches_canonical")
+    if sha_match is False:
+        alignment = "SOURCE_REPO_MISMATCH_UNQUALIFIED"
+    elif (last.get("radar_read_status") != "PASS"
+          or last.get("canonical_snapshot_status") != "PASS"):
+        alignment = "READ_SURFACE_NOT_FRESH_UNQUALIFIED"
+    elif sha_match is not True or canonical_seq is None or radar_source_seq is None:
+        alignment = "UNKNOWN"
+    elif radar_source_seq == canonical_seq:
+        alignment = "SEQUENCE_EQUAL_UNQUALIFIED"
+    elif radar_source_seq < canonical_seq:
+        alignment = "RADAR_BEHIND_CANONICAL_UNQUALIFIED"
+    else:
+        alignment = "RADAR_AHEAD_OR_RESTART_UNQUALIFIED"
+    us["radar_canonical_alignment"] = alignment
+    # A worker can poll/recompute the same cache repeatedly. Neither its
+    # heartbeat nor repeated success is proof of unique-event incremental Radar.
+    if (sha_match is True and canonical_identity == "UNCHANGED"
+            and radar_identity == "UNCHANGED"
+            and first.get("radar_source_repo_matches_canonical") is True
+            and us["radar_source_sequence_progress"] == "ADVANCED"):
+        radar_progress = "SOURCE_SEQUENCE_ADVANCED_UNQUALIFIED"
+    elif (us["radar_worker_poll_sequence"] == "ADVANCED"
+          and us["radar_source_sequence_progress"] == "UNCHANGED"):
+        radar_progress = "WORKER_POLL_ONLY_NOT_INCREMENTAL"
+    else:
+        radar_progress = "RADAR_INCREMENT_NOT_VERIFIED"
+    us["radar_increment_classification"] = radar_progress
+    us["radar_increment_proven"] = False
 
     cn = {}
     left, right = before.get("cn", {}), after.get("cn", {})
@@ -335,6 +431,7 @@ def main() -> int:
     from data_provider.us_canonical_runtime_reader import (
         read_us_livefeed_health, read_us_market_snapshots,
     )
+    from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--progress-interval-seconds", type=float, default=12.0)
@@ -348,6 +445,7 @@ def main() -> int:
             instant,
             read_us_livefeed_health(now_utc=instant),
             read_us_market_snapshots(US_SYMBOLS, now_utc=instant),
+            read_us_radar_analysis(US_SYMBOLS, now_utc=instant),
             {
                 symbol: read_cn_market_data(symbol, timeframe=CN_TIMEFRAME, limit=1, now_utc=instant)
                 for symbol in CN_SYMBOLS
@@ -355,14 +453,16 @@ def main() -> int:
         )
 
     try:
-        first_time, first_health, first_us, first_cn = read_observation()
+        first_time, first_health, first_us, first_radar, first_cn = read_observation()
         first = _sample_progress_evidence(
-            us_health=first_health, us_snapshot=first_us, cn_reads=first_cn,
+            us_health=first_health, us_snapshot=first_us,
+            us_radar=first_radar, cn_reads=first_cn,
         )
         time.sleep(args.progress_interval_seconds)
-        now, us_health, us_snapshot, cn_reads = read_observation()
+        now, us_health, us_snapshot, us_radar, cn_reads = read_observation()
         second = _sample_progress_evidence(
-            us_health=us_health, us_snapshot=us_snapshot, cn_reads=cn_reads,
+            us_health=us_health, us_snapshot=us_snapshot,
+            us_radar=us_radar, cn_reads=cn_reads,
         )
         report = audit_cloud_shadow(
             us_health=us_health,
