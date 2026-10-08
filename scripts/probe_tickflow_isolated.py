@@ -8,6 +8,7 @@ Use only official Python SDK. Do not print provider payloads or error messages.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from datetime import datetime, timezone
 import importlib.metadata
 import json
@@ -53,10 +54,19 @@ def _row_count(value: Any) -> int | None:
     return None
 
 
+@contextmanager
+def _hide_provider_output():
+    """Suppress SDK notices/logs (possibly non-ASCII or carrying data/key)."""
+    with open(os.devnull, "w", encoding="utf-8", errors="replace") as sink:
+        with redirect_stdout(sink), redirect_stderr(sink):
+            yield
+
+
 def _operation(name: str, call: Callable[[], Any]) -> dict:
     started = time.perf_counter()
     try:
-        result = call()
+        with _hide_provider_output():
+            result = call()
         return {
             "name": name,
             "operation": "COMPLETED",
@@ -100,15 +110,17 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
     state = "FAILED"
     reason = None
     try:
-        stream.subscribe("quotes", list(symbols))
-        stream.connect(block=False)
-        time.sleep(seconds)
+        with _hide_provider_output():
+            stream.subscribe("quotes", list(symbols))
+            stream.connect(block=False)
+            time.sleep(seconds)
         state = "OBSERVED" if counts["quote_events"] else "NO_EVENTS_OBSERVED"
     except Exception as exc:
         reason = type(exc).__name__
     finally:
         try:
-            stream.close()
+            with _hide_provider_output():
+                stream.close()
         except Exception:
             state = "CLOSE_FAILED"
     return {
@@ -163,9 +175,11 @@ def build_probe(
         "canonical_write": False,
         "order_execution": False,
     }
+    is_official_sdk = client_factory is None
     if client_factory is None:
         try:
-            from tickflow import TickFlow
+            with _hide_provider_output():
+                from tickflow import TickFlow
         except Exception as exc:
             # Includes Windows ZoneInfoNotFoundError when tzdata is absent.
             # Never dump arbitrary SDK or package-manager exception bodies.
@@ -187,10 +201,17 @@ def build_probe(
         return result
 
     try:
-        client = (
-            client_factory.free() if mode == "free"
-            else client_factory()  # SDK reads TICKFLOW_API_KEY from environment
-        )
+        with _hide_provider_output():
+            if mode == "free":
+                client = (
+                    client_factory.free(timeout=8.0, max_retries=0)
+                    if is_official_sdk else client_factory.free()
+                )
+            else:
+                client = (
+                    client_factory(timeout=8.0, max_retries=0)
+                    if is_official_sdk else client_factory()
+                )  # SDK reads TICKFLOW_API_KEY from environment
     except Exception as exc:
         result["operations"].append({
             "name": "client_initialize",
