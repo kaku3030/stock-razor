@@ -58,3 +58,30 @@ configuration or error messages are printed.
 Invariant: `canonical_writer_created=false`, `proposals_admitted=0`,
 `data_qualification=NOT_VERIFIED`, `radar_admission=BLOCKED`,
 `live_trade=false` and `can_confirm_signal=false`.
+
+## Two-sample unique-event progress witness (V0.2)
+
+The cloud audit now reads the existing source caches twice, with a 12-second
+sampling interval. It explicitly reports:
+
+- US: health heartbeat sequence, provider callback event count,
+  **accepted** event count, canonical snapshot sequence, and reported
+  session state. Advancing heartbeat sequence with unchanged accepted event
+  count is **not** interpreted as active market data.
+- US closed market: unchanged provider event count is classified as
+  `CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE`, not a provider outage.
+- CN: observer polling sequence vs 15m last-bar label progression. A cloud
+  observer heartbeat may advance repeatedly while the current/last complete
+  15m bar stays unchanged. That is **not** proof of lost ticks.
+- CN provider switching (Tencent/Eastmoney) and event counter reset are
+  called out separately. Provider raw bars and bar time labels are not
+  printed, only classified change states.
+
+No accepted-event delta or last-bar change becomes `source_progress_qualified`;
+independent exchange source event lineage, entitlement, completeness,
+reconnect, cross-source finality and cloud desktop-off witness are still
+required. This adds actual time-separated **AWS cache** observations, **not**
+end-to-end P50/P95/P99 or continuous subscription admission.
+
+The AWS SSM command timeout remains 120 seconds and GitHub workflow remains
+manual. No new daemons, paid endpoints or canonical writes.
