@@ -182,7 +182,7 @@ def audit_cloud_shadow(
 
 
 
-_BAR_TIME = re.compile(r"^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?$")
+_BAR_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$")
 
 
 def _bar_label(info: dict) -> str | None:
