@@ -18,13 +18,19 @@ Systems Manager. The workflow can be initiated from mobile or computer.
 - Source SHA is anchored to the workflow checkout of protected `main`.
   Bootstrap, probe source and requirements each have a SHA256 integrity check
   against the runner checkout before execution.
-- Supported modes **without official purchase**: `metadata` (no network
-  data request) or `free` (at most one historical 1d K-line request).
+- Supported modes **without Premium execution**: `metadata` (no network data
+  request), `free` (at most one historical 1d K-line request), or
+  `premium-contract` (contract evaluation only; no SDK client or data request).
 - Paid `premium` / WebSocket deliberately blocked in the AWS workflow until
   the user reports official purchase, secure AWS credential provisioning,
   provider IP/overseas/concurrency rights and rate-limit qualification.
 - Cannot access `TICKFLOW_API_KEY`; SSM script explicitly unsets potential
   key env and never reads SSM SecureString or Secrets Manager.
+- `premium-contract` requires the explicit authentication method,
+  credential-reference, IAM, provider entitlement/region, concurrency,
+  WebSocket, rate-limit and data-qualification gates. Any missing or unknown
+  gate remains `BLOCKED`; the contract never authorizes canonical writes,
+  Radar or trading.
 - No deployed systemd service, order, subscription, canonical update,
   provider failover/routing change, paid plan purchase or live trade.
 
@@ -36,7 +42,9 @@ Systems Manager. The workflow can be initiated from mobile or computer.
 3. AWS: optionally run `free` and record one historical daily REST query
    operation status. This is **not** a latency distribution and cannot prove
    minute/real-time entitlement.
-4. Credential/country rights checked separately before premium AWS probe.
+4. Run `premium-contract` to audit the fail-closed conditions before any
+   separate Premium probe is designed. Credential/country rights remain
+   external prerequisites.
 5. During A-share session, collect original feed timestamps, unique events,
    continuity and P50/P95/P99 at AWS Tokyo and desktop, plus cross-check
    Eastmoney/Tencent/TDX; only then prepare a qualified source candidate.
@@ -55,5 +63,7 @@ always prints `cloud_independence=NOT_VERIFIED`,
 
 Use an authorized secret store with minimum access, confirm TickFlow allows
 AWS Tokyo and concurrent desktop+cloud use, and only then add an isolated
-premium probe in a separate PR. Secret values must never be passed as workflow
-inputs, command-line arguments, repo files, CI output, logs or ChatGPT text.
+premium probe in a separate PR. This code-only PR does not select or read a
+secret store and does not enable Premium execution. Secret values must never
+be passed as workflow inputs, command-line arguments, repo files, CI output,
+logs or ChatGPT text.

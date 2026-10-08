@@ -24,8 +24,8 @@ def test_cloud_workflow_dispatch_restricts_modes_and_is_oidc_ssm_only():
     modes = dispatch["inputs"]["mode"]
     assert modes["type"] == "choice"
     assert modes["default"] == "metadata"
-    assert modes["options"] == ["metadata", "free"]
-    assert '[[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free ]]' in WORKFLOW
+    assert modes["options"] == ["metadata", "free", "premium-contract"]
+    assert '[[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free || "$PROBE_MODE" == premium-contract ]]' in WORKFLOW
 
 
 def test_cloud_workflow_uses_pinned_sha256_artifact_delivery():
@@ -88,6 +88,28 @@ def test_location_explicitly_marks_aws_and_never_promotes_entitlement():
             mode="metadata", symbols=("159611.SZ",),
             location="UNVERIFIED_CUSTOM_LOCATION", client_factory=NoInit
         )
+
+
+def test_premium_contract_mode_is_network_free_and_fail_closed():
+    from scripts.probe_tickflow_isolated import build_probe
+
+    class NoInit:
+        def __init__(self):
+            raise AssertionError("contract mode must not initialize SDK")
+
+    result = build_probe(
+        mode="premium-contract",
+        symbols=("159611.SZ",),
+        location="AWS_TOKYO_SSM_ISOLATE",
+        client_factory=NoInit,
+        credential_present=False,
+        sdk_version="0.1.25",
+    )
+    assert result["premium_execution"] == "BLOCKED"
+    assert result["premium_contract"]["network_execution"] is False
+    assert result["premium_contract"]["source_arbiter_admission"] == "BLOCKED"
+    assert result["premium_contract"]["radar_admission"] == "BLOCKED"
+    assert result["premium_contract"]["live_trade"] is False
 
 
 def test_aws_ssm_report_selects_sorted_json_regardless_first_key():

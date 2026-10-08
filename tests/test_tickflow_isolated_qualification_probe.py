@@ -132,6 +132,91 @@ def test_premium_missing_key_is_skipped_without_sdk_calls():
     assert r["real_market_slo"] == "NOT_VERIFIED"
 
 
+def test_premium_contract_missing_credential_and_unknown_gates_is_blocked():
+    class NoClient:
+        def __init__(self):
+            raise AssertionError("Premium contract must not instantiate SDK")
+
+    r = probe.build_probe(
+        mode="premium-contract", symbols=("159611.SZ",),
+        client_factory=NoClient, credential_present=False,
+    )
+    contract = r["premium_contract"]
+    assert r["operations"] == [{
+        "name": "premium_execution_gate",
+        "operation": "BLOCKED",
+        "reason_codes": [
+            "CREDENTIAL_REFERENCE_FAIL",
+            "IAM_READ_PERMISSION_UNKNOWN",
+            "PROVIDER_ENTITLEMENT_UNKNOWN",
+            "PROVIDER_REGION_AUTHORIZED_UNKNOWN",
+            "CONCURRENT_USE_AUTHORIZED_UNKNOWN",
+            "WEBSOCKET_AUTHORIZED_UNKNOWN",
+            "RATE_LIMIT_AUTHORIZED_UNKNOWN",
+            "DATA_QUALIFICATION_UNKNOWN",
+        ],
+    }]
+    assert contract["network_execution"] is False
+    assert contract["canonical_write"] is False
+    assert contract["radar_admission"] == "BLOCKED"
+    assert contract["live_trade"] is False
+
+
+def test_premium_contract_permission_denial_stays_blocked():
+    contract = probe.evaluate_premium_execution_gate(
+        auth_method=probe.PREMIUM_AUTH_METHOD,
+        requested_interfaces=("quotes",),
+        credential_reference_available=True,
+        iam_read_permission="FAIL",
+        provider_entitlement="PASS",
+        provider_region_authorized="PASS",
+        concurrent_use_authorized="PASS",
+        websocket_authorized="PASS",
+        rate_limit_authorized="PASS",
+        data_qualification="PASS",
+    )
+    assert contract["premium_execution"] == "BLOCKED"
+    assert contract["blocked_reasons"] == ["IAM_READ_PERMISSION_FAIL"]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"auth_method": "STATIC_API_KEY"},
+    {"requested_interfaces": ("orders",)},
+    {"data_qualification": "INVALID"},
+])
+def test_premium_contract_configuration_errors_fail_closed(kwargs):
+    defaults = {
+        "auth_method": probe.PREMIUM_AUTH_METHOD,
+        "requested_interfaces": ("quotes",),
+        "credential_reference_available": True,
+        "iam_read_permission": "PASS",
+        "provider_entitlement": "PASS",
+        "provider_region_authorized": "PASS",
+        "concurrent_use_authorized": "PASS",
+        "websocket_authorized": "PASS",
+        "rate_limit_authorized": "PASS",
+        "data_qualification": "PASS",
+    }
+    defaults.update(kwargs)
+    with pytest.raises(ValueError):
+        probe.evaluate_premium_execution_gate(**defaults)
+
+
+def test_cli_dependency_failure_exits_nonzero_without_leaking(monkeypatch, capsys):
+    import sys
+
+    def missing_package(_name):
+        raise probe.importlib.metadata.PackageNotFoundError("tickflow")
+
+    monkeypatch.setattr(probe.importlib.metadata, "version", missing_package)
+    monkeypatch.setattr(sys, "argv", ["probe", "--mode", "free"])
+    assert probe.main() == 2
+    output = capsys.readouterr().out
+    assert '"setup_state": "BLOCKED"' in output
+    assert "PackageNotFoundError" in output
+    assert "API_KEY" not in output
+
+
 def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
     r = probe.build_probe(
         mode="premium", symbols=("159611.SZ", "518880.SH"),

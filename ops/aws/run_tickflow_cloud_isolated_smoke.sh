@@ -16,7 +16,7 @@ requirements_hash="$4"
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'TICKFLOW_CLOUD_SETUP=INVALID_REVISION'; exit 2; }
 [[ "$probe_hash" =~ ^[0-9a-f]{64}$ ]] || { echo 'TICKFLOW_CLOUD_SETUP=INVALID_PROBE_HASH'; exit 2; }
 [[ "$requirements_hash" =~ ^[0-9a-f]{64}$ ]] || { echo 'TICKFLOW_CLOUD_SETUP=INVALID_REQUIREMENTS_HASH'; exit 2; }
-[[ "$mode" == "metadata" || "$mode" == "free" ]] || { echo 'TICKFLOW_CLOUD_SETUP=PREMIUM_REQUIRES_SEPARATE_ENTITLEMENT_GATE'; exit 2; }
+[[ "$mode" == "metadata" || "$mode" == "free" || "$mode" == "premium-contract" ]] || { echo 'TICKFLOW_CLOUD_SETUP=PREMIUM_REQUIRES_SEPARATE_ENTITLEMENT_GATE'; exit 2; }
 
 # AWS SSM process environment is not a source of paid-data authorization.
 # This smoke is *intentionally* unable to use a premium credential.
@@ -100,7 +100,7 @@ import json,sys
 data=json.load(sys.stdin)
 assert data.get("schema") == "stock_razor_tickflow_isolated_probe_v0_1"
 assert data.get("location") == "AWS_TOKYO_SSM_ISOLATE"
-assert data.get("mode") in ("metadata", "free")
+assert data.get("mode") in ("metadata", "free", "premium-contract")
 assert data.get("api_key_present") is False
 assert data.get("canonical_write") is False
 assert data.get("order_execution") is False
@@ -110,7 +110,13 @@ assert data.get("live_trade") is False
 assert data.get("can_confirm_signal") is False
 assert data.get("data_qualification") == "NOT_VERIFIED"
 ops=data.get("operations",[])
-assert ops and ops[0] == {"name":"sdk_import","operation":"COMPLETED"}
+if data.get("mode") == "premium-contract":
+  assert ops and ops[0]["name"] == "premium_execution_gate"
+  assert data.get("premium_execution") == "BLOCKED"
+  assert data.get("premium_contract", {}).get("network_execution") is False
+  assert data.get("premium_contract", {}).get("blocked_reasons")
+else:
+  assert ops and ops[0] == {"name":"sdk_import","operation":"COMPLETED"}
 print(json.dumps({
   "schema":data["schema"],
   "location":data["location"],
