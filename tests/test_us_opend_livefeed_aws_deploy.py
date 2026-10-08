@@ -424,3 +424,13 @@ def test_livefeed_verifier_requires_completed_daily_history_without_promotion():
     assert 'daily.get("repo_sha") == expected_sha' in VERIFY
     assert 'daily.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'daily.get("live_trade") is False' in VERIFY
+
+
+def test_heartbeat_exposes_explicit_research_only_and_no_signal_confirmation():
+    assert '"research_only":True,"can_confirm_signal":False' in INSTALLER
+    assert 'assert heartbeat.get("research_only") is True' in VERIFY
+    assert 'assert heartbeat.get("can_confirm_signal") is False' in VERIFY
+    assert 'assert heartbeat.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'assert heartbeat.get("live_trade") is False' in VERIFY
+    assert "OpenUSTradeContext" not in INSTALLER
+    assert "OpenSecTradeContext" not in INSTALLER
