@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - [修复] US OpenD persistent livefeed 通过现有 RuntimeBridge 记录 controller 接收事件，修复 heartbeat 的 event_count 与 last_push_utc 不更新问题；保持 UNKNOWN/BLOCKED/NO 保护边界。
+- [修复] Eastmoney 只读适配器的仅结束时间查询改用有界 history_n，避免空 StartTime 导致 Daily 数据查询失败。
 
 - [修复] 独立 RS Breakout 验证器改为下一交易日开盘执行决策日收盘信号，避免使用同一根 K 线收盘价造成执行时序高估。
 
