@@ -94,7 +94,7 @@ status_path = os.environ.get(
     "STOCK_RAZOR_US_RADAR_STATUS_PATH",
     "/run/stock-razor-us-radar/latest-research-state.json",
 )
-poll_seconds = max(1.0, float(os.environ.get("STOCK_RAZOR_US_RADAR_POLL_SECONDS", "5")))
+poll_seconds = max(0.1, float(os.environ.get("STOCK_RAZOR_US_RADAR_POLL_SECONDS", "0.25")))
 options_context_enabled = os.environ.get("STOCK_RAZOR_OPTIONS_CONTEXT_ENABLED", "false").strip().lower() == "true"
 options_context_path = os.environ.get(
     "STOCK_RAZOR_OPTIONS_CONTEXT_PATH",
@@ -208,7 +208,7 @@ Environment=STOCK_RAZOR_SOURCE_REPO_SHA=$SOURCE_REPO_SHA
 Environment=STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH=$SOURCE_PATH
 Environment=STOCK_RAZOR_US_DAILY_HISTORY_PATH=/run/stock-razor-us-livefeed/daily-history.json
 Environment=STOCK_RAZOR_US_RADAR_STATUS_PATH=$STATUS_PATH
-Environment=STOCK_RAZOR_US_RADAR_POLL_SECONDS=5
+Environment=STOCK_RAZOR_US_RADAR_POLL_SECONDS=0.25
 Environment=STOCK_RAZOR_OPTIONS_CONTEXT_ENABLED=$OPTIONS_CONTEXT_ENABLED
 Environment=STOCK_RAZOR_OPTIONS_CONTEXT_PATH=$OPTIONS_CONTEXT_PATH
 Environment=STOCK_RAZOR_OPTIONS_SOURCE_REPO_SHA=$OPTIONS_SOURCE_REPO_SHA
