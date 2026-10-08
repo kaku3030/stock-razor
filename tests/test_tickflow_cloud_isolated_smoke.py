@@ -20,10 +20,11 @@ def test_cloud_workflow_dispatch_restricts_modes_and_is_oidc_ssm_only():
     assert "aws-actions/configure-aws-credentials@v4" in WORKFLOW
     assert "AWS-RunShellScript" in WORKFLOW
     assert "ssm send-command" in WORKFLOW
-    assert "choices" not in str(WORKFLOW)  # workflow_dispatch type=choice
-    assert "default: metadata" in WORKFLOW
-    assert "metadata" in WORKFLOW and "free" in WORKFLOW
-    assert "premium" not in WORKFLOW.lower()
+    dispatch = wf.get("on", wf.get(True))["workflow_dispatch"]
+    modes = dispatch["inputs"]["mode"]
+    assert modes["type"] == "choice"
+    assert modes["default"] == "metadata"
+    assert modes["options"] == ["metadata", "free"]
     assert '[[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free ]]' in WORKFLOW
 
 
