@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 
+import pytest
+
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from src.services.a_share_intraday_currentness import (
     qualify_same_session_currentness,
