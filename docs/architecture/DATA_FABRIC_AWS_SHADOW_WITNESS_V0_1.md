@@ -85,3 +85,32 @@ end-to-end P50/P95/P99 or continuous subscription admission.
 
 The AWS SSM command timeout remains 120 seconds and GitHub workflow remains
 manual. No new daemons, paid endpoints or canonical writes.
+
+## US session and Canonical chain triage (V0.3)
+
+The shadow-only probe now reuses the existing
+`futu_us_market_state_to_session` classifier instead of accepting invented
+generic `OPEN/PRE_MARKET` enum values. The actual Futu `MORNING` and
+`AFTERNOON` map to regular session; premarket, after-hours, overnight and
+closed states remain distinguishable. Unknown/new provider states stay
+`unknown` rather than silently being called regular or closed.
+
+US two-sample progress includes `market_session`, sanitized
+`canonical_export_status`, `canonical_snapshot_status`,
+`canonical_snapshot_age_seconds` and
+`canonical_chain_classification`. The triage distinguishes
+`EXPORT_NOT_CONFIRMED`, `EXPORT_PASS_SNAPSHOT_STALE_CAUSE_UNKNOWN`,
+`ACCEPTED_CALLBACKS_SNAPSHOT_UNCHANGED_CAUSE_UNKNOWN`,
+`BOTH_COUNTERS_ADVANCED_UNQUALIFIED` and
+`CANONICAL_PROGRESSION_NOT_VERIFIED`.
+
+**Interpretation limits:** An export heartbeat reporting PASS while a
+snapshot has aged beyond its freshness window is an observed mismatch,
+not proof of a broken OpenD provider. A callback delta without a Canonical
+sequence delta can legitimately occur while a 1m bar is still forming.
+Non-regular-session silence is not classified as a provider failure.
+Missing counters and unknown session states remain unqualified. No
+provider RTT, latency P50/P95/P99, source entitlement, independent
+stream progress or automatic failover is inferred. This is only
+read-only evidence for distinguishing service liveness from bar freshness.
+All Data/Radar/Execution controls remain fail-closed.

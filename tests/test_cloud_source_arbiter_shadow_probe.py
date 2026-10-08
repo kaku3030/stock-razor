@@ -213,3 +213,108 @@ def test_invalid_progress_interval_is_not_silent_pass():
     for invalid in (0,-1,31,True):
         with pytest.raises(ValueError):
             observe_source_progress({}, {}, interval_seconds=invalid)
+
+
+
+def test_futu_market_session_mapping_is_reused_in_aws_shadow():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+
+    for market_state, session, expected_progress in (
+        ("MORNING", "regular", "EVENT_PROGRESS_NOT_VERIFIED"),
+        ("AFTERNOON", "regular", "EVENT_PROGRESS_NOT_VERIFIED"),
+        ("PRE_MARKET_BEGIN", "premarket", "NON_REGULAR_SESSION_NO_ADVANCEMENT_NOT_FAILURE"),
+        ("AFTER_HOURS_END", "afterhours", "NON_REGULAR_SESSION_NO_ADVANCEMENT_NOT_FAILURE"),
+        ("OVERNIGHT", "overnight", "NON_REGULAR_SESSION_NO_ADVANCEMENT_NOT_FAILURE"),
+        ("WAITING_OPEN", "closed", "CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE"),
+        ("CLOSED", "closed", "CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE"),
+        ("OPEN", "unknown", "EVENT_PROGRESS_NOT_VERIFIED"),
+        ("arbitrary-secret-state", "unknown", "EVENT_PROGRESS_NOT_VERIFIED"),
+    ):
+        cache = _sample_progress_evidence(
+            us_health={
+                "status": "HEALTHY", "market_state_us": market_state,
+                "sequence": 5, "event_count": 6, "accepted_event_count": 4,
+            },
+            us_snapshot={"status": "STALE", "sequence": 2, "source_age_seconds": 350},
+            cn_reads=cn_rows(),
+        )
+        assert cache["us"]["market_session"] == session
+        if session == "unknown":
+            assert cache["us"]["market_state"] == "UNKNOWN"
+        result = observe_source_progress(cache, cache, interval_seconds=12)
+        assert result["us"]["event_progress_classification"] == expected_progress
+        assert result["us"]["canonical_snapshot_status"] == "STALE"
+        assert result["us"]["canonical_snapshot_age_seconds"] == 350
+        assert result["us"]["canonical_chain_classification"] == "EXPORT_NOT_CONFIRMED"
+        assert result["unique_provider_event_delivery_qualified"] is False
+
+
+def test_export_pass_but_stale_snapshot_does_not_blame_provider():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    health = {
+        "status": "HEALTHY", "market_state_us": "PRE_MARKET_BEGIN",
+        "sequence": 12, "event_count": 10, "accepted_event_count": 10,
+        "canonical_export_status": "PASS", "api_key": "NEVER_EXPOSE",
+    }
+    snapshot = {
+        "status": "STALE", "sequence": 40, "source_age_seconds": 634,
+        "symbols": {"US.AMD": {"latest": {"close": "PRICE_SECRET"}}},
+    }
+    first = _sample_progress_evidence(
+        us_health=health, us_snapshot=snapshot, cn_reads=cn_rows(),
+    )
+    second = _sample_progress_evidence(
+        us_health={**health, "sequence": 13},
+        us_snapshot=snapshot, cn_reads=cn_rows(),
+    )
+    result = observe_source_progress(first, second, interval_seconds=12.2)
+    assert result["us"]["heartbeat_sequence"] == "ADVANCED"
+    assert result["us"]["market_state"] == "PRE_MARKET_BEGIN"
+    assert result["us"]["market_session"] == "premarket"
+    assert result["us"]["event_progress_classification"] == (
+        "NON_REGULAR_SESSION_NO_ADVANCEMENT_NOT_FAILURE"
+    )
+    assert result["us"]["canonical_chain_classification"] == (
+        "EXPORT_PASS_SNAPSHOT_STALE_CAUSE_UNKNOWN"
+    )
+    assert "NEVER_EXPOSE" not in json.dumps(result)
+    assert "PRICE_SECRET" not in json.dumps(result)
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_accepted_callbacks_without_snapshot_sequence_change_not_promoted():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    def sample(accepted, sequence):
+        return _sample_progress_evidence(
+            us_health={
+                "status": "HEALTHY", "market_state_us": "MORNING",
+                "sequence": 9, "event_count": accepted + 1,
+                "accepted_event_count": accepted, "canonical_export_status": "PASS",
+            },
+            us_snapshot={
+                "status": "PASS", "sequence": sequence,
+                "source_age_seconds": float("nan"),
+            },
+            cn_reads=cn_rows(),
+        )
+
+    result = observe_source_progress(
+        sample(10, 4), sample(11, 4), interval_seconds=12,
+    )
+    assert result["us"]["accepted_event_counter"] == "ADVANCED"
+    assert result["us"]["market_session"] == "regular"
+    assert result["us"]["canonical_snapshot_age_seconds"] is None
+    assert result["us"]["canonical_chain_classification"] == (
+        "ACCEPTED_CALLBACKS_SNAPSHOT_UNCHANGED_CAUSE_UNKNOWN"
+    )
+    assert result["us"]["event_progress_classification"] == (
+        "ACCEPTED_COUNTER_ADVANCED_UNQUALIFIED"
+    )
+    assert result["unique_provider_event_delivery_qualified"] is False

@@ -85,6 +85,9 @@ jobs:
           assert progress.get("radar_admission") == "BLOCKED"
           assert set(progress.get("cn",{})) == {"159611","518880"}
           assert "event_progress_classification" in progress.get("us",{})
+          assert progress.get("us",{}).get("market_session") in {"regular","premarket","afterhours","overnight","closed","unknown"}
+          assert "canonical_chain_classification" in progress.get("us",{})
+          assert progress.get("us",{}).get("canonical_snapshot_status") in {"PASS","STALE","NO_DATA","INVALID","UNAVAILABLE","DEGRADED","HEALTHY","UNKNOWN","BLOCKED"}
           assert len(p.get("entries",[])) == 4
           assert {x.get("market") for x in p["entries"]} == {"US","CN"}
           assert all(x.get("decision",{}).get("decision") == "BLOCKED"

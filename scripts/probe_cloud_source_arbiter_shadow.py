@@ -18,6 +18,9 @@ from src.services.data_fabric_source_arbiter_policy import (
     Candidate,
     propose_authoritative_source,
 )
+from src.services.live_feed.futu_k1m_currentness import (
+    futu_us_market_state_to_session,
+)
 
 US_SYMBOLS = ("US.AMD", "US.NVDA")
 CN_SYMBOLS = ("159611", "518880")
@@ -207,18 +210,28 @@ def _sample_progress_evidence(
     *,
     us_health: dict, us_snapshot: dict, cn_reads: dict,
 ) -> dict:
+    # Use the existing OpenD session mapping; generic OPEN/PRE_MARKET enums
+    # are not the provider's states and must never manufacture a session.
+    raw_market_state = us_health.get("market_state_us")
+    market_state = (
+        raw_market_state.strip().upper()
+        if isinstance(raw_market_state, str) else "UNKNOWN"
+    )
+    market_session = futu_us_market_state_to_session(market_state)
     return {
         "us": {
             "health_status": _safe_status(us_health.get("status")),
-            "market_state": us_health.get("market_state_us")
-            if us_health.get("market_state_us") in {
-                "OPEN", "CLOSED", "PRE_MARKET", "AFTER_HOURS",
-                "EXTENDED_HOURS", "UNKNOWN"
-            } else "UNKNOWN",
+            "market_state": market_state if market_session != "unknown" else "UNKNOWN",
+            "market_session": market_session,
             "heartbeat_sequence": _count(us_health.get("sequence")),
             "received_events": _count(us_health.get("event_count")),
             "accepted_events": _count(us_health.get("accepted_event_count")),
             "canonical_sequence": _count(us_snapshot.get("sequence")),
+            "canonical_export_status": _safe_status(us_health.get("canonical_export_status")),
+            "canonical_snapshot_status": _safe_status(us_snapshot.get("status")),
+            "canonical_snapshot_age_seconds": _finite_number(
+                us_snapshot.get("source_age_seconds")
+            ),
         },
         "cn": {
             symbol: {
@@ -246,21 +259,44 @@ def observe_source_progress(before: dict, after: dict, *, interval_seconds: floa
     first, last = before.get("us", {}), after.get("us", {})
     us = {
         "market_state": last.get("market_state", "UNKNOWN"),
+        "market_session": last.get("market_session", "unknown"),
         "health": last.get("health_status", "UNKNOWN"),
         "heartbeat_sequence": _increment(first.get("heartbeat_sequence"), last.get("heartbeat_sequence")),
         "received_event_counter": _increment(first.get("received_events"), last.get("received_events")),
         "accepted_event_counter": _increment(first.get("accepted_events"), last.get("accepted_events")),
         "canonical_snapshot_sequence": _increment(first.get("canonical_sequence"), last.get("canonical_sequence")),
+        "canonical_export_status": last.get("canonical_export_status", "UNKNOWN"),
+        "canonical_snapshot_status": last.get("canonical_snapshot_status", "UNKNOWN"),
+        "canonical_snapshot_age_seconds": last.get("canonical_snapshot_age_seconds"),
     }
     if us["accepted_event_counter"] == "ADVANCED":
         status = "ACCEPTED_COUNTER_ADVANCED_UNQUALIFIED"
     elif us["accepted_event_counter"] == "COUNTER_RESET_OR_REORDERED":
         status = "COUNTER_RESET_OR_REORDERED"
-    elif us["market_state"] == "CLOSED":
+    elif us["accepted_event_counter"] == "UNCHANGED" and us["market_session"] == "closed":
         status = "CLOSED_SESSION_NO_ADVANCEMENT_NOT_FAILURE"
+    elif us["accepted_event_counter"] == "UNCHANGED" and us["market_session"] in {
+        "premarket", "afterhours", "overnight"
+    }:
+        status = "NON_REGULAR_SESSION_NO_ADVANCEMENT_NOT_FAILURE"
     else:
         status = "EVENT_PROGRESS_NOT_VERIFIED"
     us["event_progress_classification"] = status
+    # This is a *triage label*, not a causal finding or a latency sample.
+    # A completed bar can remain unchanged even after accepted callbacks.
+    if us["canonical_export_status"] != "PASS":
+        chain = "EXPORT_NOT_CONFIRMED"
+    elif us["canonical_snapshot_status"] == "STALE":
+        chain = "EXPORT_PASS_SNAPSHOT_STALE_CAUSE_UNKNOWN"
+    elif (us["accepted_event_counter"] == "ADVANCED"
+          and us["canonical_snapshot_sequence"] == "UNCHANGED"):
+        chain = "ACCEPTED_CALLBACKS_SNAPSHOT_UNCHANGED_CAUSE_UNKNOWN"
+    elif (us["accepted_event_counter"] == "ADVANCED"
+          and us["canonical_snapshot_sequence"] == "ADVANCED"):
+        chain = "BOTH_COUNTERS_ADVANCED_UNQUALIFIED"
+    else:
+        chain = "CANONICAL_PROGRESSION_NOT_VERIFIED"
+    us["canonical_chain_classification"] = chain
 
     cn = {}
     left, right = before.get("cn", {}), after.get("cn", {})
