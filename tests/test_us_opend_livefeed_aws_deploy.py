@@ -438,10 +438,10 @@ def test_heartbeat_exposes_explicit_research_only_and_no_signal_confirmation():
 
 def test_event_aware_loop_shortens_closed_bar_pickup_without_extra_opend_rpc_calls():
     runtime = _embedded_runtime_python()
-    assert "producer_poll_seconds=0.5" in runtime
+    assert "producer_event_min_interval_seconds=0.10" in runtime
     assert "market_state_query_interval_seconds=5.0" in runtime
-    assert "time.sleep(producer_poll_seconds)" in runtime
-    assert "pending_data_event_count=data_event_count" in runtime
+    assert "data_wakeup.wait_when_unchanged(" in runtime
+    assert "pending_data_event_count=read_data_event_count()" in runtime
     assert "with evidence_lock:" in runtime
     assert "if not state_due and not event_due:" in runtime
     assert "if state_due:" in runtime
@@ -472,3 +472,19 @@ def test_event_aware_loop_fails_closed_on_market_state_rpc_exception():
     assert 'market_state="UNKNOWN"' in runtime
     assert "state_ret=-1" in runtime
     assert '"market_state_evidence":"PASS" if state_ret==ft.RET_OK else "BLOCKED"' in runtime
+
+
+def test_livefeed_callback_wakes_the_single_writer_without_provider_rpc_in_callback():
+    runtime = _embedded_runtime_python()
+    handler = runtime.split("def on_event_accepted(event):", 1)[1].split("\\nbridge=", 1)[0]
+    assert "data_wakeup.notify()" in handler
+    assert "ctx.get_global_state()" not in handler
+    assert "ctx.get_user_info(" not in handler
+    assert "research_consumer.run_once(" not in handler
+    assert "consumer_result=research_consumer.run_once(max_events=1000)" in runtime
+    assert "producer_event_min_interval_seconds=0.10" in runtime
+    assert "market_state_query_interval_seconds=5.0" in runtime
+    assert "data_wakeup.wait_when_unchanged(" in runtime
+    assert '"wakeup_mode":"CALLBACK_EVENT_WITH_PERIODIC_HEALTH_DEADLINE"' in runtime
+    assert '"radar_admission":"BLOCKED"' in runtime
+    assert '"live_trade":False' in runtime
