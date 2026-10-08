@@ -346,6 +346,54 @@ def test_uppercase_repo_sha_is_rejected_not_normalized():
         )
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "intraday_timestamp_semantics_proven",
+        "intraday_currentness_proven",
+    ],
+)
+def test_cn_top_level_evidence_flags_must_be_boolean(field_name):
+    with pytest.raises(
+        ProviderRuntimeIngestError,
+        match=f"{field_name} must be a boolean",
+    ):
+        build_cn_provider_observations_from_cloud_snapshot(
+            snapshot(
+                providers_used=["eastmoney"],
+                symbols=one_symbol({
+                    "1d": frame(
+                        provider_used="eastmoney",
+                        provider_lineage="eastmoney",
+                        fallback_from=None,
+                    ),
+                }),
+                **{field_name: "true"},
+            )
+        )
+
+
+def test_tencent_currentness_rejects_unknown_value():
+    with pytest.raises(
+        ProviderRuntimeIngestError,
+        match="currentness must be PROVEN or UNPROVEN",
+    ):
+        build_cn_provider_observations_from_cloud_snapshot(
+            snapshot(
+                providers_used=["tencent"],
+                symbols=one_symbol({
+                    "15m": frame(
+                        provider_used="tencent",
+                        provider_lineage="tencent",
+                        fallback_from="eastmoney",
+                        fallback_reason="RuntimeError",
+                        currentness="MAYBE",
+                    ),
+                }),
+            )
+        )
+
+
 def test_provider_used_lineage_and_fallback_must_agree():
     with pytest.raises(
         ProviderRuntimeIngestError,
