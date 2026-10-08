@@ -779,3 +779,79 @@ def test_worker_refreshes_options_context_when_canonical_sequence_is_unchanged(t
     assert first.symbols[0].options_context.net_gex == 100.0
     assert second.symbols[0].options_context.net_gex == 200.0
     assert second.can_confirm_signal is False
+
+
+def test_unchanged_file_fast_path_skips_reparse_but_rechecks_age(tmp_path, monkeypatch):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    now = {"at": emitted}
+    evaluator = CanonicalSnapshotRadarEvaluator(
+        now=lambda: now["at"], max_active_age_seconds=120,
+    )
+    worker = CanonicalSnapshotRadarWorker(expected_repo_sha=SHA, evaluator=evaluator)
+    path = write_payload(tmp_path, body)
+    first = worker.poll_file(path)
+    assert first.status == "PASS"
+
+    def no_duplicate_load(_path):
+        raise AssertionError("No full JSON reparse on unchanged file")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(worker_module, "load_canonical_snapshot_file", no_duplicate_load)
+        second = worker.poll_file(path)
+        assert second.status == "UNCHANGED"
+        assert second.source_sequence == first.source_sequence
+        assert second.symbols[0].technical_state == first.symbols[0].technical_state
+        assert second.can_confirm_signal is False
+        now["at"] = emitted + timedelta(seconds=121)
+        stale = worker.poll_file(path)
+        assert stale.status == "BLOCKED"
+        assert stale.reasons == ("SOURCE_EXPORT_STALE",)
+
+
+def test_fast_path_atomic_replacement_reparses_new_sequence(tmp_path, monkeypatch):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    worker = CanonicalSnapshotRadarWorker(
+        expected_repo_sha=SHA,
+        evaluator=CanonicalSnapshotRadarEvaluator(now=lambda: emitted),
+    )
+    path = write_payload(tmp_path, body)
+    assert worker.poll_file(path).status == "PASS"
+    original_load = worker_module.load_canonical_snapshot_file
+    calls = {"count": 0}
+
+    def track_load(file):
+        calls["count"] += 1
+        return original_load(file)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(worker_module, "load_canonical_snapshot_file", track_load)
+        replacement = tmp_path / "replacement.json"
+        replacement.write_text(json.dumps(dict(body, sequence=4)), encoding="utf-8")
+        replacement.replace(path)
+        assert worker.poll_file(path).status == "PASS"
+        assert calls["count"] == 1
+        assert worker.poll_file(path).status == "UNCHANGED"
+        assert calls["count"] == 1
+
+
+def test_fast_path_never_caches_or_republishes_unsafe_source(tmp_path):
+    body = payload()
+    emitted = datetime.fromisoformat(body["emitted_at_utc"])
+    worker = CanonicalSnapshotRadarWorker(
+        expected_repo_sha=SHA,
+        evaluator=CanonicalSnapshotRadarEvaluator(now=lambda: emitted),
+    )
+    path = write_payload(tmp_path, body)
+    assert worker.poll_file(path).status == "PASS"
+    replacement = tmp_path / "invalid.json"
+    replacement.write_text(
+        json.dumps(dict(body, sequence=4, radar_admission="PASS")),
+        encoding="utf-8",
+    )
+    replacement.replace(path)
+    for _ in range(2):
+        blocked = worker.poll_file(path)
+        assert blocked.status == "BLOCKED"
+        assert blocked.can_confirm_signal is False
