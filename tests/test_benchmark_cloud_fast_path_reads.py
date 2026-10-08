@@ -91,3 +91,79 @@ def test_nonfinite_or_boolean_runtime_values_are_not_measured():
     assert benchmark._number({"read_latency_ms": True}, "read_latency_ms") is None
     assert benchmark._number({"read_latency_ms": float("nan")}, "read_latency_ms") is None
     assert benchmark._number({"read_latency_ms": float("inf")}, "read_latency_ms") is None
+
+
+def test_cn_source_diagnostics_are_per_symbol_and_never_publish_bars(monkeypatch):
+    payloads = {
+        "159611": {
+            "status": "PASS",
+            "provider_used": "eastmoney",
+            "fallback_from": None,
+            "timestamp_semantic": "UNKNOWN",
+            "currentness": "UNPROVEN",
+            "symbol_intraday_timestamp_semantics_proven": False,
+            "symbol_intraday_currentness_proven": False,
+            "source_age_seconds": 40.0,
+            "total_row_count": 120,
+            "rows": [{"close": 11.11}],
+            "failure_reason": "DO_NOT_PRINT",
+        },
+        "518880": {
+            "status": "PASS",
+            "provider_used": "tencent",
+            "fallback_from": "eastmoney",
+            "timestamp_semantic": "BAR_END",
+            "currentness": "PROVEN",
+            "symbol_intraday_timestamp_semantics_proven": True,
+            "symbol_intraday_currentness_proven": True,
+            "source_age_seconds": 5.0,
+            "total_row_count": 480,
+            "rows": [{"close": 22.22}],
+            "api_key": "SECRET",
+        },
+    }
+    monkeypatch.setattr(
+        benchmark,
+        "read_cn_market_data",
+        lambda symbol, **kwargs: payloads[symbol],
+    )
+    result = benchmark.cn_symbol_read_diagnostics(
+        ["159611", "518880", "518880"], "15m"
+    )
+    assert result["scope"] == "CN_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"
+    assert result["requested_symbols"] == 2
+    assert result["data_qualification"] == "NOT_VERIFIED"
+    assert result["symbols"]["159611"]["symbol_currentness_proven"] is False
+    assert result["symbols"]["518880"]["currentness"] == "PROVEN"
+    assert result["symbols"]["518880"]["provider_used"] == "tencent"
+    assert result["symbols"]["518880"]["fallback_from"] == "eastmoney"
+    import json
+    encoded = json.dumps(result)
+    assert "DO_NOT_PRINT" not in encoded
+    assert "SECRET" not in encoded
+    assert "close" not in encoded
+    assert "11.11" not in encoded
+    assert "22.22" not in encoded
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_cn_diagnostics_unknown_and_stale_remain_visible(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_cn_market_data",
+        lambda symbol, **kwargs: {
+            "status": "STALE", "provider_used": "untrusted",
+            "timestamp_semantic": "some-new-semantic",
+            "currentness": "UNPROVEN",
+            "source_age_seconds": float("inf"),
+            "total_row_count": True,
+        },
+    )
+    row = benchmark.cn_symbol_read_diagnostics(["159611"], "15m")["symbols"]["159611"]
+    assert row["read_status"] == "STALE"
+    assert row["provider_used"] == "UNKNOWN"
+    assert row["timestamp_semantic"] == "UNKNOWN"
+    assert row["symbol_currentness_proven"] is False
+    assert row["source_age_seconds"] is None
+    assert row["observed_row_count"] is None
+    assert row["radar_admission"] == "BLOCKED"
