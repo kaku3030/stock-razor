@@ -71,6 +71,7 @@ from src.services.live_feed.futu_us_daily_history import (
 )
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
+from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
 
 CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ")
@@ -109,6 +110,10 @@ data_event_count=0
 last_push_utc=None
 latest_time_keys={}
 evidence_lock=threading.Lock()
+data_wakeup=DataArrivalWake()
+def read_data_event_count():
+    with evidence_lock:
+        return data_event_count
 def generation(): return controller.snapshot().controller_generation
 adapter=FutuK1MStreamingAdapter(
     ctx,ft,runtime_instance_id=runtime_id,controller_generation=generation,
@@ -126,6 +131,8 @@ def on_event_accepted(event):
             key=event.semantic_stream_key
             if key is not None and event.provider_timestamp_raw:
                 latest_time_keys[key.symbol]=str(event.provider_timestamp_raw)
+            # Callback never drains or opens a new provider request.
+            data_wakeup.notify()
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
@@ -267,9 +274,9 @@ quote_right_query_reason="NOT_QUERIED"
 last_quote_right_poll_monotonic=None
 startup_monotonic=time.monotonic()
 startup_callback_deadline_seconds=20
-# Event-aware userland drain: do not generate more Futu API calls than the
-# former five-second producer loop. The fast check reads only in-memory counts.
-producer_poll_seconds=0.5
+# Callback-driven wakeup of the existing one-writer consumer. No additional
+# Futu RPC or subscriptions; periodic market-state fallback remains 5s.
+producer_event_min_interval_seconds=0.10
 market_state_query_interval_seconds=5.0
 last_market_state_query_monotonic=None
 last_consumed_data_event_count=-1
@@ -277,6 +284,7 @@ consumer_backlog_pending=False
 market_state="UNKNOWN"
 state_ret=-1
 idle_fastpath_skips=0
+last_consumer_dispatch_monotonic=None
 def publish(payload):
     os.makedirs(os.path.dirname(status_path),exist_ok=True)
     tmp=status_path+".tmp"
@@ -285,10 +293,23 @@ def publish(payload):
     os.replace(tmp,status_path)
 try:
     while True:
-        time.sleep(producer_poll_seconds)
         monotonic_now=time.monotonic()
-        with evidence_lock:
-            pending_data_event_count=data_event_count
+        until_state_query=(
+            0.0 if last_market_state_query_monotonic is None
+            else max(0.0, market_state_query_interval_seconds
+                     - (monotonic_now-last_market_state_query_monotonic))
+        )
+        if not consumer_backlog_pending:
+            # Atomic clear + second counter check avoids a missed callback
+            # between the first observation and wait. Health queries run on
+            # their own bounded deadline even when no callbacks arrive.
+            data_wakeup.wait_when_unchanged(
+                read_data_event_count,
+                last_processed_count=last_consumed_data_event_count,
+                max_wait_seconds=until_state_query,
+            )
+        monotonic_now=time.monotonic()
+        pending_data_event_count=read_data_event_count()
         state_due=(
             last_market_state_query_monotonic is None
             or monotonic_now-last_market_state_query_monotonic >= market_state_query_interval_seconds
@@ -300,6 +321,16 @@ try:
         if not state_due and not event_due:
             idle_fastpath_skips+=1
             continue
+        if event_due and not state_due and last_consumer_dispatch_monotonic is not None:
+            elapsed=monotonic_now-last_consumer_dispatch_monotonic
+            if elapsed < producer_event_min_interval_seconds:
+                # Coalesce callback bursts into a single bounded 100ms pass.
+                time.sleep(producer_event_min_interval_seconds-elapsed)
+                monotonic_now=time.monotonic()
+                state_due=(
+                    last_market_state_query_monotonic is None
+                    or monotonic_now-last_market_state_query_monotonic >= market_state_query_interval_seconds
+                )
         if state_due:
             # No additional global-state RPCs; never infer PASS when it fails.
             last_market_state_query_monotonic=monotonic_now
@@ -314,6 +345,7 @@ try:
         cache_session=futu_us_market_state_to_session(market_state)
         snap=bridge.drain()
         consumer_result=research_consumer.run_once(max_events=1000)
+        last_consumer_dispatch_monotonic=time.monotonic()
         last_consumed_data_event_count=pending_data_event_count
         # Bounded catch-up: keep draining after a full 1000-evidence batch.
         consumer_backlog_pending=(consumer_result.evidence_processed >= 1000)
@@ -543,7 +575,8 @@ try:
           "last_push_utc":push_utc,"market_state_us":market_state,
           "cache_session_us":cache_session,
           "producer_loop_observation":{
-              "poll_seconds":producer_poll_seconds,
+              "wakeup_mode":"CALLBACK_EVENT_WITH_PERIODIC_HEALTH_DEADLINE",
+              "event_min_interval_seconds":producer_event_min_interval_seconds,
               "market_state_query_interval_seconds":market_state_query_interval_seconds,
               "idle_fastpath_skips":idle_fastpath_skips,
               "last_seen_data_event_count":last_consumed_data_event_count,
