@@ -538,7 +538,7 @@ class CanonicalSnapshotRadarEvaluator:
 
 
 class CanonicalSnapshotRadarWorker:
-    """Stateful poller that enforces runtime-local export sequence monotonicity."""
+    """Stateful, read-only poller enforcing SHA, timestamps and sequence gates."""
 
     def __init__(
         self,
@@ -554,6 +554,56 @@ class CanonicalSnapshotRadarWorker:
         self._last_runtime_instance_id: str | None = None
         self._last_sequence: int | None = None
         self._last_successful_evaluation: CanonicalRadarEvaluation | None = None
+        self._last_successful_source: CanonicalSnapshotSource | None = None
+        self._last_file_signature: tuple | None = None
+
+    @staticmethod
+    def _file_signature(path: str | Path) -> tuple:
+        """Atomic export identity; file replacement/rewrites invalidate the cache."""
+        file = Path(path)
+        stat = file.stat()
+        return (
+            str(file.absolute()), stat.st_dev, stat.st_ino, stat.st_size,
+            stat.st_mtime_ns, stat.st_ctime_ns,
+        )
+
+    def _unchanged(
+        self,
+        source: CanonicalSnapshotSource,
+        *,
+        options_contexts: Mapping[str, RadarOptionsContext] | None = None,
+    ) -> CanonicalRadarEvaluation:
+        cached_symbols = (
+            self._last_successful_evaluation.symbols
+            if self._last_successful_evaluation is not None else ()
+        )
+        normalized_options = {
+            str(symbol).strip().upper(): context
+            for symbol, context in (options_contexts or {}).items()
+        }
+        refreshed_symbols = tuple(
+            CanonicalRadarSymbolResult(
+                symbol=item.symbol,
+                status=item.status,
+                technical_state=item.technical_state,
+                options_context=normalized_options.get(item.symbol.upper()),
+                reasons=item.reasons,
+            )
+            for item in cached_symbols
+        )
+        return CanonicalRadarEvaluation(
+            status="UNCHANGED",
+            source_repo_sha=source.repo_sha,
+            runtime_instance_id=source.runtime_instance_id,
+            source_sequence=source.sequence,
+            source_emitted_at=source.emitted_at,
+            source_delivery_mode=source.delivery_mode,
+            source_bar_closure=source.bar_closure,
+            source_radar_admission=source.radar_admission,
+            source_live_trade=source.live_trade,
+            symbols=refreshed_symbols,
+            reasons=("SOURCE_SEQUENCE_UNCHANGED",),
+        )
 
     def poll_file(
         self,
@@ -562,6 +612,29 @@ class CanonicalSnapshotRadarWorker:
         daily_frames: Mapping[str, pd.DataFrame] | None = None,
         options_contexts: Mapping[str, RadarOptionsContext] | None = None,
     ) -> CanonicalRadarEvaluation:
+        # Producer uses atomic replace. A validated, unchanged inode need
+        # not be decoded on every 250ms poll. The critical source preflight
+        # MUST still execute every cycle, including stale/future-clock checks.
+        try:
+            signature_before = self._file_signature(path)
+        except OSError:
+            signature_before = None
+        if (
+            signature_before is not None
+            and signature_before == self._last_file_signature
+            and self._last_successful_source is not None
+            and self._last_successful_evaluation is not None
+        ):
+            blocked = self._evaluator.preflight_source(
+                self._last_successful_source,
+                expected_repo_sha=self._expected_repo_sha,
+            )
+            if blocked is not None:
+                return blocked
+            return self._unchanged(
+                self._last_successful_source, options_contexts=options_contexts,
+            )
+
         try:
             source = load_canonical_snapshot_file(path)
         except (OSError, json.JSONDecodeError, CanonicalSnapshotContractError):
@@ -583,38 +656,7 @@ class CanonicalSnapshotRadarWorker:
             if source.sequence < self._last_sequence:
                 return self._blocked(source, "SOURCE_SEQUENCE_REGRESSION")
             if source.sequence == self._last_sequence:
-                cached_symbols = (
-                    self._last_successful_evaluation.symbols
-                    if self._last_successful_evaluation is not None
-                    else ()
-                )
-                normalized_options = {
-                    str(symbol).strip().upper(): context
-                    for symbol, context in (options_contexts or {}).items()
-                }
-                refreshed_symbols = tuple(
-                    CanonicalRadarSymbolResult(
-                        symbol=item.symbol,
-                        status=item.status,
-                        technical_state=item.technical_state,
-                        options_context=normalized_options.get(item.symbol.upper()),
-                        reasons=item.reasons,
-                    )
-                    for item in cached_symbols
-                )
-                return CanonicalRadarEvaluation(
-                    status="UNCHANGED",
-                    source_repo_sha=source.repo_sha,
-                    runtime_instance_id=source.runtime_instance_id,
-                    source_sequence=source.sequence,
-                    source_emitted_at=source.emitted_at,
-                    source_delivery_mode=source.delivery_mode,
-                    source_bar_closure=source.bar_closure,
-                    source_radar_admission=source.radar_admission,
-                    source_live_trade=source.live_trade,
-                    symbols=refreshed_symbols,
-                    reasons=("SOURCE_SEQUENCE_UNCHANGED",),
-                )
+                return self._unchanged(source, options_contexts=options_contexts)
 
         evaluation = self._evaluator.evaluate_source(
             source,
@@ -626,6 +668,18 @@ class CanonicalSnapshotRadarWorker:
             self._last_runtime_instance_id = source.runtime_instance_id
             self._last_sequence = source.sequence
             self._last_successful_evaluation = evaluation
+            self._last_successful_source = source
+            # Do not cache a signature if an atomic update happened during
+            # parsing: the next poll must decode the newly published content.
+            try:
+                signature_after = self._file_signature(path)
+            except OSError:
+                signature_after = None
+            self._last_file_signature = (
+                signature_before
+                if signature_before is not None and signature_before == signature_after
+                else None
+            )
         return evaluation
 
     @staticmethod
