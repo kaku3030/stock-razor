@@ -17,7 +17,9 @@ def test_cn_observer_defaults_cover_benchmark_gold_etf():
 
 def test_watchlist_extension_keeps_research_and_admission_isolated():
     assert "stock-razor-cn-eastmoney.service" in INSTALLER
-    assert "RADAR_ADMISSION=BLOCKED" in INSTALLER
-    assert "LIVE_TRADE=NO" in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
+    assert '"can_confirm_signal": False' in INSTALLER
+    assert '"research_only": True' in INSTALLER
     assert "OpenUSTradeContext" not in INSTALLER
     assert "OpenSecTradeContext" not in INSTALLER
