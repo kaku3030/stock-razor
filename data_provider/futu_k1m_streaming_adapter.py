@@ -58,6 +58,10 @@ class FutuK1MStreamingAdapter:
         self._handler_callback_count = 0
         self._row_count = 0
         self._sink_emit_count = 0
+        self._callback_latency_ms_last: float | None = None
+        self._callback_latency_ms_max: float | None = None
+        self._callback_latency_ms_sum = 0.0
+        self._callback_latency_sample_count = 0
         self._last_subscribe_result = None
 
     def register_event_sink(self, sink: Callable[[ProviderEvent], None]) -> None:
@@ -74,18 +78,22 @@ class FutuK1MStreamingAdapter:
 
         class KlineHandler(self._ft.CurKlineHandlerBase):
             def on_recv_rsp(self, rsp_pb):
+                callback_started = adapter._monotonic()
                 adapter._handler_callback_count += 1
-                ret, data = super().on_recv_rsp(rsp_pb)
-                if ret != adapter._ft.RET_OK:
-                    adapter._emit_error(str(data))
+                try:
+                    ret, data = super().on_recv_rsp(rsp_pb)
+                    if ret != adapter._ft.RET_OK:
+                        adapter._emit_error(str(data))
+                        return ret, data
+                    if not hasattr(data, "to_dict"):
+                        adapter._emit_error("K_1M payload is not tabular")
+                        return ret, data
+                    for row in data.to_dict("records"):
+                        adapter._row_count += 1
+                        adapter._emit_row(row)
                     return ret, data
-                if not hasattr(data, "to_dict"):
-                    adapter._emit_error("K_1M payload is not tabular")
-                    return ret, data
-                for row in data.to_dict("records"):
-                    adapter._row_count += 1
-                    adapter._emit_row(row)
-                return ret, data
+                finally:
+                    adapter._record_callback_latency(callback_started)
 
         handler = KlineHandler()
         # Retain the handler independently of the provider context.  Some
@@ -181,12 +189,35 @@ class FutuK1MStreamingAdapter:
             raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
 
     def diagnostics(self) -> dict:
+        mean_latency = (
+            self._callback_latency_ms_sum / self._callback_latency_sample_count
+            if self._callback_latency_sample_count
+            else None
+        )
         return {
             "handler_callback_count": self._handler_callback_count,
             "row_count": self._row_count,
             "sink_emit_count": self._sink_emit_count,
+            "provider_callback_latency_ms_last": self._callback_latency_ms_last,
+            "provider_callback_latency_ms_max": self._callback_latency_ms_max,
+            "provider_callback_latency_ms_mean": (
+                round(mean_latency, 3) if mean_latency is not None else None
+            ),
+            "provider_callback_latency_sample_count": self._callback_latency_sample_count,
             "last_subscribe_result": self._last_subscribe_result,
         }
+
+    def _record_callback_latency(self, started_at: float) -> None:
+        latency_ms = max(0.0, (self._monotonic() - started_at) * 1000)
+        latency_ms = round(latency_ms, 3)
+        self._callback_latency_ms_last = latency_ms
+        self._callback_latency_ms_max = (
+            latency_ms
+            if self._callback_latency_ms_max is None
+            else max(self._callback_latency_ms_max, latency_ms)
+        )
+        self._callback_latency_ms_sum += latency_ms
+        self._callback_latency_sample_count += 1
 
     def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
         self._validate_key(key)
