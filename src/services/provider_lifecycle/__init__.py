@@ -30,6 +30,10 @@ from .notification_gateway import (
     ProviderNotificationPolicyError,
     format_provider_notification,
 )
+from .shadow_runtime_pipeline import (
+    ProviderShadowRuntimeCycle,
+    ProviderShadowRuntimePipeline,
+)
 from .shadow_validation import (
     ProviderShadowAlertResult,
     ProviderShadowAlertValidator,
@@ -91,6 +95,8 @@ __all__ = [
     "ProviderShadowAlertResult",
     "ProviderShadowAlertValidator",
     "ProviderShadowNotificationPlan",
+    "ProviderShadowRuntimeCycle",
+    "ProviderShadowRuntimePipeline",
     "RuntimeProviderSnapshot",
     "StaleProviderAlertEvidenceError",
     "assess_provider",
