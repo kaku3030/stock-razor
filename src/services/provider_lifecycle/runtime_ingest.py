@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from .contract import ProviderHealthState
 from .observer import (
@@ -652,4 +652,277 @@ def ingest_cn_cloud_observation(
     return tuple(
         observer.ingest(observation)
         for observation in build_cn_provider_observations_from_cloud_snapshot(payload)
+    )
+
+
+_ALPACA_FEEDS = frozenset({
+    "iex",
+    "sip",
+    "delayed_sip",
+    "boats",
+    "overnight",
+    "otc",
+})
+_ALPACA_EVENT_TYPES = frozenset({
+    "subscription_error",
+    "subscription_registered",
+    "stream_worker_started",
+    "stream_worker_error",
+    "worker_terminated",
+    "stop_requested",
+    "shutdown_failed",
+    "owner_retained",
+    "stream_stop_requested",
+    "shutdown_completed",
+    "owner_cleared",
+})
+_ALPACA_NEGATIVE_EVENT_TYPES = frozenset({
+    "subscription_error",
+    "stream_worker_error",
+    "shutdown_failed",
+    "owner_retained",
+})
+
+
+def build_alpaca_observation_from_runtime_events(
+    events: Sequence[Mapping[str, object]],
+    *,
+    repo_sha: str,
+) -> ProviderRuntimeObservation:
+    """Translate one Alpaca adapter instance's lifecycle events.
+
+    Adapter registration and worker-thread liveness are deliberately not auth,
+    readiness, entitlement, or Data Admission evidence. This source may emit
+    UNKNOWN or negative lifecycle state only.
+    """
+
+    if not isinstance(events, Sequence) or isinstance(events, (str, bytes)):
+        raise ProviderRuntimeIngestError("Alpaca runtime events must be a sequence")
+    if not events:
+        raise ProviderRuntimeIngestError("Alpaca runtime events must not be empty")
+
+    exact_repo_sha = _exact_sha(repo_sha)
+    normalized: list[dict[str, object]] = []
+    owner_identity: str | None = None
+    feed: str | None = None
+    previous_at: datetime | None = None
+    previous_generation = -1
+
+    for index, raw_event in enumerate(events):
+        event = _required_mapping(raw_event, f"events[{index}]")
+        if event.get("provider_type") != "alpaca":
+            raise ProviderRuntimeIngestError(
+                f"events[{index}].provider_type must be alpaca"
+            )
+        event_type = _text(event.get("event_type"), f"events[{index}].event_type")
+        if event_type not in _ALPACA_EVENT_TYPES:
+            raise ProviderRuntimeIngestError(
+                f"unsupported Alpaca event_type: {event_type}"
+            )
+
+        event_at = _parse_aware_timestamp(
+            event.get("event_at"),
+            f"events[{index}].event_at",
+        )
+        if previous_at is not None and event_at < previous_at:
+            raise ProviderRuntimeIngestError(
+                "Alpaca runtime event_at values must be non-decreasing"
+            )
+        previous_at = event_at
+
+        current_owner = _text(
+            event.get("owner_identity"),
+            f"events[{index}].owner_identity",
+        )
+        if owner_identity is None:
+            owner_identity = current_owner
+        elif current_owner != owner_identity:
+            raise ProviderRuntimeIngestError(
+                "Alpaca runtime events must belong to one owner_identity"
+            )
+
+        current_feed = _text(event.get("feed"), f"events[{index}].feed").lower()
+        if current_feed not in _ALPACA_FEEDS:
+            raise ProviderRuntimeIngestError(
+                f"unsupported Alpaca feed: {current_feed}"
+            )
+        if feed is None:
+            feed = current_feed
+        elif current_feed != feed:
+            raise ProviderRuntimeIngestError(
+                "Alpaca runtime events must use one feed"
+            )
+
+        generation = _nonnegative_int(
+            event.get("runtime_generation"),
+            f"events[{index}].runtime_generation",
+        )
+        if generation < previous_generation:
+            raise ProviderRuntimeIngestError(
+                "Alpaca runtime_generation must be non-decreasing"
+            )
+        previous_generation = generation
+
+        if event.get("ack_status") != "UNKNOWN":
+            raise ProviderRuntimeIngestError(
+                "Alpaca adapter events cannot promote ack_status beyond UNKNOWN"
+            )
+        if event.get("ack_evidence") != "SDK_registration_return_only":
+            raise ProviderRuntimeIngestError(
+                "unexpected Alpaca ack_evidence source"
+            )
+        if event.get("entitlement_status") != "UNKNOWN":
+            raise ProviderRuntimeIngestError(
+                "Alpaca adapter events cannot prove entitlement"
+            )
+        if event.get("entitlement_source") != "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED":
+            raise ProviderRuntimeIngestError(
+                "unexpected Alpaca entitlement_source"
+            )
+
+        normalized.append({
+            "event_type": event_type,
+            "event_at": event_at,
+            "runtime_generation": generation,
+            "worker_status": event.get("worker_status"),
+            "shutdown_status": event.get("shutdown_status"),
+            "owner_status": event.get("owner_status"),
+            "unsubscribe_status": event.get("unsubscribe_status"),
+            "stream_error_type": event.get("stream_error_type"),
+            "symbols": tuple(event.get("symbols") or ()),
+        })
+
+    assert owner_identity is not None
+    assert feed is not None
+    latest = normalized[-1]
+    latest_at = latest["event_at"]
+    latest_generation = int(latest["runtime_generation"])
+
+    last_failure: dict[str, object] | None = None
+    current_negative: dict[str, object] | None = None
+    for event in normalized:
+        event_type = str(event["event_type"])
+        if event_type in _ALPACA_NEGATIVE_EVENT_TYPES:
+            last_failure = event
+            current_negative = event
+        elif event_type in {
+            "subscription_registered",
+            "stream_worker_started",
+            "stop_requested",
+            "stream_stop_requested",
+            "shutdown_completed",
+            "owner_cleared",
+        }:
+            current_negative = None
+        # worker_terminated preserves the immediately preceding state.
+
+    health_state = (
+        ProviderHealthState.DEGRADED
+        if current_negative is not None
+        else ProviderHealthState.UNKNOWN
+    )
+
+    def event_failure_reason(event: Mapping[str, object]) -> str:
+        event_type = str(event.get("event_type") or "UNKNOWN").upper()
+        error_type = event.get("stream_error_type")
+        if error_type is None:
+            return f"ALPACA_{event_type}"[:240]
+        safe_error = _text(error_type, "stream_error_type")
+        return f"ALPACA_{event_type}:{safe_error}"[:240]
+
+    current_failure_reason = (
+        event_failure_reason(current_negative)
+        if current_negative is not None
+        else None
+    )
+    current_error_code = (
+        str(current_negative["event_type"]).upper()
+        if current_negative is not None
+        else None
+    )
+
+    capabilities = MappingProxyType({
+        "provider_type": "alpaca",
+        "feed": feed,
+        "event_count": len(normalized),
+        "latest_event_type": latest["event_type"],
+        "runtime_generation": latest_generation,
+        "ack_status": "UNKNOWN",
+        "ack_evidence": "SDK_registration_return_only",
+        "entitlement_status": "UNKNOWN",
+        "entitlement_source": "EXTERNAL_ACCOUNT_EVIDENCE_REQUIRED",
+        "worker_status": latest.get("worker_status"),
+        "shutdown_status": latest.get("shutdown_status"),
+        "owner_status": latest.get("owner_status"),
+        "unsubscribe_status": latest.get("unsubscribe_status"),
+        "event_types": tuple(str(event["event_type"]) for event in normalized),
+        "data_admission": "NOT_EVALUATED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    })
+
+    def observed(
+        field_name: str,
+        value: object,
+        *,
+        observed_at: datetime = latest_at,
+        error_code: str | None = current_error_code,
+        evidence_suffix: str | None = None,
+    ) -> ObservedProviderValue:
+        suffix = evidence_suffix or f"{latest_generation}:{field_name}"
+        return ObservedProviderValue(
+            value=value,
+            provenance=EvidenceProvenance(
+                observed_at=observed_at,
+                source="alpaca_adapter_runtime_events",
+                runtime_id=owner_identity,
+                repo_sha=exact_repo_sha,
+                error_code=error_code,
+                evidence_id=f"alpaca:{owner_identity}:{suffix}",
+            ),
+        )
+
+    fields: dict[str, ObservedProviderValue] = {
+        "health_state": observed("health_state", health_state),
+        "failure_reason": observed(
+            "failure_reason",
+            current_failure_reason,
+        ),
+        "capabilities": observed(
+            "capabilities",
+            capabilities,
+            error_code=None,
+        ),
+    }
+
+    if last_failure is not None:
+        failure_at = last_failure["event_at"]
+        failure_type = str(last_failure["event_type"]).upper()
+        fields["last_failure"] = observed(
+            "last_failure",
+            failure_at,
+            observed_at=failure_at,
+            error_code=failure_type,
+            evidence_suffix=f"{last_failure['runtime_generation']}:last_failure",
+        )
+
+    return ProviderRuntimeObservation(
+        provider_id="alpaca",
+        fields=fields,
+    )
+
+
+def ingest_alpaca_runtime_events(
+    observer: ProviderRuntimeObserver,
+    events: Sequence[Mapping[str, object]],
+    *,
+    repo_sha: str,
+) -> RuntimeProviderSnapshot:
+    """Ingest one coherent Alpaca adapter event stream into lifecycle evidence."""
+
+    return observer.ingest(
+        build_alpaca_observation_from_runtime_events(
+            events,
+            repo_sha=repo_sha,
+        )
     )
