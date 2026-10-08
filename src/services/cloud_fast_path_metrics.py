@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from math import floor
+from math import floor, isfinite
 from typing import Iterable
 
 
@@ -20,6 +20,8 @@ DATA_TO_RADAR_SLO_MS = 1000.0
 
 _LATENCY_FIELDS = (
     "provider_latency_ms",
+    "provider_callback_processing_latency_ms",
+    "provider_request_path_latency_ms",
     "canonical_latency_ms",
     "radar_analysis_latency_ms",
     "radar_read_latency_ms",
@@ -36,6 +38,8 @@ class FastPathSample:
     observed_at: datetime
     provider: str | None = None
     provider_latency_ms: float | None = None
+    provider_callback_processing_latency_ms: float | None = None
+    provider_request_path_latency_ms: float | None = None
     canonical_latency_ms: float | None = None
     radar_analysis_latency_ms: float | None = None
     radar_read_latency_ms: float | None = None
@@ -67,8 +71,13 @@ class FastPathSample:
             raise ValueError("observed_at must be timezone-aware")
         for field in (*_LATENCY_FIELDS, "data_to_radar_latency_ms", "freshness_ms"):
             value = getattr(self, field)
-            if value is not None and (not isinstance(value, (int, float)) or value < 0):
-                raise ValueError(f"{field} must be non-negative or None")
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                or value < 0
+            ):
+                raise ValueError(f"{field} must be finite, non-negative or None")
         for field in ("retry_count", "fallback_count"):
             value = getattr(self, field)
             if value is not None and (
@@ -206,6 +215,8 @@ def summarize_fast_path(samples: Iterable[FastPathSample]) -> dict:
             "freshness_ms",
         )
     )
+    if len(retry_evidence) != len(rows) or len(fallback_evidence) != len(rows):
+        required_evidence_missing = True
     status = "EVIDENCE_COMPLETE" if not required_evidence_missing else "INCOMPLETE_EVIDENCE"
 
     return {
