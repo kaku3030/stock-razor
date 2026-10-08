@@ -234,7 +234,7 @@ def test_us_diagnostics_reject_unrecognized_status_and_bad_counts(monkeypatch):
         benchmark, "read_us_market_snapshots",
         lambda symbols: {
             "status": "PASS",
-            "symbols": {"QQQ": {"counts": {
+            "symbols": {"US.QQQ": {"counts": {
                 "1m": True, "5m": -1, "15m": "2", "1h": 0
             }}},
         },
