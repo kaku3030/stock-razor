@@ -51,6 +51,17 @@ def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
 
 
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile / 100
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * weight, 3)
+
+
 def _row_count(value: Any) -> int | None:
     if isinstance(value, (list, tuple)):
         return len(value)
@@ -159,7 +170,14 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
     """Best-effort bounded WS smoke. Callback errors never print payloads."""
     if not 0 < seconds <= 15:
         raise ValueError("WebSocket probe duration must be (0,15] seconds")
-    counts = {"quote_callbacks": 0, "quote_events": 0, "error_callbacks": 0}
+    counts = {
+        "quote_callbacks": 0,
+        "quote_events": 0,
+        "unique_quote_samples": 0,
+        "error_callbacks": 0,
+    }
+    seen_samples: set[tuple[str, int]] = set()
+    timestamp_deltas_ms: list[float] = []
     stream = client.stream
     started = time.perf_counter()
 
@@ -168,6 +186,23 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
         counts["quote_callbacks"] += 1
         if isinstance(quotes, (list, tuple)):
             counts["quote_events"] += len(quotes)
+            arrival_ms = time.time() * 1000
+            for quote in quotes:
+                if not isinstance(quote, dict):
+                    continue
+                symbol = str(quote.get("symbol") or "")
+                raw_timestamp = quote.get("timestamp")
+                if not symbol or not isinstance(raw_timestamp, (int, float)):
+                    continue
+                provider_ms = float(raw_timestamp)
+                if provider_ms < 10_000_000_000:
+                    provider_ms *= 1000
+                sample = (symbol, int(provider_ms))
+                if sample in seen_samples:
+                    continue
+                seen_samples.add(sample)
+                timestamp_deltas_ms.append(max(0.0, arrival_ms - provider_ms))
+            counts["unique_quote_samples"] = len(seen_samples)
 
     @stream.on_error
     def on_error(message: Any) -> None:
@@ -195,6 +230,14 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
         "elapsed_ms": _elapsed_ms(started),
         **counts,
         "failure_class": reason,
+        "arrival_minus_provider_timestamp_ms": {
+            "count": len(timestamp_deltas_ms),
+            "p50": _percentile(timestamp_deltas_ms, 50),
+            "p95": _percentile(timestamp_deltas_ms, 95),
+            "p99": _percentile(timestamp_deltas_ms, 99),
+        },
+        "sample_latency_qualification": "NOT_VERIFIED",
+        "clock_offset_qualification": "NOT_VERIFIED",
         "continuous_feed_qualified": False,
         "stale_drop_reconnect_qualified": False,
     }

@@ -45,7 +45,20 @@ class FakeStream:
 
     def connect(self, block=True):
         assert block is False
-        self.handlers["quotes"]([{"last_price": 1, "token": "DO_NOT_LEAK"}])
+        self.handlers["quotes"]([
+            {
+                "symbol": "159611.SZ",
+                "last_price": 1,
+                "timestamp": 1776754802000,
+                "token": "DO_NOT_LEAK",
+            },
+            {
+                "symbol": "159611.SZ",
+                "last_price": 1,
+                "timestamp": 1776754802000,
+                "token": "DO_NOT_LEAK",
+            },
+        ])
         self.handlers["error"]("DO_NOT_LEAK")
 
     def close(self):
@@ -249,7 +262,11 @@ def test_ws_smoke_tracks_callbacks_but_never_promotes_stream(monkeypatch):
     )
     ws = r["operations"][-1]
     assert fake.stream.closed is True
-    assert ws["quote_events"] == 1
+    assert ws["quote_events"] == 2
+    assert ws["unique_quote_samples"] == 1
+    assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 1
+    assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
+    assert ws["clock_offset_qualification"] == "NOT_VERIFIED"
     assert ws["error_callbacks"] == 1
     assert ws["continuous_feed_qualified"] is False
     assert ws["stale_drop_reconnect_qualified"] is False
