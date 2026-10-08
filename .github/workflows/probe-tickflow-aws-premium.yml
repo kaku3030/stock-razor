@@ -1,0 +1,73 @@
+name: TickFlow AWS Premium Probe (Explicit Opt-In)
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_premium_probe:
+        description: "Must be true only after secret and IAM/provider authorization are independently verified"
+        required: true
+        type: boolean
+        default: false
+      secret_arn:
+        description: "Exact Tokyo Secrets Manager ARN; never enter the API key"
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  premium-probe:
+    if: ${{ inputs.enable_premium_probe == true && inputs.secret_arn != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+      TICKFLOW_PREMIUM_PROBE_ENABLED: "true"
+      TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: tickflow-premium-probe-${{ github.run_id }}
+          aws-region: ap-northeast-1
+      - name: Run bounded isolated probe over SSM
+        env:
+          SECRET_ARN: ${{ inputs.secret_arn }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+          revision="$(git rev-parse HEAD)"
+          bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
+          probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
+          requirements_hash="$(sha256sum ops/requirements/tickflow-isolated-v0.1.txt | cut -d' ' -f1)"
+          read -r -d '' remote <<REMOTE || true
+          set -euo pipefail
+          umask 077
+          temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
+          trap 'rm -rf "\$temp_dir"' EXIT
+          export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
+          curl --fail --silent --show-error --max-time 20 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/ops/aws/run_tickflow_premium_probe.sh' \
+            -o "\$temp_dir/bootstrap.sh" 2>/dev/null
+          printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
+          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash'
+          REMOTE
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
+          for _ in $(seq 1 100); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text; exit 0 ;;
+              Failed|TimedOut|Cancelled|Cancelling) echo "TICKFLOW_PREMIUM_PROBE=$status" >&2; exit 1 ;;
+            esac
+            sleep 3
+          done
+          echo 'TICKFLOW_PREMIUM_PROBE=TIMEOUT' >&2
+          exit 1

@@ -112,6 +112,11 @@ def test_premium_contract_mode_is_network_free_and_fail_closed():
     assert result["premium_contract"]["live_trade"] is False
 
 
+def test_aws_report_preserves_premium_contract_security_fields():
+    assert '"premium_execution":data.get("premium_execution")' in CLOUD
+    assert '"premium_contract":data.get("premium_contract")' in CLOUD
+
+
 def test_aws_ssm_report_selects_sorted_json_regardless_first_key():
     # The first key of sort_keys=True is 'can_confirm_signal', not
     # 'cloud_independence'. A double escaped ERE brace previously dropped

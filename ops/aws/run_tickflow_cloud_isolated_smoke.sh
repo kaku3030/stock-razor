@@ -123,6 +123,8 @@ print(json.dumps({
   "mode":data["mode"],
   "sdk_version":data.get("sdk_version"),
   "operations":ops,
+  "premium_execution":data.get("premium_execution"),
+  "premium_contract":data.get("premium_contract"),
   "source_arbiter_admission":"BLOCKED",
   "data_qualification":"NOT_VERIFIED",
   "radar_admission":"BLOCKED",
