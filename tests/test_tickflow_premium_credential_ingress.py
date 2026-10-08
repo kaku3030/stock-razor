@@ -27,6 +27,14 @@ def test_premium_path_is_dormant_and_pins_all_remote_artifacts():
         assert forbidden not in PREMIUM_BOOTSTRAP.lower()
 
 
+def test_remote_premium_bootstrap_hash_verification_precedes_execution():
+    """The SSM target must authenticate fetched code before first execution."""
+    assert "sr-tickflow-premium-bootstrap.XXXXXXXX" in PREMIUM_WORKFLOW
+    assert "/tmp/run_tickflow_premium_probe.sh" not in PREMIUM_WORKFLOW
+    assert "sha256sum -c - >/dev/null" in PREMIUM_WORKFLOW
+    assert PREMIUM_WORKFLOW.index("sha256sum -c - >/dev/null") < PREMIUM_WORKFLOW.index(r'bash "\$temp_dir/bootstrap.sh"')
+
+
 def test_ingress_requires_exact_opt_in():
     assert premium_ingress_enabled("true") is True
     assert premium_ingress_enabled("TRUE") is False

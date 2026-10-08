@@ -48,12 +48,18 @@ jobs:
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
           probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
           requirements_hash="$(sha256sum ops/requirements/tickflow-isolated-v0.1.txt | cut -d' ' -f1)"
-          remote="$(printf '%s\n' \
-            'set -euo pipefail' \
-            "export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true" \
-            "curl --fail --silent --show-error --max-time 20 https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/ops/aws/run_tickflow_premium_probe.sh -o /tmp/run_tickflow_premium_probe.sh" \
-            'chmod 0755 /tmp/run_tickflow_premium_probe.sh' \
-            "/tmp/run_tickflow_premium_probe.sh $revision $SECRET_ARN $probe_hash $requirements_hash $bootstrap_hash")"
+          read -r -d '' remote <<REMOTE || true
+          set -euo pipefail
+          umask 077
+          temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
+          trap 'rm -rf "\$temp_dir"' EXIT
+          export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
+          curl --fail --silent --show-error --max-time 20 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/ops/aws/run_tickflow_premium_probe.sh' \
+            -o "\$temp_dir/bootstrap.sh" 2>/dev/null
+          printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
+          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash'
+          REMOTE
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 100); do
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
