@@ -197,3 +197,13 @@ def test_us_radar_worker_emits_truthful_runtime_latency_telemetry():
     assert '"radar_analysis_latency_ms": radar_analysis_latency_ms' in INSTALLER
     assert '"data_to_radar_latency_ms": data_to_radar_latency_ms' in INSTALLER
     assert '"emitted_at_utc": completed_at.isoformat()' in INSTALLER
+
+
+def test_us_radar_verifier_requires_runtime_latency_telemetry_consistency():
+    assert 'radar_analysis_performed = payload.get("radar_analysis_performed")' in VERIFY
+    assert 'radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")' in VERIFY
+    assert 'data_to_radar_latency_ms = payload.get("data_to_radar_latency_ms")' in VERIFY
+    assert 'assert isinstance(radar_analysis_performed, bool)' in VERIFY
+    assert 'assert payload.get("poll_status") == "PASS"' in VERIFY
+    assert 'assert radar_analysis_latency_ms is None' in VERIFY
+    assert 'assert data_to_radar_latency_ms is None' in VERIFY
