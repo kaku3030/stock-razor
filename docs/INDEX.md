@@ -74,6 +74,7 @@
 | [Provider Lifecycle / Cost Guard V0.1](architecture/PROVIDER_LIFECYCLE_COST_GUARD_V0_1.md) | Self-Survival Layer：Provider 生命周期、额度/费用、凭据、fallback 质量门禁、主动提醒与禁止自动付费合同 |
 | [Runtime Provider Observer / Evidence Provenance V0.1](architecture/PROVIDER_RUNTIME_OBSERVER_V0_1.md) | 运行时 provider 证据、field-level provenance、observed_at/source/error code/repo/runtime 追踪，以及 Provider Health 与 Data Admission 分离 |
 | [OpenD Runtime Evidence Ingest V0.1](architecture/PROVIDER_OPEND_RUNTIME_INGEST_V0_1.md) | 将现有云端 US OpenD heartbeat 保守映射为 Provider Lifecycle evidence；保留 exact SHA/runtime provenance，不把 REALTIME/closure 升级为 Data Admission 或 HEALTHY |
+| [CN Runtime Evidence Ingest V0.1](architecture/PROVIDER_CN_RUNTIME_INGEST_V0_1.md) | 将 A 股云端 Eastmoney-primary/Tencent-fallback per-frame lineage 拆成 provider-specific runtime evidence；fallback 不反向证明 Eastmoney 健康，currentness/route latency 不冒充 provider freshness/latency |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
 
 ## 多语言
