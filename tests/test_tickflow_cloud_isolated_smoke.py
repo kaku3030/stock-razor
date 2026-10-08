@@ -88,3 +88,11 @@ def test_location_explicitly_marks_aws_and_never_promotes_entitlement():
             mode="metadata", symbols=("159611.SZ",),
             location="UNVERIFIED_CUSTOM_LOCATION", client_factory=NoInit
         )
+
+
+def test_aws_ssm_report_selects_sorted_json_regardless_first_key():
+    # The first key of sort_keys=True is 'can_confirm_signal', not
+    # 'cloud_independence'. A double escaped ERE brace previously dropped
+    # a valid SSM report and failed a completed cloud smoke workflow.
+    assert "grep -E '^[{]' | tail -n1" in WORKFLOW
+    assert "grep -E '^\\\\{'" not in WORKFLOW
