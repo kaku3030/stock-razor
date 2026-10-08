@@ -23,6 +23,13 @@ from .contract import (
     evaluate_cost_action,
     evaluate_fallback,
 )
+from .notification_gateway import (
+    ProviderNotificationChannelResult,
+    ProviderNotificationDispatch,
+    ProviderNotificationGateway,
+    ProviderNotificationPolicyError,
+    format_provider_notification,
+)
 from .observer import (
     EvidenceConflictError,
     EvidenceProvenance,
@@ -68,6 +75,10 @@ __all__ = [
     "ProviderGuardAssessment",
     "ProviderHealthState",
     "ProviderLifecycleRecord",
+    "ProviderNotificationChannelResult",
+    "ProviderNotificationDispatch",
+    "ProviderNotificationGateway",
+    "ProviderNotificationPolicyError",
     "ProviderRole",
     "ProviderRuntimeIngestError",
     "ProviderRuntimeObservation",
@@ -81,6 +92,7 @@ __all__ = [
     "build_negative_provider_probe_observation",
     "evaluate_cost_action",
     "evaluate_fallback",
+    "format_provider_notification",
     "get_provider_definition",
     "ingest_alpaca_runtime_events",
     "ingest_cn_cloud_observation",

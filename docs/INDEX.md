@@ -78,6 +78,7 @@
 | [Alpaca Runtime Evidence Ingest V0.1](architecture/PROVIDER_ALPACA_RUNTIME_INGEST_V0_1.md) | 将 Alpaca adapter 生命周期事件映射为 fallback-provider evidence；feed=SIP 不等于 SIP entitlement，worker/registration 不升级 HEALTHY，Bar/Quote freshness 仍属 Data Admission |
 | [Negative Provider Probe Ingest V0.1](architecture/PROVIDER_NEGATIVE_PROBE_INGEST_V0_1.md) | OpenAI/Anthropic/Tavily/Twelve Data/EODHD/AWS 的标准化负向 auth/quota/rate-limit/failure evidence；仅允许降级/失败，不接受 raw response/密钥，也不产生 HEALTHY/余额/Admission 证据 |
 | [Provider Alert Engine V0.1](architecture/PROVIDER_ALERT_ENGINE_V0_1.md) | 将 Provider Guard assessment 转为 OPEN/UPDATED/RESOLVED typed transitions；UNKNOWN/HEALTHY 不发 generic alert，specific guard code 优先去重，旧 evidence fail-closed |
+| [Provider Notification Gateway V0.1](architecture/PROVIDER_NOTIFICATION_GATEWAY_V0_1.md) | 将 typed Provider Alert transitions 接入现有 route_type=alert 通知栈；复用 dedup/cooldown/渠道诊断，发送失败不反写 Provider/Radar/Execution 状态 |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
 
 ## 多语言
