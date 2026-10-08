@@ -202,6 +202,41 @@ def read_cn_radar_analysis(
             _fail("INVALID", error="FUTURE_EMITTED_AT"),
         )
 
+    radar_analysis_performed = payload.get("radar_analysis_performed")
+    radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")
+    data_to_radar_latency_ms = payload.get("data_to_radar_latency_ms")
+    if (
+        radar_analysis_performed is not None
+        and not isinstance(radar_analysis_performed, bool)
+    ):
+        return _finish(started_at, _fail("INVALID", error="RADAR_TELEMETRY_INVALID"))
+    for value in (radar_analysis_latency_ms, data_to_radar_latency_ms):
+        if (
+            value is not None
+            and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or value < 0
+            )
+        ):
+            return _finish(started_at, _fail("INVALID", error="RADAR_TELEMETRY_INVALID"))
+    if (
+        radar_analysis_performed is True
+        and (
+            radar_analysis_latency_ms is None
+            or data_to_radar_latency_ms is None
+        )
+    ):
+        return _finish(started_at, _fail("INVALID", error="RADAR_TELEMETRY_INCOMPLETE"))
+    if (
+        radar_analysis_performed is not True
+        and (
+            radar_analysis_latency_ms is not None
+            or data_to_radar_latency_ms is not None
+        )
+    ):
+        return _finish(started_at, _fail("INVALID", error="RADAR_TELEMETRY_INCONSISTENT"))
+
     requested, invalid = _symbols(symbols)
     if invalid:
         return _finish(
@@ -265,6 +300,17 @@ def read_cn_radar_analysis(
         "sequence": payload.get("sequence"),
         "emitted_at_utc": payload.get("emitted_at_utc"),
         "poll_status": payload.get("poll_status"),
+        "radar_analysis_performed": radar_analysis_performed,
+        "radar_analysis_latency_ms": (
+            float(radar_analysis_latency_ms)
+            if radar_analysis_latency_ms is not None
+            else None
+        ),
+        "data_to_radar_latency_ms": (
+            float(data_to_radar_latency_ms)
+            if data_to_radar_latency_ms is not None
+            else None
+        ),
         "source_repo_sha": payload.get("source_repo_sha"),
         "source_runtime_instance_id": payload.get("source_runtime_instance_id"),
         "source_sequence": payload.get("source_sequence"),
