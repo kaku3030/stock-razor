@@ -6,7 +6,7 @@ SERVICE_NAME="${SERVICE_NAME:-stock-razor-cn-eastmoney.service}"
 REPO_URL="${REPO_URL:-https://github.com/kaku3030/stock-razor.git}"
 REPO_REF="${REPO_REF:?REPO_REF exact commit SHA is required}"
 STATUS_PATH="${STATUS_PATH:-/run/stock-razor-cn-eastmoney/latest-observation.json}"
-SYMBOLS="${SYMBOLS:-512730,159611,159363}"
+SYMBOLS="${SYMBOLS:-512730,159611,159363,518880}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 
 case "$REPO_REF" in
@@ -61,7 +61,7 @@ symbols = tuple(
         item.strip()
         for item in os.environ.get(
             "STOCK_RAZOR_CN_SYMBOLS",
-            "512730,159611,159363",
+            "512730,159611,159363,518880",
         ).split(",")
         if item.strip()
     )
