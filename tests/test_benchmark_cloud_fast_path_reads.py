@@ -167,3 +167,87 @@ def test_cn_diagnostics_unknown_and_stale_remain_visible(monkeypatch):
     assert row["source_age_seconds"] is None
     assert row["observed_row_count"] is None
     assert row["radar_admission"] == "BLOCKED"
+
+
+def test_us_cloud_diagnostics_distinguish_closed_market_and_missing_symbols(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_us_livefeed_health",
+        lambda: {
+            "status": "DEGRADED",
+            "market_state_us": "CLOSED",
+            "delivery_mode": "UNPROVEN",
+            "bar_closure": "UNPROVEN",
+            "canonical_export_status": "BLOCKED",
+            "realtime_delivery_evidence": False,
+            "bar_closure_proven": False,
+            "secret": "DO_NOT_PRINT",
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_market_snapshots",
+        lambda symbols: {
+            "status": "STALE",
+            "source_age_seconds": 600.0,
+            "data_available": True,
+            "symbols": {
+                "AMD": {
+                    "counts": {"1m": 20, "5m": 4, "15m": 1, "1h": 0},
+                    "latest": {"1m": {"close": 101.25}},
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_radar_analysis",
+        lambda symbols: {
+            "status": "STALE",
+            "poll_status": "BLOCKED",
+            "source_age_seconds": 999.0,
+            "failure_reason": "SECRET_ERROR",
+        },
+    )
+    result=benchmark.us_cloud_read_diagnostics(["AMD", "NVDA"])
+    assert result["scope"] == "US_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"
+    assert result["market_state_us"] == "CLOSED"
+    assert result["livefeed_status"] == "DEGRADED"
+    assert result["canonical_snapshot_status"] == "STALE"
+    assert result["radar_poll_status"] == "BLOCKED"
+    assert result["symbols"]["AMD"]["bar_counts"]["1m"] == 20
+    assert result["symbols"]["AMD"]["any_bars_observed"] is True
+    assert result["symbols"]["NVDA"]["symbol_present"] is False
+    assert result["symbols"]["NVDA"]["any_bars_observed"] is False
+    assert result["data_qualification"] == "NOT_VERIFIED"
+    assert result["radar_admission"] == "BLOCKED"
+    import json
+    encoded=json.dumps(result)
+    for secret in ("DO_NOT_PRINT", "SECRET_ERROR", "close", "101.25"):
+        assert secret not in encoded
+
+
+def test_us_diagnostics_reject_unrecognized_status_and_bad_counts(monkeypatch):
+    monkeypatch.setattr(
+        benchmark, "read_us_livefeed_health",
+        lambda: {"status": "PROVIDER_VERIFIED", "market_state_us": "CUSTOM"},
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_market_snapshots",
+        lambda symbols: {
+            "status": "PASS",
+            "symbols": {"QQQ": {"counts": {
+                "1m": True, "5m": -1, "15m": "2", "1h": 0
+            }}},
+        },
+    )
+    monkeypatch.setattr(
+        benchmark, "read_us_radar_analysis",
+        lambda symbols: {"status": "OPEN_TRADE", "poll_status": "GREAT"},
+    )
+    out=benchmark.us_cloud_read_diagnostics(["QQQ"])
+    assert out["livefeed_status"] == "UNKNOWN"
+    assert out["market_state_us"] == "UNKNOWN"
+    assert out["radar_status"] == "UNKNOWN"
+    assert out["symbols"]["QQQ"]["bar_counts"] == {
+        "1m": None, "5m": None, "15m": None, "1h": 0
+    }
+    assert out["symbols"]["QQQ"]["any_bars_observed"] is False
+    assert out["can_confirm_signal"] is False
