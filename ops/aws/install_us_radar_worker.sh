@@ -132,6 +132,7 @@ worker = CanonicalSnapshotRadarWorker(
     evaluator=evaluator,
 )
 cycle = 0
+last_logged_poll_status = None
 
 
 def publish(payload):
@@ -227,8 +228,38 @@ while True:
         "radar_admission": "BLOCKED",
         "live_trade": False,
     }
+    # Preserve complete atomic status for local read-only consumers on EVERY
+    # poll, including changed safety gates. Do not dump multi-symbol technical
+    # snapshots into systemd journal four times per second on unchanged data.
     publish(payload)
-    print(json.dumps(payload, separators=(",", ":"), allow_nan=False), flush=True)
+    should_log = (
+        radar_analysis_performed
+        or evaluation.status != last_logged_poll_status
+        or cycle % 40 == 0
+    )
+    if should_log:
+        audit = {
+            "type": "us_radar_worker_compact_audit",
+            "log_scope": "SUMMARY_ONLY_FULL_STATE_IN_ATOMIC_STATUS_FILE",
+            "worker_repo_sha": worker_repo_sha,
+            "expected_source_repo_sha": expected_source_repo_sha,
+            "runtime_instance_id": runtime_id,
+            "sequence": cycle,
+            "emitted_at_utc": completed_at.isoformat(),
+            "source_runtime_instance_id": evaluation.runtime_instance_id,
+            "source_sequence": evaluation.source_sequence,
+            "poll_status": evaluation.status,
+            "radar_analysis_performed": radar_analysis_performed,
+            "radar_analysis_latency_ms": radar_analysis_latency_ms,
+            "data_to_radar_latency_ms": data_to_radar_latency_ms,
+            "worker_phase_timing": payload["worker_phase_timing"],
+            "research_only": True,
+            "can_confirm_signal": False,
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+        print(json.dumps(audit, separators=(",", ":"), allow_nan=False), flush=True)
+        last_logged_poll_status = evaluation.status
     time.sleep(poll_seconds)
 PY
 
