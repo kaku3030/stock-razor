@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from math import isfinite
+
 from datetime import datetime, timezone
 import json
 import os
@@ -342,6 +344,7 @@ def read_cn_market_data(
         and (
             isinstance(provider_request_latency_ms, bool)
             or not isinstance(provider_request_latency_ms, (int, float))
+            or not isfinite(provider_request_latency_ms)
             or provider_request_latency_ms < 0
         )
     ):
