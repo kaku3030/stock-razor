@@ -474,3 +474,86 @@ def test_runtime_restart_and_session_change_cannot_look_like_normal_progress():
     later = capture("runtime-stable", "PRE_MARKET_BEGIN", 7, 30, 21)
     r = observe_source_progress(same_runtime, later, interval_seconds=12)["us"]
     assert r["event_progress_classification"] == "SESSION_TRANSITION_UNQUALIFIED"
+
+
+
+def test_livefeed_canonical_and_radar_pin_identity_are_distinguished():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+
+    source_sha = "a" * 40
+    previous_sha = "b" * 40
+    def sample(health_sha, canonical_sha, radar_expected_sha, live_id="feed-one", snapshot_id="feed-one"):
+        return _sample_progress_evidence(
+            us_health={
+                "status": "HEALTHY", "market_state_us": "MORNING",
+                "repo_sha": health_sha, "runtime_instance_id": live_id,
+                "sequence": 9, "event_count": 11, "accepted_event_count": 10,
+            },
+            us_snapshot={
+                "status": "STALE", "repo_sha": canonical_sha,
+                "runtime_instance_id": snapshot_id, "sequence": 3,
+                "source_age_seconds": 18000,
+            },
+            us_radar={
+                "status": "PASS", "expected_source_repo_sha": radar_expected_sha,
+                "sequence": 51, "runtime_instance_id": "research-worker",
+                "source_sequence": 3, "poll_status": "BLOCKED",
+            },
+            cn_reads=cn_rows(),
+        )
+
+    pinned_old = sample(source_sha, source_sha, previous_sha)
+    result = observe_source_progress(pinned_old, pinned_old, interval_seconds=12)
+    us = result["us"]
+    assert us["livefeed_canonical_repo_match"] is True
+    assert us["livefeed_canonical_runtime_match"] is True
+    assert us["radar_expected_livefeed_repo_match"] is False
+    assert us["source_identity_classification"] == "RADAR_EXPECTED_SOURCE_STALE_UNQUALIFIED"
+    assert us["radar_canonical_alignment"] == "SOURCE_REPO_MISMATCH_UNQUALIFIED"
+    assert us["radar_increment_proven"] is False
+    assert source_sha not in json.dumps(result)
+    assert previous_sha not in json.dumps(result)
+
+    consistent = sample(source_sha, source_sha, source_sha)
+    consistent_result = observe_source_progress(consistent, consistent, interval_seconds=12)
+    assert consistent_result["us"]["source_identity_classification"] == "IDENTITIES_MATCH_UNQUALIFIED"
+    assert consistent_result["radar_admission"] == "BLOCKED"
+    assert consistent_result["unique_provider_event_delivery_qualified"] is False
+
+    divergent = sample(source_sha, previous_sha, source_sha)
+    out = observe_source_progress(divergent, divergent, interval_seconds=12)
+    assert out["us"]["source_identity_classification"] == "LIVEFEED_CANONICAL_IDENTITY_MISMATCH_UNQUALIFIED"
+
+    wrong_runtime = sample(source_sha, source_sha, source_sha, snapshot_id="other-feed")
+    out = observe_source_progress(wrong_runtime, wrong_runtime, interval_seconds=12)
+    assert out["us"]["source_identity_classification"] == "LIVEFEED_CANONICAL_IDENTITY_MISMATCH_UNQUALIFIED"
+
+
+def test_unknown_or_malformed_provenance_does_not_forge_matching_sources():
+    from scripts.probe_cloud_source_arbiter_shadow import (
+        _sample_progress_evidence, observe_source_progress,
+    )
+    sample = _sample_progress_evidence(
+        us_health={
+            "status": "HEALTHY", "repo_sha": "not a git sha",
+            "runtime_instance_id": "livefeed", "market_state_us": "MORNING",
+            "API_SECRET": "NEVER_PRINT",
+        },
+        us_snapshot={
+            "status": "STALE", "repo_sha": "a" * 40, "sequence": 1,
+        },
+        us_radar={
+            "status": "PASS", "source_sequence": 1,
+            "expected_source_repo_sha": "a" * 40,
+        },
+        cn_reads=cn_rows(),
+    )
+    out = observe_source_progress(sample, sample, interval_seconds=12)
+    assert out["us"]["livefeed_canonical_repo_match"] is None
+    assert out["us"]["livefeed_canonical_runtime_match"] is None
+    assert out["us"]["radar_expected_livefeed_repo_match"] is None
+    assert out["us"]["source_identity_classification"] == "IDENTITY_UNKNOWN_OR_INCONSISTENT"
+    assert out["live_trade"] is False
+    assert "NEVER_PRINT" not in json.dumps(out)
