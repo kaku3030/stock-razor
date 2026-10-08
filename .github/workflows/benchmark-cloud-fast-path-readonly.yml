@@ -57,8 +57,8 @@ jobs:
             else
               report="$("$python_bin" scripts/benchmark_cloud_fast_path_reads.py --market cn --symbols 159611 518880 --timeframe 15m --iterations 30)"
             fi
-            printf '%s' "$report" | "$python_bin" -c '
-          import json,sys
+            printf '%s' "$report" | DEPLOYED_SHA="$deployed_sha" "$python_bin" -c '
+          import json,os,sys
           data=json.load(sys.stdin)
           summary=data["summary"]
           assert data["missing_layers_are_not_inferred"] is True
@@ -72,6 +72,7 @@ jobs:
           report={
              "market":data["samples"][0]["market"] if data["samples"] else None,
              "status":summary["status"],
+             "runtime_repo_sha":os.environ.get("DEPLOYED_SHA"),
              "sample_count":summary["sample_count"],
              "measurement_scope":"REPEATED_READ_DIAGNOSTICS_ONLY",
              "percentiles_not_provider_slo":True,
