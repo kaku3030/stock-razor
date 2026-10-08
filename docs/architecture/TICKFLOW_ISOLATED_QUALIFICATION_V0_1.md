@@ -100,3 +100,22 @@ Provider events must never themselves grant Radar execution authorization.
 
 No paid plan has been purchased by this engineering slice; the user's
 separate TickFlow Expert purchase and credential setup are outside CI.
+
+## Isolation findings on 2026-10-08 (JST)
+
+On the user's authorized Windows desktop, a separate
+`%LOCALAPPDATA%\\StockRazor\\IsolatedProbes\\tickflow\\venv`
+has been created without modifying the global Python or trading installation.
+The exact SDK `tickflow==0.1.25` plus `tzdata==2026.3` imports
+successfully. `pip check` passes, but a new venv without tzdata failed at
+`ZoneInfo("Asia/Shanghai")` despite `pip check` showing healthy, hence
+the explicit Windows pin.
+
+The SDK's free-mode announcement contains non-ASCII characters and can raise
+`UnicodeEncodeError` on Windows consoles using incompatible code pages.
+The probe now silences provider stdout/stderr into a UTF-8 null sink and
+limits offline HTTP queries to an 8-second timeout and zero automatic
+retries, while emitting only sanitized status/evidence metadata.
+
+The local `TICKFLOW_API_KEY` environment variable was absent when checked.
+This is **not** a purchase, login, WS, AWS or paid-data qualification result.
