@@ -215,6 +215,79 @@ def cn_symbol_read_diagnostics(symbols: list[str], timeframe: str) -> dict:
     }
 
 
+def us_cloud_read_diagnostics(symbols: list[str]) -> dict:
+    """Read-only health/coverage view; no price bars or raw errors are logged."""
+    statuses = frozenset({
+        "PASS", "HEALTHY", "STALE", "DEGRADED", "BLOCKED",
+        "INVALID", "NO_DATA", "UNKNOWN",
+    })
+    market_states = frozenset({
+        "OPEN", "CLOSED", "PRE_MARKET", "AFTER_HOURS",
+        "EXTENDED_HOURS", "UNKNOWN",
+    })
+    delivery_modes = frozenset({"REALTIME", "DELAYED", "UNPROVEN", "UNKNOWN"})
+    closure_modes = frozenset({"PROVEN", "UNPROVEN", "UNKNOWN"})
+
+    health = read_us_livefeed_health()
+    canonical = read_us_market_snapshots(symbols)
+    radar = read_us_radar_analysis(symbols)
+    source_symbols = canonical.get("symbols")
+    source_symbols = source_symbols if isinstance(source_symbols, dict) else {}
+    coverage = {}
+    for symbol in dict.fromkeys(symbols):
+        info = source_symbols.get(symbol)
+        info = info if isinstance(info, dict) else {}
+        source_counts = info.get("counts")
+        source_counts = source_counts if isinstance(source_counts, dict) else {}
+        counts = {
+            frame: (
+                source_counts[frame]
+                if isinstance(source_counts.get(frame), int)
+                and not isinstance(source_counts.get(frame), bool)
+                and source_counts[frame] >= 0
+                else None
+            )
+            for frame in ("1m", "5m", "15m", "1h")
+        }
+        coverage[symbol] = {
+            "symbol_present": symbol in source_symbols,
+            "bar_counts": counts,
+            "any_bars_observed": any(
+                value is not None and value > 0 for value in counts.values()
+            ),
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+            "can_confirm_signal": False,
+        }
+    return {
+        "scope": "US_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION",
+        "livefeed_status": _allow_status(health.get("status"), statuses),
+        "market_state_us": _allow_status(
+            health.get("market_state_us"), market_states
+        ),
+        "delivery_mode": _allow_status(health.get("delivery_mode"), delivery_modes),
+        "bar_closure": _allow_status(health.get("bar_closure"), closure_modes),
+        "realtime_delivery_evidence": health.get("realtime_delivery_evidence") is True,
+        "bar_closure_proven": health.get("bar_closure_proven") is True,
+        "canonical_export_status": _allow_status(
+            health.get("canonical_export_status"), statuses
+        ),
+        "canonical_snapshot_status": _allow_status(
+            canonical.get("status"), statuses
+        ),
+        "canonical_snapshot_age_seconds": _number(canonical, "source_age_seconds"),
+        "canonical_data_available": canonical.get("data_available") is True,
+        "radar_status": _allow_status(radar.get("status"), statuses),
+        "radar_poll_status": _allow_status(radar.get("poll_status"), statuses),
+        "radar_source_age_seconds": _number(radar, "source_age_seconds"),
+        "symbols": coverage,
+        "data_qualification": "NOT_VERIFIED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "can_confirm_signal": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--market", choices=("us", "cn"), required=True)
@@ -235,9 +308,15 @@ def main() -> int:
         if args.market == "cn"
         else None
     )
+    us_diagnostics = (
+        us_cloud_read_diagnostics(args.symbols)
+        if args.market == "us"
+        else None
+    )
     print(json.dumps({
         "schema": "stock_razor_cloud_fast_path_benchmark_v1",
         "cn_symbol_read_diagnostics": source_diagnostics,
+        "us_cloud_read_diagnostics": us_diagnostics,
         "measurement_boundary": "RUNTIME_TELEMETRY_PLUS_READ_SURFACES",
         "missing_layers_are_not_inferred": True,
         "summary": summarize_fast_path(samples),
