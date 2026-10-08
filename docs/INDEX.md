@@ -76,6 +76,7 @@
 | [OpenD Runtime Evidence Ingest V0.1](architecture/PROVIDER_OPEND_RUNTIME_INGEST_V0_1.md) | 将现有云端 US OpenD heartbeat 保守映射为 Provider Lifecycle evidence；保留 exact SHA/runtime provenance，不把 REALTIME/closure 升级为 Data Admission 或 HEALTHY |
 | [CN Runtime Evidence Ingest V0.1](architecture/PROVIDER_CN_RUNTIME_INGEST_V0_1.md) | 将 A 股云端 Eastmoney-primary/Tencent-fallback per-frame lineage 拆成 provider-specific runtime evidence；fallback 不反向证明 Eastmoney 健康，currentness/route latency 不冒充 provider freshness/latency |
 | [Alpaca Runtime Evidence Ingest V0.1](architecture/PROVIDER_ALPACA_RUNTIME_INGEST_V0_1.md) | 将 Alpaca adapter 生命周期事件映射为 fallback-provider evidence；feed=SIP 不等于 SIP entitlement，worker/registration 不升级 HEALTHY，Bar/Quote freshness 仍属 Data Admission |
+| [Negative Provider Probe Ingest V0.1](architecture/PROVIDER_NEGATIVE_PROBE_INGEST_V0_1.md) | OpenAI/Anthropic/Tavily/Twelve Data/EODHD/AWS 的标准化负向 auth/quota/rate-limit/failure evidence；仅允许降级/失败，不接受 raw response/密钥，也不产生 HEALTHY/余额/Admission 证据 |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
 
 ## 多语言
