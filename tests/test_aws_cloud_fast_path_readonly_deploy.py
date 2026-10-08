@@ -59,3 +59,12 @@ def test_cloud_benchmark_surfaces_cn_per_symbol_qualification_and_read_success()
     assert '"data_qualification") == "NOT_VERIFIED"' in WORKFLOW
     assert 'set(diagnostics.get("symbols",{})) == {"159611","518880"}' in WORKFLOW
     assert 'row.get("can_confirm_signal") is False' in WORKFLOW
+
+
+def test_aws_fast_path_reports_sanitized_us_health_and_radar_reasons():
+    assert 'us_diagnostics=data.get("us_cloud_read_diagnostics")' in WORKFLOW
+    assert '"US_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"' in WORKFLOW
+    assert 'set(us_diagnostics.get("symbols",{})) == {"AMD","NVDA","TSLA","QQQ"}' in WORKFLOW
+    assert '"us_cloud_read_diagnostics":us_diagnostics' in WORKFLOW
+    assert 'us_diagnostics.get("data_qualification") == "NOT_VERIFIED"' in WORKFLOW
+    assert 'us_diagnostics.get("radar_admission") == "BLOCKED"' in WORKFLOW
