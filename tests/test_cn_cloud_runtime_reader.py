@@ -313,3 +313,30 @@ def test_repeated_reads_hit_cache_and_atomic_replace_invalidates(tmp_path):
     assert third["source_cache_hit"] is False
     assert third["sequence"] == 8
     assert third["rows"][-1]["close"] == 1.7
+
+
+def test_cn_reader_exposes_provider_request_latency_without_promotion(tmp_path):
+    payload = _payload()
+    payload["symbols"]["159611"]["timeframes"]["15m"]["request_latency_ms"] = 1234.5
+    path = _write(tmp_path / "cn.json", payload)
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["status"] == "PASS"
+    assert result["provider_request_latency_ms"] == 1234.5
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+@pytest.mark.parametrize("value", [-1, "fast", True])
+def test_cn_reader_rejects_invalid_provider_request_latency(tmp_path, value):
+    payload = _payload()
+    payload["symbols"]["159611"]["timeframes"]["15m"]["request_latency_ms"] = value
+    path = _write(tmp_path / "cn.json", payload)
+
+    result = read_cn_market_data("159611", "15m", path=path, now_utc=NOW)
+
+    assert result["status"] == "INVALID"
+    assert result["error"] == "PROVIDER_REQUEST_LATENCY_INVALID"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
