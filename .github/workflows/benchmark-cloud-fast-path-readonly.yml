@@ -66,6 +66,20 @@ jobs:
           assert summary["live_trade"] is False
           assert summary["can_confirm_signal"] is False
           diagnostics=data.get("cn_symbol_read_diagnostics")
+          us_diagnostics=data.get("us_cloud_read_diagnostics")
+          if data["samples"] and data["samples"][0]["market"] == "us":
+             assert isinstance(us_diagnostics,dict)
+             assert us_diagnostics.get("scope") == "US_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"
+             assert us_diagnostics.get("data_qualification") == "NOT_VERIFIED"
+             assert us_diagnostics.get("radar_admission") == "BLOCKED"
+             assert us_diagnostics.get("live_trade") is False
+             assert us_diagnostics.get("can_confirm_signal") is False
+             assert set(us_diagnostics.get("symbols",{})) == {"AMD","NVDA","TSLA","QQQ"}
+             assert all(
+                symbol.get("radar_admission") == "BLOCKED"
+                and symbol.get("can_confirm_signal") is False
+                for symbol in us_diagnostics["symbols"].values()
+             )
           if data["samples"] and data["samples"][0]["market"] == "cn":
              assert isinstance(diagnostics,dict)
              assert diagnostics.get("scope") == "CN_READ_ONLY_SOURCE_DIAGNOSTIC_NOT_ADMISSION"
@@ -90,6 +104,7 @@ jobs:
              "sample_count":summary["sample_count"],
              "read_success_rate":summary["success_rate"],
              "cn_symbol_read_diagnostics":diagnostics,
+             "us_cloud_read_diagnostics":us_diagnostics,
              "measurement_scope":"REPEATED_READ_DIAGNOSTICS_ONLY",
              "percentiles_not_provider_slo":True,
              "metrics":{key:summary["metrics"].get(key) for key in selected},

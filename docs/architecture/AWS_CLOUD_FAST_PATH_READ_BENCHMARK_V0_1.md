@@ -47,3 +47,23 @@ cross-source correctness and Radar approval. Consequently the report always
 states `data_qualification=NOT_VERIFIED` and
 `radar_admission=BLOCKED`. The added `read_success_rate` is only
 the read-surface status rate, not a market data quality acceptance score.
+
+## US OpenD health and bar-coverage diagnostics
+
+The US fast-read benchmark now also emits one bounded `us_cloud_read_diagnostics`
+view per run. It separates health, market session, delivery mode, bar-closure
+evidence, canonical snapshot state, Radar read/poll status, and the number of
+cached 1m/5m/15m/1h bars for each requested US symbol.
+
+This is needed because **fast cached reads with `read_success_rate=0`**
+do not prove that the market stream is available. During a closed market,
+absent bars, stale snapshots and blocked Radar are plausible and must
+be reported separately; the diagnostic must not invent a failure cause.
+
+Only whitelisted statuses and counts are emitted; no price bars, last trade
+values, raw errors, account data or credentials enter GitHub logs.
+
+`data_qualification=NOT_VERIFIED`,
+`radar_admission=BLOCKED`, and `can_confirm_signal=false` continue to
+apply even if all component statuses are HEALTHY. A US market-session
+qualification with advancing 1m/5m/15m/1h source data is a separate step.
