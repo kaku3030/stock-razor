@@ -23,6 +23,10 @@ with open(daily_path, encoding="utf-8") as handle:
 
 export = heartbeat.get("canonical_snapshot_export") or {}
 assert heartbeat.get("repo_sha") == expected_sha
+assert heartbeat.get("research_only") is True
+assert heartbeat.get("can_confirm_signal") is False
+assert heartbeat.get("radar_admission") == "BLOCKED"
+assert heartbeat.get("live_trade") is False
 assert int(heartbeat.get("event_count") or 0) > 0
 
 warm_start = heartbeat.get("warm_start") or {}
