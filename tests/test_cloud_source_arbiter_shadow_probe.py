@@ -21,8 +21,8 @@ def us_snapshot(*, status="PASS", age=7):
         "source_age_seconds": age,
         "emitted_at_utc": (NOW - timedelta(seconds=age)).isoformat(),
         "symbols": {
-            "US.AMD": {"counts": {"15m": 22}, "latest": {"close": 999}},
-            "US.NVDA": {"counts": {"15m": 23}, "latest": {"close": 888}},
+            "US.AMD": {"counts": {"15m": 22}, "latest": {"close": "PRICE_SENTINEL_AMD"}},
+            "US.NVDA": {"counts": {"15m": 23}, "latest": {"close": "PRICE_SENTINEL_NVDA"}},
         },
         "user_account": "SECRET_DO_NOT_PRINT",
     }
@@ -36,7 +36,7 @@ def cn_rows(*, age=9):
             "source_age_seconds": age,
             "emitted_at_utc": (NOW - timedelta(seconds=age)).isoformat(),
             "total_row_count": 64, "currentness": "PROVEN",
-            "rows": [{"close": 222}],
+            "rows": [{"close": "PRICE_SENTINEL_CN_A"}],
             "api_key": "SECRET_DO_NOT_PRINT",
         },
         "518880": {
@@ -45,7 +45,7 @@ def cn_rows(*, age=9):
             "source_age_seconds": age,
             "emitted_at_utc": (NOW - timedelta(seconds=age)).isoformat(),
             "total_row_count": 150, "currentness": "PROVEN",
-            "rows": [{"close": 111}],
+            "rows": [{"close": "PRICE_SENTINEL_CN_B"}],
         },
     }
 
@@ -75,7 +75,7 @@ def test_realistic_cloud_health_never_implies_qualified_canonical_writer():
     assert d["entries"][2]["observed_bar_count"] == 64
     assert d["entries"][2]["decision"]["source_latency_ms"] is None
     payload=json.dumps(d)
-    for secret in ("SECRET_DO_NOT_PRINT", "close", "999", "888", "222", "111"):
+    for secret in ("SECRET_DO_NOT_PRINT", "\"close\"", "PRICE_SENTINEL_"):
         assert secret not in payload
 
 
