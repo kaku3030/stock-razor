@@ -52,3 +52,13 @@ def test_cn_radar_workflow_uses_exact_main_and_ssm():
     assert "install_cn_radar_worker.sh" in WORKFLOW
     assert "verify_cn_radar_worker.sh" in WORKFLOW
     assert "CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS" in WORKFLOW
+
+
+def test_cn_radar_worker_emits_truthful_runtime_latency_telemetry():
+    assert "analysis_started = time.perf_counter()" in INSTALL
+    assert '"radar_analysis_performed": radar_analysis_performed' in INSTALL
+    assert '"radar_analysis_latency_ms": radar_analysis_latency_ms' in INSTALL
+    assert '"data_to_radar_latency_ms": data_to_radar_latency_ms' in INSTALL
+    assert 'poll_status = "UNCHANGED"' in INSTALL
+    assert "radar_analysis_performed = False" in INSTALL
+    assert '"emitted_at_utc": completed_at.isoformat()' in INSTALL
