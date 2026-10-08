@@ -12,6 +12,12 @@ from .notification_gateway import (
     ProviderNotificationDispatch,
     ProviderNotificationGateway,
 )
+from .shadow_validation import (
+    ProviderAlertShadowBatch,
+    ProviderAlertShadowEvent,
+    ProviderAlertShadowSummary,
+    ProviderAlertShadowValidator,
+)
 from .contract import (
     CostAction,
     CostGuardDecision,
@@ -69,6 +75,10 @@ __all__ = [
     "ProviderAlertEvaluation",
     "ProviderAlertTransition",
     "ProviderAlertTransitionState",
+    "ProviderAlertShadowBatch",
+    "ProviderAlertShadowEvent",
+    "ProviderAlertShadowSummary",
+    "ProviderAlertShadowValidator",
     "NotificationDispatcher",
     "ProviderNotificationDispatch",
     "ProviderNotificationGateway",

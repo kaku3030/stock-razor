@@ -79,6 +79,7 @@
 | [Negative Provider Probe Ingest V0.1](architecture/PROVIDER_NEGATIVE_PROBE_INGEST_V0_1.md) | OpenAI/Anthropic/Tavily/Twelve Data/EODHD/AWS 的标准化负向 auth/quota/rate-limit/failure evidence；仅允许降级/失败，不接受 raw response/密钥，也不产生 HEALTHY/余额/Admission 证据 |
 | [Provider Alert Engine V0.1](architecture/PROVIDER_ALERT_ENGINE_V0_1.md) | 将 Provider Guard assessment 转为 OPEN/UPDATED/RESOLVED typed transitions；UNKNOWN/HEALTHY 不发 generic alert，specific guard code 优先去重，旧 evidence fail-closed |
 | [Provider Notification Gateway V0.1](architecture/PROVIDER_NOTIFICATION_GATEWAY_V0_1.md) | 将 Provider Alert transition 薄桥接到现有 route_type=alert 通知栈；复用 dedup/cooldown/渠道诊断，RESOLVED 独立 cooldown，通知失败不回写 lifecycle/Radar 状态 |
+| [Provider Alert Shadow Validation V0.1](architecture/PROVIDER_ALERT_SHADOW_VALIDATION_V0_1.md) | 对真实 Provider snapshots 运行 Alert Engine 但禁用通知发送，记录 deterministic shadow journal/覆盖统计；shadow 永远不能自行升级 active notification |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
 
 ## 多语言
