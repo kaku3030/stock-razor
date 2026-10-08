@@ -137,12 +137,15 @@ while True:
 
     completed_at = datetime.now(timezone.utc)
     if source_emitted is not None:
-        source_age_seconds = max(
-            0.0,
-            (completed_at - source_emitted.astimezone(timezone.utc)).total_seconds(),
+        source_delta_ms = (
+            completed_at - source_emitted.astimezone(timezone.utc)
+        ).total_seconds() * 1000
+        # Do not turn a clock reversal into fake 0ms Data->Radar latency.
+        source_age_seconds = (
+            round(source_delta_ms / 1000, 6) if source_delta_ms >= 0 else None
         )
-        if radar_analysis_performed:
-            data_to_radar_latency_ms = round(source_age_seconds * 1000, 3)
+        if radar_analysis_performed and source_delta_ms >= 0:
+            data_to_radar_latency_ms = round(source_delta_ms, 3)
 
     payload = {
         "type": "cn_radar_research_heartbeat",
