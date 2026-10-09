@@ -2019,6 +2019,10 @@ jobs:
                           return value, 'SNAPSHOTS_OBJECT'
                       if 'symbols' in value:
                           return value, 'SYMBOLS_OBJECT'
+                      if (value.get('ok') is False and 'status' in value
+                              and value.get('radar_admission') == 'BLOCKED'
+                              and value.get('live_trade') is False):
+                          return value, 'CANONICAL_STATUS_OBJECT'
                       if value.get('type') == 'text' and isinstance(value.get('text'), str):
                           value = value['text']
                           continue
@@ -2073,6 +2077,16 @@ jobs:
               data, shape = decode_snapshot_result(call.get('output'))
               diagnostic['tool_output_shape'] = shape
               if not isinstance(data, dict):
+                  return diagnostic
+
+              # The fail-closed reader may return a status object without
+              # a symbols map (for example UNAVAILABLE). Classify it safely.
+              if data.get('ok') is False and 'status' in data:
+                  diagnostic['canonical_source_status'] = (
+                      data.get('status')
+                      if data.get('status') in ('PASS', 'STALE', 'INVALID', 'UNAVAILABLE', 'INVALID_ARGUMENT')
+                      else 'UNKNOWN'
+                  )
                   return diagnostic
 
               # Runtime tunnel targets readonly_mcp_server.py, not the older
