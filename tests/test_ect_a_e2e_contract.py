@@ -299,6 +299,8 @@ def test_secure_mcp_tunnel_bootstrap_is_posix_shell_compatible() -> None:
     bootstrap = tunnel.split('cat > "$wrapper"', 1)[0]
     assert "set -eu" in bootstrap
     assert "set -euo pipefail" not in bootstrap
+    assert "zipfile.ZipFile" in bootstrap
+    assert "unzip -oq" not in bootstrap
 
 
 def _response_for_source() -> str:

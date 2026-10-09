@@ -1933,7 +1933,13 @@ jobs:
           expected_checksum="$(awk -v file="$asset" '$2 == file { print $1; exit }' "$tmp_dir/SHA256SUMS.txt")"
           test "${#expected_checksum}" -eq 64
           printf '%s  %s\n' "$expected_checksum" "$tmp_dir/$asset" | sha256sum --check --status
-          unzip -oq "$tmp_dir/$asset" -d "$tmp_dir/extracted"
+          python3 - "$tmp_dir/$asset" "$tmp_dir/extracted" <<'PY'
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              archive.extractall(sys.argv[2])
+          PY
           client_path="$(find "$tmp_dir/extracted" -type f -name tunnel-client -perm -u+x -print -quit)"
           test -n "$client_path"
           install -m 0755 "$client_path" "$install_dir/tunnel-client"
