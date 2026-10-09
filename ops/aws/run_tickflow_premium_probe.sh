@@ -75,9 +75,16 @@ if [[ -z "$aws_cli" ]]; then
 fi
 if [[ -z "$aws_cli" ]]; then
   probe_stage=INSTALL_AWS_CLI
+  aws_arch="$(uname -m 2>/dev/null || true)"
+  case "$aws_arch" in
+    x86_64|amd64) aws_package_arch=x86_64 ;;
+    aarch64|arm64) aws_package_arch=aarch64 ;;
+    *) printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=UNSUPPORTED\n'; exit 126 ;;
+  esac
+  printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=%s\n' "$aws_package_arch"
   mkdir -p "$root/aws-cli" "$root/bin"
   curl --fail --silent --show-error --max-time 60 \
-    'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' \
+    "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
     -o "$stage/awscliv2.zip" 2>/dev/null
   python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$stage/awscli-installer/aws/install"
