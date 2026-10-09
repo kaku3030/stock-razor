@@ -51,13 +51,17 @@ jobs:
           read -r -d '' remote <<REMOTE || true
           set -euo pipefail
           umask 077
+          bootstrap_stage=REMOTE_INIT
           temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
-          trap 'rm -rf "\$temp_dir"' EXIT
+          trap 'rc=\$?; if (( rc != 0 )); then printf "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s\\n" "\$bootstrap_stage"; fi; rm -rf "\$temp_dir"' EXIT
+          bootstrap_stage=DOWNLOAD_BOOTSTRAP
           export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
           curl --fail --silent --show-error --max-time 20 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/ops/aws/run_tickflow_premium_probe.sh' \
             -o "\$temp_dir/bootstrap.sh" 2>/dev/null
+          bootstrap_stage=VERIFY_BOOTSTRAP_HASH
           printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
+          bootstrap_stage=RUN_BOOTSTRAP
           bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash'
           REMOTE
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
@@ -71,7 +75,7 @@ jobs:
             output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
             error_output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardErrorContent --output text 2>/dev/null || true)"
             status_details="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StatusDetails --output text 2>/dev/null || true)"
-            safe_stage="$(printf '%s\n%s\n' "$output" "$error_output" | awk -F= '/^TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+$/ {print; exit} /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; exit}')"
+            safe_stage="$(printf '%s\n%s\n' "$output" "$error_output" | awk -F= '/^TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE)=[A-Z_]+$/ {print; exit} /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; exit}')"
             if [[ -n "$safe_stage" ]]; then
               printf '%s\n' "$safe_stage" >&2
             elif [[ "$status_details" == *TimedOut* ]]; then
