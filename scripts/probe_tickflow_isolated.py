@@ -67,9 +67,8 @@ def _row_count(value: Any) -> int | None:
     if isinstance(value, (list, tuple)):
         return len(value)
     if isinstance(value, dict):
-        # Official SDK may return a keyed mapping. The shape is not silently
-        # assumed to represent a specific count or data-qualification status.
-        return None
+        rows = _rows(value)
+        return len(rows) if rows is not None else None
     return None
 
 
@@ -81,6 +80,21 @@ def _rows(value: Any) -> list[Any] | None:
             candidate = value.get(key)
             if isinstance(candidate, (list, tuple)):
                 return list(candidate)
+        column_names = (
+            "timestamp", "time", "datetime", "date", "open", "high", "low",
+            "close", "volume", "amount", "open_interest", "prev_close",
+        )
+        columns = {
+            name: list(value[name])
+            for name in column_names
+            if isinstance(value.get(name), (list, tuple))
+        }
+        if columns:
+            row_count = max(len(column) for column in columns.values())
+            return [
+                {name: column[index] for name, column in columns.items() if index < len(column)}
+                for index in range(row_count)
+            ]
     return None
 
 
