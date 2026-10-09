@@ -84,23 +84,32 @@ def add_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) 
     midpoint = (result["high"] + result["low"]) / 2
     upper = midpoint + multiplier * result[f"atr{period}"]
     lower = midpoint - multiplier * result[f"atr{period}"]
-    direction = pd.Series(1, index=result.index, dtype=int)
-    line = lower.copy()
+    # Keep the exact historical state machine, but replace repeated Pandas
+    # scalar .at lookups with NumPy array indexing. Each series conversion is
+    # done once; do not change the ATR formula, transition order, NaN handling
+    # (Python's max/min), or the signal direction semantics.
+    upper_values = upper.to_numpy(copy=True)
+    lower_values = lower.to_numpy(copy=True)
+    close_values = result["close"].to_numpy(copy=False)
+    direction_values = np.ones(len(result), dtype=np.int64)
+    line_values = lower_values.copy()
     for index in range(1, len(result)):
         previous = index - 1
-        if result.at[index, "close"] > upper.at[previous]:
-            direction.at[index] = 1
-        elif result.at[index, "close"] < lower.at[previous]:
-            direction.at[index] = -1
+        if close_values[index] > upper_values[previous]:
+            direction_values[index] = 1
+        elif close_values[index] < lower_values[previous]:
+            direction_values[index] = -1
         else:
-            direction.at[index] = direction.at[previous]
-            if direction.at[index] > 0:
-                lower.at[index] = max(lower.at[index], lower.at[previous])
+            direction_values[index] = direction_values[previous]
+            if direction_values[index] > 0:
+                lower_values[index] = max(lower_values[index], lower_values[previous])
             else:
-                upper.at[index] = min(upper.at[index], upper.at[previous])
-        line.at[index] = lower.at[index] if direction.at[index] > 0 else upper.at[index]
-    result["supertrend"] = line
-    result["supertrend_direction"] = direction
+                upper_values[index] = min(upper_values[index], upper_values[previous])
+        line_values[index] = (
+            lower_values[index] if direction_values[index] > 0 else upper_values[index]
+        )
+    result["supertrend"] = line_values
+    result["supertrend_direction"] = direction_values
     return result
 
 
