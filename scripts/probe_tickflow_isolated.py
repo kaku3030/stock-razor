@@ -128,6 +128,61 @@ def _timestamp(value: Any) -> float | None:
     return None
 
 
+def _ohlcv_anomaly_diagnostics(
+    numbers: dict[str, list[float | None]],
+    numeric_fields: dict[str, bool],
+    *,
+    sample_count: int,
+) -> dict[str, Any]:
+    """Classify OHLCV failures without returning provider values."""
+    reasons = {
+        "HIGH_BELOW_OPEN_OR_CLOSE": 0,
+        "LOW_ABOVE_OPEN_OR_CLOSE": 0,
+        "NEGATIVE_VOLUME": 0,
+        "TOLERANCE_PRECISION": 0,
+        "COUNT_ONLY": 0,
+    }
+    required = ("open", "high", "low", "close", "volume")
+    if sample_count == 0 or not all(numeric_fields.get(name, False) for name in required):
+        reasons["COUNT_ONLY"] = sample_count
+        return {
+            "status": "NOT_VERIFIED",
+            "reasons": [name for name, count in reasons.items() if count],
+            "counts": reasons,
+        }
+
+    for open_, high, low, close, volume in zip(
+        numbers["open"], numbers["high"], numbers["low"],
+        numbers["close"], numbers["volume"],
+    ):
+        if volume is not None and volume < 0:
+            reasons["NEGATIVE_VOLUME"] += 1
+        if None in (open_, high, low, close):
+            reasons["COUNT_ONLY"] += 1
+            continue
+        scale = max(abs(open_), abs(high), abs(low), abs(close), 1.0)
+        tolerance = scale * 1e-12
+        high_gap = max(open_, close) - high
+        low_gap = low - min(open_, close)
+        for gap, reason in (
+            (high_gap, "HIGH_BELOW_OPEN_OR_CLOSE"),
+            (low_gap, "LOW_ABOVE_OPEN_OR_CLOSE"),
+        ):
+            if gap <= 0:
+                continue
+            if gap <= tolerance:
+                reasons["TOLERANCE_PRECISION"] += 1
+            else:
+                reasons[reason] += 1
+
+    failed = any(reasons[name] for name in reasons if name != "COUNT_ONLY")
+    return {
+        "status": "FAILED" if failed else "PASS",
+        "reasons": [name for name, count in reasons.items() if count],
+        "counts": reasons,
+    }
+
+
 def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
     """Return only field-level evidence; never return bar values or payloads."""
     rows = _rows(value)
@@ -149,6 +204,17 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
             "timestamp_first": None,
             "timestamp_last": None,
             "ohlcv_range_valid": "NOT_VERIFIED",
+            "ohlcv_anomaly_diagnostics": {
+                "status": "NOT_VERIFIED",
+                "reasons": ["COUNT_ONLY"],
+                "counts": {
+                    "HIGH_BELOW_OPEN_OR_CLOSE": 0,
+                    "LOW_ABOVE_OPEN_OR_CLOSE": 0,
+                    "NEGATIVE_VOLUME": 0,
+                    "TOLERANCE_PRECISION": 0,
+                    "COUNT_ONLY": 0,
+                },
+            },
             "closure": "NOT_VERIFIED",
             "freshness": "NOT_VERIFIED",
             "entitlement_evidence": "UNKNOWN",
@@ -185,6 +251,9 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
                 numbers["close"], numbers["volume"],
             )
         )
+    diagnostics = _ohlcv_anomaly_diagnostics(
+        numbers, numeric_fields, sample_count=len(rows)
+    )
 
     age_ms = None
     if valid_timestamps:
@@ -201,6 +270,7 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
         "timestamp_last": valid_timestamps[-1] if valid_timestamps else None,
         "latest_timestamp_age_ms": age_ms,
         "ohlcv_range_valid": ohlcv_range_valid,
+        "ohlcv_anomaly_diagnostics": diagnostics,
         "closure": "NOT_VERIFIED",
         "freshness": "NOT_VERIFIED",
         "entitlement_evidence": "UNKNOWN",
