@@ -57,6 +57,17 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
     assert "response_code=UNKNOWN" in PREMIUM_WORKFLOW
 
 
+def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
+    assert 'command -v aws 2>/dev/null || true' in PREMIUM_BOOTSTRAP
+    assert 'for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_BOOTSTRAP
+    assert 'secret_json="$("$aws_cli" secretsmanager get-secret-value' in PREMIUM_BOOTSTRAP
+    assert '2>&1 | sed -n' in PREMIUM_BOOTSTRAP
+    assert 'StandardOutputContent' not in PREMIUM_BOOTSTRAP
+    assert 'StandardErrorContent' not in PREMIUM_BOOTSTRAP
+
+
 def test_ingress_requires_exact_opt_in():
     assert premium_ingress_enabled("true") is True
     assert premium_ingress_enabled("TRUE") is False
