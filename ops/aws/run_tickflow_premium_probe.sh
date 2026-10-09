@@ -77,7 +77,9 @@ if [[ -z "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
   exit 127
 fi
-aws_version="$("$aws_cli" --version 2>&1 | sed -n 's/^aws-cli\/\([^ ]*\).*/\1/p')"
+aws_version_raw="$("$aws_cli" --version 2>&1 || true)"
+aws_version="$(printf '%s\n' "$aws_version_raw" | sed -n 's/^aws-cli\/\([^ ]*\).*/\1/p')"
+unset aws_version_raw
 if [[ -z "$aws_version" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=INVALID\n'
   exit 127

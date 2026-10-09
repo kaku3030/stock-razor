@@ -63,9 +63,14 @@ def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_BOOTSTRAP
     assert 'secret_json="$("$aws_cli" secretsmanager get-secret-value' in PREMIUM_BOOTSTRAP
-    assert '2>&1 | sed -n' in PREMIUM_BOOTSTRAP
+    assert '2>&1 || true' in PREMIUM_BOOTSTRAP
     assert 'StandardOutputContent' not in PREMIUM_BOOTSTRAP
     assert 'StandardErrorContent' not in PREMIUM_BOOTSTRAP
+    assert 'aws_version_raw=' in PREMIUM_BOOTSTRAP
+    assert '|| true)' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_AWS_CLI=(AVAILABLE|UNAVAILABLE|INVALID)' in PREMIUM_WORKFLOW
+    assert 'TICKFLOW_PREMIUM_AWS_CLI_PATH=' in PREMIUM_WORKFLOW
+    assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_WORKFLOW
 
 
 def test_ingress_requires_exact_opt_in():
