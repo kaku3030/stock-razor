@@ -12,6 +12,7 @@ from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from datetime import datetime, timezone
 import importlib.metadata
 import json
+import math
 import os
 import re
 import time
@@ -70,6 +71,127 @@ def _row_count(value: Any) -> int | None:
         # assumed to represent a specific count or data-qualification status.
         return None
     return None
+
+
+def _rows(value: Any) -> list[Any] | None:
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(value, dict):
+        for key in ("data", "rows", "items", "klines", "candles"):
+            candidate = value.get(key)
+            if isinstance(candidate, (list, tuple)):
+                return list(candidate)
+    return None
+
+
+def _field(row: Any, names: tuple[str, ...]) -> Any:
+    if not isinstance(row, dict):
+        return None
+    for name in names:
+        if name in row:
+            return row[name]
+    return None
+
+
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    return None
+
+
+def _timestamp(value: Any) -> float | None:
+    number = _number(value)
+    if number is not None:
+        return number / 1000 if number >= 10_000_000_000 else number
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return None
+
+
+def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
+    """Return only field-level evidence; never return bar values or payloads."""
+    rows = _rows(value)
+    fields = {
+        "timestamp": ("timestamp", "time", "datetime", "date"),
+        "open": ("open", "open_price"),
+        "high": ("high", "high_price"),
+        "low": ("low", "low_price"),
+        "close": ("close", "close_price"),
+        "volume": ("volume", "vol"),
+        "amount": ("amount", "turnover"),
+    }
+    if rows is None:
+        return {
+            "sample_count": None,
+            "field_presence": {name: False for name in fields},
+            "numeric_fields": {name: "NOT_VERIFIED" for name in fields if name != "timestamp"},
+            "timestamp_monotonicity": "NOT_VERIFIED",
+            "timestamp_first": None,
+            "timestamp_last": None,
+            "ohlcv_range_valid": "NOT_VERIFIED",
+            "closure": "NOT_VERIFIED",
+            "freshness": "NOT_VERIFIED",
+            "entitlement_evidence": "UNKNOWN",
+            "period": period,
+        }
+
+    timestamps = [_timestamp(_field(row, fields["timestamp"])) for row in rows]
+    numbers = {
+        name: [_number(_field(row, aliases)) for row in rows]
+        for name, aliases in fields.items()
+        if name != "timestamp"
+    }
+    numeric_fields = {
+        name: all(item is not None for item in values) if values else False
+        for name, values in numbers.items()
+    }
+    valid_timestamps = [item for item in timestamps if item is not None]
+    if len(valid_timestamps) == len(timestamps) and valid_timestamps:
+        if all(left < right for left, right in zip(valid_timestamps, valid_timestamps[1:])):
+            monotonicity = "STRICTLY_INCREASING"
+        elif all(left <= right for left, right in zip(valid_timestamps, valid_timestamps[1:])):
+            monotonicity = "NON_DECREASING"
+        else:
+            monotonicity = "NOT_MONOTONIC"
+    else:
+        monotonicity = "NOT_VERIFIED"
+
+    ohlcv_range_valid: bool | str = "NOT_VERIFIED"
+    if all(numeric_fields[name] for name in ("open", "high", "low", "close", "volume")):
+        ohlcv_range_valid = all(
+            low <= min(open_, close) <= max(open_, close) <= high and volume >= 0
+            for open_, high, low, close, volume in zip(
+                numbers["open"], numbers["high"], numbers["low"],
+                numbers["close"], numbers["volume"],
+            )
+        )
+
+    age_ms = None
+    if valid_timestamps:
+        age_ms = round(max(0.0, time.time() - valid_timestamps[-1]) * 1000, 3)
+    return {
+        "sample_count": len(rows),
+        "field_presence": {
+            name: any(_field(row, aliases) is not None for row in rows)
+            for name, aliases in fields.items()
+        },
+        "numeric_fields": numeric_fields,
+        "timestamp_monotonicity": monotonicity,
+        "timestamp_first": valid_timestamps[0] if valid_timestamps else None,
+        "timestamp_last": valid_timestamps[-1] if valid_timestamps else None,
+        "latest_timestamp_age_ms": age_ms,
+        "ohlcv_range_valid": ohlcv_range_valid,
+        "closure": "NOT_VERIFIED",
+        "freshness": "NOT_VERIFIED",
+        "entitlement_evidence": "UNKNOWN",
+        "period": period,
+    }
 
 
 def evaluate_premium_execution_gate(
@@ -139,18 +261,21 @@ def _hide_provider_output():
             yield
 
 
-def _operation(name: str, call: Callable[[], Any]) -> dict:
+def _operation(name: str, call: Callable[[], Any], *, summarize: Callable[[Any], dict] | None = None) -> dict:
     started = time.perf_counter()
     try:
         with _hide_provider_output():
             result = call()
-        return {
+        operation = {
             "name": name,
             "operation": "COMPLETED",
             "elapsed_ms": _elapsed_ms(started),
             "row_count": _row_count(result),
             "schema_qualified": False,
         }
+        if summarize is not None:
+            operation["summary"] = summarize(result)
+        return operation
     except Exception as exc:
         # Exception messages may include URL, provider responses or credentials.
         return {
@@ -367,12 +492,21 @@ def build_probe(
         _operation("realtime_quote", lambda: client.quotes.get(symbols=list(symbols)))
     )
     for period in PERIODS:
-        result["operations"].append(
-            _operation(
-                "kline_" + period,
-                lambda period=period: client.klines.get(symbols[0], period=period, count=3),
+        kline_symbols = symbols if period in {"15m", "60m"} else (symbols[0],)
+        for symbol in kline_symbols:
+            result["operations"].append(
+                _operation(
+                    "kline_" + period,
+                    lambda period=period, symbol=symbol: client.klines.get(
+                        symbol, period=period, count=3
+                    ),
+                    summarize=(
+                        lambda value, period=period: _kline_summary(value, period=period)
+                    ) if period in {"15m", "60m"} else None,
+                )
             )
-        )
+            if period in {"15m", "60m"}:
+                result["operations"][-1]["symbol"] = symbol
     result["operations"].append(
         _operation("five_level_depth", lambda: client.depth.get(symbols[0]))
     )
