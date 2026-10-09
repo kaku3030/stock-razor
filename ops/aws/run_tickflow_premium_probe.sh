@@ -4,7 +4,22 @@ umask 077
 
 # Stage-only diagnostics: no secret, command arguments, URLs, or provider payloads.
 probe_stage=INIT
-trap 'rc=$?; if (( rc != 0 )); then printf "TICKFLOW_PREMIUM_FAILED_STAGE=%s\nTICKFLOW_PREMIUM_EXIT_CLASS=NONZERO\n" "$probe_stage"; fi' EXIT
+
+cleanup() {
+  local rc=$?
+  trap - EXIT
+  unset TICKFLOW_API_KEY secret_json
+  if [[ -n ${stage:-} ]]; then
+    rm -rf -- "$stage"
+  fi
+  if (( rc != 0 )); then
+    printf 'TICKFLOW_PREMIUM_FAILED_STAGE=%s\n' "$probe_stage"
+    printf 'TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO\n'
+  fi
+  exit "$rc"
+}
+
+trap cleanup EXIT
 
 if [[ "$#" -ne 5 ]]; then
   echo 'TICKFLOW_PREMIUM_SETUP=INVALID_ARGUMENTS'
@@ -30,7 +45,6 @@ export PIP_INDEX_URL=https://pypi.org/simple PIP_DISABLE_PIP_VERSION_CHECK=1 PIP
 
 root=/opt/stock-razor-tickflow-premium-probe
 stage="$(mktemp -d -t sr-tickflow-premium.XXXXXXXX)"
-trap 'unset TICKFLOW_API_KEY; rm -rf "$stage"' EXIT
 base="https://raw.githubusercontent.com/kaku3030/stock-razor/$revision"
 probe_stage=DOWNLOAD_BOOTSTRAP
 curl --fail --silent --show-error --max-time 20 "$base/ops/aws/run_tickflow_premium_probe.sh" -o "$stage/bootstrap.sh" 2>/dev/null

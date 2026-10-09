@@ -35,6 +35,18 @@ def test_remote_premium_bootstrap_hash_verification_precedes_execution():
     assert PREMIUM_WORKFLOW.index("sha256sum -c - >/dev/null") < PREMIUM_WORKFLOW.index(r'bash "\$temp_dir/bootstrap.sh"')
 
 
+def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined():
+    assert PREMIUM_BOOTSTRAP.count("trap cleanup EXIT") == 1
+    assert "trap '" not in PREMIUM_BOOTSTRAP
+    assert "trap - EXIT" in PREMIUM_BOOTSTRAP
+    assert 'unset TICKFLOW_API_KEY secret_json' in PREMIUM_BOOTSTRAP
+    assert 'exit "$rc"' in PREMIUM_BOOTSTRAP
+    assert "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+" in PREMIUM_WORKFLOW
+    assert "StandardErrorContent" not in PREMIUM_WORKFLOW
+    assert "response_code=UNKNOWN" in PREMIUM_WORKFLOW
+
+
 def test_ingress_requires_exact_opt_in():
     assert premium_ingress_enabled("true") is True
     assert premium_ingress_enabled("TRUE") is False

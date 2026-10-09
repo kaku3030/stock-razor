@@ -61,13 +61,29 @@ jobs:
           bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash'
           REMOTE
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
+          report_terminal_failure() {
+            local response_code output safe_stage
+            response_code="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query ResponseCode --output text 2>/dev/null || true)"
+            if [[ ! "$response_code" =~ ^(-?[0-9]+|None)$ ]]; then
+              response_code=UNKNOWN
+            fi
+            echo "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=$response_code" >&2
+            output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
+            safe_stage="$(printf '%s\n' "$output" | awk -F= '/^TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+$/ {print; exit} /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; exit}')"
+            if [[ -n "$safe_stage" ]]; then
+              printf '%s\n' "$safe_stage" >&2
+            else
+              echo 'TICKFLOW_PREMIUM_FAILED_STAGE=UNKNOWN' >&2
+            fi
+          }
           for _ in $(seq 1 100); do
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
             case "$status" in
               Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text; exit 0 ;;
-              Failed|TimedOut|Cancelled|Cancelling) echo "TICKFLOW_PREMIUM_PROBE=$status" >&2; exit 1 ;;
+              Failed|TimedOut|Cancelled|Cancelling) echo "TICKFLOW_PREMIUM_PROBE=$status" >&2; report_terminal_failure; exit 1 ;;
             esac
             sleep 3
           done
           echo 'TICKFLOW_PREMIUM_PROBE=TIMEOUT' >&2
+          report_terminal_failure
           exit 1
