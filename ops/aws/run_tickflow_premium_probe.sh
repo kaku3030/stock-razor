@@ -119,6 +119,12 @@ fi
 printf 'TICKFLOW_PREMIUM_AWS_CLI=AVAILABLE\n'
 printf 'TICKFLOW_PREMIUM_AWS_CLI_PATH=%s\n' "$aws_cli"
 printf 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=%s\n' "$aws_version"
+caller_arn="$("$aws_cli" sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+if [ -n "$caller_arn" ]; then
+  printf 'TICKFLOW_PREMIUM_CALLER_ARN=%s\n' "$caller_arn"
+else
+  printf 'TICKFLOW_PREMIUM_CALLER_ARN=UNKNOWN\n'
+fi
 probe_stage=READ_SECRET
 # Capture only the CLI error stream to a private temporary file; it is never
 # emitted into Actions logs, and the EXIT trap deletes it on every path.
