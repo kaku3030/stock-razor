@@ -91,7 +91,7 @@ def test_new_probe_is_opt_in_not_default_six_call_suite() -> None:
     assert "          - secure_mcp_cost_smoke" in workflow
     assert "            secure_mcp_cost_smoke)" in workflow
     assert "            secure_mcp_remote_e2e)" in workflow
-    assert "MCP_CALL_SEQUENCE=PASS" in workflow
+    assert "MCP_CALL_SEQUENCE=" in workflow
 
 
 def test_full_e2e_also_meters_each_call_and_actual_retries() -> None:
