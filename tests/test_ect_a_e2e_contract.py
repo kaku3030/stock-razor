@@ -305,8 +305,10 @@ def test_secure_mcp_tunnel_bootstrap_is_posix_shell_compatible() -> None:
     assert 'chmod 0755 "$client_path"' in bootstrap
     assert "unzip -oq" not in bootstrap
     assert 'command -v aws 2>/dev/null || true' in bootstrap
-    assert 'for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in bootstrap
+    assert 'for candidate in "$install_dir/aws-cli-bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in bootstrap
     assert '"$aws_cli" ssm get-parameter' in bootstrap
+    assert 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' in bootstrap
+    assert 'aws-cli-bin/aws' in bootstrap
 
 
 def _response_for_source() -> str:

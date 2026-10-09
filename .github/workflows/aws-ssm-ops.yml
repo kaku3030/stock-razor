@@ -1950,6 +1950,22 @@ jobs:
           echo "TUNNEL_CLIENT_RELEASE=$release_tag"
           echo "TUNNEL_CLIENT_CHECKSUM=PASS"
 
+          aws_cli="$(command -v aws 2>/dev/null || true)"
+          for candidate in "$install_dir/aws-cli-bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+            if [ -x "$candidate" ]; then aws_cli="$candidate"; break; fi
+          done
+          if [ ! -x "$aws_cli" ]; then
+            aws_tmp="$tmp_dir/aws-cli"
+            mkdir -p "$aws_tmp/extracted" "$install_dir/aws-cli" "$install_dir/aws-cli-bin"
+            curl --fail --silent --show-error --location --max-time 120 \
+              https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o "$aws_tmp/awscliv2.zip"
+            python3 -m zipfile -e "$aws_tmp/awscliv2.zip" "$aws_tmp/extracted"
+            chmod 0755 "$aws_tmp/extracted/aws/install"
+            "$aws_tmp/extracted/aws/install" -i "$install_dir/aws-cli" -b "$install_dir/aws-cli-bin" >/dev/null
+            aws_cli="$install_dir/aws-cli-bin/aws"
+          fi
+          test -x "$aws_cli"
+
           if [ ! -s "$profile_dir/stock-razor-secure-mcp.yaml" ]; then
             "$install_dir/tunnel-client" init \
               --sample sample_mcp_with_dcr \
@@ -1959,7 +1975,7 @@ jobs:
               --mcp-server-url "$mcp_server_url"
           fi
           aws_cli="$(command -v aws 2>/dev/null || true)"
-          for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+          for candidate in /opt/stock-razor/tunnel-client/aws-cli-bin/aws /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
             if [ -x "$candidate" ]; then aws_cli="$candidate"; break; fi
           done
           test -x "$aws_cli"
@@ -1978,7 +1994,7 @@ jobs:
           set -euo pipefail
           parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
           aws_cli="$(command -v aws 2>/dev/null || true)"
-          for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+          for candidate in /opt/stock-razor/tunnel-client/aws-cli-bin/aws /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
             if [ -x "$candidate" ]; then aws_cli="$candidate"; break; fi
           done
           test -x "$aws_cli"
