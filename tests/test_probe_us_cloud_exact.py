@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
+import subprocess
 
 from scripts.probe_us_cloud_exact import probe
 
@@ -9,6 +11,20 @@ def test_workflow_fetches_probe_by_exact_sha_and_reports_safe_failure_diagnostic
     assert "raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py" in workflow
     assert "base64 -w0 scripts/probe_us_cloud_exact.py" not in workflow
     assert "US_EXACT_CLOUD_PROBE_RESPONSE_CODE=" in workflow
+    assert 'command="set -eu;' in workflow
+    assert 'command="set -euo pipefail;' not in workflow
+
+
+def test_remote_command_is_compatible_with_bin_sh_entrypoint():
+    if not shutil.which("sh"):
+        return
+    result = subprocess.run(
+        ["sh", "-c", "set -eu; command='set -eu; printf remote-shell-ok'; sh -c \"$command\""],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.stdout == "remote-shell-ok"
 
 
 def test_probe_requires_exact_sha_and_keeps_unobservable_latency_blocked(monkeypatch):
