@@ -31,6 +31,10 @@ def test_premium_path_is_dormant_and_pins_all_remote_artifacts():
 def test_remote_premium_bootstrap_hash_verification_precedes_execution():
     """The SSM target must authenticate fetched code before first execution."""
     assert "sr-tickflow-premium-bootstrap.XXXXXXXX" in PREMIUM_WORKFLOW
+    remote = PREMIUM_WORKFLOW.split("read -r -d '' remote <<REMOTE", 1)[1]
+    remote = remote.split("          REMOTE", 1)[0]
+    assert "set -euo pipefail" not in remote
+    assert "trap 'rc=\\$?; if [ \"\\$rc\" -ne 0 ]" in remote
     assert "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s" in PREMIUM_WORKFLOW
     assert "bootstrap_stage=VERIFY_BOOTSTRAP_HASH" in PREMIUM_WORKFLOW
     assert "/tmp/run_tickflow_premium_probe.sh" not in PREMIUM_WORKFLOW
