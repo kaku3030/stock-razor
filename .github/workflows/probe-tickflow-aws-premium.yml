@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -62,16 +62,22 @@ jobs:
           REMOTE
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
           report_terminal_failure() {
-            local response_code output safe_stage
+            local response_code output error_output status_details safe_stage
             response_code="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query ResponseCode --output text 2>/dev/null || true)"
             if [[ ! "$response_code" =~ ^(-?[0-9]+|None)$ ]]; then
               response_code=UNKNOWN
             fi
             echo "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=$response_code" >&2
             output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
-            safe_stage="$(printf '%s\n' "$output" | awk -F= '/^TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+$/ {print; exit} /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; exit}')"
+            error_output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardErrorContent --output text 2>/dev/null || true)"
+            status_details="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StatusDetails --output text 2>/dev/null || true)"
+            safe_stage="$(printf '%s\n%s\n' "$output" "$error_output" | awk -F= '/^TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+$/ {print; exit} /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; exit}')"
             if [[ -n "$safe_stage" ]]; then
               printf '%s\n' "$safe_stage" >&2
+            elif [[ "$status_details" == *TimedOut* ]]; then
+              echo 'TICKFLOW_PREMIUM_FAILED_STAGE=SSM_COMMAND_TIMEOUT' >&2
+            elif [[ "$response_code" =~ ^[1-9][0-9]*$ || "$status_details" == *Failed* ]]; then
+              echo 'TICKFLOW_PREMIUM_FAILED_STAGE=SSM_REMOTE_COMMAND' >&2
             else
               echo 'TICKFLOW_PREMIUM_FAILED_STAGE=UNKNOWN' >&2
             fi
