@@ -23,6 +23,7 @@ on:
           - us_opend_k1m_probe
           - us_opend_qot_right_notify_probe
           - us_opend_userinfo_qot_right_probe
+          - us_opend_subscription_audit
           - us_opend_k1m_continuity_probe
           - us_opend_k5m_probe
           - us_opend_k5m_crosscheck_probe
@@ -1140,6 +1141,100 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_userinfo_qot_right_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_opend_subscription_audit)
+              read -r -d '' us_opend_subscription_audit_script <<'REMOTE' || true
+          set -eu
+          echo '=== OPEND US SUBSCRIPTION CAPACITY READ-ONLY AUDIT ==='
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          import futu as ft
+
+          # Never call subscribe/unsubscribe, restart units, or log raw provider data.
+          tracked = ("US.AMD", "US.NVDA", "US.TSLA", "US.AAPL", "US.QQQ",
+                     "US.CIEN", "US.AAOI", "US.LITE", "US.GLDM")
+          out = {
+              "probe": "us_opend_subscription_audit_v0_1",
+              "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+              "opend_reachable": False,
+              "query_status": "UNKNOWN",
+              "scope": "ALL_CONNECTIONS",
+              "quota_verified": False,
+              "subscription_capacity": "UNKNOWN",
+              "subscribed_tracked": [],
+              "unsubscribed_tracked": [],
+              "subscription_types": {},
+              "radar_admission": "BLOCKED",
+              "source_arbiter_admission": "BLOCKED",
+              "live_trade": False,
+          }
+
+          def parse_subscription(data):
+              """Whitelist only provider-documented aggregate fields and tracked codes."""
+              if not isinstance(data, dict):
+                  return {"query_status": "UNRECOGNIZED_RESPONSE"}
+              sub_list = data.get("sub_list")
+              sub_num = data.get("sub_num")
+              found = set()
+              types = {}
+              if isinstance(sub_list, dict):
+                  for kind, codes in sub_list.items():
+                      if isinstance(kind, str) and kind in (
+                          "QUOTE", "ORDER_BOOK", "TICKER", "K_1M", "K_5M",
+                          "K_15M", "K_30M", "K_60M", "K_DAY", "RT_DATA"
+                      ) and isinstance(codes, (list, tuple)):
+                          safe = sorted(set(c for c in codes if type(c) is str and c in tracked))
+                          types[kind] = {"tracked_count": len(safe), "tracked_codes": safe}
+                          found.update(safe)
+              aggregate = {}
+              if isinstance(sub_num, dict):
+                  for key in ("total_used", "remain", "total", "used", "max", "limit"):
+                      value = sub_num.get(key)
+                      if type(value) is int and 0 <= value <= 1000000:
+                          aggregate[key] = value
+              # A provider success does not prove a usable subscription slot.
+              capacity_known = "remain" in aggregate and "total_used" in aggregate
+              return {
+                  "query_status": "PASS",
+                  "quota_verified": capacity_known,
+                  "subscription_capacity": aggregate if capacity_known else "UNKNOWN",
+                  "subscription_types": types,
+                  "subscribed_tracked": sorted(found),
+                  "unsubscribed_tracked": sorted(set(tracked) - found) if types else [],
+              }
+
+          ctx = None
+          try:
+              ctx = ft.OpenQuoteContext(host="127.0.0.1", port=11111)
+              out["opend_reachable"] = True
+              ret, data = ctx.query_subscription(is_all_conn=True)
+              if ret == ft.RET_OK:
+                  out.update(parse_subscription(data))
+              else:
+                  out["query_status"] = "PROVIDER_REJECTED"
+          except Exception as exc:
+              # No raw exception strings; may contain account details.
+              out["query_status"] = "ERROR"
+              out["error_class"] = type(exc).__name__ if type(exc).__name__ in (
+                  "AttributeError", "TypeError", "RuntimeError", "ConnectionError",
+                  "TimeoutError", "OSError"
+              ) else "OTHER"
+          finally:
+              if ctx is not None:
+                  try:
+                      ctx.close()
+                  except Exception:
+                      pass
+
+          print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+          print("SUBSCRIPTION_CHANGES=NONE")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("SOURCE_ARBITER_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_subscription_audit_script" '[ $script ]' > commands.json
               ;;
             futures_opend_snapshot_probe)
               read -r -d '' futures_opend_snapshot_probe_script <<'REMOTE' || true
