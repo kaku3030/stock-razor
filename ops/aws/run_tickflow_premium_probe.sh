@@ -95,7 +95,8 @@ if [[ -z "$aws_cli" ]]; then
   "$stage/awscli-installer/aws/install" \
     -i "$stage/aws-cli" -b "$stage/bin" >/dev/null 2>&1
   probe_stage=VERIFY_AWS_CLI_INSTALL
-  aws_cli="$stage/bin/aws"
+  aws_cli="$stage/aws-cli/v2/current/bin/aws"
+  [[ -x "$aws_cli" ]] || aws_cli="$stage/bin/aws"
 fi
 if [[ ! -x "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
