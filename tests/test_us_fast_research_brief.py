@@ -140,3 +140,40 @@ def test_unproven_bar_closure_stays_unproven_and_never_grants_trade(monkeypatch)
     assert result["radar_admission"] == "BLOCKED"
     assert result["source_arbiter_admission"] == "BLOCKED"
     assert result["trading_authority"] is False
+
+
+def test_fast_brief_refuses_fresh_heartbeat_with_blocked_source_poll(monkeypatch):
+    radar = _radar()
+    radar["poll_status"] = "BLOCKED"
+    _patch(monkeypatch, radar=radar)
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert result["ok"] is False
+    assert result["status"] == "BLOCKED"
+    assert "RADAR_CURRENT_POLL_NOT_VALID" in result["reasons"]
+    assert result["provenance"]["radar_poll_status"] == "BLOCKED"
+    assert result["symbols"] == {}
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_fast_brief_refuses_unknown_or_absent_radar_poll_status(monkeypatch):
+    for status in ("UNKNOWN", None, "SOURCE_EXPORT_STALE", "DEGRADED"):
+        radar = _radar()
+        radar["poll_status"] = status
+        _patch(monkeypatch, radar=radar)
+        result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+        assert result["status"] == "BLOCKED"
+        assert result["symbols"] == {}
+        assert "RADAR_CURRENT_POLL_NOT_VALID" in result["reasons"]
+
+
+def test_fast_brief_still_accepts_source_unchanged_only_as_research(monkeypatch):
+    radar = _radar()
+    radar["poll_status"] = "UNCHANGED"
+    _patch(monkeypatch, radar=radar)
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert result["ok"] is True
+    assert result["status"] == "ALIGNED_RESEARCH_ONLY"
+    assert result["can_confirm_signal"] is False
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert result["radar_admission"] == "BLOCKED"
