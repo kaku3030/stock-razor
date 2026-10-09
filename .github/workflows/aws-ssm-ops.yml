@@ -1958,7 +1958,12 @@ jobs:
               --tunnel-id "$tunnel_id" \
               --mcp-server-url "$mcp_server_url"
           fi
-          api_key="$(aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          aws_cli="$(command -v aws 2>/dev/null || true)"
+          for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+            if [ -x "$candidate" ]; then aws_cli="$candidate"; break; fi
+          done
+          test -x "$aws_cli"
+          api_key="$("$aws_cli" ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
           test -n "$api_key" && test "$api_key" != None
           export CONTROL_PLANE_API_KEY="$api_key"
           unset api_key
@@ -1972,7 +1977,12 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
-          api_key="$(/usr/bin/aws ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
+          aws_cli="$(command -v aws 2>/dev/null || true)"
+          for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+            if [ -x "$candidate" ]; then aws_cli="$candidate"; break; fi
+          done
+          test -x "$aws_cli"
+          api_key="$("$aws_cli" ssm get-parameter --name "$parameter_name" --with-decryption --query 'Parameter.Value' --output text)"
           test -n "$api_key" && test "$api_key" != None
           export CONTROL_PLANE_API_KEY="$api_key"
           unset api_key
