@@ -183,6 +183,52 @@ def test_columnar_sdk_kline_shape_gets_row_count_without_payload_output():
     assert summary["ohlcv_range_valid"] is True
 
 
+def test_kline_summary_classifies_ohlcv_failures_without_values():
+    summary = probe._kline_summary([
+        {"timestamp": 1, "open": 10, "high": 9, "low": 11,
+         "close": 10, "volume": -1, "secret": "DO_NOT_LEAK"},
+    ], period="15m")
+    diagnostics = summary["ohlcv_anomaly_diagnostics"]
+    assert summary["ohlcv_range_valid"] is False
+    assert diagnostics["status"] == "FAILED"
+    assert diagnostics["reasons"] == [
+        "HIGH_BELOW_OPEN_OR_CLOSE", "LOW_ABOVE_OPEN_OR_CLOSE",
+        "NEGATIVE_VOLUME",
+    ]
+    assert diagnostics["counts"] == {
+        "HIGH_BELOW_OPEN_OR_CLOSE": 1,
+        "LOW_ABOVE_OPEN_OR_CLOSE": 1,
+        "NEGATIVE_VOLUME": 1,
+        "TOLERANCE_PRECISION": 0,
+        "COUNT_ONLY": 0,
+    }
+    assert "DO_NOT_LEAK" not in json.dumps(summary)
+    assert '"open": 10' not in json.dumps(summary)
+
+
+def test_kline_summary_separates_precision_edge_from_material_inconsistency():
+    summary = probe._kline_summary([
+        {"timestamp": 1, "open": 1.0, "high": 1.0 - 5e-13,
+         "low": 1.0, "close": 1.0, "volume": 1},
+    ], period="60m")
+    diagnostics = summary["ohlcv_anomaly_diagnostics"]
+    assert summary["ohlcv_range_valid"] is False
+    assert diagnostics["reasons"] == ["TOLERANCE_PRECISION"]
+    assert diagnostics["counts"]["TOLERANCE_PRECISION"] == 1
+    assert diagnostics["counts"]["HIGH_BELOW_OPEN_OR_CLOSE"] == 0
+    assert diagnostics["counts"]["LOW_ABOVE_OPEN_OR_CLOSE"] == 0
+
+
+def test_kline_summary_marks_opaque_rows_as_count_only():
+    summary = probe._kline_summary(["opaque", "rows"], period="15m")
+    diagnostics = summary["ohlcv_anomaly_diagnostics"]
+    assert summary["sample_count"] == 2
+    assert summary["ohlcv_range_valid"] == "NOT_VERIFIED"
+    assert diagnostics["status"] == "NOT_VERIFIED"
+    assert diagnostics["reasons"] == ["COUNT_ONLY"]
+    assert diagnostics["counts"]["COUNT_ONLY"] == 2
+
+
 def test_premium_missing_key_is_skipped_without_sdk_calls():
     class NoClient:
         def __init__(self):
