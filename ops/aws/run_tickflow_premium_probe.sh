@@ -156,7 +156,7 @@ export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'i
 unset secret_json
 
 probe_stage=RUN_PREMIUM_PROBE
-result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE --ws-seconds "$ws_seconds" 2>/dev/null)"
+result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE --symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds" 2>/dev/null)"
 probe_stage=VALIDATE_RESULT
 printf '%s\n' "$result" | python3 -c '
 import json,sys
