@@ -1637,144 +1637,6 @@ jobs:
               protocol_script="${protocol_script//__EXPECTED_MANIFEST_SHA256__/$expected_manifest_sha256}"
               jq -c -n --arg script "$protocol_script" '[ $script ]' > commands.json
               ;;
-            secure_mcp_cost_smoke)
-              # One Responses API request only. Avoid repeatedly paying for the six-call suite
-              # when merely checking whether the secure tunnel and budget are alive.
-              read -r -d '' cost_smoke_script <<'REMOTE' || true
-          set -eu
-          tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
-          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
-          cleanup() { unset OPENAI_API_KEY api_key; }
-          trap cleanup 0 1 2 3 15
-          python3 -c 'import boto3'
-          api_key="$(PARAMETER_NAME="$parameter_name" python3 -c 'import os,boto3; print(boto3.client("ssm", region_name="ap-northeast-1").get_parameter(Name=os.environ["PARAMETER_NAME"], WithDecryption=True)["Parameter"]["Value"], end="")')"
-          test -n "$api_key" && test "$api_key" != None
-          export OPENAI_API_KEY="$api_key"
-          unset api_key
-          python3 - "$tunnel_id" <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.error
-          import urllib.request
-          from decimal import Decimal
-
-          MODEL = 'gpt-6-astra'
-          # Conservative token-only reference rates from the official model page,
-          # USD per 1M tokens, Standard tier, short-context. Billing is authoritative.
-          INPUT_USD_PER_M = Decimal('10')
-          CACHED_INPUT_USD_PER_M = Decimal('1')
-          OUTPUT_USD_PER_M = Decimal('50')
-
-          def token_cost(usage, model):
-              if model != MODEL or not isinstance(usage, dict):
-                  return None
-              inp = usage.get('input_tokens')
-              out = usage.get('output_tokens')
-              details = usage.get('input_tokens_details') or {}
-              cached = details.get('cached_tokens', 0) if isinstance(details, dict) else None
-              if not all(type(v) is int and 0 <= v <= 1000000000 for v in (inp, out, cached)):
-                  return None
-              if cached > inp:
-                  return None
-              estimate = (
-                  Decimal(inp - cached) * INPUT_USD_PER_M
-                  + Decimal(cached) * CACHED_INPUT_USD_PER_M
-                  + Decimal(out) * OUTPUT_USD_PER_M
-              ) / Decimal(1000000)
-              return {
-                  'input_tokens': inp,
-                  'cached_input_tokens': cached,
-                  'output_tokens': out,
-                  'usd_token_estimate': format(estimate, '.6f'),
-              }
-
-          body = {
-              'model': MODEL,
-              'store': False,
-              'max_output_tokens': 3000,
-              'tools': [{
-                  'type': 'mcp',
-                  'server_label': 'stock-razor-private',
-                  'tunnel_id': sys.argv[1],
-                  'allowed_tools': ['get_market_snapshots'],
-                  'require_approval': 'never',
-              }],
-              'input': (
-                  'Call get_market_snapshots exactly once for ["AMD"] '
-                  'with timeframe "15m". Do not call any other tool.'
-              ),
-          }
-          req = urllib.request.Request(
-              'https://api.openai.com/v1/responses',
-              data=json.dumps(body).encode('utf-8'),
-              headers={
-                  'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'],
-                  'Content-Type': 'application/json',
-              },
-              method='POST',
-          )
-          print('OPENAI_MODEL_CALLS_ATTEMPTED=1', flush=True)
-          print('OPENAI_ESTIMATE_BASIS=gpt-6-astra-token-only-standard', flush=True)
-          try:
-              with urllib.request.urlopen(req, timeout=90) as response:
-                  payload = json.loads(response.read().decode('utf-8'))
-                  status = response.status
-          except urllib.error.HTTPError as exc:
-              print('RESPONSES_HTTP_STATUS=' + str(exc.code))
-              print('OPENAI_MODEL_CALLS_SUCCEEDED=0')
-              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
-              raise SystemExit(1)
-          except (OSError, ValueError):
-              print('RESPONSES_STATUS=NETWORK_OR_JSON_ERROR')
-              print('OPENAI_MODEL_CALLS_SUCCEEDED=UNKNOWN')
-              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
-              raise SystemExit(1)
-          if status != 200 or not isinstance(payload, dict):
-              print('RESPONSES_STATUS=INVALID')
-              print('OPENAI_MODEL_CALLS_SUCCEEDED=UNKNOWN')
-              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
-              raise SystemExit(1)
-          print('OPENAI_MODEL_CALLS_SUCCEEDED=1')
-          usage_cost = token_cost(payload.get('usage'), payload.get('model'))
-          if usage_cost is None:
-              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
-          else:
-              print('OPENAI_TOKEN_COST_STATUS=ESTIMATED')
-              for key, value in usage_cost.items():
-                  print('OPENAI_' + key.upper() + '=' + str(value))
-          output = payload.get('output')
-          if not isinstance(output, list):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              raise SystemExit(1)
-          calls = [item for item in output if isinstance(item, dict) and item.get('type') == 'mcp_call']
-          if len(calls) != 1 or calls[0].get('name') != 'get_market_snapshots' or calls[0].get('error') not in (None, ''):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              raise SystemExit(1)
-          value = calls[0].get('output')
-          if isinstance(value, str):
-              try:
-                  value = json.loads(value)
-              except ValueError:
-                  value = None
-          snapshots = value.get('snapshots') if isinstance(value, dict) else None
-          if not isinstance(snapshots, list) or not any(
-              isinstance(item, dict) and item.get('symbol') in ('AMD', 'US.AMD')
-              for item in snapshots
-          ):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
-              raise SystemExit(1)
-          print('SECURE_MCP_SINGLE_TOOL_SMOKE=PASS')
-          print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
-          print('CHATGPT_NATIVE_MCP_READ=NOT_VERIFIED')
-          print('RADAR_ADMISSION=BLOCKED')
-          print('SOURCE_ARBITER_ADMISSION=BLOCKED')
-          print('LIVE_TRADE=NO')
-          PY
-          REMOTE
-              jq -c -n --arg script "$cost_smoke_script" '[ $script ]' > commands.json
-              ;;
             secure_mcp_remote_e2e)
               read -r -d '' e2e_script <<'REMOTE' || true
           set -eu
@@ -2019,6 +1881,144 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$e2e_script" '[ $script ]' > commands.json
+              ;;
+            secure_mcp_cost_smoke)
+              # One Responses API request only. Avoid repeatedly paying for the six-call suite
+              # when merely checking whether the secure tunnel and budget are alive.
+              read -r -d '' cost_smoke_script <<'REMOTE' || true
+          set -eu
+          tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
+          parameter_name='arn:aws:ssm:ap-northeast-1:888425712426:parameter/stock-razor/mcp-tunnel/openai-api-key'
+          cleanup() { unset OPENAI_API_KEY api_key; }
+          trap cleanup 0 1 2 3 15
+          python3 -c 'import boto3'
+          api_key="$(PARAMETER_NAME="$parameter_name" python3 -c 'import os,boto3; print(boto3.client("ssm", region_name="ap-northeast-1").get_parameter(Name=os.environ["PARAMETER_NAME"], WithDecryption=True)["Parameter"]["Value"], end="")')"
+          test -n "$api_key" && test "$api_key" != None
+          export OPENAI_API_KEY="$api_key"
+          unset api_key
+          python3 - "$tunnel_id" <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+          from decimal import Decimal
+
+          MODEL = 'gpt-6-astra'
+          # Conservative token-only reference rates from the official model page,
+          # USD per 1M tokens, Standard tier, short-context. Billing is authoritative.
+          INPUT_USD_PER_M = Decimal('10')
+          CACHED_INPUT_USD_PER_M = Decimal('1')
+          OUTPUT_USD_PER_M = Decimal('50')
+
+          def token_cost(usage, model):
+              if model != MODEL or not isinstance(usage, dict):
+                  return None
+              inp = usage.get('input_tokens')
+              out = usage.get('output_tokens')
+              details = usage.get('input_tokens_details') or {}
+              cached = details.get('cached_tokens', 0) if isinstance(details, dict) else None
+              if not all(type(v) is int and 0 <= v <= 1000000000 for v in (inp, out, cached)):
+                  return None
+              if cached > inp:
+                  return None
+              estimate = (
+                  Decimal(inp - cached) * INPUT_USD_PER_M
+                  + Decimal(cached) * CACHED_INPUT_USD_PER_M
+                  + Decimal(out) * OUTPUT_USD_PER_M
+              ) / Decimal(1000000)
+              return {
+                  'input_tokens': inp,
+                  'cached_input_tokens': cached,
+                  'output_tokens': out,
+                  'usd_token_estimate': format(estimate, '.6f'),
+              }
+
+          body = {
+              'model': MODEL,
+              'store': False,
+              'max_output_tokens': 3000,
+              'tools': [{
+                  'type': 'mcp',
+                  'server_label': 'stock-razor-private',
+                  'tunnel_id': sys.argv[1],
+                  'allowed_tools': ['get_market_snapshots'],
+                  'require_approval': 'never',
+              }],
+              'input': (
+                  'Call get_market_snapshots exactly once for ["AMD"] '
+                  'with timeframe "15m". Do not call any other tool.'
+              ),
+          }
+          req = urllib.request.Request(
+              'https://api.openai.com/v1/responses',
+              data=json.dumps(body).encode('utf-8'),
+              headers={
+                  'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'],
+                  'Content-Type': 'application/json',
+              },
+              method='POST',
+          )
+          print('OPENAI_MODEL_CALLS_ATTEMPTED=1', flush=True)
+          print('OPENAI_ESTIMATE_BASIS=gpt-6-astra-token-only-standard', flush=True)
+          try:
+              with urllib.request.urlopen(req, timeout=90) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+                  status = response.status
+          except urllib.error.HTTPError as exc:
+              print('RESPONSES_HTTP_STATUS=' + str(exc.code))
+              print('OPENAI_MODEL_CALLS_SUCCEEDED=0')
+              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
+              raise SystemExit(1)
+          except (OSError, ValueError):
+              print('RESPONSES_STATUS=NETWORK_OR_JSON_ERROR')
+              print('OPENAI_MODEL_CALLS_SUCCEEDED=UNKNOWN')
+              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
+              raise SystemExit(1)
+          if status != 200 or not isinstance(payload, dict):
+              print('RESPONSES_STATUS=INVALID')
+              print('OPENAI_MODEL_CALLS_SUCCEEDED=UNKNOWN')
+              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
+              raise SystemExit(1)
+          print('OPENAI_MODEL_CALLS_SUCCEEDED=1')
+          usage_cost = token_cost(payload.get('usage'), payload.get('model'))
+          if usage_cost is None:
+              print('OPENAI_TOKEN_COST_STATUS=UNKNOWN')
+          else:
+              print('OPENAI_TOKEN_COST_STATUS=ESTIMATED')
+              for key, value in usage_cost.items():
+                  print('OPENAI_' + key.upper() + '=' + str(value))
+          output = payload.get('output')
+          if not isinstance(output, list):
+              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
+              raise SystemExit(1)
+          calls = [item for item in output if isinstance(item, dict) and item.get('type') == 'mcp_call']
+          if len(calls) != 1 or calls[0].get('name') != 'get_market_snapshots' or calls[0].get('error') not in (None, ''):
+              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
+              raise SystemExit(1)
+          value = calls[0].get('output')
+          if isinstance(value, str):
+              try:
+                  value = json.loads(value)
+              except ValueError:
+                  value = None
+          snapshots = value.get('snapshots') if isinstance(value, dict) else None
+          if not isinstance(snapshots, list) or not any(
+              isinstance(item, dict) and item.get('symbol') in ('AMD', 'US.AMD')
+              for item in snapshots
+          ):
+              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
+              print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
+              raise SystemExit(1)
+          print('SECURE_MCP_SINGLE_TOOL_SMOKE=PASS')
+          print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
+          print('CHATGPT_NATIVE_MCP_READ=NOT_VERIFIED')
+          print('RADAR_ADMISSION=BLOCKED')
+          print('SOURCE_ARBITER_ADMISSION=BLOCKED')
+          print('LIVE_TRADE=NO')
+          PY
+          REMOTE
+              jq -c -n --arg script "$cost_smoke_script" '[ $script ]' > commands.json
               ;;
             canonical_futures_mcp_remote_e2e)
               read -r -d '' canonical_e2e_script <<'REMOTE' || true
