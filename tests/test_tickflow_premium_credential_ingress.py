@@ -17,6 +17,7 @@ PREMIUM_BOOTSTRAP = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(enco
 def test_premium_path_is_dormant_and_pins_all_remote_artifacts():
     assert 'default: false' in PREMIUM_WORKFLOW
     assert 'if: ${{ inputs.enable_premium_probe == true' in PREMIUM_WORKFLOW
+    assert 'ref: ${{ github.sha }}' in PREMIUM_WORKFLOW
     assert 'bootstrap_hash=' in PREMIUM_WORKFLOW
     assert 'sha256sum -c -' in PREMIUM_BOOTSTRAP
     assert 'unset TICKFLOW_PREMIUM_PROBE_ENABLED TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED' in PREMIUM_BOOTSTRAP
@@ -43,7 +44,10 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
     assert 'exit "$rc"' in PREMIUM_BOOTSTRAP
     assert "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=" in PREMIUM_WORKFLOW
     assert "TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+" in PREMIUM_WORKFLOW
-    assert "StandardErrorContent" not in PREMIUM_WORKFLOW
+    assert "StandardErrorContent" in PREMIUM_WORKFLOW
+    assert "StatusDetails" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_FAILED_STAGE=SSM_REMOTE_COMMAND" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_FAILED_STAGE=SSM_COMMAND_TIMEOUT" in PREMIUM_WORKFLOW
     assert "response_code=UNKNOWN" in PREMIUM_WORKFLOW
 
 
