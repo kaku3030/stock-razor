@@ -1901,7 +1901,9 @@ jobs:
               ;;
             secure_mcp_tunnel_deploy)
               read -r -d '' deploy_script <<'REMOTE' || true
-          set -euo pipefail
+          # AWS-RunShellScript invokes commands with /bin/sh on this host;
+          # keep the remote bootstrap POSIX-shell compatible.
+          set -eu
           export DEBIAN_FRONTEND=noninteractive
           tunnel_id='tunnel_6abedaad9a8881919dbad5a7b56e095d'
           mcp_server_url='http://127.0.0.1:8000/mcp'

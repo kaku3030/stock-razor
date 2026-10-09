@@ -283,6 +283,24 @@ def test_secure_remote_e2e_selector_parses_and_writes_commands_json() -> None:
     assert "Unsupported action" not in result.stdout
 
 
+def test_secure_mcp_tunnel_bootstrap_is_posix_shell_compatible() -> None:
+    workflow = yaml.load(
+        (ROOT / ".github/workflows/aws-ssm-ops.yml").read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    command_set = next(
+        step for step in workflow["jobs"]["read-only-ssm"]["steps"]
+        if step.get("id") == "command-set"
+    )
+    source = str(command_set["run"])
+    tunnel = source.split("secure_mcp_tunnel_deploy)", 1)[1].split(
+        "jq -c -n --arg script \"$deploy_script\"", 1
+    )[0]
+    bootstrap = tunnel.split('cat > "$wrapper"', 1)[0]
+    assert "set -eu" in bootstrap
+    assert "set -euo pipefail" not in bootstrap
+
+
 def _response_for_source() -> str:
     workflow = yaml.load(
         (ROOT / ".github/workflows/aws-ssm-ops.yml").read_text(encoding="utf-8"),
