@@ -317,3 +317,21 @@ def test_smoke_uses_actual_port_8000_canonical_snapshot_contract() -> None:
     assert "do not supply " in script
     assert "snapshot_freshness" in script
     assert "source_age_seconds" in script
+
+
+def test_canonical_fail_closed_missing_snapshot_file_is_classified_without_error_leak() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    error = {
+        "ok": False, "status": "UNAVAILABLE", "error": "sensitive_secret_path",
+        "radar_admission": "BLOCKED", "live_trade": False,
+    }
+    result = inspect({"status": "completed", "output": [{
+        "type": "mcp_call", "name": "get_market_snapshots",
+        "status": "completed", "output": json.dumps(error),
+    }]})
+    assert result["tool_output_shape"] == "CANONICAL_STATUS_OBJECT"
+    assert result["canonical_source_status"] == "UNAVAILABLE"
+    assert result["snapshot_schema"] == "NOT_VERIFIED"
+    assert result["market_data_present"] == "NOT_VERIFIED"
+    assert "sensitive_secret_path" not in str(result)
