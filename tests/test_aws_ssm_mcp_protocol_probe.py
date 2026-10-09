@@ -62,3 +62,9 @@ def test_mcp_protocol_audit_emits_bounded_metadata_not_full_market_snapshots():
     assert "json.dumps(safe(results[key])" not in block
     assert "MCP_PROTOCOL_TOOL_CALL_FAILED=YES" in block
     assert "raise SystemExit(1)" in block
+
+
+def test_mcp_protocol_python_failure_propagates_to_ssm_job():
+    block = _probe_block()
+    assert 'python3 - "$source" "http://127.0.0.1:8000/mcp" <<\'PY\' || exit 1' in block
+    assert "MCP_PROTOCOL_TOOL_CALL_FAILED=YES" in block

@@ -1492,7 +1492,7 @@ jobs:
           echo "MCP_ROUTE_OPTIONS_STATUS=$route_status"
           case "$route_status" in 404|000|'') echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; 2*|3*|4*) : ;; *) echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; esac
           echo 'MCP_PROTOCOL_ENDPOINT=http://127.0.0.1:8000/mcp'
-          python3 - "$source" "http://127.0.0.1:8000/mcp" <<'PY'
+          python3 - "$source" "http://127.0.0.1:8000/mcp" <<'PY' || exit 1
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
