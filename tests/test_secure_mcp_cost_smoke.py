@@ -13,7 +13,7 @@ WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/aws-ssm-ops.
 def _cost_probe_source() -> str:
     text = WORKFLOW.read_text(encoding="utf-8")
     block = text.split("            secure_mcp_cost_smoke)", 1)[1].split(
-        "            secure_mcp_remote_e2e)", 1
+        "            canonical_futures_mcp_remote_e2e)", 1
     )[0]
     code = block.split('python3 - "$tunnel_id" <<\'PY\'', 1)[1].split(
         "\n          PY", 1
