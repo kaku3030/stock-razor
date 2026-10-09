@@ -9,10 +9,20 @@ from scripts import probe_tickflow_isolated as probe
 
 class FakeKlines:
     def get(self, symbol, *, period, count):
-        assert symbol == "159611.SZ"
+        assert symbol in {"159611.SZ", "518880.SH"}
         assert period in {"1d", "1m", "5m", "15m", "30m", "60m"}
         assert count in (3, 5)
-        return [{"symbol": symbol, "close": 999, "api_key": "DO_NOT_LEAK"}]
+        return [{
+            "symbol": symbol,
+            "timestamp": "2026-10-09T01:00:00+00:00",
+            "open": 10,
+            "high": 11,
+            "low": 9,
+            "close": 10.5,
+            "volume": 100,
+            "amount": 1000,
+            "api_key": "DO_NOT_LEAK",
+        }]
 
 
 class FakeQuotes:
@@ -129,6 +139,38 @@ def test_free_daily_probe_does_not_require_key_or_claim_minute_service():
     assert r["operations"][-1]["schema_qualified"] is False
 
 
+def test_kline_summary_is_field_only_and_rejects_bad_ohlcv_order():
+    summary = probe._kline_summary([
+        {"timestamp": "2026-10-09T01:00:00+00:00", "open": 10, "high": 9,
+         "low": 11, "close": "bad", "volume": -1},
+        {"timestamp": "2026-10-09T00:59:00+00:00", "open": 10, "high": 12,
+         "low": 9, "close": 11, "volume": 1},
+    ], period="15m")
+    assert summary["sample_count"] == 2
+    assert summary["field_presence"] == {
+        "timestamp": True, "open": True, "high": True, "low": True,
+        "close": True, "volume": True, "amount": False,
+    }
+    assert summary["numeric_fields"]["close"] is False
+    assert summary["timestamp_monotonicity"] == "NOT_MONOTONIC"
+    assert summary["ohlcv_range_valid"] == "NOT_VERIFIED"
+    assert summary["closure"] == "NOT_VERIFIED"
+    assert summary["freshness"] == "NOT_VERIFIED"
+    assert summary["entitlement_evidence"] == "UNKNOWN"
+    encoded = json.dumps(summary)
+    assert '"open": 10' not in encoded
+    assert '"close": "bad"' not in encoded
+
+
+def test_kline_summary_unknown_shape_stays_unverified():
+    summary = probe._kline_summary({"provider_payload": "opaque"}, period="60m")
+    assert summary["sample_count"] is None
+    assert all(value is False for value in summary["field_presence"].values())
+    assert summary["timestamp_monotonicity"] == "NOT_VERIFIED"
+    assert summary["ohlcv_range_valid"] == "NOT_VERIFIED"
+    assert summary["entitlement_evidence"] == "UNKNOWN"
+
+
 def test_premium_missing_key_is_skipped_without_sdk_calls():
     class NoClient:
         def __init__(self):
@@ -238,15 +280,34 @@ def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
     names = [x["name"] for x in r["operations"]]
     assert names == [
         "sdk_import", "realtime_quote", "kline_1m", "kline_5m",
-        "kline_15m", "kline_30m", "kline_60m", "five_level_depth",
+        "kline_15m", "kline_15m", "kline_30m", "kline_60m", "kline_60m",
+        "five_level_depth",
         "websocket_quote_smoke",
     ]
     assert r["operations"][-1]["operation"] == "SKIPPED"
     assert all(x.get("schema_qualified") is not True for x in r["operations"])
+    kline_ops = [
+        x for x in r["operations"] if x["name"] in {"kline_15m", "kline_60m"}
+    ]
+    assert [(x["name"], x["symbol"]) for x in kline_ops] == [
+        ("kline_15m", "159611.SZ"),
+        ("kline_15m", "518880.SH"),
+        ("kline_60m", "159611.SZ"),
+        ("kline_60m", "518880.SH"),
+    ]
+    for operation in kline_ops:
+        summary = operation["summary"]
+        assert summary["sample_count"] == 1
+        assert summary["field_presence"]["close"] is True
+        assert summary["numeric_fields"]["volume"] is True
+        assert summary["ohlcv_range_valid"] is True
+        assert summary["closure"] == "NOT_VERIFIED"
+        assert summary["freshness"] == "NOT_VERIFIED"
+        assert summary["entitlement_evidence"] == "UNKNOWN"
     encoded = json.dumps(r)
     assert "DO_NOT_LEAK" not in encoded
     assert "last_price" not in encoded
-    assert "close" not in encoded
+    assert '"close": 10.5' not in encoded
     assert "bid_prices" not in encoded
     assert r["can_confirm_signal"] is False
     assert r["source_arbiter_admission"] == "BLOCKED"
