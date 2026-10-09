@@ -91,6 +91,7 @@ if [[ -z "$aws_cli" ]]; then
   probe_stage=EXTRACT_AWS_CLI
   python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$stage/awscli-installer/aws/install"
+  find "$stage/awscli-installer" -type f -name aws -exec chmod u+x {} + 2>/dev/null || true
   probe_stage=RUN_AWS_CLI_INSTALLER
   "$stage/awscli-installer/aws/install" \
     -i "$stage/aws-cli" -b "$stage/bin" >/dev/null 2>&1
