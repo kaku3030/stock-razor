@@ -117,7 +117,9 @@ fi
 printf 'TICKFLOW_PREMIUM_AWS_CLI=AVAILABLE\n'
 printf 'TICKFLOW_PREMIUM_AWS_CLI_PATH=%s\n' "$aws_cli"
 printf 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=%s\n' "$aws_version"
+probe_stage=READ_SECRET
 secret_json="$("$aws_cli" secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>/dev/null)"
+probe_stage=PARSE_SECRET
 export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); v=d.get("api_key") if isinstance(d,dict) and set(d)=={"api_key"} else None; assert isinstance(v,str) and v.strip(); print(v,end="")')"
 [[ -n "$TICKFLOW_API_KEY" ]]
 unset secret_json
