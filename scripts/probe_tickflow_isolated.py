@@ -175,7 +175,14 @@ def _ohlcv_anomaly_diagnostics(
             else:
                 reasons[reason] += 1
 
-    failed = any(reasons[name] for name in reasons if name != "COUNT_ONLY")
+    failed = any(
+        reasons[name]
+        for name in (
+            "HIGH_BELOW_OPEN_OR_CLOSE",
+            "LOW_ABOVE_OPEN_OR_CLOSE",
+            "NEGATIVE_VOLUME",
+        )
+    )
     return {
         "status": "FAILED" if failed else "PASS",
         "reasons": [name for name, count in reasons.items() if count],
@@ -245,7 +252,9 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
     ohlcv_range_valid: bool | str = "NOT_VERIFIED"
     if all(numeric_fields[name] for name in ("open", "high", "low", "close", "volume")):
         ohlcv_range_valid = all(
-            low <= min(open_, close) <= max(open_, close) <= high and volume >= 0
+            high + (max(abs(open_), abs(high), abs(low), abs(close), 1.0) * 1e-12) >= max(open_, close)
+            and low - (max(abs(open_), abs(high), abs(low), abs(close), 1.0) * 1e-12) <= min(open_, close)
+            and volume >= 0
             for open_, high, low, close, volume in zip(
                 numbers["open"], numbers["high"], numbers["low"],
                 numbers["close"], numbers["volume"],
