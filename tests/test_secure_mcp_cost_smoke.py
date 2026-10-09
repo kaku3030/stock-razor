@@ -92,3 +92,48 @@ def test_new_probe_is_opt_in_not_default_six_call_suite() -> None:
     assert "            secure_mcp_cost_smoke)" in workflow
     assert "            secure_mcp_remote_e2e)" in workflow
     assert "MCP_CALL_SEQUENCE=PASS" in workflow
+
+
+def test_full_e2e_also_meters_each_call_and_actual_retries() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    block = text.split("            secure_mcp_remote_e2e)", 1)[1].split(
+        "            canonical_futures_mcp_remote_e2e)", 1
+    )[0]
+    assert "OPENAI_HTTP_POST_ATTEMPT=1" in block
+    assert "OPENAI_LOGICAL_MODEL_CALLS=" in block
+    assert "OPENAI_HTTP200_RESPONSES=" in block
+    assert "OPENAI_COST_UNKNOWN_CALLS=" in block
+    assert "OPENAI_TOKEN_COST_ESTIMATE_USD=" in block
+    assert "OPENAI_CALL_USAGE_" in block
+    assert "print(payload)" not in block
+    assert "print(req)" not in block
+
+
+def test_full_e2e_token_estimate_rejects_bad_counts() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    block = text.split("            secure_mcp_remote_e2e)", 1)[1].split(
+        "            canonical_futures_mcp_remote_e2e)", 1
+    )[0]
+    source = textwrap.dedent(
+        block.split('python3 - "$tunnel_id" <<\'PY\'', 1)[1].split(
+            "\n          PY", 1
+        )[0]
+    )
+    tree = ast.parse(source)
+    fn = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "response_token_estimate"
+    )
+    ns = {"Decimal": Decimal}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), "<full_e2e_cost>", "exec"), ns)
+    estimate = ns["response_token_estimate"]
+    assert estimate({"model": "gpt-6-astra", "usage": {
+        "input_tokens": 10000, "output_tokens": 2000,
+        "input_tokens_details": {"cached_tokens": 5000},
+    }}) == (10000, 5000, 2000, Decimal("0.155"))
+    assert estimate({"model": "gpt-6-astra", "usage": {
+        "input_tokens": 100, "output_tokens": -1,
+    }}) is None
+    assert estimate({"model": "unknown", "usage": {
+        "input_tokens": 100, "output_tokens": 20,
+    }}) is None
