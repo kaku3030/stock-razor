@@ -43,6 +43,8 @@ cp .env.example .env
 4. 推送分支：`git push origin feature/your-feature`
 5. 创建 Pull Request
 
+常规开发不要求手工 Code Owner 审批。`main` 的合并以 GitHub 当前生效的分支规则和必需检查为准；Code Owner 请求属于可选的协作信息，不是常规合并门禁。研究/PIT、provider entitlement、部署、Radar admission 和交易授权仍是彼此独立的证据门槛，不能由 PR review 或 CI 通过推导。
+
 ### Commit 规范
 
 使用 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
@@ -85,6 +87,8 @@ docs: 更新 README 部署说明
 | web-gate | 前端变更时执行 `npm run lint` + `npm run build` | ✅（触发时） |
 | pr-review | 暂停 PR 自动触发，仅保留维护者通过 `workflow_dispatch` 按 PR 编号手动运行；通过 GitHub API 读取 PR 元数据和 diff，不检出或执行 fork PR 代码 | ❌（辅助项） |
 | network-smoke | 定时/手动执行 `pytest -m network` + `scripts/test.sh quick`（非阻断） | ❌（观测项） |
+
+`pr-review` 是辅助项，不是手工审批或常规合并门禁。实际必需检查与保护规则以 GitHub 当前生效的规则集为准。
 
 **本地运行检查：**
 

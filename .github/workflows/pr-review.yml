@@ -1,5 +1,7 @@
-# PR 手动辅助审查 - 元数据检查 + AI 语义审查
+# PR 手动辅助审查 - 元数据检查 + AI 语义审查（非合并门禁）
 # 暂停 PR 自动触发；维护者可按 PR 编号手动运行，且不会检出或执行 fork PR 代码。
+# This workflow is advisory and must not be used as a manual Code Owner
+# approval gate; required merge checks are enforced by the live GitHub ruleset.
 
 name: PR Review
 
