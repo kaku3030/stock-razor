@@ -1,0 +1,87 @@
+name: Audit TickFlow AWS IAM Identity (Read Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - name: Assume existing GitHub Ops OIDC identity
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: tickflow-iam-audit-${{ github.run_id }}
+          aws-region: ap-northeast-1
+      - name: Confirm EC2 instance profile and its IAM role without reading secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile_arn="$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --region "$AWS_REGION" --query 'Reservations[0].Instances[0].IamInstanceProfile.Arn' --output text 2>/dev/null || true)"
+          profile_name="${profile_arn##*/}"
+          unset profile_arn
+          if [[ "$profile_name" != "StockRazorEc2SsmInstanceRole" ]]; then
+            echo "TICKFLOW_IAM_PROFILE=UNEXPECTED"
+            exit 1
+          fi
+          echo "TICKFLOW_IAM_PROFILE=EXPECTED"
+          if role_name="$(aws iam get-instance-profile --instance-profile-name "$profile_name" --query 'InstanceProfile.Roles[0].RoleName' --output text 2>/dev/null)"; then
+            if [[ "$role_name" == "StockRazorEc2SsmInstanceRole" ]]; then
+              echo "TICKFLOW_IAM_ROLE_METADATA=EXPECTED"
+            else
+              echo "TICKFLOW_IAM_ROLE_METADATA=OTHER"
+            fi
+          else
+            echo "TICKFLOW_IAM_ROLE_METADATA=NOT_AUTHORIZED_OR_UNAVAILABLE"
+          fi
+          unset role_name profile_name
+          # IMDSv2: list ONLY the role name; never retrieve its credentials.
+          read -r -d '' remote <<'REMOTE' || true
+          set -eu
+          token="$(curl --fail --silent --max-time 5 --request PUT --header 'X-aws-ec2-metadata-token-ttl-seconds: 30' http://169.254.169.254/latest/api/token 2>/dev/null || true)"
+          if [ -z "$token" ]; then
+            echo 'TICKFLOW_IAM_REMOTE_ROLE=IMDS_UNAVAILABLE'
+            exit 0
+          fi
+          role="$(curl --fail --silent --max-time 5 --header "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/iam/security-credentials/ 2>/dev/null || true)"
+          unset token
+          case "$role" in
+            StockRazorEc2SsmInstanceRole) echo 'TICKFLOW_IAM_REMOTE_ROLE=EXPECTED';;
+            '') echo 'TICKFLOW_IAM_REMOTE_ROLE=IMDS_UNAVAILABLE';;
+            *) echo 'TICKFLOW_IAM_REMOTE_ROLE=OTHER';;
+          esac
+          REMOTE
+          command_id="$(aws ssm send-command --region "$AWS_REGION" --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 60 --query 'Command.CommandId' --output text)"
+          for _ in $(seq 1 18); do
+            status="$(aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success)
+                raw="$(aws ssm get-command-invocation --region "$AWS_REGION" --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
+                safe="$(printf '%s\n' "$raw" | grep -Ex 'TICKFLOW_IAM_REMOTE_ROLE=(EXPECTED|IMDS_UNAVAILABLE|OTHER)' | head -n 1 || true)"
+                if [[ -z "$safe" ]]; then
+                  echo 'TICKFLOW_IAM_REMOTE_ROLE=UNKNOWN'
+                else
+                  printf '%s\n' "$safe"
+                fi
+                echo 'TICKFLOW_IAM_AUDIT=COMPLETE'
+                echo 'LIVE_TRADE=NO'
+                echo 'RADAR_ADMISSION=BLOCKED'
+                exit 0
+                ;;
+              Failed|TimedOut|Cancelled|Cancelling)
+                echo 'TICKFLOW_IAM_REMOTE_ROLE=SSM_UNAVAILABLE'
+                exit 1
+                ;;
+            esac
+            sleep 3
+          done
+          echo 'TICKFLOW_IAM_REMOTE_ROLE=SSM_TIMEOUT'
+          exit 1
