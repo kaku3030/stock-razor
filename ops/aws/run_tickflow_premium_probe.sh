@@ -66,7 +66,7 @@ probe_stage=INSTALL_DEPENDENCIES
 probe_stage=READ_SECRET
 aws_cli="$(command -v aws 2>/dev/null || true)"
 if [[ -z "$aws_cli" ]]; then
-  for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws; do
+  for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
     if [[ -x "$candidate" ]]; then
       aws_cli="$candidate"
       break
