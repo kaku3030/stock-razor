@@ -135,3 +135,72 @@ def _blocked(reason: str) -> dict:
         "radar_admission": "BLOCKED",
         "live_trade": False,
     }
+
+
+class ValidatedDailyHistoryFileCache:
+    """Reuse *validated* daily research frames only for an unchanged file.
+
+    Historical data can remain stable across thousands of Radar polls. Atomic
+    replacement, in-place rewrites, missing files, source SHA changes and
+    validation failures all invalidate the cache. This class never upgrades
+    a historical-data safety permission or infers currentness from file age.
+
+    Returned pandas frames must be treated as read-only by consumers.
+    """
+
+    def __init__(self) -> None:
+        self._cache_key: tuple | None = None
+        self._cache_value: tuple[dict[str, pd.DataFrame], dict] | None = None
+
+    @staticmethod
+    def _signature(path: str | Path) -> tuple:
+        source = Path(path)
+        stat = source.stat()
+        return (
+            str(source.absolute()),
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_size,
+            stat.st_mtime_ns,
+            stat.st_ctime_ns,
+        )
+
+    def read(
+        self,
+        path: str | Path,
+        *,
+        expected_repo_sha: str,
+    ) -> tuple[dict[str, pd.DataFrame], dict, bool]:
+        """Return frames, diagnostics and cache-hit flag; never cache BLOCKED."""
+        try:
+            before = self._signature(path)
+        except OSError:
+            self._cache_key = None
+            self._cache_value = None
+            frames, diagnostics = load_futu_us_daily_history_frames(
+                path, expected_repo_sha=expected_repo_sha
+            )
+            return frames, diagnostics, False
+
+        key = (*before, expected_repo_sha)
+        if key == self._cache_key and self._cache_value is not None:
+            frames, diagnostics = self._cache_value
+            return frames, dict(diagnostics), True
+
+        frames, diagnostics = load_futu_us_daily_history_frames(
+            path, expected_repo_sha=expected_repo_sha
+        )
+        try:
+            after = self._signature(path)
+        except OSError:
+            after = None
+        if (
+            before == after
+            and diagnostics.get("status") == "PASS"
+        ):
+            self._cache_key = key
+            self._cache_value = (frames, diagnostics)
+        else:
+            self._cache_key = None
+            self._cache_value = None
+        return frames, diagnostics, False

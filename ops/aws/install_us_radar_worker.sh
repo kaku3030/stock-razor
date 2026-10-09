@@ -55,6 +55,7 @@ from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarWorker,
 )
 from src.services.stock_radar_v2.daily_history_reader import (
+    ValidatedDailyHistoryFileCache,
     load_futu_us_daily_history_frames,
 )
 from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
@@ -76,6 +77,7 @@ from src.services.stock_radar_v2.canonical_snapshot_worker import (
     CanonicalSnapshotRadarWorker,
 )
 from src.services.stock_radar_v2.daily_history_reader import (
+    ValidatedDailyHistoryFileCache,
     load_futu_us_daily_history_frames,
 )
 from src.services.stock_radar_v2.options_context_reader import RadarOptionsContextReader
@@ -134,6 +136,7 @@ worker = CanonicalSnapshotRadarWorker(
 )
 cycle = 0
 latency_ledger = CanonicalExportLatencyLedger()
+daily_history_cache = ValidatedDailyHistoryFileCache()
 last_logged_poll_status = None
 
 
@@ -151,7 +154,7 @@ def publish(payload):
 while True:
     cycle_started = time.perf_counter()
     daily_started = time.perf_counter()
-    daily_frames, daily_history = load_futu_us_daily_history_frames(
+    daily_frames, daily_history, daily_cache_hit = daily_history_cache.read(
         daily_history_path,
         expected_repo_sha=expected_source_repo_sha,
     )
@@ -213,6 +216,7 @@ while True:
         "source_path": source_path,
         "daily_history_path": daily_history_path,
         "daily_history": daily_history,
+        "daily_history_cache_hit": daily_cache_hit,
         "options_context": {
             "enabled": options_context_enabled,
             "source_path": options_context_path if options_context_enabled else None,
@@ -228,6 +232,7 @@ while True:
         # Provider->Radar samples or an E2E latency distribution.
         "worker_phase_timing": {
             "daily_history_load_ms": daily_load_ms,
+            "daily_history_cache_hit": daily_cache_hit,
             "options_context_load_ms": options_load_ms,
             "canonical_poll_and_analysis_ms": poll_elapsed_ms,
             "symbol_compute_ms": dict(timed_technical.symbol_compute_ms),

@@ -126,3 +126,78 @@ def test_reader_rejects_too_few_rows(tmp_path):
     )
     assert frames == {}
     assert diagnostics["reason"] == "INSUFFICIENT_DAILY_ROWS:US.AMD"
+
+
+def test_validated_daily_cache_reuses_only_unchanged_pass_data(tmp_path, monkeypatch):
+    import src.services.stock_radar_v2.daily_history_reader as module
+
+    path = _write(tmp_path, _payload())
+    reader = module.ValidatedDailyHistoryFileCache()
+    frames, status, cache_hit = reader.read(path, expected_repo_sha=SHA)
+    assert status["status"] == "PASS"
+    assert cache_hit is False
+
+    def cannot_reparse(*args, **kwargs):
+        raise AssertionError("Unchanged daily history must not be reparsed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "load_futu_us_daily_history_frames", cannot_reparse)
+        cached, repeat, cache_hit = reader.read(path, expected_repo_sha=SHA)
+        assert cache_hit is True
+        assert cached is frames
+        assert repeat["status"] == "PASS"
+
+    # Changing only provenance must never hit a validated cache.
+    changed, rejected, cache_hit = reader.read(path, expected_repo_sha="b" * 40)
+    assert changed == {}
+    assert rejected["status"] == "BLOCKED"
+    assert rejected["reason"] == "SOURCE_REPO_SHA_MISMATCH"
+    assert cache_hit is False
+
+
+def test_validated_daily_cache_atomic_replace_reparses_and_cannot_replay_pass(tmp_path):
+    import src.services.stock_radar_v2.daily_history_reader as module
+
+    path = _write(tmp_path, _payload())
+    reader = module.ValidatedDailyHistoryFileCache()
+    assert reader.read(path, expected_repo_sha=SHA)[1]["status"] == "PASS"
+    assert reader.read(path, expected_repo_sha=SHA)[2] is True
+
+    unsafe = tmp_path / "replacement.json"
+    unsafe.write_text(json.dumps(_payload(safe=False)), encoding="utf-8")
+    unsafe.replace(path)
+    for _ in range(2):
+        frames, diagnostics, hit = reader.read(path, expected_repo_sha=SHA)
+        assert frames == {}
+        assert diagnostics["status"] == "BLOCKED"
+        assert diagnostics["reason"] == "SAFETY_CONTRACT_VIOLATION"
+        assert hit is False
+
+    safe = tmp_path / "replacement2.json"
+    safe.write_text(json.dumps(_payload()), encoding="utf-8")
+    safe.replace(path)
+    assert reader.read(path, expected_repo_sha=SHA)[1]["status"] == "PASS"
+    assert reader.read(path, expected_repo_sha=SHA)[2] is True
+
+    path.unlink()
+    frames, diagnostics, cache_hit = reader.read(path, expected_repo_sha=SHA)
+    assert frames == {}
+    assert diagnostics["status"] == "BLOCKED"
+    assert cache_hit is False
+
+
+def test_validated_daily_cache_updates_on_in_place_rewrite(tmp_path):
+    from src.services.stock_radar_v2.daily_history_reader import ValidatedDailyHistoryFileCache
+
+    path = _write(tmp_path, _payload())
+    reader = ValidatedDailyHistoryFileCache()
+    assert reader.read(path, expected_repo_sha=SHA)[2] is False
+    assert reader.read(path, expected_repo_sha=SHA)[2] is True
+
+    body = _payload()
+    body["symbols"]["US.AMD"]["rows"][-1]["close"] += 0.25
+    path.write_text(json.dumps(body), encoding="utf-8")
+    frames, diagnostics, cache_hit = reader.read(path, expected_repo_sha=SHA)
+    assert cache_hit is False
+    assert diagnostics["status"] == "PASS"
+    assert float(frames["US.AMD"].iloc[-1]["close"]) == float(body["symbols"]["US.AMD"]["rows"][-1]["close"])
