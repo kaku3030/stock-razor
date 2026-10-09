@@ -15,10 +15,10 @@ def _source() -> str:
 
 
 def _parser():
-    source = "import json\n" + _source()
+    source = "import json\n" + textwrap.dedent(_source())
     # Workflow embeds Python under a fixed 10-space heredoc indentation.
     import textwrap
-    tree = ast.parse(textwrap.dedent(source))
+    tree = ast.parse(source)
     function = next(
         x for x in tree.body
         if isinstance(x, ast.FunctionDef) and x.name == "parse_subscription"
