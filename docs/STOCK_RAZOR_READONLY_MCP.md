@@ -98,3 +98,40 @@ is ~400 similar model calls before other fees or activity. The test calls are
 metered individually by the full E2E workflow; model calls are independent of
 market-data API calls or EC2 time. No remote probe is automatically triggered
 by a code merge.
+
+## 2026-10-10 canonical remote smoke schema correction
+
+Read-only cloud E2E GitHub Actions run 37964659098 used exact
+main 4f27a7f8306b99c7a7c1304d4245099ee14759af.
+Responses HTTP/model call and `get_market_snapshots` discovery/call
+**passed** (1 MCP call, tool status completed, no tool error).
+Reported 1770 input + 184 output tokens; token-only
+cost estimate **USD 0.026900**. Probe still failed because the
+validator expected the older `stock_razor_readonly_mcp.py` facade
+`{read_only, snapshots: [...]}`.
+
+**Source-of-truth:** production secure tunnel targets
+`http://127.0.0.1:8000/mcp`, served by
+`realtime_monitor/readonly_mcp_server.py` (installed using
+`ops/aws/install_readonly_mcp.sh`). That implementation calls
+`data_provider/us_canonical_runtime_reader.read_us_market_snapshots`,
+which returns `{ok, status, data_available, symbols: {'US.AMD':
+{counts, latest: {'15m': bar}}}, ...}`. Its tool takes `symbols`,
+not a `timeframe` parameter. The earlier validator therefore
+made a **false-negative schema assertion**; this does not prove the
+actual returned data was populated or fresh.
+
+The corrected single-call probe decodes standard typed MCP content,
+accepts only the canonical US.AMD 15m schema, reports a fixed
+`SYMBOLS_OBJECT` output shape, requires fail-closed runtime flags,
+requires source `status=PASS` and source age 0..120 s,
+and requires a nonempty 15m latest bar and `data_available=true`.
+Older facade responses may be categorized `LEGACY_FACADE`
+but cannot pass this exact-runtime probe. Source snapshot freshness
+does **not** establish last bar's market-session currentness or
+provider-to-Radar latency; those gates remain independent and blocked.
+
+No extra OpenAI API or cloud calls were made while implementing this fix.
+The two previous token-only estimated model charges sum to USD 0.051860,
+but billing account balance and any other project/API activity remain
+unknown.
