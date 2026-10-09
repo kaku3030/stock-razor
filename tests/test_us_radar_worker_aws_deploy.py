@@ -163,9 +163,10 @@ def test_embedded_worker_runtime_imports_daily_history_reader():
     source = _embedded_source(INSTALLER, marker, "\nPY\n\ncat >/etc/systemd")
     assert "from src.services.stock_radar_v2.daily_history_reader import (" in source
     assert "load_futu_us_daily_history_frames" in source
-    assert source.index("load_futu_us_daily_history_frames") < source.index(
-        "daily_frames, daily_history = load_futu_us_daily_history_frames("
+    assert source.index("ValidatedDailyHistoryFileCache") < source.index(
+        "daily_frames, daily_history, daily_cache_hit = daily_history_cache.read("
     )
+    assert "expected_repo_sha=expected_source_repo_sha" in source
 
 
 def test_options_context_slot_is_opt_in_and_requires_exact_source_provenance():
