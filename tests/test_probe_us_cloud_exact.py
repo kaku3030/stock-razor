@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 from scripts.probe_us_cloud_exact import probe
+
+
+def test_workflow_fetches_probe_by_exact_sha_and_reports_safe_failure_diagnostics():
+    workflow = Path(".github/workflows/probe-us-cloud-exact.yml").read_text(encoding="utf-8")
+    assert "raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py" in workflow
+    assert "base64 -w0 scripts/probe_us_cloud_exact.py" not in workflow
+    assert "US_EXACT_CLOUD_PROBE_RESPONSE_CODE=" in workflow
 
 
 def test_probe_requires_exact_sha_and_keeps_unobservable_latency_blocked(monkeypatch):
