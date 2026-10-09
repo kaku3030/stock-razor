@@ -1,0 +1,70 @@
+name: Probe US Cloud Exact Main (Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: "Bounded read-only observation window"
+        required: true
+        type: choice
+        default: "30"
+        options:
+          - "30"
+          - "60"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: probe-us-cloud-exact-main
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: us-cloud-exact-readonly-${{ github.run_id }}
+          aws-region: ap-northeast-1
+      - name: Run bounded US-only read-only probe
+        shell: bash
+        env:
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
+          remote="$(base64 -w0 scripts/probe_us_cloud_exact.py)"
+          command="set -euo pipefail; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; printf '%s' '$remote' | base64 -d > \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS'"
+          params="$(jq -cn --arg c "$command" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 180 --query 'Command.CommandId' --output text)"
+          for _ in $(seq 1 80); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success)
+                report="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
+                printf '%s\n' "$report" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema"] == "stock_razor_us_exact_cloud_probe_v1"; assert x["radar_admission"] == "BLOCKED"; assert x["source_arbiter_admission"] == "BLOCKED"; assert x["live_trade"] == "NO"; print(json.dumps(x, sort_keys=True))'
+                echo 'US_EXACT_CLOUD_PROBE_EXECUTED=YES'
+                echo 'RADAR_ADMISSION=BLOCKED'
+                echo 'SOURCE_ARBITER_ADMISSION=BLOCKED'
+                echo 'LIVE_TRADE=NO'
+                exit 0
+                ;;
+              Failed|TimedOut|Cancelled|Cancelling) echo "US_EXACT_CLOUD_PROBE=$status" >&2; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo 'US_EXACT_CLOUD_PROBE=TIMEOUT' >&2
+          exit 1
