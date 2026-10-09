@@ -59,7 +59,7 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
 
 def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'command -v aws 2>/dev/null || true' in PREMIUM_BOOTSTRAP
-    assert 'for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws' in PREMIUM_BOOTSTRAP
+    assert 'for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_BOOTSTRAP
     assert 'secret_json="$("$aws_cli" secretsmanager get-secret-value' in PREMIUM_BOOTSTRAP
