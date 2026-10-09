@@ -464,14 +464,22 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
 
     state = "FAILED"
     reason = None
+    connection_call = "NOT_VERIFIED"
+    subscription_call = "NOT_VERIFIED"
     try:
         with _hide_provider_output():
             stream.subscribe("quotes", list(symbols))
+            subscription_call = "PASS"
             stream.connect(block=False)
+            connection_call = "PASS"
             time.sleep(seconds)
         state = "OBSERVED" if counts["quote_events"] else "NO_EVENTS_OBSERVED"
     except Exception as exc:
         reason = type(exc).__name__
+        if subscription_call == "NOT_VERIFIED":
+            subscription_call = "FAIL"
+        elif connection_call == "NOT_VERIFIED":
+            connection_call = "FAIL"
     finally:
         try:
             with _hide_provider_output():
@@ -487,12 +495,25 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
             "p99": _percentile(samples, 99),
         }
 
+    connection_state = "FAIL" if connection_call == "FAIL" else "UNKNOWN"
+    subscription_state = (
+        "FAIL" if subscription_call == "FAIL" else "UNKNOWN"
+    )
+    event_state = "PASS" if counts["quote_events"] else "UNKNOWN"
+
     return {
         "name": "websocket_quote_smoke",
         "operation": state,
         "elapsed_ms": _elapsed_ms(started),
         **counts,
         "failure_class": reason,
+        "connection_call": connection_call,
+        "connection_state": connection_state,
+        "connection_method": "stream.connect(block=False)",
+        "subscription_call": subscription_call,
+        "subscription_state": subscription_state,
+        "subscription_method": "stream.subscribe(channel='quotes', symbols=<validated>)",
+        "event_state": event_state,
         "first_per_symbol_cache_candidate_age_ms": metrics(initial_candidate_deltas_ms),
         # Backwards-compatible key but now excludes initial cached snapshots.
         "arrival_minus_provider_timestamp_ms": metrics(post_initial_candidate_deltas_ms),

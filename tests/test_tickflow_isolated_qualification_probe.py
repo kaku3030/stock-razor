@@ -383,6 +383,11 @@ def test_ws_smoke_tracks_callbacks_but_never_promotes_stream(monkeypatch):
     ws = r["operations"][-1]
     assert fake.stream.closed is True
     assert ws["quote_events"] == 2
+    assert ws["connection_call"] == "PASS"
+    assert ws["connection_state"] == "UNKNOWN"
+    assert ws["subscription_call"] == "PASS"
+    assert ws["subscription_state"] == "UNKNOWN"
+    assert ws["event_state"] == "PASS"
     assert ws["unique_quote_samples"] == 1
     assert ws["initial_snapshot_candidates"] == 1
     assert ws["duplicate_timestamp_events"] == 1
@@ -395,6 +400,29 @@ def test_ws_smoke_tracks_callbacks_but_never_promotes_stream(monkeypatch):
     assert ws["continuous_feed_qualified"] is False
     assert ws["stale_drop_reconnect_qualified"] is False
     assert "DO_NOT_LEAK" not in json.dumps(r)
+
+
+def test_ws_diagnostics_keep_connection_failure_separate_from_subscription(monkeypatch):
+    class ConnectFailureStream(FakeStream):
+        def connect(self, block=True):
+            raise ConnectionError("DO_NOT_LEAK")
+
+    client = FakeClient()
+    client.stream = ConnectFailureStream()
+    monkeypatch.setattr(probe.time, "sleep", lambda seconds: None)
+    ws = probe.build_probe(
+        mode="premium", symbols=("159611.SZ", "518880.SH"),
+        ws_seconds=1, client_factory=lambda: client,
+        credential_present=True,
+    )["operations"][-1]
+
+    assert ws["subscription_call"] == "PASS"
+    assert ws["subscription_state"] == "UNKNOWN"
+    assert ws["connection_call"] == "FAIL"
+    assert ws["connection_state"] == "FAIL"
+    assert ws["event_state"] == "UNKNOWN"
+    assert ws["quote_events"] == 0
+    assert ws["failure_class"] == "ConnectionError"
 
 
 def test_ws_requires_explicit_premium_and_bounded_duration():
@@ -472,6 +500,9 @@ def test_ws_initial_snapshot_is_not_used_as_live_lag_and_events_are_bounded(monk
     ws = result["operations"][-1]
     assert ws["quote_callbacks"] == 2
     assert ws["quote_events"] == 8
+    assert ws["connection_state"] == "UNKNOWN"
+    assert ws["subscription_state"] == "UNKNOWN"
+    assert ws["event_state"] == "PASS"
     assert ws["initial_snapshot_candidates"] == 2
     assert ws["post_initial_update_candidates"] == 2
     assert ws["duplicate_timestamp_events"] == 1
@@ -512,6 +543,9 @@ def test_ws_quote_with_boolean_or_non_finite_timestamp_is_never_age_sample(monke
         ws_seconds=1, client_factory=lambda: c, credential_present=True,
     )["operations"][-1]
     assert ws["invalid_timestamp_events"] == 4
+    assert ws["connection_state"] == "UNKNOWN"
+    assert ws["subscription_state"] == "UNKNOWN"
+    assert ws["event_state"] == "PASS"
     assert ws["initial_snapshot_candidates"] == 1
     assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 0
     assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
