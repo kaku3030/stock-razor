@@ -13,6 +13,7 @@ from data_provider.us_canonical_runtime_reader import (
     read_us_market_snapshots,
 )
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
+from data_provider.us_research_brief import read_us_market_brief
 
 mcp = FastMCP("stock-razor-readonly")
 
@@ -55,6 +56,12 @@ def get_market_snapshots(symbols: list[str] | None = None) -> dict:
 def get_market_analysis(symbols: list[str] | None = None) -> dict:
     """Return the latest precomputed US Radar research state without recomputation."""
     return read_us_radar_analysis(symbols)
+
+
+@mcp.tool()
+def get_market_brief(symbols: list[str] | None = None) -> dict:
+    """One bounded read-only brief: aligned canonical prices and precomputed Radar research."""
+    return read_us_market_brief(symbols)
 
 
 @mcp.tool()

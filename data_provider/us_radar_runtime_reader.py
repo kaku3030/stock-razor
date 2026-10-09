@@ -267,6 +267,7 @@ def read_us_radar_analysis(
             else None
         ),
         "source_sequence": evaluation.get("source_sequence"),
+        "source_runtime_instance_id": evaluation.get("runtime_instance_id"),
         "source_delivery_mode": evaluation.get("source_delivery_mode"),
         "source_bar_closure": evaluation.get("source_bar_closure"),
         "symbols": result,
