@@ -49,11 +49,11 @@ jobs:
           probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
           requirements_hash="$(sha256sum ops/requirements/tickflow-isolated-v0.1.txt | cut -d' ' -f1)"
           read -r -d '' remote <<REMOTE || true
-          set -euo pipefail
+          set -eu
           umask 077
           bootstrap_stage=REMOTE_INIT
           temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
-          trap 'rc=\$?; if (( rc != 0 )); then printf "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s\\n" "\$bootstrap_stage"; fi; rm -rf "\$temp_dir"' EXIT
+          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s\\n" "\$bootstrap_stage"; fi; rm -rf "\$temp_dir"' EXIT
           bootstrap_stage=DOWNLOAD_BOOTSTRAP
           export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
           curl --fail --silent --show-error --max-time 20 \
