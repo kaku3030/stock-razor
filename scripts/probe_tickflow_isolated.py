@@ -306,42 +306,78 @@ def _skip(name: str, reason: str) -> dict:
 
 
 def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict:
-    """Best-effort bounded WS smoke. Callback errors never print payloads."""
+    """Bounded WebSocket observation, NOT a subscription or live-feed qualifier.
+
+    The official sync SDK exposes quote/error callbacks but not the server's
+    subscribed acknowledgement. The first sample for every symbol may be a
+    cached snapshot; even later samples are only update *candidates*.
+    Never interpret the initial snapshot or any unqualified age as E2E lag.
+    """
     if not 0 < seconds <= 15:
         raise ValueError("WebSocket probe duration must be (0,15] seconds")
     counts = {
         "quote_callbacks": 0,
         "quote_events": 0,
         "unique_quote_samples": 0,
+        "initial_snapshot_candidates": 0,
+        "post_initial_update_candidates": 0,
+        "duplicate_timestamp_events": 0,
+        "out_of_order_timestamp_events": 0,
+        "unrequested_symbol_events": 0,
+        "invalid_timestamp_events": 0,
         "error_callbacks": 0,
     }
-    seen_samples: set[tuple[str, int]] = set()
-    timestamp_deltas_ms: list[float] = []
+    allowed_symbols = set(symbols)
+    last_provider_timestamp_ms: dict[str, float] = {}
+    initial_candidate_deltas_ms: list[float] = []
+    post_initial_candidate_deltas_ms: list[float] = []
     stream = client.stream
     started = time.perf_counter()
 
     @stream.on_quotes
     def on_quotes(quotes: Any) -> None:
         counts["quote_callbacks"] += 1
-        if isinstance(quotes, (list, tuple)):
-            counts["quote_events"] += len(quotes)
-            arrival_ms = time.time() * 1000
-            for quote in quotes:
-                if not isinstance(quote, dict):
-                    continue
-                symbol = str(quote.get("symbol") or "")
-                raw_timestamp = quote.get("timestamp")
-                if not symbol or not isinstance(raw_timestamp, (int, float)):
-                    continue
-                provider_ms = float(raw_timestamp)
-                if provider_ms < 10_000_000_000:
-                    provider_ms *= 1000
-                sample = (symbol, int(provider_ms))
-                if sample in seen_samples:
-                    continue
-                seen_samples.add(sample)
-                timestamp_deltas_ms.append(max(0.0, arrival_ms - provider_ms))
-            counts["unique_quote_samples"] = len(seen_samples)
+        if not isinstance(quotes, (list, tuple)):
+            return
+        counts["quote_events"] += len(quotes)
+        arrival_ms = time.time() * 1000
+        for quote in quotes:
+            if not isinstance(quote, dict):
+                counts["invalid_timestamp_events"] += 1
+                continue
+            symbol = quote.get("symbol")
+            if not isinstance(symbol, str) or symbol not in allowed_symbols:
+                counts["unrequested_symbol_events"] += 1
+                continue
+            raw_timestamp = quote.get("timestamp")
+            if (
+                isinstance(raw_timestamp, bool)
+                or not isinstance(raw_timestamp, (int, float))
+                or not math.isfinite(raw_timestamp)
+                or raw_timestamp <= 0
+            ):
+                counts["invalid_timestamp_events"] += 1
+                continue
+            provider_ms = float(raw_timestamp)
+            if provider_ms < 10_000_000_000:
+                provider_ms *= 1000
+            previous = last_provider_timestamp_ms.get(symbol)
+            if previous is None:
+                # This can be an initial cached quote. Never label it live.
+                counts["initial_snapshot_candidates"] += 1
+                initial_candidate_deltas_ms.append(arrival_ms - provider_ms)
+                last_provider_timestamp_ms[symbol] = provider_ms
+                counts["unique_quote_samples"] += 1
+            elif provider_ms == previous:
+                counts["duplicate_timestamp_events"] += 1
+            elif provider_ms < previous:
+                counts["out_of_order_timestamp_events"] += 1
+            else:
+                # Not enough to prove that it was produced after subscription.
+                counts["post_initial_update_candidates"] += 1
+                post_initial_candidate_deltas_ms.append(arrival_ms - provider_ms)
+                last_provider_timestamp_ms[symbol] = provider_ms
+                counts["unique_quote_samples"] += 1
 
     @stream.on_error
     def on_error(message: Any) -> None:
@@ -363,24 +399,34 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
                 stream.close()
         except Exception:
             state = "CLOSE_FAILED"
+
+    def metrics(samples: list[float]) -> dict:
+        return {
+            "count": len(samples),
+            "p50": _percentile(samples, 50),
+            "p95": _percentile(samples, 95),
+            "p99": _percentile(samples, 99),
+        }
+
     return {
         "name": "websocket_quote_smoke",
         "operation": state,
         "elapsed_ms": _elapsed_ms(started),
         **counts,
         "failure_class": reason,
-        "arrival_minus_provider_timestamp_ms": {
-            "count": len(timestamp_deltas_ms),
-            "p50": _percentile(timestamp_deltas_ms, 50),
-            "p95": _percentile(timestamp_deltas_ms, 95),
-            "p99": _percentile(timestamp_deltas_ms, 99),
-        },
+        "first_per_symbol_cache_candidate_age_ms": metrics(initial_candidate_deltas_ms),
+        # Backwards-compatible key but now excludes initial cached snapshots.
+        "arrival_minus_provider_timestamp_ms": metrics(post_initial_candidate_deltas_ms),
+        "lag_scope": "POST_INITIAL_CANDIDATES_ONLY_NOT_VERIFIED_LIVE",
+        "subscribed_ack_evidence": "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK",
+        "snapshot_vs_live_evidence": "NOT_VERIFIED",
+        "ping_pong_evidence": "NOT_VERIFIED",
+        "reconnect_resubscribe_evidence": "NOT_VERIFIED",
         "sample_latency_qualification": "NOT_VERIFIED",
         "clock_offset_qualification": "NOT_VERIFIED",
         "continuous_feed_qualified": False,
         "stale_drop_reconnect_qualified": False,
     }
-
 
 def build_probe(
     *,
