@@ -12,6 +12,15 @@ on:
         description: "Exact Tokyo Secrets Manager ARN; never enter the API key"
         required: false
         type: string
+      ws_seconds:
+        description: "Explicit optional bounded WebSocket smoke duration in seconds (not a live-feed qualification)"
+        required: true
+        type: choice
+        default: "0"
+        options:
+          - "0"
+          - "10"
+          - "15"
 
 permissions:
   id-token: write
@@ -40,10 +49,12 @@ jobs:
       - name: Run bounded isolated probe over SSM
         env:
           SECRET_ARN: ${{ inputs.secret_arn }}
+          WS_SECONDS: ${{ inputs.ws_seconds }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+          [[ "$WS_SECONDS" =~ ^(0|10|15)$ ]]
           revision="$(git rev-parse HEAD)"
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
           probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
@@ -62,7 +73,7 @@ jobs:
           bootstrap_stage=VERIFY_BOOTSTRAP_HASH
           printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
           bootstrap_stage=RUN_BOOTSTRAP
-          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash'
+          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash' '$WS_SECONDS'
           REMOTE
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
           report_terminal_failure() {
