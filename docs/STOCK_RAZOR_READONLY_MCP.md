@@ -67,3 +67,34 @@ supports about 49 calls if nothing else consumes credits.
 
 An E2E probe success does not prove native ChatGPT app installation,
 24/7 uptime, freshness, clock skew, Radar admission or live trading.
+
+## MCP smoke failure diagnostics (privacy-safe)
+
+The first metered smoke, GitHub Actions run 37962759162, returned HTTP 200
+and token usage (1746 input, 150 output), yielding a **token-only estimated**
+USD 0.024960. Its MCP data assertion **failed**; no AMD bars or quotes were
+verified. This is **not** a provider failure proof and not a successful E2E.
+
+The cost smoke now logs allowlisted `MCP_DIAG_*` fields:
+
+- `RESPONSE_STATUS`: completed/incomplete/failed/UNKNOWN;
+- `TOOL_CALLS` and `LIST_TOOLS`: counts to distinguish discovery from execution;
+- `TOOL_ERROR`, `TOOL_NAME_MATCH`, `TOOL_STATUS`: only flags / fixed statuses;
+- `TOOL_OUTPUT_SHAPE`: fixed code such as TEXT_NOT_JSON, EMPTY_CONTENT,
+  OBJECT_NO_SNAPSHOTS, SNAPSHOTS_OBJECT, MULTIPLE_CONTENT_ITEMS;
+- `SNAPSHOT_SCHEMA`: PASS only for a read-only response containing AMD;
+- `MARKET_DATA_PRESENT`: PASS only with nonempty quote or bars; EMPTY otherwise.
+
+The smoke interprets either a direct JSON snapshot result or the standard
+MCP typed `content: [{type: text, text: ...}]` envelope. It never logs raw
+tool outputs, responses, credentials or error messages. Failure remains FAIL
+without promoting entitlement, currentness, ChatGPT-native connection or any
+trading admission.
+
+Cost/runway must be reconciled from API billing. User-reported starting
+balance of USD 9.99 was not queried from OpenAI billing, and is not a
+continuously refreshed balance. As an **illustration only**, 9.99 / 0.024960
+is ~400 similar model calls before other fees or activity. The test calls are
+metered individually by the full E2E workflow; model calls are independent of
+market-data API calls or EC2 time. No remote probe is automatically triggered
+by a code merge.
