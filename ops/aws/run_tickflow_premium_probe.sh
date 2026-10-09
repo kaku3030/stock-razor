@@ -100,6 +100,7 @@ if [[ -z "$aws_cli" ]]; then
   if [[ ! -x "$aws_cli" ]]; then
     aws_cli="$(find "$stage/aws-cli" -type f -name aws -perm -u+x -print -quit 2>/dev/null || true)"
   fi
+  [[ -x "$aws_cli" ]] || aws_cli="$stage/awscli-installer/aws/dist/aws"
 fi
 if [[ ! -x "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
