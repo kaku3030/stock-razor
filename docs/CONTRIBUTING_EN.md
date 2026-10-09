@@ -44,6 +44,13 @@ cp .env.example .env
 4. Push the branch: `git push origin feature/your-feature`
 5. Open a Pull Request against `main`.
 
+Routine development does not require manual Code Owner approval. Merges to
+`main` follow the currently enforced GitHub branch rules and required checks;
+Code Owner requests are optional collaboration metadata, not a routine merge
+gate. Research/PIT approval, provider entitlement, deployment, Radar
+admission, and trading authorization remain separate evidence gates and cannot
+be inferred from PR review or CI success.
+
 ### Commit Message Convention
 
 This project follows [Conventional Commits](https://www.conventionalcommits.org/):
@@ -88,6 +95,10 @@ PRs that only change ordinary `docs/**`, non-governance Markdown, or `LICENSE` k
 | `pr-review` | Automatic PR triggering is temporarily paused. Maintainers can still run it by PR number through `workflow_dispatch`; it reads PR metadata and diff through the GitHub API and never checks out or executes fork PR code. | ❌ (advisory) |
 
 Separately, the repository also has a non-blocking `network-smoke` workflow in `.github/workflows/network-smoke.yml`, but it is only triggered by `schedule` and `workflow_dispatch`, not by pull requests.
+
+The `pr-review` workflow is advisory. It is not a manual approval or routine
+merge gate; the enforced required checks and branch protections are defined by
+the live GitHub ruleset.
 
 **Running checks locally:**
 
