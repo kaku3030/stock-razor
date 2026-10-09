@@ -22,7 +22,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-if [[ "$#" -ne 5 ]]; then
+if [[ "$#" -ne 6 ]]; then
   echo 'TICKFLOW_PREMIUM_SETUP=INVALID_ARGUMENTS'
   exit 2
 fi
@@ -32,6 +32,8 @@ secret_arn="$2"
 probe_hash="$3"
 requirements_hash="$4"
 bootstrap_hash="$5"
+ws_seconds="$6"
+[[ "$ws_seconds" =~ ^(0|10|15)$ ]]
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
 [[ "$probe_hash" =~ ^[0-9a-f]{64}$ ]]
 [[ "$requirements_hash" =~ ^[0-9a-f]{64}$ ]]
@@ -154,7 +156,7 @@ export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'i
 unset secret_json
 
 probe_stage=RUN_PREMIUM_PROBE
-result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE 2>/dev/null)"
+result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE --ws-seconds "$ws_seconds" 2>/dev/null)"
 probe_stage=VALIDATE_RESULT
 printf '%s\n' "$result" | python3 -c '
 import json,sys
