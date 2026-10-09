@@ -42,3 +42,28 @@ returning AMD/QQQ data; local tests or an HTTP 200 do not establish it.
 For a private server, use the supported Secure MCP Tunnel or an approved
 HTTPS reverse proxy. Do not expose OpenD or the internal FastAPI service
 directly.
+
+## Budgeted secure tunnel smoke
+
+GitHub Actions > AWS SSM Ops > secure_mcp_cost_smoke sends exactly ONE
+OpenAI Responses API request through the existing tunnel and only allows
+get_market_snapshots for AMD 15m. max_output_tokens=3000 and no API retry.
+It cannot start providers or enable trading. The older secure_mcp_remote_e2e
+action still performs SIX model requests, and is not a cheap quota check.
+
+Per-request nonsecret logs: OPENAI_MODEL_CALLS_ATTEMPTED,
+OPENAI_MODEL_CALLS_SUCCEEDED, OPENAI_INPUT_TOKENS,
+OPENAI_CACHED_INPUT_TOKENS, OPENAI_OUTPUT_TOKENS and
+OPENAI_USD_TOKEN_ESTIMATE (only when provider usage is available).
+Absent usage or unexpected model gives OPENAI_TOKEN_COST_STATUS=UNKNOWN.
+
+USD estimates use conservative GPT-6 Astra reference rates:
+$10/M uncached input, $1/M cached input and $50/M output tokens
+(Standard tier). This token-only estimate is NOT the OpenAI invoice,
+does not include other tool/infrastructure charges, and is NOT an
+authoritative current balance. Reconcile against OpenAI Platform usage/cost.
+For illustration, $9.99 divided by a measured $0.20 per call
+supports about 49 calls if nothing else consumes credits.
+
+An E2E probe success does not prove native ChatGPT app installation,
+24/7 uptime, freshness, clock skew, Radar admission or live trading.
