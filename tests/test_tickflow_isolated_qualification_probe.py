@@ -212,7 +212,8 @@ def test_kline_summary_separates_precision_edge_from_material_inconsistency():
          "low": 1.0, "close": 1.0, "volume": 1},
     ], period="60m")
     diagnostics = summary["ohlcv_anomaly_diagnostics"]
-    assert summary["ohlcv_range_valid"] is False
+    assert summary["ohlcv_range_valid"] is True
+    assert diagnostics["status"] == "PASS"
     assert diagnostics["reasons"] == ["TOLERANCE_PRECISION"]
     assert diagnostics["counts"]["TOLERANCE_PRECISION"] == 1
     assert diagnostics["counts"]["HIGH_BELOW_OPEN_OR_CLOSE"] == 0
