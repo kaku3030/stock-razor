@@ -79,7 +79,7 @@ def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'chmod 0755 "$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
     assert '-i "$stage/aws-cli" -b "$stage/bin"' in PREMIUM_BOOTSTRAP
     assert '"$stage/aws-cli/v2/current/bin/aws"' in PREMIUM_BOOTSTRAP
-    assert 'find "$stage/aws-cli" -type f -path' in PREMIUM_BOOTSTRAP
+    assert 'find "$stage/aws-cli" -type f -name aws -perm -u+x' in PREMIUM_BOOTSTRAP
     assert 'uname -m 2>/dev/null || true' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=' in PREMIUM_BOOTSTRAP
 

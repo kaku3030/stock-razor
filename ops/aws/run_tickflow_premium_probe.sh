@@ -98,7 +98,7 @@ if [[ -z "$aws_cli" ]]; then
   aws_cli="$stage/aws-cli/v2/current/bin/aws"
   [[ -x "$aws_cli" ]] || aws_cli="$stage/bin/aws"
   if [[ ! -x "$aws_cli" ]]; then
-    aws_cli="$(find "$stage/aws-cli" -type f -path '*/bin/aws' -perm -u+x -print -quit 2>/dev/null || true)"
+    aws_cli="$(find "$stage/aws-cli" -type f -name aws -perm -u+x -print -quit 2>/dev/null || true)"
   fi
 fi
 if [[ ! -x "$aws_cli" ]]; then
