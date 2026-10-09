@@ -45,3 +45,12 @@ def test_installer_keeps_runtime_read_only_and_exact_sha():
     assert "STOCK_RAZOR_CN_RADAR_STATUS_PATH" in source
     assert 'assert result["live_trade"] is False' in source
     assert 'assert result["radar_admission"] == "BLOCKED"' in source
+
+
+def test_canonical_mcp_exposes_single_call_evidence_aligned_us_research_brief():
+    source = Path("realtime_monitor/readonly_mcp_server.py").read_text(encoding="utf-8")
+    installer = Path("ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
+    assert "def get_us_research_brief(" in source
+    assert "return read_us_fast_research_brief(symbols)" in source
+    assert "get_us_research_brief" in installer
+    assert "get_us_research_brief([\"AMD\"])" in installer

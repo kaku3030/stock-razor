@@ -13,6 +13,7 @@ from data_provider.us_canonical_runtime_reader import (
     read_us_market_snapshots,
 )
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
+from data_provider.us_fast_research_brief import read_us_fast_research_brief
 
 mcp = FastMCP("stock-razor-readonly")
 
@@ -55,6 +56,16 @@ def get_market_snapshots(symbols: list[str] | None = None) -> dict:
 def get_market_analysis(symbols: list[str] | None = None) -> dict:
     """Return the latest precomputed US Radar research state without recomputation."""
     return read_us_radar_analysis(symbols)
+
+
+@mcp.tool()
+def get_us_research_brief(symbols: list[str] | None = None) -> dict:
+    """Get compact US 1m/5m/15m/1h plus precomputed Radar evidence in one call.
+
+    SOURCE_SHA, runtime, sequence and freshness must align. No provider I/O
+    or LLM reasoning runs here; trading and signal gates stay closed.
+    """
+    return read_us_fast_research_brief(symbols)
 
 
 @mcp.tool()
