@@ -272,3 +272,13 @@ def test_radar_latency_histogram_uses_distinct_validated_canonical_sequences_onl
     assert '"radar_admission": "BLOCKED"' in INSTALLER
     assert '"live_trade": False' in INSTALLER
     assert '"end_to_end_distribution": "NOT_VERIFIED"' in INSTALLER
+
+
+def test_worker_skips_validated_unchanged_daily_history_without_admission_upgrade():
+    assert "ValidatedDailyHistoryFileCache" in INSTALLER
+    assert "daily_history_cache = ValidatedDailyHistoryFileCache()" in INSTALLER
+    assert "daily_frames, daily_history, daily_cache_hit = daily_history_cache.read(" in INSTALLER
+    assert '"daily_history_cache_hit": daily_cache_hit' in INSTALLER
+    assert '"daily_history_load_ms": daily_load_ms' in INSTALLER
+    assert '"radar_admission": "BLOCKED"' in INSTALLER
+    assert '"live_trade": False' in INSTALLER
