@@ -76,7 +76,7 @@ jobs:
             error_output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardErrorContent --output text 2>/dev/null || true)"
             status_details="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StatusDetails --output text 2>/dev/null || true)"
             safe_diagnostics="$(printf '%s\n%s\n' "$output" "$error_output" | awk -F= '
-              /^TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE)=[A-Z_]+$/ {print; next}
+              /^TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE|AWS_CLI_STAGE)=[A-Z_]+$/ {print; next}
               /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI=(AVAILABLE|UNAVAILABLE|INVALID)$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI_ARCH=(x86_64|aarch64|UNSUPPORTED)$/ {print; next}

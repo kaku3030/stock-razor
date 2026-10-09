@@ -49,7 +49,7 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
     assert 'unset TICKFLOW_API_KEY secret_json' in PREMIUM_BOOTSTRAP
     assert 'exit "$rc"' in PREMIUM_BOOTSTRAP
     assert "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=" in PREMIUM_WORKFLOW
-    assert "TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE)=[A-Z_]+" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE|AWS_CLI_STAGE)=[A-Z_]+" in PREMIUM_WORKFLOW
     assert "StandardErrorContent" in PREMIUM_WORKFLOW
     assert "StatusDetails" in PREMIUM_WORKFLOW
     assert "TICKFLOW_PREMIUM_FAILED_STAGE=SSM_REMOTE_COMMAND" in PREMIUM_WORKFLOW

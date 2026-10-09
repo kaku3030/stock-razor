@@ -14,6 +14,7 @@ cleanup() {
   fi
   if (( rc != 0 )); then
     printf 'TICKFLOW_PREMIUM_FAILED_STAGE=%s\n' "$probe_stage"
+    printf 'TICKFLOW_PREMIUM_AWS_CLI_STAGE=%s\n' "$probe_stage"
     printf 'TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO\n'
   fi
   exit "$rc"
@@ -82,14 +83,18 @@ if [[ -z "$aws_cli" ]]; then
     *) printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=UNSUPPORTED\n'; exit 126 ;;
   esac
   printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=%s\n' "$aws_package_arch"
+  probe_stage=DOWNLOAD_AWS_CLI
   mkdir -p "$root/aws-cli" "$root/bin"
   curl --fail --silent --show-error --max-time 60 \
     "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
     -o "$stage/awscliv2.zip" 2>/dev/null
+  probe_stage=EXTRACT_AWS_CLI
   python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$stage/awscli-installer/aws/install"
+  probe_stage=RUN_AWS_CLI_INSTALLER
   "$stage/awscli-installer/aws/install" \
     -i "$root/aws-cli" -b "$root/bin" >/dev/null 2>&1
+  probe_stage=VERIFY_AWS_CLI_INSTALL
   aws_cli="$root/bin/aws"
 fi
 if [[ ! -x "$aws_cli" ]]; then
