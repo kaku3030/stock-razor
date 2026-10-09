@@ -84,7 +84,7 @@ if [[ -z "$aws_cli" ]]; then
   esac
   printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=%s\n' "$aws_package_arch"
   probe_stage=DOWNLOAD_AWS_CLI
-  mkdir -p "$root/aws-cli" "$root/bin"
+  mkdir -p "$stage/aws-cli" "$stage/bin"
   curl --fail --silent --show-error --max-time 60 \
     "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
     -o "$stage/awscliv2.zip" 2>/dev/null
@@ -93,9 +93,9 @@ if [[ -z "$aws_cli" ]]; then
   chmod 0755 "$stage/awscli-installer/aws/install"
   probe_stage=RUN_AWS_CLI_INSTALLER
   "$stage/awscli-installer/aws/install" \
-    -i "$root/aws-cli" -b "$root/bin" >/dev/null 2>&1
+    -i "$stage/aws-cli" -b "$stage/bin" >/dev/null 2>&1
   probe_stage=VERIFY_AWS_CLI_INSTALL
-  aws_cli="$root/bin/aws"
+  aws_cli="$stage/bin/aws"
 fi
 if [[ ! -x "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
