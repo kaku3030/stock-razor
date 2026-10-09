@@ -135,3 +135,32 @@ No extra OpenAI API or cloud calls were made while implementing this fix.
 The two previous token-only estimated model charges sum to USD 0.051860,
 but billing account balance and any other project/API activity remain
 unknown.
+
+## Fast chat watchlist scan (2026-10-10)
+
+New **`get_us_quick_scan(symbols=["AMD","NVDA","TSLA","QQQ"])`** is a
+strictly read-only, **compact projection** of the existing
+`read_us_fast_research_brief`. It reuses the existing fail-closed
+snapshot + Radar aligned cache reads, without another provider query,
+model inference, or admission change. It includes source sequence,
+runtime, SHA, market/radar ages, bar closure metadata, per-symbol
+1m/5m/15m/1h close and explicit per-bar `is_closed`,
+`is_complete`, `quality_flags`, 1d/1h/15m trend and quality,
+support/resistance, research score, watch conditions and risk flags.
+
+Prefer one `get_us_quick_scan` tool call for routine mobile watchlist
+review. Request the larger `get_us_research_brief` only when detailed
+indicator values or additional evidence are required. Never infer
+trade-ready data from aggregate `bar_closure=PROVEN`: each bar's
+finality must be checked. Missing or stale sources and SHA/runtime/
+sequence mismatch fail closed with no per-symbol research output.
+
+**Performance claims:** the one-call brief observed in ChatGPT on
+2026-10-10 took about 5.9s end-to-end for four symbols and returned
+about 23KB. This is one observation, not an SLA or a controlled
+comparison. The new compact endpoint reduces returned fields and
+expected model token load; actual tunnel RTT and p50/p95 speedup are
+**NOT VERIFIED** until deployed and benchmarked on matched requests.
+The source SHA reported by the runtime must be checked against
+deployed revision separately. OpenAI Responses API token costs do not
+directly measure ChatGPT plugin token accounting.
