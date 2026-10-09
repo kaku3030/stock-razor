@@ -139,3 +139,12 @@ def test_cloud_ws_smoke_is_independent_opt_in_and_bounded():
 def test_cloud_ws_duration_is_validated_before_remote_network_calls():
     assert PREMIUM_WORKFLOW.index('[[ "$WS_SECONDS" =~ ^(0|10|15)$ ]]') < PREMIUM_WORKFLOW.index('aws ssm send-command')
     assert PREMIUM_BOOTSTRAP.index('[[ "$ws_seconds" =~ ^(0|10|15)$ ]]') < PREMIUM_BOOTSTRAP.index('curl --fail')
+
+
+def test_cloud_premium_probe_has_exactly_two_explicit_qualification_symbols():
+    # The Python probe has a third default symbol. Cloud qualification must not
+    # accidentally consume extra provider entitlement or conflate failure modes.
+    assert '--symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds"' in PREMIUM_BOOTSTRAP
+    assert '--symbols "$symbols"' not in PREMIUM_BOOTSTRAP
+    assert "RADAR_ADMISSION=BLOCKED" in PREMIUM_BOOTSTRAP
+    assert "LIVE_TRADE=NO" in PREMIUM_BOOTSTRAP
