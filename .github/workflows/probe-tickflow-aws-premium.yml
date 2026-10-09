@@ -62,7 +62,6 @@ jobs:
           read -r -d '' remote <<REMOTE || true
           set -eu
           umask 077
-          printf 'TICKFLOW_PREMIUM_CALLER_ARN=%s\n' "\$(aws sts get-caller-identity --query Arn --output text)"
           bootstrap_stage=REMOTE_INIT
           temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
           trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s\\n" "\$bootstrap_stage"; fi; rm -rf "\$temp_dir"' EXIT
