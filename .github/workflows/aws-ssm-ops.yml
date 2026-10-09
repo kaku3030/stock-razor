@@ -1988,34 +1988,124 @@ jobs:
               print('OPENAI_TOKEN_COST_STATUS=ESTIMATED')
               for key, value in usage_cost.items():
                   print('OPENAI_' + key.upper() + '=' + str(value))
-          output = payload.get('output')
-          if not isinstance(output, list):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              raise SystemExit(1)
-          calls = [item for item in output if isinstance(item, dict) and item.get('type') == 'mcp_call']
-          if len(calls) != 1 or calls[0].get('name') != 'get_market_snapshots' or calls[0].get('error') not in (None, ''):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              raise SystemExit(1)
-          value = calls[0].get('output')
-          if isinstance(value, str):
-              try:
-                  value = json.loads(value)
-              except ValueError:
-                  value = None
-          snapshots = value.get('snapshots') if isinstance(value, dict) else None
-          if not isinstance(snapshots, list) or not any(
-              isinstance(item, dict) and item.get('symbol') in ('AMD', 'US.AMD')
-              for item in snapshots
-          ):
-              print('SECURE_MCP_SINGLE_TOOL_SMOKE=FAIL')
-              print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
-              raise SystemExit(1)
-          print('SECURE_MCP_SINGLE_TOOL_SMOKE=PASS')
+          def decode_snapshot_result(value):
+              """Decode known MCP envelopes, not raw model text or arbitrary objects."""
+              for _ in range(6):
+                  if isinstance(value, str):
+                      try:
+                          value = json.loads(value)
+                      except (ValueError, TypeError):
+                          return None, 'TEXT_NOT_JSON'
+                      continue
+                  if isinstance(value, list):
+                      if not value:
+                          return None, 'EMPTY_CONTENT'
+                      text_items = [
+                          item for item in value[:16]
+                          if isinstance(item, dict)
+                          and item.get('type') == 'text'
+                          and isinstance(item.get('text'), str)
+                      ]
+                      if len(text_items) == 1:
+                          value = text_items[0]['text']
+                          continue
+                      if len(value) == 1:
+                          value = value[0]
+                          continue
+                      return None, 'MULTIPLE_CONTENT_ITEMS'
+                  if isinstance(value, dict):
+                      if 'snapshots' in value:
+                          return value, 'SNAPSHOTS_OBJECT'
+                      if value.get('type') == 'text' and isinstance(value.get('text'), str):
+                          value = value['text']
+                          continue
+                      for key in ('structuredContent', 'structured_content', 'result', 'content'):
+                          if key in value:
+                              value = value[key]
+                              break
+                      else:
+                          return None, 'OBJECT_NO_SNAPSHOTS'
+                      continue
+                  return None, 'INVALID_TYPE'
+              return None, 'DEPTH_LIMIT'
+
+          def response_diagnostics(payload):
+              """Return only fixed-category metadata. Never return tool prices/messages."""
+              out = payload.get('output')
+              status = payload.get('status')
+              if status not in ('completed', 'incomplete', 'failed', 'in_progress', 'queued'):
+                  status = 'UNKNOWN'
+              if not isinstance(out, list):
+                  return {
+                      'response_status': status, 'output_shape': 'NOT_LIST',
+                      'tool_calls': 0, 'list_tools': 0, 'tool_error': False,
+                      'tool_name_match': False, 'tool_status': 'UNKNOWN',
+                      'tool_output_shape': 'NOT_AVAILABLE',
+                      'snapshot_schema': 'NOT_VERIFIED',
+                      'market_data_present': 'NOT_VERIFIED',
+                  }
+              calls = [item for item in out if isinstance(item, dict) and item.get('type') == 'mcp_call']
+              listed = [item for item in out if isinstance(item, dict) and item.get('type') == 'mcp_list_tools']
+              diagnostic = {
+                  'response_status': status, 'output_shape': 'LIST',
+                  'tool_calls': len(calls), 'list_tools': len(listed),
+                  'tool_error': False, 'tool_name_match': False,
+                  'tool_status': 'UNKNOWN', 'tool_output_shape': 'NOT_AVAILABLE',
+                  'snapshot_schema': 'NOT_VERIFIED',
+                  'market_data_present': 'NOT_VERIFIED',
+              }
+              if len(calls) != 1:
+                  return diagnostic
+              call = calls[0]
+              diagnostic['tool_error'] = call.get('error') not in (None, '')
+              diagnostic['tool_name_match'] = call.get('name') == 'get_market_snapshots'
+              if call.get('status') in ('completed', 'failed', 'in_progress', 'incomplete'):
+                  diagnostic['tool_status'] = call['status']
+              data, shape = decode_snapshot_result(call.get('output'))
+              diagnostic['tool_output_shape'] = shape
+              if not isinstance(data, dict) or data.get('read_only') is not True:
+                  return diagnostic
+              snapshots = data.get('snapshots')
+              if not isinstance(snapshots, list):
+                  return diagnostic
+              matching = [
+                  item for item in snapshots
+                  if isinstance(item, dict) and item.get('symbol') in ('AMD', 'US.AMD')
+              ]
+              if not matching:
+                  return diagnostic
+              diagnostic['snapshot_schema'] = 'PASS'
+              diagnostic['market_data_present'] = (
+                  'PASS' if any(
+                      isinstance(item.get('quote'), dict) and bool(item['quote'])
+                      or isinstance(item.get('bars'), list) and bool(item['bars'])
+                      for item in matching
+                  ) else 'EMPTY'
+              )
+              return diagnostic
+
+          result = response_diagnostics(payload)
+          # Fixed keys/allowlisted enums only; never log raw output, errors or responses.
+          for key, value in result.items():
+              if type(value) is bool:
+                  value = 'YES' if value else 'NO'
+              print('MCP_DIAG_' + key.upper() + '=' + str(value))
+          success = (
+              result['response_status'] == 'completed'
+              and result['tool_calls'] == 1
+              and result['tool_error'] is False
+              and result['tool_name_match'] is True
+              and result['snapshot_schema'] == 'PASS'
+              and result['market_data_present'] == 'PASS'
+          )
+          print('SECURE_MCP_SINGLE_TOOL_SMOKE=' + ('PASS' if success else 'FAIL'))
           print('MARKET_DATA_FRESHNESS=NOT_VERIFIED')
           print('CHATGPT_NATIVE_MCP_READ=NOT_VERIFIED')
           print('RADAR_ADMISSION=BLOCKED')
           print('SOURCE_ARBITER_ADMISSION=BLOCKED')
           print('LIVE_TRADE=NO')
+          if not success:
+              raise SystemExit(1)
           PY
           REMOTE
               jq -c -n --arg script "$cost_smoke_script" '[ $script ]' > commands.json

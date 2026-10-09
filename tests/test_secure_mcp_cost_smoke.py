@@ -137,3 +137,101 @@ def test_full_e2e_token_estimate_rejects_bad_counts() -> None:
     assert estimate({"model": "unknown", "usage": {
         "input_tokens": 100, "output_tokens": 20,
     }}) is None
+
+
+def _typed_diagnostics():
+    import json
+    source = _cost_probe_source()
+    tree = ast.parse(source)
+    funcs = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"decode_snapshot_result", "response_diagnostics"}
+    ]
+    assert len(funcs) == 2
+    ns = {"json": json}
+    exec(compile(ast.Module(body=funcs, type_ignores=[]), "<typed_mcp>", "exec"), ns)
+    return ns["response_diagnostics"]
+
+
+def test_single_call_diagnostic_classifies_missing_tool_call() -> None:
+    inspect = _typed_diagnostics()
+    result = inspect({"status": "completed", "output": [
+        {"type": "mcp_list_tools", "tools": [{"name": "get_market_snapshots"}]},
+    ]})
+    assert result["tool_calls"] == 0
+    assert result["list_tools"] == 1
+    assert result["snapshot_schema"] == "NOT_VERIFIED"
+    assert result["market_data_present"] == "NOT_VERIFIED"
+
+
+def test_single_call_diagnostic_supports_mcp_text_content_envelope() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    data = {
+        "read_only": True,
+        "snapshots": [
+            {"symbol": "AMD", "quote": {"received_at": "2026-10-09T16:00:00Z"}, "bars": []}
+        ],
+    }
+    output = {"content": [{"type": "text", "text": json.dumps(data)}]}
+    result = inspect({"status": "completed", "output": [
+        {"type": "mcp_call", "name": "get_market_snapshots",
+         "status": "completed", "error": None, "output": json.dumps(output)},
+    ]})
+    assert result["tool_calls"] == 1
+    assert result["tool_name_match"] is True
+    assert result["tool_error"] is False
+    assert result["snapshot_schema"] == "PASS"
+    assert result["market_data_present"] == "PASS"
+    assert result["tool_output_shape"] == "SNAPSHOTS_OBJECT"
+
+
+def test_single_call_diagnostic_rejects_missing_data_or_false_read_only() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    for data in (
+        {"read_only": False, "snapshots": [{"symbol": "AMD", "quote": {"price": 1}}]},
+        {"read_only": True, "snapshots": [{"symbol": "QQQ", "quote": {"price": 1}}]},
+    ):
+        result = inspect({"status": "completed", "output": [
+            {"type": "mcp_call", "name": "get_market_snapshots",
+             "output": json.dumps(data)}
+        ]})
+        assert result["snapshot_schema"] == "NOT_VERIFIED"
+    empty = inspect({"status": "completed", "output": [
+        {"type": "mcp_call", "name": "get_market_snapshots",
+         "output": json.dumps({
+             "read_only": True, "snapshots": [{"symbol": "AMD", "quote": {}, "bars": []}]
+         })}
+    ]})
+    assert empty["snapshot_schema"] == "PASS"
+    assert empty["market_data_present"] == "EMPTY"
+
+
+def test_single_call_diagnostic_never_echoes_provider_error_payloads() -> None:
+    inspect = _typed_diagnostics()
+    secret = "sensitive_provider_error_with_credentials"
+    result = inspect({"status": "completed", "output": [
+        {"type": "mcp_call", "name": "get_market_snapshots",
+         "error": secret, "output": secret}
+    ]})
+    assert result["tool_error"] is True
+    assert result["tool_output_shape"] == "TEXT_NOT_JSON"
+    assert secret not in str(result)
+    script = _cost_probe_source()
+    assert "print(payload)" not in script
+    assert "print(call)" not in script
+    assert "print(data)" not in script
+    assert "MCP_DIAG_" in script
+
+
+def test_single_call_diagnostic_rejects_multiple_calls_and_incomplete_response() -> None:
+    inspect = _typed_diagnostics()
+    one = {"type": "mcp_call", "name": "get_market_snapshots", "output": "{}"}
+    multiple = inspect({"status": "completed", "output": [one, one]})
+    assert multiple["tool_calls"] == 2
+    assert multiple["snapshot_schema"] == "NOT_VERIFIED"
+    incomplete = inspect({"status": "incomplete", "output": [one]})
+    assert incomplete["response_status"] == "incomplete"
+    assert incomplete["snapshot_schema"] == "NOT_VERIFIED"
