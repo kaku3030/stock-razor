@@ -64,7 +64,28 @@ probe_stage=INSTALL_DEPENDENCIES
 # The key is returned only into this process environment; never echo it, pass
 # it as an argument, write it to disk, or include it in a report.
 probe_stage=READ_SECRET
-secret_json="$(aws secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>/dev/null)"
+aws_cli="$(command -v aws 2>/dev/null || true)"
+if [[ -z "$aws_cli" ]]; then
+  for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws; do
+    if [[ -x "$candidate" ]]; then
+      aws_cli="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$aws_cli" ]]; then
+  printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
+  exit 127
+fi
+aws_version="$("$aws_cli" --version 2>&1 | sed -n 's/^aws-cli\/\([^ ]*\).*/\1/p')"
+if [[ -z "$aws_version" ]]; then
+  printf 'TICKFLOW_PREMIUM_AWS_CLI=INVALID\n'
+  exit 127
+fi
+printf 'TICKFLOW_PREMIUM_AWS_CLI=AVAILABLE\n'
+printf 'TICKFLOW_PREMIUM_AWS_CLI_PATH=%s\n' "$aws_cli"
+printf 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=%s\n' "$aws_version"
+secret_json="$("$aws_cli" secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>/dev/null)"
 export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); v=d.get("api_key") if isinstance(d,dict) and set(d)=={"api_key"} else None; assert isinstance(v,str) and v.strip(); print(v,end="")')"
 [[ -n "$TICKFLOW_API_KEY" ]]
 unset secret_json
