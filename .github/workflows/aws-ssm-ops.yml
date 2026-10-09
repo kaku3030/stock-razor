@@ -1962,7 +1962,7 @@ jobs:
             python3 -m zipfile -e "$aws_tmp/awscliv2.zip" "$aws_tmp/extracted"
             chmod 0755 "$aws_tmp/extracted/aws/install"
             chmod 0755 "$aws_tmp/extracted/aws/dist/aws"
-            "$aws_tmp/extracted/aws/install" -i "$install_dir/aws-cli" -b "$install_dir/aws-cli-bin" >/dev/null
+            "$aws_tmp/extracted/aws/install" --update -i "$install_dir/aws-cli" -b "$install_dir/aws-cli-bin" >/dev/null
             aws_cli="$install_dir/aws-cli-bin/aws"
           fi
           test -x "$aws_cli"
