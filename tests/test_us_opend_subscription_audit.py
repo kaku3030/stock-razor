@@ -1,5 +1,6 @@
 """Offline contract tests for safe OpenD quota inspection in AWS SSM Ops."""
 import ast
+import textwrap
 from pathlib import Path
 
 
@@ -17,7 +18,6 @@ def _source() -> str:
 def _parser():
     source = "import json\n" + textwrap.dedent(_source())
     # Workflow embeds Python under a fixed 10-space heredoc indentation.
-    import textwrap
     tree = ast.parse(source)
     function = next(
         x for x in tree.body
