@@ -104,3 +104,15 @@ def test_secret_document_has_only_api_key_and_never_serializes_payload():
     assert key == "secret-value"
     with pytest.raises(ValueError):
         validate_secret_document({"api_key": "secret-value", "extra": "x"})
+
+def test_premium_secret_error_diagnostics_are_bounded_and_allowlisted():
+    assert '2>"$stage/secret-read-error"' in PREMIUM_BOOTSTRAP
+    assert 'secret_error_class=UNKNOWN' in PREMIUM_BOOTSTRAP
+    assert 'secret_error_class=ACCESS_DENIED' in PREMIUM_BOOTSTRAP
+    assert 'secret_error_class=RESOURCE_NOT_FOUND' in PREMIUM_BOOTSTRAP
+    assert 'secret_error_class=DECRYPTION_FAILURE' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=%s' in PREMIUM_BOOTSTRAP
+    assert "exit 254" in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=(ACCESS_DENIED|RESOURCE_NOT_FOUND|' in PREMIUM_WORKFLOW
+    assert 'head -n 8' in PREMIUM_WORKFLOW
+    assert 'cat "$stage/secret-read-error"' not in PREMIUM_BOOTSTRAP
