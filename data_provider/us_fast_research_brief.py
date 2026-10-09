@@ -175,6 +175,11 @@ def read_us_fast_research_brief(
         reasons.append("MARKET_SOURCE_NOT_FRESH_AND_VALID")
     if radar.get("ok") is not True or radar.get("status") != "PASS":
         reasons.append("RADAR_SOURCE_NOT_FRESH_AND_VALID")
+    # A freshly-written Worker heartbeat is NOT proof it accepted its source.
+    # An unchanged-but-qualified sequence remains usable for read-only study;
+    # a BLOCKED/UNKNOWN poll must never be laundered into an aligned brief.
+    if radar.get("poll_status") not in {"PASS", "UNCHANGED"}:
+        reasons.append("RADAR_CURRENT_POLL_NOT_VALID")
     if not market.get("repo_sha") or market.get("repo_sha") != radar.get("expected_source_repo_sha"):
         reasons.append("SOURCE_REPO_SHA_MISMATCH")
     if not market.get("runtime_instance_id") or market.get("runtime_instance_id") != radar.get("source_runtime_instance_id"):
