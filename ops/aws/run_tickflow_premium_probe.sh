@@ -164,14 +164,62 @@ unset secret_json
 probe_stage=RUN_PREMIUM_PROBE
 result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE --symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds" 2>/dev/null)"
 probe_stage=VALIDATE_RESULT
-printf '%s\n' "$result" | python3 -c '
-import json,sys
+printf '%s\n' "$result" | STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH="$root/last-sanitized-probe.json" STOCK_RAZOR_PROBE_REPO_SHA="$revision" python3 -c '
+import json, os, sys, tempfile
+from datetime import datetime, timezone
 d=json.load(sys.stdin)
 assert d["mode"] == "premium" and d["api_key_present"] is True
 assert d["canonical_write"] is False and d["order_execution"] is False
 assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "BLOCKED"
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
-print(json.dumps({"schema":d["schema"],"mode":d["mode"],"operations":d["operations"],"data_qualification":d["data_qualification"],"radar_admission":"BLOCKED","live_trade":False},sort_keys=True))
+assert isinstance(d["operations"],list) and len(d["operations"]) <= 20
+allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","five_level_depth","websocket_quote_smoke"}
+allowed_states={"COMPLETED","NO_EVENTS_OBSERVED","BLOCKED","SKIPPED","ERROR"}
+ops=[]
+for raw in d["operations"]:
+    assert isinstance(raw,dict) and raw.get("name") in allowed_names
+    state=raw.get("operation")
+    assert state in allowed_states
+    item={"name":raw["name"],"operation":state}
+    for field in ("elapsed_ms","row_count"):
+        value=raw.get(field)
+        if type(value) in (int,float) and 0 <= value <= 1e8:
+            item[field]=value
+    if type(raw.get("schema_qualified")) is bool:
+        item["schema_qualified"]=raw["schema_qualified"]
+    summary=raw.get("summary") or {}
+    if isinstance(summary,dict):
+        for field in ("freshness","closure"):
+            if summary.get(field) in ("NOT_VERIFIED","PROVEN","UNPROVEN","PASS","BLOCKED"):
+                item[field]=summary[field]
+    ops.append(item)
+safe={
+    "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
+    "mode":"premium",
+    "observed_at_utc":datetime.now(timezone.utc).isoformat(),
+    "repo_sha":os.environ["STOCK_RAZOR_PROBE_REPO_SHA"],
+    "operations":ops,
+    "data_qualification":"NOT_VERIFIED",
+    "radar_admission":"BLOCKED",
+    "source_arbiter_admission":"BLOCKED",
+    "live_trade":False,
+}
+dest=os.environ["STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH"]
+directory=os.path.dirname(dest)
+os.makedirs(directory,mode=0o755,exist_ok=True)
+with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",dir=directory,delete=False) as handle:
+    tmp=handle.name
+    json.dump(safe,handle,sort_keys=True,separators=(",",":"))
+    handle.flush()
+    os.fsync(handle.fileno())
+try:
+    os.chmod(tmp,0o644)
+    os.replace(tmp,dest)
+except BaseException:
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
+print(json.dumps(safe,sort_keys=True))
 '
 probe_stage=COMPLETE
 echo 'TICKFLOW_PREMIUM_PROBE_EXECUTED=YES'

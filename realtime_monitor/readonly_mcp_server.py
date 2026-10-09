@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.futures_runtime_health import read_futures_runtime_health
+from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
     read_us_market_bars,
@@ -22,6 +23,12 @@ mcp = FastMCP("stock-razor-readonly")
 def get_futures_runtime_health() -> dict:
     """Return fail-closed Futures runtime heartbeat health evidence."""
     return read_futures_runtime_health()
+
+
+@mcp.tool()
+def get_tickflow_probe_health() -> dict:
+    """Read sanitized AWS TickFlow probe evidence, never live TickFlow market data."""
+    return read_tickflow_probe_health()
 
 
 @mcp.tool()
