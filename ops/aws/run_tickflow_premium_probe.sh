@@ -2,6 +2,10 @@
 set -euo pipefail
 umask 077
 
+# Stage-only diagnostics: no secret, command arguments, URLs, or provider payloads.
+probe_stage=INIT
+trap 'rc=$?; if (( rc != 0 )); then printf "TICKFLOW_PREMIUM_FAILED_STAGE=%s\nTICKFLOW_PREMIUM_EXIT_CLASS=NONZERO\n" "$probe_stage"; fi' EXIT
+
 if [[ "$#" -ne 5 ]]; then
   echo 'TICKFLOW_PREMIUM_SETUP=INVALID_ARGUMENTS'
   exit 2
@@ -28,6 +32,7 @@ root=/opt/stock-razor-tickflow-premium-probe
 stage="$(mktemp -d -t sr-tickflow-premium.XXXXXXXX)"
 trap 'unset TICKFLOW_API_KEY; rm -rf "$stage"' EXIT
 base="https://raw.githubusercontent.com/kaku3030/stock-razor/$revision"
+probe_stage=DOWNLOAD_BOOTSTRAP
 curl --fail --silent --show-error --max-time 20 "$base/ops/aws/run_tickflow_premium_probe.sh" -o "$stage/bootstrap.sh" 2>/dev/null
 printf '%s  %s\n' "$bootstrap_hash" "$stage/bootstrap.sh" | sha256sum -c - >/dev/null
 curl --fail --silent --show-error --max-time 20 "$base/scripts/probe_tickflow_isolated.py" -o "$stage/probe.py" 2>/dev/null
@@ -35,19 +40,24 @@ curl --fail --silent --show-error --max-time 20 "$base/ops/requirements/tickflow
 printf '%s  %s\n' "$probe_hash" "$stage/probe.py" | sha256sum -c - >/dev/null
 printf '%s  %s\n' "$requirements_hash" "$stage/requirements.txt" | sha256sum -c - >/dev/null
 
+probe_stage=VERIFY_ARTIFACTS
 mkdir -p "$root"
 venv="$root/venv"
 [[ -x "$venv/bin/python" ]] || python3 -m venv "$venv" >/dev/null 2>&1
+probe_stage=INSTALL_DEPENDENCIES
 "$venv/bin/python" -m pip install --disable-pip-version-check --no-input --quiet -r "$stage/requirements.txt" >/dev/null 2>&1
 
 # The key is returned only into this process environment; never echo it, pass
 # it as an argument, write it to disk, or include it in a report.
+probe_stage=READ_SECRET
 secret_json="$(aws secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>/dev/null)"
 export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); v=d.get("api_key") if isinstance(d,dict) and set(d)=={"api_key"} else None; assert isinstance(v,str) and v.strip(); print(v,end="")')"
 [[ -n "$TICKFLOW_API_KEY" ]]
 unset secret_json
 
+probe_stage=RUN_PREMIUM_PROBE
 result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE 2>/dev/null)"
+probe_stage=VALIDATE_RESULT
 printf '%s\n' "$result" | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
@@ -57,6 +67,7 @@ assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "B
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
 print(json.dumps({"schema":d["schema"],"mode":d["mode"],"operations":d["operations"],"data_qualification":d["data_qualification"],"radar_admission":"BLOCKED","live_trade":False},sort_keys=True))
 '
+probe_stage=COMPLETE
 echo 'TICKFLOW_PREMIUM_PROBE_EXECUTED=YES'
 echo 'TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED'
 echo 'RADAR_ADMISSION=BLOCKED'
