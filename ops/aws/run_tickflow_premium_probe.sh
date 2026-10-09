@@ -118,7 +118,36 @@ printf 'TICKFLOW_PREMIUM_AWS_CLI=AVAILABLE\n'
 printf 'TICKFLOW_PREMIUM_AWS_CLI_PATH=%s\n' "$aws_cli"
 printf 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=%s\n' "$aws_version"
 probe_stage=READ_SECRET
-secret_json="$("$aws_cli" secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>/dev/null)"
+# Capture only the CLI error stream to a private temporary file; it is never
+# emitted into Actions logs, and the EXIT trap deletes it on every path.
+if secret_json="$("$aws_cli" secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>"$stage/secret-read-error")"; then
+  :
+else
+  secret_error_class=UNKNOWN
+  if grep -Eq 'An error occurred \((AccessDeniedException|AccessDenied)\)' "$stage/secret-read-error"; then
+    secret_error_class=ACCESS_DENIED
+  elif grep -Eq 'An error occurred \(ResourceNotFoundException\)' "$stage/secret-read-error"; then
+    secret_error_class=RESOURCE_NOT_FOUND
+  elif grep -Eq 'An error occurred \(DecryptionFailure\)' "$stage/secret-read-error"; then
+    secret_error_class=DECRYPTION_FAILURE
+  elif grep -Eq 'An error occurred \(InvalidRequestException\)' "$stage/secret-read-error"; then
+    secret_error_class=INVALID_REQUEST
+  elif grep -Eq 'An error occurred \(InvalidParameterException\)' "$stage/secret-read-error"; then
+    secret_error_class=INVALID_PARAMETER
+  elif grep -Eq 'An error occurred \((InvalidClientTokenId|UnrecognizedClientException)\)' "$stage/secret-read-error"; then
+    secret_error_class=INVALID_CLIENT_TOKEN
+  elif grep -Eq 'An error occurred \(ExpiredToken(Exception)?\)' "$stage/secret-read-error"; then
+    secret_error_class=EXPIRED_TOKEN
+  elif grep -Eq 'An error occurred \((ThrottlingException|TooManyRequestsException)\)' "$stage/secret-read-error"; then
+    secret_error_class=THROTTLED
+  elif grep -Eiq 'Could not connect to the endpoint URL|Connect timeout|Read timeout|SSL validation failed' "$stage/secret-read-error"; then
+    secret_error_class=ENDPOINT_UNREACHABLE
+  elif grep -Eiq 'Unable to locate credentials|Partial credentials found' "$stage/secret-read-error"; then
+    secret_error_class=CREDENTIALS_MISSING
+  fi
+  printf 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=%s\n' "$secret_error_class"
+  exit 254
+fi
 probe_stage=PARSE_SECRET
 export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); v=d.get("api_key") if isinstance(d,dict) and set(d)=={"api_key"} else None; assert isinstance(v,str) and v.strip(); print(v,end="")')"
 [[ -n "$TICKFLOW_API_KEY" ]]
