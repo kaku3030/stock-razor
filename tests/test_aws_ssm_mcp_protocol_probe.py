@@ -48,3 +48,23 @@ def test_new_research_brief_is_in_strict_mcp_protocol_surface():
     assert "call('get_us_research_brief',{'symbols':['AMD']},'AMD')" in block
     assert "MCP_TOOL_SURFACE_MISMATCH=FAIL" in block
     assert "raise SystemExit(1)" in block
+
+
+def test_mcp_protocol_audit_emits_bounded_metadata_not_full_market_snapshots():
+    block = _probe_block()
+    assert "def compact_result(value):" in block
+    assert "'read_latency_ms'" in block
+    assert "'source_age_seconds'" in block
+    assert "'radar_admission'" in block
+    assert "'provider_to_radar_e2e'" in block
+    assert "if isinstance(symbols,dict): summary['symbol_count']=len(symbols)" in block
+    assert "json.dumps(compact_result(results[key])" in block
+    assert "json.dumps(safe(results[key])" not in block
+    assert "MCP_PROTOCOL_TOOL_CALL_FAILED=YES" in block
+    assert "raise SystemExit(1)" in block
+
+
+def test_mcp_protocol_python_failure_propagates_to_ssm_job():
+    block = _probe_block()
+    assert 'python3 - "$source" "http://127.0.0.1:8000/mcp" <<\'PY\' || exit 1' in block
+    assert "MCP_PROTOCOL_TOOL_CALL_FAILED=YES" in block

@@ -1492,7 +1492,7 @@ jobs:
           echo "MCP_ROUTE_OPTIONS_STATUS=$route_status"
           case "$route_status" in 404|000|'') echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; 2*|3*|4*) : ;; *) echo 'MCP_PROTOCOL_ENDPOINT=UNKNOWN'; echo 'MCP_PROBE_REASON=localhost-route-not-evidenced'; exit 0 ;; esac
           echo 'MCP_PROTOCOL_ENDPOINT=http://127.0.0.1:8000/mcp'
-          python3 - "$source" "http://127.0.0.1:8000/mcp" <<'PY'
+          python3 - "$source" "http://127.0.0.1:8000/mcp" <<'PY' || exit 1
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
@@ -1531,8 +1531,34 @@ jobs:
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
           print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8='+('PASS' if len(names)==8 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
+          def compact_result(value):
+              # SSM Stdout is limited to 24k. Keep all tool-result *verdicts*
+              # observable; never print prices, positions, tokens or full bars.
+              parsed=value
+              if isinstance(value,dict) and isinstance(value.get('content'),list):
+                  for block in value['content']:
+                      if isinstance(block,dict) and block.get('type')=='text':
+                          try: candidate=json.loads(block.get('text',''))
+                          except (ValueError,TypeError): continue
+                          if isinstance(candidate,dict):
+                              parsed=candidate; break
+              if not isinstance(parsed,dict): return {'shape':type(parsed).__name__}
+              selected=('schema','ok','status','poll_status','read_latency_ms','source_age_seconds','radar_admission','source_arbiter_admission','live_trade','research_only','provider_to_radar_e2e')
+              summary={k:parsed[k] for k in selected if k in parsed}
+              symbols=parsed.get('symbols')
+              if isinstance(symbols,dict): summary['symbol_count']=len(symbols)
+              return safe(summary)
           def call(n,a,label=None):
-              st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); key=n+(':'+label if label else ''); results[key]=z.get('result',z); print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL')); print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL')); print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(safe(results[key]),separators=(',',':'))[:3000])
+              st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid)
+              good=ok(st,z) and not (z.get('result') or {}).get('isError',False)
+              key=n+(':'+label if label else '')
+              results[key]=z.get('result',z)
+              print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL'))
+              print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL'))
+              print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(compact_result(results[key]),separators=(',',':'))[:600])
+              if not good:
+                  print('MCP_PROTOCOL_TOOL_CALL_FAILED=YES')
+                  raise SystemExit(1)
           if len(names)==8 and set(names)==allowed:
               call('get_futures_runtime_health',args(by['get_futures_runtime_health']))
               call('get_livefeed_health',args(by['get_livefeed_health']))
