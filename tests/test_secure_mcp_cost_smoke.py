@@ -205,7 +205,7 @@ def test_single_call_diagnostic_rejects_missing_data_or_false_read_only() -> Non
              "read_only": True, "snapshots": [{"symbol": "AMD", "quote": {}, "bars": []}]
          })}
     ]})
-    assert empty["snapshot_schema"] == "PASS"
+    assert empty["snapshot_schema"] == "LEGACY_FACADE"
     assert empty["market_data_present"] == "EMPTY"
 
 
