@@ -66,7 +66,7 @@ probe_stage=INSTALL_DEPENDENCIES
 probe_stage=READ_SECRET
 aws_cli="$(command -v aws 2>/dev/null || true)"
 if [[ -z "$aws_cli" ]]; then
-  for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
+  for candidate in "$root/bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
     if [[ -x "$candidate" ]]; then
       aws_cli="$candidate"
       break
@@ -74,6 +74,17 @@ if [[ -z "$aws_cli" ]]; then
   done
 fi
 if [[ -z "$aws_cli" ]]; then
+  probe_stage=INSTALL_AWS_CLI
+  mkdir -p "$root/aws-cli" "$root/bin"
+  curl --fail --silent --show-error --max-time 60 \
+    'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' \
+    -o "$stage/awscliv2.zip" 2>/dev/null
+  python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
+  "$stage/awscli-installer/aws/install" \
+    -i "$root/aws-cli" -b "$root/bin" >/dev/null 2>&1
+  aws_cli="$root/bin/aws"
+fi
+if [[ ! -x "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
   exit 127
 fi
