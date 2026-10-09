@@ -12,17 +12,16 @@ class FakeKlines:
         assert symbol in {"159611.SZ", "518880.SH"}
         assert period in {"1d", "1m", "5m", "15m", "30m", "60m"}
         assert count in (3, 5)
-        return [{
-            "symbol": symbol,
-            "timestamp": "2026-10-09T01:00:00+00:00",
-            "open": 10,
-            "high": 11,
-            "low": 9,
-            "close": 10.5,
-            "volume": 100,
-            "amount": 1000,
+        return {
+            "timestamp": ["2026-10-09T01:00:00+00:00"],
+            "open": [10],
+            "high": [11],
+            "low": [9],
+            "close": [10.5],
+            "volume": [100],
+            "amount": [1000],
             "api_key": "DO_NOT_LEAK",
-        }]
+        }
 
 
 class FakeQuotes:
@@ -169,6 +168,19 @@ def test_kline_summary_unknown_shape_stays_unverified():
     assert summary["timestamp_monotonicity"] == "NOT_VERIFIED"
     assert summary["ohlcv_range_valid"] == "NOT_VERIFIED"
     assert summary["entitlement_evidence"] == "UNKNOWN"
+
+
+def test_columnar_sdk_kline_shape_gets_row_count_without_payload_output():
+    value = {
+        "timestamp": [1, 2], "open": [10, 11], "high": [11, 12],
+        "low": [9, 10], "close": [10.5, 11.5], "volume": [100, 200],
+    }
+    assert probe._row_count(value) == 2
+    summary = probe._kline_summary(value, period="15m")
+    assert summary["sample_count"] == 2
+    assert summary["field_presence"]["timestamp"] is True
+    assert summary["numeric_fields"]["close"] is True
+    assert summary["ohlcv_range_valid"] is True
 
 
 def test_premium_missing_key_is_skipped_without_sdk_calls():
