@@ -177,3 +177,65 @@ def test_fast_brief_still_accepts_source_unchanged_only_as_research(monkeypatch)
     assert result["can_confirm_signal"] is False
     assert result["source_arbiter_admission"] == "BLOCKED"
     assert result["radar_admission"] == "BLOCKED"
+
+
+
+def test_quick_scan_one_cache_read_and_compact_multitimeframe_research(monkeypatch):
+    calls = _patch(monkeypatch)
+    result = module.read_us_quick_scan(["AMD"], now_utc=NOW)
+    assert calls == {"market": 1, "radar": 1}
+    assert result["ok"] is True
+    assert result["status"] == "ALIGNED_RESEARCH_ONLY"
+    assert result["provider_requests"] == 0
+    assert result["live_trade"] is False
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert result["can_confirm_signal"] is False
+    assert result["source"]["sequence"] == 3
+    amd = result["symbols"]["US.AMD"]
+    assert amd["bars"]["1m"]["close"] == 163
+    assert amd["bars"]["1m"]["is_closed"] is True
+    assert amd["bars"]["15m"] is None
+    assert amd["trend"]["daily"]["trend"] == "up"
+    assert amd["trend"]["15m"]["trend"] == "down"
+    assert amd["support_levels"] == [159]
+    assert amd["signal_permission"] == "BLOCKED"
+    assert "indicators" not in str(result)
+    assert result["read_latency_ms"] >= 0
+
+
+def test_quick_scan_blocks_misaligned_and_stale_without_exposing_research(monkeypatch):
+    radar = _radar()
+    radar["source_sequence"] = 2
+    calls = _patch(monkeypatch, radar=radar)
+    result = module.read_us_quick_scan(["AMD"], now_utc=NOW)
+    assert calls == {"market": 1, "radar": 1}
+    assert result["ok"] is False
+    assert result["symbols"] == {}
+    assert "SOURCE_SEQUENCE_NOT_ALIGNED" in result["reasons"]
+    assert result["live_trade"] is False
+
+
+def test_quick_scan_blocks_invalid_symbols_before_reading(monkeypatch):
+    calls = _patch(monkeypatch)
+    result = module.read_us_quick_scan(["HK.00700"], now_utc=NOW)
+    assert result["ok"] is False
+    assert result["status"] == "INVALID_ARGUMENT"
+    assert result["symbols"] == {}
+    assert calls == {"market": 0, "radar": 0}
+
+
+def test_quick_scan_preserves_partial_bar_flags(monkeypatch):
+    market = _market()
+    market["symbols"]["US.AMD"]["latest"]["15m"] = {
+        "close": 165, "bar_end_utc": NOW.isoformat(),
+        "is_closed": False, "is_complete": False,
+        "quality_flags": ["PARTIAL_BAR", "MISSING_BAR"],
+    }
+    _patch(monkeypatch, market=market)
+    result = module.read_us_quick_scan(["AMD"], now_utc=NOW)
+    bar = result["symbols"]["US.AMD"]["bars"]["15m"]
+    assert bar["is_closed"] is False
+    assert bar["is_complete"] is False
+    assert "PARTIAL_BAR" in bar["quality_flags"]
+    assert result["can_confirm_signal"] is False
