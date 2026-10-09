@@ -82,7 +82,8 @@ jobs:
               /^TICKFLOW_PREMIUM_AWS_CLI_ARCH=(x86_64|aarch64|UNSUPPORTED)$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI_PATH=\/[A-Za-z0-9._+\/-]+$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI_VERSION=[0-9]+(\.[0-9]+)*$/ {print; next}
-            ' | head -n 5)"
+              /^TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=(ACCESS_DENIED|RESOURCE_NOT_FOUND|DECRYPTION_FAILURE|INVALID_REQUEST|INVALID_PARAMETER|INVALID_CLIENT_TOKEN|EXPIRED_TOKEN|THROTTLED|ENDPOINT_UNREACHABLE|CREDENTIALS_MISSING|UNKNOWN)$/ {print; next}
+            ' | head -n 8)"
             if [[ -n "$safe_diagnostics" ]]; then
               printf '%s\n' "$safe_diagnostics" >&2
             elif [[ "$status_details" == *TimedOut* ]]; then
