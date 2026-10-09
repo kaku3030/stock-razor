@@ -182,7 +182,7 @@ def test_single_call_diagnostic_supports_mcp_text_content_envelope() -> None:
     assert result["tool_calls"] == 1
     assert result["tool_name_match"] is True
     assert result["tool_error"] is False
-    assert result["snapshot_schema"] == "PASS"
+    assert result["snapshot_schema"] == "LEGACY_FACADE"
     assert result["market_data_present"] == "PASS"
     assert result["tool_output_shape"] == "SNAPSHOTS_OBJECT"
 
@@ -205,7 +205,7 @@ def test_single_call_diagnostic_rejects_missing_data_or_false_read_only() -> Non
              "read_only": True, "snapshots": [{"symbol": "AMD", "quote": {}, "bars": []}]
          })}
     ]})
-    assert empty["snapshot_schema"] == "PASS"
+    assert empty["snapshot_schema"] == "LEGACY_FACADE"
     assert empty["market_data_present"] == "EMPTY"
 
 
@@ -235,3 +235,103 @@ def test_single_call_diagnostic_rejects_multiple_calls_and_incomplete_response()
     incomplete = inspect({"status": "incomplete", "output": [one]})
     assert incomplete["response_status"] == "incomplete"
     assert incomplete["snapshot_schema"] == "NOT_VERIFIED"
+
+
+def _canonical_payload(*, status="PASS", age=8.0, bar=None, live_trade=False, radar="BLOCKED"):
+    return {
+        "ok": True,
+        "status": status,
+        "source_age_seconds": age,
+        "bar_closure": "PROVEN",
+        "radar_admission": radar,
+        "live_trade": live_trade,
+        "data_available": bar is not False,
+        "symbols": {
+            "US.AMD": {
+                "latest": {
+                    "1m": {"time": "2026-10-09T20:00:00Z"},
+                    "5m": None,
+                    "15m": None if bar is False else (bar or {
+                        "time": "2026-10-09T20:00:00Z",
+                        "open": 100, "high": 101, "low": 99, "close": 100.5,
+                    }),
+                    "1h": None,
+                }
+            }
+        },
+    }
+
+
+def test_canonical_snapshot_from_real_cloud_reader_is_accepted() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    data = _canonical_payload()
+    result = inspect({"status": "completed", "output": [{
+        "type": "mcp_call",
+        "name": "get_market_snapshots",
+        "status": "completed",
+        "output": json.dumps({"content": [{"type": "text", "text": json.dumps(data)}]}),
+    }]})
+    assert result["tool_output_shape"] == "SYMBOLS_OBJECT"
+    assert result["snapshot_schema"] == "PASS"
+    assert result["market_data_present"] == "PASS"
+    assert result["canonical_source_status"] == "PASS"
+    assert result["snapshot_freshness"] == "FRESH"
+    assert result["bar_closure"] == "PROVEN"
+
+
+def test_canonical_snapshot_stale_and_bad_provenance_stay_disqualified() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    for data in (
+        _canonical_payload(status="STALE", age=999),
+        _canonical_payload(status="PASS", age=None),
+        _canonical_payload(status="PASS", live_trade=True),
+        _canonical_payload(status="PASS", radar="PASS"),
+        _canonical_payload(status="PASS", bar=False),
+    ):
+        result = inspect({"status": "completed", "output": [{
+            "type": "mcp_call", "name": "get_market_snapshots",
+            "output": json.dumps(data),
+        }]})
+        valid_for_smoke = (
+            result["snapshot_schema"] == "PASS"
+            and result["canonical_source_status"] == "PASS"
+            and result["snapshot_freshness"] == "FRESH"
+            and result["market_data_present"] == "PASS"
+        )
+        assert not valid_for_smoke, data
+
+
+def test_smoke_uses_actual_port_8000_canonical_snapshot_contract() -> None:
+    from pathlib import Path
+    script = _cost_probe_source()
+    canonical = Path("data_provider/us_canonical_runtime_reader.py").read_text(encoding="utf-8")
+    server = Path("realtime_monitor/readonly_mcp_server.py").read_text(encoding="utf-8")
+    assert "def get_market_snapshots(symbols: list[str] | None = None)" in server
+    assert "return read_us_market_snapshots(symbols)" in server
+    assert '"symbols": result' in canonical
+    assert '"data_available": any(' in canonical
+    assert "symbols.get('US.AMD')" in script
+    assert "latest.get('15m')" in script
+    assert "do not supply " in script
+    assert "snapshot_freshness" in script
+    assert "source_age_seconds" in script
+
+
+def test_canonical_fail_closed_missing_snapshot_file_is_classified_without_error_leak() -> None:
+    import json
+    inspect = _typed_diagnostics()
+    error = {
+        "ok": False, "status": "UNAVAILABLE", "error": "sensitive_secret_path",
+        "radar_admission": "BLOCKED", "live_trade": False,
+    }
+    result = inspect({"status": "completed", "output": [{
+        "type": "mcp_call", "name": "get_market_snapshots",
+        "status": "completed", "output": json.dumps(error),
+    }]})
+    assert result["tool_output_shape"] == "CANONICAL_STATUS_OBJECT"
+    assert result["canonical_source_status"] == "UNAVAILABLE"
+    assert result["snapshot_schema"] == "NOT_VERIFIED"
+    assert result["market_data_present"] == "NOT_VERIFIED"
+    assert "sensitive_secret_path" not in str(result)

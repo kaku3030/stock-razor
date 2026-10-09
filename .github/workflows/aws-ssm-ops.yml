@@ -1946,8 +1946,9 @@ jobs:
                   'require_approval': 'never',
               }],
               'input': (
-                  'Call get_market_snapshots exactly once for ["AMD"] '
-                  'with timeframe "15m". Do not call any other tool.'
+                  'Call get_market_snapshots exactly once with symbols ["AMD"]. '
+                  'The result includes latest 15m bars by symbol; do not supply '
+                  'a timeframe parameter. Do not call any other tool.'
               ),
           }
           req = urllib.request.Request(
@@ -2016,6 +2017,12 @@ jobs:
                   if isinstance(value, dict):
                       if 'snapshots' in value:
                           return value, 'SNAPSHOTS_OBJECT'
+                      if 'symbols' in value:
+                          return value, 'SYMBOLS_OBJECT'
+                      if (value.get('ok') is False and 'status' in value
+                              and value.get('radar_admission') == 'BLOCKED'
+                              and value.get('live_trade') is False):
+                          return value, 'CANONICAL_STATUS_OBJECT'
                       if value.get('type') == 'text' and isinstance(value.get('text'), str):
                           value = value['text']
                           continue
@@ -2043,6 +2050,9 @@ jobs:
                       'tool_output_shape': 'NOT_AVAILABLE',
                       'snapshot_schema': 'NOT_VERIFIED',
                       'market_data_present': 'NOT_VERIFIED',
+                      'canonical_source_status': 'UNKNOWN',
+                      'snapshot_freshness': 'NOT_VERIFIED',
+                      'bar_closure': 'UNKNOWN',
                   }
               calls = [item for item in out if isinstance(item, dict) and item.get('type') == 'mcp_call']
               listed = [item for item in out if isinstance(item, dict) and item.get('type') == 'mcp_list_tools']
@@ -2053,6 +2063,9 @@ jobs:
                   'tool_status': 'UNKNOWN', 'tool_output_shape': 'NOT_AVAILABLE',
                   'snapshot_schema': 'NOT_VERIFIED',
                   'market_data_present': 'NOT_VERIFIED',
+                  'canonical_source_status': 'UNKNOWN',
+                  'snapshot_freshness': 'NOT_VERIFIED',
+                  'bar_closure': 'UNKNOWN',
               }
               if len(calls) != 1:
                   return diagnostic
@@ -2063,7 +2076,62 @@ jobs:
                   diagnostic['tool_status'] = call['status']
               data, shape = decode_snapshot_result(call.get('output'))
               diagnostic['tool_output_shape'] = shape
-              if not isinstance(data, dict) or data.get('read_only') is not True:
+              if not isinstance(data, dict):
+                  return diagnostic
+
+              # The fail-closed reader may return a status object without
+              # a symbols map (for example UNAVAILABLE). Classify it safely.
+              if data.get('ok') is False and 'status' in data:
+                  diagnostic['canonical_source_status'] = (
+                      data.get('status')
+                      if data.get('status') in ('PASS', 'STALE', 'INVALID', 'UNAVAILABLE', 'INVALID_ARGUMENT')
+                      else 'UNKNOWN'
+                  )
+                  return diagnostic
+
+              # Runtime tunnel targets readonly_mcp_server.py, not the older
+              # stock_razor_readonly_mcp facade. Canonical reader exports
+              # {ok, status, symbols: {'US.AMD': {latest: {'15m': bar}}}}.
+              # Treat any stale/unknown data as not live-qualified.
+              symbols = data.get('symbols')
+              if isinstance(symbols, dict):
+                  diagnostic['canonical_source_status'] = (
+                      data.get('status')
+                      if data.get('status') in ('PASS', 'STALE', 'INVALID', 'UNAVAILABLE')
+                      else 'UNKNOWN'
+                  )
+                  age = data.get('source_age_seconds')
+                  diagnostic['snapshot_freshness'] = (
+                      'FRESH'
+                      if type(age) in (int, float) and 0 <= age <= 120
+                      else 'STALE'
+                      if type(age) in (int, float) and age > 120
+                      else 'NOT_VERIFIED'
+                  )
+                  diagnostic['bar_closure'] = (
+                      'PROVEN' if data.get('bar_closure') == 'PROVEN' else 'UNKNOWN'
+                  )
+                  if data.get('live_trade') is not False or data.get('radar_admission') != 'BLOCKED':
+                      return diagnostic
+                  item = symbols.get('US.AMD')
+                  if not isinstance(item, dict):
+                      return diagnostic
+                  latest = item.get('latest')
+                  diagnostic['snapshot_schema'] = 'PASS' if isinstance(latest, dict) else 'NOT_VERIFIED'
+                  if diagnostic['snapshot_schema'] != 'PASS':
+                      return diagnostic
+                  diagnostic['market_data_present'] = (
+                      'PASS' if (
+                          data.get('data_available') is True
+                          and isinstance(latest.get('15m'), dict)
+                          and bool(latest['15m'])
+                      ) else 'EMPTY'
+                  )
+                  return diagnostic
+
+              # Backward-compatible interpretation of an older facade shape.
+              # This is not the runtime shape expected from port 8000/mcp.
+              if data.get('read_only') is not True:
                   return diagnostic
               snapshots = data.get('snapshots')
               if not isinstance(snapshots, list):
@@ -2074,7 +2142,7 @@ jobs:
               ]
               if not matching:
                   return diagnostic
-              diagnostic['snapshot_schema'] = 'PASS'
+              diagnostic['snapshot_schema'] = 'LEGACY_FACADE'
               diagnostic['market_data_present'] = (
                   'PASS' if any(
                       isinstance(item.get('quote'), dict) and bool(item['quote'])
@@ -2096,6 +2164,8 @@ jobs:
               and result['tool_error'] is False
               and result['tool_name_match'] is True
               and result['snapshot_schema'] == 'PASS'
+              and result['canonical_source_status'] == 'PASS'
+              and result['snapshot_freshness'] == 'FRESH'
               and result['market_data_present'] == 'PASS'
           )
           print('SECURE_MCP_SINGLE_TOOL_SMOKE=' + ('PASS' if success else 'FAIL'))
