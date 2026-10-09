@@ -26,7 +26,7 @@ def test_mcp_protocol_probe_binds_process_socket_and_source_to_same_mainpid():
     assert "MCP_PROBE_REASON=readonly-mcp-process-not-evidenced" in block
 
 
-def test_mcp_protocol_probe_accepts_module_invocation_and_seven_tool_surface():
+def test_mcp_protocol_probe_accepts_module_invocation_and_eight_tool_surface():
     block = _probe_block()
     assert "grep -Eq 'readonly_mcp_server(\\.py|([[:space:]]|$))'" in block
     assert "has_streamable_run = any(" in block
@@ -35,8 +35,16 @@ def test_mcp_protocol_probe_accepts_module_invocation_and_seven_tool_surface():
     assert "get_market_analysis" in block
     assert "get_cn_market_data" in block
     assert "get_cn_market_analysis" in block
-    assert "PRIVATE_MCP_TOOL_DISCOVERY_7_OF_7" in block
-    assert "len(names)==7 and set(names)==allowed" in block
+    assert "PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8" in block
+    assert "len(names)==8 and set(names)==allowed" in block
     assert "call('get_market_analysis',{'symbols':['AMD']},'AMD')" in block
     assert "call('get_cn_market_data',{'symbol':'159611','timeframe':'1d','limit':1},'159611')" in block
     assert "call('get_cn_market_analysis',{'symbols':['159611']},'159611')" in block
+
+
+def test_new_research_brief_is_in_strict_mcp_protocol_surface():
+    block = _probe_block()
+    assert "'get_us_research_brief'" in block
+    assert "call('get_us_research_brief',{'symbols':['AMD']},'AMD')" in block
+    assert "MCP_TOOL_SURFACE_MISMATCH=FAIL" in block
+    assert "raise SystemExit(1)" in block

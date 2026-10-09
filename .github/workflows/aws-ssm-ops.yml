@@ -1496,7 +1496,7 @@ jobs:
           import datetime as dt,http.client,json,sys
           from urllib.parse import urlsplit
           source=sys.argv[1]; endpoint=urlsplit(sys.argv[2]); host=endpoint.hostname; port=endpoint.port or 80; path=endpoint.path
-          allowed={'get_futures_runtime_health','get_market_snapshots','get_market_bars','get_livefeed_health','get_market_analysis','get_cn_market_data','get_cn_market_analysis'}; results={}
+          allowed={'get_futures_runtime_health','get_market_snapshots','get_market_bars','get_livefeed_health','get_market_analysis','get_us_research_brief','get_cn_market_data','get_cn_market_analysis'}; results={}
           def safe(value):
               if isinstance(value,dict): return {k:('[REDACTED]' if any(x in k.lower() for x in ('token','session','secret','password','api_key','access_key')) else safe(v)) for k,v in value.items()}
               if isinstance(value,list): return [safe(v) for v in value]
@@ -1529,18 +1529,24 @@ jobs:
           if not ok(st,o):print('MCP_INITIALIZE_DETAIL='+json.dumps(safe(o))[:500]);raise SystemExit
           send({'jsonrpc':'2.0','method':'notifications/initialized'},sid); st,o,sid=send({'jsonrpc':'2.0','id':2,'method':'tools/list','params':{}},sid)
           tools=(o.get('result') or {}).get('tools',[]) if isinstance(o,dict) else []; names=[t.get('name') for t in tools]; by={t.get('name'):t for t in tools}
-          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_7_OF_7='+('PASS' if len(names)==7 and set(names)==allowed else 'FAIL'))
+          print('DISCOVERED_TOOLS='+json.dumps(names,separators=(',',':'))); print('PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8='+('PASS' if len(names)==8 and set(names)==allowed else 'FAIL'))
           for t in tools:print('TOOL_SCHEMA_'+str(t.get('name'))+'='+json.dumps(t.get('inputSchema',{}),separators=(',',':')))
           def call(n,a,label=None):
               st,z,_=send({'jsonrpc':'2.0','id':100+len(results),'method':'tools/call','params':{'name':n,'arguments':a}},sid); good=ok(st,z) and not (z.get('result') or {}).get('isError',False); key=n+(':'+label if label else ''); results[key]=z.get('result',z); print('MCP_CALL_'+n+'='+('PASS' if good else 'FAIL')); print('MCP_'+n.upper()+'='+('PASS' if good else 'FAIL')); print('MCP_RESULT_'+n+('['+label+']' if label else '')+'='+json.dumps(safe(results[key]),separators=(',',':'))[:3000])
-          if len(names)==7 and set(names)==allowed:
+          if len(names)==8 and set(names)==allowed:
               call('get_futures_runtime_health',args(by['get_futures_runtime_health']))
               call('get_livefeed_health',args(by['get_livefeed_health']))
               for s in ('AMD','QQQ'):call('get_market_snapshots',args(by['get_market_snapshots'],s),s)
               for s in ('AMD','QQQ'):call('get_market_bars',args(by['get_market_bars'],s),s)
               call('get_market_analysis',{'symbols':['AMD']},'AMD')
+              call('get_us_research_brief',{'symbols':['AMD']},'AMD')
               call('get_cn_market_data',{'symbol':'159611','timeframe':'1d','limit':1},'159611')
               call('get_cn_market_analysis',{'symbols':['159611']},'159611')
+          else:
+              # Probe failures must never be treated as a successful matching
+              # protocol surface; a new or missing tool requires review.
+              print('MCP_TOOL_SURFACE_MISMATCH=FAIL')
+              raise SystemExit(1)
           try:
               import futu as ft
               from datetime import datetime, timedelta
