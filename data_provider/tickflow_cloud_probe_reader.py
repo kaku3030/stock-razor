@@ -72,7 +72,7 @@ def read_tickflow_probe_health(path: str | None = None, *,
         if not isinstance(op, dict) or op.get("name") not in SAFE_OPERATIONS:
             return fail("INVALID")
         name, state = op["name"], op.get("operation")
-        if state not in ("COMPLETED", "NO_EVENTS_OBSERVED", "BLOCKED", "SKIPPED", "ERROR"):
+        if state not in ("COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED", "FAILED", "BLOCKED", "SKIPPED", "ERROR"):
             return fail("INVALID")
         item = {"name": name, "operation": state}
         for field in ("elapsed_ms", "row_count"):

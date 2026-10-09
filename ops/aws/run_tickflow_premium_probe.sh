@@ -174,7 +174,7 @@ assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "B
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
 assert isinstance(d["operations"],list) and len(d["operations"]) <= 20
 allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","five_level_depth","websocket_quote_smoke"}
-allowed_states={"COMPLETED","NO_EVENTS_OBSERVED","BLOCKED","SKIPPED","ERROR"}
+allowed_states={"COMPLETED","NO_EVENTS_OBSERVED","OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
 ops=[]
 for raw in d["operations"]:
     assert isinstance(raw,dict) and raw.get("name") in allowed_names

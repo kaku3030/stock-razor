@@ -71,3 +71,20 @@ def test_reader_bounded_and_mcp_wired():
     assert "source_arbiter_admission" in producer
     assert "os.replace(tmp,dest)" in producer
     assert "os.chmod(tmp,0o644)" in producer
+
+
+def test_provider_failure_and_ws_observed_are_valid_probe_evidence_only(tmp_path):
+    payload = sample()
+    payload["operations"] = [
+        {"name": "kline_15m", "operation": "FAILED", "failure_class": "NetworkError"},
+        {"name": "websocket_quote_smoke", "operation": "OBSERVED", "quote_events": 2},
+    ]
+    path = tmp_path / "probe.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    result = read_tickflow_probe_health(str(path), now_utc=NOW)
+    assert result["status"] == "PROBE_ONLY"
+    assert [op["operation"] for op in result["operations"]] == ["FAILED", "OBSERVED"]
+    assert result["data_admission"] == "BLOCKED"
+    assert result["production_tickflow_feed"] is False
+    assert "NetworkError" not in json.dumps(result)
+    assert "quote_events" not in json.dumps(result)
