@@ -75,6 +75,7 @@ def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'python3 -m zipfile -e' in PREMIUM_BOOTSTRAP
     assert 'INSTALL_AWS_CLI' in PREMIUM_BOOTSTRAP
     assert '"$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
+    assert 'chmod 0755 "$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
 
 
 def test_ingress_requires_exact_opt_in():

@@ -80,6 +80,7 @@ if [[ -z "$aws_cli" ]]; then
     'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' \
     -o "$stage/awscliv2.zip" 2>/dev/null
   python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
+  chmod 0755 "$stage/awscli-installer/aws/install"
   "$stage/awscli-installer/aws/install" \
     -i "$root/aws-cli" -b "$root/bin" >/dev/null 2>&1
   aws_cli="$root/bin/aws"
