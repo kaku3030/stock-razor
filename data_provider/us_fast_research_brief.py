@@ -241,3 +241,94 @@ def read_us_fast_research_brief(
             for symbol in selected
         },
     )
+
+
+
+def read_us_quick_scan(
+    symbols: Iterable[str] | None = None,
+    *,
+    snapshot_path: str | None = None,
+    radar_path: str | None = None,
+    now_utc: datetime | None = None,
+) -> dict:
+    """Small read-only MCP payload for fast watchlist review.
+
+    Reuses the canonical aligned brief and its fail-closed gates; this is
+    projection only, not a new provider call or a trading signal.
+    """
+    started = perf_counter()
+    full = read_us_fast_research_brief(
+        symbols, snapshot_path=snapshot_path, radar_path=radar_path,
+        now_utc=now_utc,
+    )
+    common = {
+        "schema": "stock_razor_us_quick_scan_v0_1",
+        "ok": full.get("ok") is True,
+        "status": full.get("status", "BLOCKED"),
+        "research_only": True,
+        "can_confirm_signal": False,
+        "trading_authority": False,
+        "radar_admission": "BLOCKED",
+        "source_arbiter_admission": "BLOCKED",
+        "live_trade": False,
+        "provider_requests": 0,
+        "provider_to_radar_e2e": "NOT_VERIFIED",
+        "reasons": full.get("reasons") or [],
+        "observed_at_utc": full.get("observed_at_utc"),
+    }
+    provenance = full.get("provenance") or {}
+    common["source"] = {
+        "repo_sha": provenance.get("market_repo_sha"),
+        "runtime_instance_id": provenance.get("market_runtime_instance_id"),
+        "sequence": provenance.get("market_sequence"),
+        "market_emitted_at_utc": provenance.get("market_emitted_at_utc"),
+        "market_age_seconds": provenance.get("market_age_seconds"),
+        "radar_age_seconds": provenance.get("radar_age_seconds"),
+        "radar_poll_status": provenance.get("radar_poll_status"),
+        "bar_closure": provenance.get("source_bar_closure"),
+        "delivery_mode": provenance.get("source_delivery_mode"),
+    }
+    if full.get("ok") is not True or full.get("status") != "ALIGNED_RESEARCH_ONLY":
+        return {
+            **common, "ok": False, "symbols": {},
+            "missing_symbols": full.get("missing_symbols") or [],
+            "read_latency_ms": round((perf_counter() - started) * 1000, 3),
+        }
+
+    def compact_bar(value: object) -> dict | None:
+        if not isinstance(value, dict):
+            return None
+        return {
+            key: value.get(key) for key in (
+                "close", "bar_end_utc", "is_closed", "is_complete", "quality_flags"
+            )
+        }
+
+    result = {}
+    for symbol, item in full["symbols"].items():
+        frames = item.get("multitimeframe") or {}
+        bars = item.get("latest_bars") or {}
+        result[symbol] = {
+            "bars": {tf: compact_bar(bars.get(tf)) for tf in ("1m", "5m", "15m", "1h")},
+            "trend": {
+                name: {
+                    "trend": (frames.get(key) or {}).get("trend"),
+                    "quality": ((frames.get(key) or {}).get("quality") or {}).get("status"),
+                    "partial": ((frames.get(key) or {}).get("quality") or {}).get("is_partial_bar"),
+                }
+                for name, key in (("daily", "daily"), ("hourly", "hourly"), ("15m", "intraday_15m"))
+            },
+            "alignment": frames.get("alignment"),
+            "research_score": frames.get("research_score"),
+            "risk_flags": frames.get("risk_flags") or [],
+            "watch_conditions": frames.get("watch_conditions") or [],
+            "support_levels": (frames.get("structure") or {}).get("support_levels"),
+            "resistance_levels": (frames.get("structure") or {}).get("resistance_levels"),
+            "volume_confirmation": (frames.get("structure") or {}).get("volume_confirmation"),
+            "technical_as_of": item.get("technical_as_of"),
+            "signal_permission": "BLOCKED",
+        }
+    return {
+        **common, "symbols": result,
+        "read_latency_ms": round((perf_counter() - started) * 1000, 3),
+    }

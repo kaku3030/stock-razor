@@ -13,7 +13,7 @@ from data_provider.us_canonical_runtime_reader import (
     read_us_market_snapshots,
 )
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
-from data_provider.us_fast_research_brief import read_us_fast_research_brief
+from data_provider.us_fast_research_brief import read_us_fast_research_brief, read_us_quick_scan
 
 mcp = FastMCP("stock-razor-readonly")
 
@@ -66,6 +66,16 @@ def get_us_research_brief(symbols: list[str] | None = None) -> dict:
     or LLM reasoning runs here; trading and signal gates stay closed.
     """
     return read_us_fast_research_brief(symbols)
+
+
+@mcp.tool()
+def get_us_quick_scan(symbols: list[str] | None = None) -> dict:
+    """Fast compact US watchlist: prices, 1m/5m/15m/1h bar finality, Radar trends.
+
+    One aligned cloud-cache read, no provider or LLM calls. All trading gates
+    remain blocked; partial bars and stale data never qualify as signals.
+    """
+    return read_us_quick_scan(symbols)
 
 
 @mcp.tool()
