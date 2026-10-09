@@ -46,8 +46,8 @@ jobs:
           set -euo pipefail
           revision="$(git rev-parse HEAD)"
           probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
-          remote="$(base64 -w0 scripts/probe_us_cloud_exact.py)"
-          command="set -euo pipefail; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; printf '%s' '$remote' | base64 -d > \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS'"
+          probe_url="https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py"
+          command="set -euo pipefail; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl -fsSL --max-time 20 '$probe_url' -o \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS'"
           params="$(jq -cn --arg c "$command" '{commands:[$c]}')"
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 180 --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 80); do
@@ -62,7 +62,12 @@ jobs:
                 echo 'LIVE_TRADE=NO'
                 exit 0
                 ;;
-              Failed|TimedOut|Cancelled|Cancelling) echo "US_EXACT_CLOUD_PROBE=$status" >&2; exit 1 ;;
+              Failed|TimedOut|Cancelled|Cancelling)
+                echo "US_EXACT_CLOUD_PROBE=$status" >&2
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query 'ResponseCode' --output text 2>/dev/null | sed 's/^/US_EXACT_CLOUD_PROBE_RESPONSE_CODE=/' >&2 || true
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query 'StandardErrorContent' --output text 2>/dev/null | tail -n 12 | sed -E 's/(TICKFLOW_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN)=[^ ]+/<redacted>/g' >&2 || true
+                exit 1
+                ;;
             esac
             sleep 2
           done
