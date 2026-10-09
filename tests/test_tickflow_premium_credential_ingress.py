@@ -59,7 +59,7 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
 
 def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'command -v aws 2>/dev/null || true' in PREMIUM_BOOTSTRAP
-    assert 'for candidate in /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in PREMIUM_BOOTSTRAP
+    assert 'for candidate in "$root/bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_BOOTSTRAP
     assert 'secret_json="$("$aws_cli" secretsmanager get-secret-value' in PREMIUM_BOOTSTRAP
@@ -71,6 +71,10 @@ def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert 'TICKFLOW_PREMIUM_AWS_CLI=(AVAILABLE|UNAVAILABLE|INVALID)' in PREMIUM_WORKFLOW
     assert 'TICKFLOW_PREMIUM_AWS_CLI_PATH=' in PREMIUM_WORKFLOW
     assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_WORKFLOW
+    assert 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' in PREMIUM_BOOTSTRAP
+    assert 'python3 -m zipfile -e' in PREMIUM_BOOTSTRAP
+    assert 'INSTALL_AWS_CLI' in PREMIUM_BOOTSTRAP
+    assert '"$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
 
 
 def test_ingress_requires_exact_opt_in():
