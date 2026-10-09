@@ -31,6 +31,8 @@ def test_premium_path_is_dormant_and_pins_all_remote_artifacts():
 def test_remote_premium_bootstrap_hash_verification_precedes_execution():
     """The SSM target must authenticate fetched code before first execution."""
     assert "sr-tickflow-premium-bootstrap.XXXXXXXX" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s" in PREMIUM_WORKFLOW
+    assert "bootstrap_stage=VERIFY_BOOTSTRAP_HASH" in PREMIUM_WORKFLOW
     assert "/tmp/run_tickflow_premium_probe.sh" not in PREMIUM_WORKFLOW
     assert "sha256sum -c - >/dev/null" in PREMIUM_WORKFLOW
     assert PREMIUM_WORKFLOW.index("sha256sum -c - >/dev/null") < PREMIUM_WORKFLOW.index(r'bash "\$temp_dir/bootstrap.sh"')
@@ -43,7 +45,7 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
     assert 'unset TICKFLOW_API_KEY secret_json' in PREMIUM_BOOTSTRAP
     assert 'exit "$rc"' in PREMIUM_BOOTSTRAP
     assert "TICKFLOW_PREMIUM_SSM_RESPONSE_CODE=" in PREMIUM_WORKFLOW
-    assert "TICKFLOW_PREMIUM_FAILED_STAGE=[A-Z_]+" in PREMIUM_WORKFLOW
+    assert "TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE)=[A-Z_]+" in PREMIUM_WORKFLOW
     assert "StandardErrorContent" in PREMIUM_WORKFLOW
     assert "StatusDetails" in PREMIUM_WORKFLOW
     assert "TICKFLOW_PREMIUM_FAILED_STAGE=SSM_REMOTE_COMMAND" in PREMIUM_WORKFLOW
