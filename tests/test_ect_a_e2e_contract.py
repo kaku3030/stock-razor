@@ -301,6 +301,8 @@ def test_secure_mcp_tunnel_bootstrap_is_posix_shell_compatible() -> None:
     assert "set -euo pipefail" not in bootstrap
     assert "zipfile.ZipFile" in bootstrap
     assert "os.makedirs(sys.argv[2], exist_ok=True)" in bootstrap
+    assert 'find "$tmp_dir/extracted" -type f -name tunnel-client -print -quit' in bootstrap
+    assert 'chmod 0755 "$client_path"' in bootstrap
     assert "unzip -oq" not in bootstrap
 
 
