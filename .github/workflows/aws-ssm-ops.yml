@@ -24,6 +24,7 @@ on:
           - us_opend_qot_right_notify_probe
           - us_opend_userinfo_qot_right_probe
           - us_opend_subscription_audit
+          - tickflow_mcp_cache_audit
           - us_opend_k1m_continuity_probe
           - us_opend_k5m_probe
           - us_opend_k5m_crosscheck_probe
@@ -1141,6 +1142,72 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_userinfo_qot_right_probe_script" '[ $script ]' > commands.json
+              ;;
+            tickflow_mcp_cache_audit)
+              read -r -d '' tickflow_mcp_cache_audit_script <<'REMOTE' || true
+          set -eu
+          echo '=== TICKFLOW PROBE CACHE + MCP READ-ONLY CLOUD AUDIT ==='
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, timezone
+
+          repo="/opt/stock-razor-mcp/repo"
+          python="/opt/stock-razor-mcp/venv/bin/python"
+          result={
+              "probe":"tickflow_mcp_cache_audit_v0_1",
+              "observed_at_utc":datetime.now(timezone.utc).isoformat(),
+              "mcp_service":"UNKNOWN",
+              "mcp_reader":"UNAVAILABLE",
+              "tickflow_probe":"UNAVAILABLE",
+              "production_tickflow_feed":False,
+              "data_admission":"BLOCKED",
+              "radar_admission":"BLOCKED",
+              "source_arbiter_admission":"BLOCKED",
+              "live_trade":False,
+          }
+          try:
+              p=subprocess.run(["/usr/bin/systemctl","is-active","stock-razor-mcp.service"],
+                               capture_output=True,text=True,timeout=3,check=False)
+              result["mcp_service"]="ACTIVE" if p.returncode==0 and p.stdout.strip()=="active" else "NOT_ACTIVE"
+          except (OSError,subprocess.TimeoutExpired):
+              result["mcp_service"]="UNAVAILABLE"
+          if os.path.isfile(python) and os.path.isdir(repo):
+              # Reader only: never import TickFlow SDK or retrieve the AWS secret.
+              code=("import json;"
+                    "from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health;"
+                    "d=read_tickflow_probe_health();"
+                    "print(json.dumps({k:d.get(k) for k in "
+                    "('status','ok','age_seconds','repo_sha','production_tickflow_feed',"
+                    "'tickflow_to_radar_e2e','provider_requests')},sort_keys=True))")
+              try:
+                  p=subprocess.run([python,"-c",code],cwd=repo,
+                                   env={"PATH":"/usr/bin:/bin","PYTHONPATH":repo},
+                                   capture_output=True,text=True,timeout=6,check=False)
+                  if p.returncode==0 and len(p.stdout)<2048:
+                      d=json.loads(p.stdout)
+                      if isinstance(d,dict) and d.get("status") in (
+                          "PROBE_ONLY","STALE","INVALID","UNAVAILABLE"
+                      ):
+                          result["mcp_reader"]="PASS"
+                          result["tickflow_probe"]=d["status"]
+                          if type(d.get("age_seconds")) in (int,float):
+                              result["probe_age_seconds"]=d["age_seconds"]
+                          sha=d.get("repo_sha")
+                          if isinstance(sha,str) and len(sha)==40 and all(c in "0123456789abcdef" for c in sha):
+                              result["probe_repo_sha"]=sha
+              except (OSError,ValueError,subprocess.TimeoutExpired):
+                  pass
+          print(json.dumps(result,sort_keys=True,separators=(",",":")))
+          print("SUBSCRIPTION_CHANGES=NONE")
+          print("DATA_ADMISSION=BLOCKED")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("SOURCE_ARBITER_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$tickflow_mcp_cache_audit_script" '[ $script ]' > commands.json
               ;;
             us_opend_subscription_audit)
               read -r -d '' us_opend_subscription_audit_script <<'REMOTE' || true
