@@ -337,7 +337,11 @@ def test_ws_smoke_tracks_callbacks_but_never_promotes_stream(monkeypatch):
     assert fake.stream.closed is True
     assert ws["quote_events"] == 2
     assert ws["unique_quote_samples"] == 1
-    assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 1
+    assert ws["initial_snapshot_candidates"] == 1
+    assert ws["duplicate_timestamp_events"] == 1
+    assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 0
+    assert ws["first_per_symbol_cache_candidate_age_ms"]["count"] == 1
+    assert ws["subscribed_ack_evidence"] == "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
     assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
     assert ws["clock_offset_qualification"] == "NOT_VERIFIED"
     assert ws["error_callbacks"] == 1
@@ -392,3 +396,75 @@ def test_operation_stdout_stderr_are_suppressed_even_on_failure(capsys):
     assert captured.out == ""
     assert captured.err == ""
     assert "DO_NOT_PRINT_ERROR_BODY" not in json.dumps(result)
+
+
+def test_ws_initial_snapshot_is_not_used_as_live_lag_and_events_are_bounded(monkeypatch):
+    class MixedStream(FakeStream):
+        def connect(self, block=True):
+            assert block is False
+            self.handlers["quotes"]([
+                {"symbol": "159611.SZ", "timestamp": 1760000000000, "token": "DO_NOT_LEAK"},
+                {"symbol": "518880.SH", "timestamp": 1760000000, "token": "DO_NOT_LEAK"},
+            ])
+            self.handlers["quotes"]([
+                {"symbol": "159611.SZ", "timestamp": 1760000001000, "token": "DO_NOT_LEAK"},
+                {"symbol": "159611.SZ", "timestamp": 1760000001000},
+                {"symbol": "159611.SZ", "timestamp": 1759999999000},
+                {"symbol": "159611.SZ", "timestamp": float("nan")},
+                {"symbol": "999999.SZ", "timestamp": 1760000002000},
+                {"symbol": "518880.SH", "timestamp": 1760000001000},
+            ])
+
+    c = FakeClient()
+    c.stream = MixedStream()
+    monkeypatch.setattr(probe.time, "sleep", lambda seconds: None)
+    result = probe.build_probe(
+        mode="premium", symbols=("159611.SZ", "518880.SH"),
+        ws_seconds=1, client_factory=lambda: c, credential_present=True,
+    )
+    ws = result["operations"][-1]
+    assert ws["quote_callbacks"] == 2
+    assert ws["quote_events"] == 8
+    assert ws["initial_snapshot_candidates"] == 2
+    assert ws["post_initial_update_candidates"] == 2
+    assert ws["duplicate_timestamp_events"] == 1
+    assert ws["out_of_order_timestamp_events"] == 1
+    assert ws["invalid_timestamp_events"] == 1
+    assert ws["unrequested_symbol_events"] == 1
+    assert ws["unique_quote_samples"] == 4
+    assert ws["first_per_symbol_cache_candidate_age_ms"]["count"] == 2
+    assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 2
+    assert ws["lag_scope"] == "POST_INITIAL_CANDIDATES_ONLY_NOT_VERIFIED_LIVE"
+    assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
+    assert ws["clock_offset_qualification"] == "NOT_VERIFIED"
+    assert ws["snapshot_vs_live_evidence"] == "NOT_VERIFIED"
+    assert ws["ping_pong_evidence"] == "NOT_VERIFIED"
+    assert ws["reconnect_resubscribe_evidence"] == "NOT_VERIFIED"
+    assert ws["continuous_feed_qualified"] is False
+    assert ws["stale_drop_reconnect_qualified"] is False
+    assert c.stream.closed
+    assert "DO_NOT_LEAK" not in json.dumps(result)
+
+
+def test_ws_quote_with_boolean_or_non_finite_timestamp_is_never_age_sample(monkeypatch):
+    class InvalidStream(FakeStream):
+        def connect(self, block=True):
+            self.handlers["quotes"]([
+                {"symbol": "159611.SZ", "timestamp": True},
+                {"symbol": "159611.SZ", "timestamp": -1},
+                {"symbol": "159611.SZ", "timestamp": float("inf")},
+                {"symbol": "159611.SZ", "timestamp": None},
+                {"symbol": "159611.SZ", "timestamp": 1760000000000},
+            ])
+
+    c = FakeClient()
+    c.stream = InvalidStream()
+    monkeypatch.setattr(probe.time, "sleep", lambda seconds: None)
+    ws = probe.build_probe(
+        mode="premium", symbols=("159611.SZ", "518880.SH"),
+        ws_seconds=1, client_factory=lambda: c, credential_present=True,
+    )["operations"][-1]
+    assert ws["invalid_timestamp_events"] == 4
+    assert ws["initial_snapshot_candidates"] == 1
+    assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 0
+    assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
