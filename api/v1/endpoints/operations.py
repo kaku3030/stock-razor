@@ -49,6 +49,8 @@ def operations_status() -> OperationsStatusResponse:
         # This endpoint intentionally cannot unlock live trading.
         live_trade=False,
         paper_auto_ready=os.getenv("PAPER_AUTO_READY", "NO").strip().upper() == "YES",
+        paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
+        paper_runtime_api_status="NOT_EXPOSED",
         notification_channels_configured=channels,
         notification_ready=bool(channels),
         pending_acceptance=pending,
