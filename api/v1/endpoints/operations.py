@@ -75,6 +75,7 @@ def operations_status() -> OperationsStatusResponse:
         paper_auto_ready=os.getenv("PAPER_AUTO_READY", "NO").strip().upper() == "YES",
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         paper_runtime_api_status="NOT_EXPOSED",
+        execution_recovery_projection_status="IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING",
         external_simulator_contract_status="READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT",
         simulated_account_evidence="NOT_VERIFIED",
         notification_channels_configured=channels,
