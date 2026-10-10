@@ -17,6 +17,7 @@ import threading
 
 from .execution_engine import ExecutionBlocked, ExecutionEngine, ExecutionStore, OrderState, RiskContext
 from .live_shadow import ShadowExecutionCapability
+from .paper_runtime_store_config import PaperRuntimeStoreConfig
 from .paper_execution_admission import (
     ExecutionAdmissionEvidence,
     PaperOrderSpec,
@@ -66,6 +67,27 @@ class PaperRuntimeOrchestrator:
         "_state",
         "_owner_thread_id",
     )
+
+    @classmethod
+    def from_config(
+        cls,
+        engine: ExecutionEngine,
+        *,
+        runtime_generation: str,
+        account_generation: str,
+        config: PaperRuntimeStoreConfig | None = None,
+    ) -> "PaperRuntimeOrchestrator":
+        """Build a runtime only when configured stores are durable and distinct."""
+
+        store_config = config or PaperRuntimeStoreConfig.from_env()
+        if engine.store.path != str(store_config.execution_path):
+            raise ExecutionBlocked("execution store path does not match configuration")
+        return cls(
+            engine,
+            runtime_generation=runtime_generation,
+            account_generation=account_generation,
+            shadow_store=ExecutionStore(store_config.shadow_path),
+        )
 
     def __init__(
         self,
