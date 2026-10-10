@@ -31,6 +31,7 @@ def review(snapshot=None, **overrides):
     kwargs = {
         "subscribed_symbols": ["US.QQQ"], "quota_verified": True,
         "total_used": 8, "remain": 12, "now_utc": NOW,
+        "quota_observed_at_utc": NOW,
     }
     kwargs.update(overrides)
     return review_us_opend_subscription_capacity(snapshot or universe(), **kwargs)
@@ -95,3 +96,16 @@ def test_no_opend_sdk_calls_or_subscribe_execution():
     assert ".subscribe(" not in source
     assert ".unsubscribe(" not in source
     assert "query_subscription(" not in source
+
+
+def test_missing_or_stale_quota_observation_fails_closed():
+    assert review(quota_observed_at_utc=None)["reason"] == "QUOTA_OBSERVATION_TIMESTAMP_REQUIRED"
+    assert review(quota_observed_at_utc=NOW - timedelta(minutes=3))["reason"] == "STALE_OR_FUTURE_QUOTA_OBSERVATION"
+    assert review(quota_observed_at_utc=NOW + timedelta(minutes=3))["reason"] == "STALE_OR_FUTURE_QUOTA_OBSERVATION"
+    assert review(quota_observed_at_utc=NOW.replace(tzinfo=None))["reason"] == "QUOTA_OBSERVATION_TIMESTAMP_REQUIRED"
+
+
+def test_fresh_quota_age_is_explicit():
+    result = review(quota_observed_at_utc=NOW - timedelta(seconds=30))
+    assert result["quota_observation_age_seconds"] == 30
+    assert result["subscription_changes"] == "NONE"
