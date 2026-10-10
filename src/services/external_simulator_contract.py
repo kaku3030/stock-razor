@@ -126,7 +126,13 @@ def admit_external_sim_order(
         raise ExternalSimulatorBlocked("side must be BUY or SELL")
     if request.kill_switch:
         raise ExternalSimulatorBlocked("kill switch is active")
-    if _enum_value(SoftwareStopStatus, request.protective_stop_status, "protective_stop_status") is not SoftwareStopStatus.SIM_ONLY_UNPROTECTED_IF_DISCONNECTED:
+    try:
+        stop_status = SoftwareStopStatus(str(request.protective_stop_status))
+    except ValueError as exc:
+        raise ExternalSimulatorBlocked(
+            "protective stop must disclose software-only protection"
+        ) from exc
+    if stop_status is not SoftwareStopStatus.SIM_ONLY_UNPROTECTED_IF_DISCONNECTED:
         raise ExternalSimulatorBlocked("protective stop status must disclose software-only protection")
 
     quantity = _decimal(request.quantity, "quantity")
