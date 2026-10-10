@@ -144,6 +144,10 @@ def _run_child(mode: str, runtime_path: Path, shadow_path: Path) -> subprocess.C
             str(shadow_path),
         ],
         cwd=Path(__file__).resolve().parents[1],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        },
         text=True,
         capture_output=True,
         check=False,
