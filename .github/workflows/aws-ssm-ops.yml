@@ -23,6 +23,7 @@ on:
           - us_opend_k1m_probe
           - us_opend_qot_right_notify_probe
           - us_opend_userinfo_qot_right_probe
+          - us_opend_sim_account_discovery_probe
           - us_opend_subscription_audit
           - tickflow_mcp_cache_audit
           - us_opend_k1m_continuity_probe
@@ -1142,6 +1143,105 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_userinfo_qot_right_probe_script" '[ $script ]' > commands.json
+              ;;
+            us_opend_sim_account_discovery_probe)
+              read -r -d '' us_opend_sim_account_discovery_probe_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US SIMULATE ACCOUNT DISCOVERY READ-ONLY PROBE ==='
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          import futu as ft
+
+          out = {
+              "probe": "us_opend_sim_account_discovery_v0_1",
+              "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+              "opend_reachable": False,
+              "query_status": "UNKNOWN",
+              "accounts": [],
+              "simulated_us_account_count": 0,
+              "simulated_us_account_ids": [],
+              "account_evidence": "NOT_VERIFIED",
+              "radar_admission": "BLOCKED",
+              "source_arbiter_admission": "BLOCKED",
+              "live_trade": False,
+          }
+
+          def safe_rows(data):
+              if not hasattr(data, "to_dict"):
+                  return []
+              try:
+                  rows = data.to_dict("records")
+              except Exception:
+                  return []
+              result = []
+              for row in rows:
+                  if not isinstance(row, dict):
+                      continue
+                  account_id = row.get("acc_id")
+                  mode = row.get("trd_env")
+                  market = row.get("trdmarket", row.get("market"))
+                  status = row.get("acc_status")
+                  if type(account_id) is not str or not account_id.strip():
+                      continue
+                  if type(mode) is not str or type(market) is not str:
+                      continue
+                  result.append({
+                      "acc_id": account_id.strip(),
+                      "trd_env": mode.upper(),
+                      "market": market.upper(),
+                      "authenticated": bool(status) if isinstance(status, bool) else True,
+                  })
+              return result
+
+          ctx = None
+          try:
+              ctx = ft.OpenSecTradeContext(
+                  filter_trdmarket=ft.TrdMarket.US,
+                  host="127.0.0.1",
+                  port=11111,
+              )
+              out["opend_reachable"] = True
+              ret, data = ctx.get_acc_list()
+              if ret == ft.RET_OK:
+                  rows = safe_rows(data)
+                  out["query_status"] = "PASS"
+                  out["accounts"] = rows
+                  candidates = [
+                      row for row in rows
+                      if row["trd_env"] == "SIMULATE"
+                      and row["market"] == "US"
+                      and row["authenticated"] is True
+                  ]
+                  out["simulated_us_account_count"] = len(candidates)
+                  out["simulated_us_account_ids"] = [row["acc_id"] for row in candidates]
+                  if len(candidates) == 1:
+                      out["account_evidence"] = "PASS"
+                  elif len(candidates) == 0:
+                      out["account_evidence"] = "BLOCKED_NO_AUTHENTICATED_SIMULATE_US_ACCOUNT"
+                  else:
+                      out["account_evidence"] = "BLOCKED_MULTIPLE_SIMULATE_US_ACCOUNTS"
+              else:
+                  out["query_status"] = "PROVIDER_REJECTED"
+          except Exception as exc:
+              out["query_status"] = "ERROR"
+              out["error_class"] = type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try:
+                      ctx.close()
+                  except Exception:
+                      pass
+
+          print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+          print("ACCOUNT_MUTATIONS=NONE")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("SOURCE_ARBITER_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+              jq -c -n --arg script "$us_opend_sim_account_discovery_probe_script" '[ $script ]' > commands.json
               ;;
             tickflow_mcp_cache_audit)
               read -r -d '' tickflow_mcp_cache_audit_script <<'REMOTE' || true
