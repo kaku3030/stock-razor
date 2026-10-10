@@ -259,6 +259,7 @@ class SystemConfigService:
         "CUSTOM_WEBHOOK_BODY_TEMPLATE": ("custom_webhook_body_template", "string"),
         "WEBHOOK_VERIFY_SSL": ("webhook_verify_ssl", "bool"),
         "DISCORD_WEBHOOK_URL": ("discord_webhook_url", "string"),
+        "DISCORD_RADAR_WEBHOOK_URL": ("discord_radar_webhook_url", "string"),
         "DISCORD_BOT_TOKEN": ("discord_bot_token", "string"),
         "DISCORD_MAIN_CHANNEL_ID": ("discord_main_channel_id", "string"),
         "DISCORD_CHANNEL_ID": ("discord_main_channel_id", "string"),
@@ -281,7 +282,7 @@ class SystemConfigService:
         "pushplus": (("PUSHPLUS_TOKEN",),),
         "serverchan3": (("SERVERCHAN3_SENDKEY",),),
         "custom": (("CUSTOM_WEBHOOK_URLS",),),
-        "discord": (("DISCORD_WEBHOOK_URL",), ("DISCORD_BOT_TOKEN", "DISCORD_MAIN_CHANNEL_ID"), ("DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID")),
+        "discord": (("DISCORD_WEBHOOK_URL",), ("DISCORD_RADAR_WEBHOOK_URL",), ("DISCORD_BOT_TOKEN", "DISCORD_MAIN_CHANNEL_ID"), ("DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID")),
         "slack": (("SLACK_WEBHOOK_URL",), ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID")),
         "astrbot": (("ASTRBOT_URL",),),
     }
@@ -297,7 +298,7 @@ class SystemConfigService:
         "pushplus": ("PUSHPLUS_TOPIC",),
         "serverchan3": ("SERVERCHAN3_SENDKEY",),
         "custom": ("CUSTOM_WEBHOOK_URLS",),
-        "discord": ("DISCORD_WEBHOOK_URL", "DISCORD_MAIN_CHANNEL_ID", "DISCORD_CHANNEL_ID"),
+        "discord": ("DISCORD_WEBHOOK_URL", "DISCORD_RADAR_WEBHOOK_URL", "DISCORD_MAIN_CHANNEL_ID", "DISCORD_CHANNEL_ID"),
         "slack": ("SLACK_WEBHOOK_URL", "SLACK_CHANNEL_ID"),
         "astrbot": ("ASTRBOT_URL",),
     }

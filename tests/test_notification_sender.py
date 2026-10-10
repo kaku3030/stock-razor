@@ -95,6 +95,11 @@ class TestDiscordSender(unittest.TestCase):
         sender = DiscordSender(cfg)
         self.assertTrue(sender._is_discord_configured())
 
+    def test_is_discord_configured_radar_webhook_only(self):
+        cfg = _config(discord_radar_webhook_url="https://discord.com/webhook/radar")
+        sender = DiscordSender(cfg)
+        self.assertTrue(sender._is_discord_configured())
+
     def test_is_discord_configured_bot_only(self):
         cfg = _config(discord_bot_token="T", discord_main_channel_id="123")
         sender = DiscordSender(cfg)
@@ -116,6 +121,34 @@ class TestDiscordSender(unittest.TestCase):
         call_kw = mock_post.call_args[1]
         self.assertEqual(call_kw["json"]["content"], "content")
         self.assertIn("username", call_kw["json"])
+
+    @mock.patch("src.notification_sender.discord_sender.requests.post")
+    def test_alert_route_uses_dedicated_radar_webhook(self, mock_post):
+        mock_post.return_value = _response(204)
+        cfg = _config(
+            discord_webhook_url="https://discord.com/webhook/main",
+            discord_radar_webhook_url="https://discord.com/webhook/radar",
+        )
+        sender = DiscordSender(cfg)
+
+        result = sender.send_to_discord("radar alert", route_type="alert")
+
+        self.assertTrue(result)
+        self.assertEqual(mock_post.call_args[0][0], "https://discord.com/webhook/radar")
+
+    @mock.patch("src.notification_sender.discord_sender.requests.post")
+    def test_report_route_keeps_original_webhook(self, mock_post):
+        mock_post.return_value = _response(204)
+        cfg = _config(
+            discord_webhook_url="https://discord.com/webhook/main",
+            discord_radar_webhook_url="https://discord.com/webhook/radar",
+        )
+        sender = DiscordSender(cfg)
+
+        result = sender.send_to_discord("daily report", route_type="report")
+
+        self.assertTrue(result)
+        self.assertEqual(mock_post.call_args[0][0], "https://discord.com/webhook/main")
 
     @mock.patch("src.notification_sender.discord_sender.requests.post")
     def test_send_strips_hidden_market_region_metadata_from_text_payload(self, mock_post):
