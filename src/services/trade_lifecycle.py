@@ -67,6 +67,21 @@ def project_trade_lifecycle(
     as_of = now.astimezone(timezone.utc)
     lifecycle_id = f"{plan.plan_id}:{plan.version}:{int(as_of.timestamp())}"
 
+    # Entry TTL applies only to new entries. An existing position must still
+    # receive stop/1R/2R/data-quality review after the entry window expires.
+    if position is not None:
+        if position_id is None:
+            raise ValueError("position_id is required with position management state")
+        return TradeLifecycleSnapshot(
+            lifecycle_id,
+            as_of,
+            LifecycleStage.POSITION_MANAGEMENT,
+            LifecycleDecision.POSITION_REVIEW,
+            plan.plan_id,
+            position_id,
+            position.reasons,
+        )
+
     plan_result = evaluate_trade_plan(plan, now=as_of)
     if plan_result.status in (
         TradePlanStatus.WAIT,
@@ -82,19 +97,6 @@ def project_trade_lifecycle(
         return TradeLifecycleSnapshot(
             lifecycle_id, as_of, LifecycleStage.PLAN, decision, plan.plan_id,
             position_id, plan_result.reasons,
-        )
-
-    if position is not None:
-        if position_id is None:
-            raise ValueError("position_id is required with position management state")
-        return TradeLifecycleSnapshot(
-            lifecycle_id,
-            as_of,
-            LifecycleStage.POSITION_MANAGEMENT,
-            LifecycleDecision.POSITION_REVIEW,
-            plan.plan_id,
-            position_id,
-            position.reasons,
         )
 
     if not trigger_ready:
