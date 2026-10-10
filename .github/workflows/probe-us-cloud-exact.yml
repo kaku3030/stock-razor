@@ -11,6 +11,10 @@ on:
         options:
           - "30"
           - "60"
+      symbols:
+        description: "Comma-separated canonical US.* symbols to inspect"
+        required: false
+        default: "US.AMD,US.NVDA,US.TSLA,US.AAPL,US.QQQ,US.GLDM,US.LITE,US.AAOI,US.CIEN"
 
 permissions:
   id-token: write
@@ -42,12 +46,13 @@ jobs:
         shell: bash
         env:
           DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          SYMBOLS: ${{ inputs.symbols }}
         run: |
           set -euo pipefail
           revision="$(git rev-parse HEAD)"
           probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
           probe_url="https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py"
-          command="set -eu; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl -fsSL --max-time 20 '$probe_url' -o \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS'"
+          command="set -eu; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl -fsSL --max-time 20 '$probe_url' -o \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS' --symbols '$SYMBOLS'"
           params="$(jq -cn --arg c "$command" '{commands:[$c]}')"
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 180 --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 80); do
