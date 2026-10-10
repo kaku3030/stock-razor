@@ -504,7 +504,7 @@ def test_blocked_shadow_decision_survives_runtime_reopen(tmp_path):
     reopened = PaperRuntimeOrchestrator(
         reopened_engine,
         runtime_generation="paper-runtime-generation-2",
-        account_generation="paper-account-generation-2",
+        account_generation="paper-account-generation-1",
         shadow_store=ExecutionStore(shadow_path),
     )
     reopened.start()
