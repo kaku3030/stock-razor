@@ -1214,6 +1214,7 @@ class ScreeningService:
         market: str,
         max_results: int,
         selection_seed: str = "",
+        cache_only: bool = False,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> Dict[str, Any]:
         _ensure_screening_enabled(self.config)
@@ -1228,6 +1229,7 @@ class ScreeningService:
                 max_results,
                 self.config,
                 selection_seed=selection_seed,
+                cache_only=cache_only,
                 progress_callback=progress_callback,
             )
         except ValueError as exc:
@@ -1298,6 +1300,10 @@ class ScreeningService:
             "result_variant_applied": bool(raw_data.get("result_variant_applied")),
             "result_variant_pool_size": raw_data.get("result_variant_pool_size") or 0,
             "result_variant_rotated_slots": raw_data.get("result_variant_rotated_slots") or 0,
+            "research_only": True,
+            "cache_only": bool(cache_only),
+            "realtime_confirmation_required": True,
+            "can_confirm_signal": False,
         }
         if self.db_manager is not None:
             self.db_manager.save_screening_run(response)
@@ -1732,12 +1738,13 @@ def _call_screening_screen(
     config: Config,
     *,
     selection_seed: str = "",
+    cache_only: bool = False,
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> Any:
     # Environment bridging is process-global, so keep it brief: materialize an
     # immutable pipeline config while holding the lock, then release it before
     # any network or LLM work. Hotspot refreshes can then run alongside screening.
-    with _screening_runtime_env(config, max_results=max_results):
+    with _screening_runtime_env(config, max_results=max_results, cache_only=cache_only):
         pipeline_config = ScreeningPipelineConfig.from_env()
         pipeline_context = _build_screening_context(config, max_results=max_results)
 
@@ -1757,8 +1764,13 @@ def _call_screening_screen(
 
 
 @contextmanager
-def _screening_runtime_env(config: Config, *, max_results: Optional[int] = None) -> Iterator[None]:
-    updates = _build_screening_runtime_env(config, max_results=max_results)
+def _screening_runtime_env(
+    config: Config,
+    *,
+    max_results: Optional[int] = None,
+    cache_only: bool = False,
+) -> Iterator[None]:
+    updates = _build_screening_runtime_env(config, max_results=max_results, cache_only=cache_only)
     if not updates:
         yield
         return
@@ -1862,7 +1874,12 @@ def _resolve_screening_snapshot_source_priority(config: Config) -> str:
     return DSA_SCREENING_SNAPSHOT_SOURCE_PRIORITY
 
 
-def _build_screening_runtime_env(config: Config, *, max_results: Optional[int] = None) -> Dict[str, str]:
+def _build_screening_runtime_env(
+    config: Config,
+    *,
+    max_results: Optional[int] = None,
+    cache_only: bool = False,
+) -> Dict[str, str]:
     # Bridge runtime only: only inject resolved DSA values for this request/process scope.
     # User .env/config is never rewritten here; unset channels/models are not silently migrated.
     # 与 LiteLLM provider/model、openai-compatible `api_base` 与 headers 注入语义保持一致，
@@ -1941,6 +1958,8 @@ def _build_screening_runtime_env(config: Config, *, max_results: Optional[int] =
     put_default("SCREENING_FALLBACK_SNAPSHOT_PATH", str(screening_data_dir / "snapshot.last_good.json"))
     put_default("SCREENING_DAILY_HISTORY_CACHE_DIR", str(screening_data_dir / "daily_history"))
     put_default("SCREENING_INDUSTRY_PROVIDER_CACHE_DIR", str(screening_data_dir / "industry_provider_cache"))
+    if cache_only:
+        put("SCREENING_CACHE_ONLY", "true")
     return env
 
 

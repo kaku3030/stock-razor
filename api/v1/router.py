@@ -28,6 +28,7 @@ from api.v1.endpoints import (
     system_config,
     usage,
     research_validation,
+    operations,
 )
 
 # 创建 v1 版本主路由。
@@ -122,6 +123,12 @@ router.include_router(
     research_validation.router,
     prefix="/research-validation",
     tags=["ResearchValidation"]
+)
+
+router.include_router(
+    operations.router,
+    prefix="/operations",
+    tags=["Operations"],
 )
 
 router.include_router(
