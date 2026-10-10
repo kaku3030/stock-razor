@@ -87,7 +87,8 @@ def test_provider_failure_and_ws_observed_are_valid_probe_evidence_only(tmp_path
     assert result["data_admission"] == "BLOCKED"
     assert result["production_tickflow_feed"] is False
     assert "NetworkError" not in json.dumps(result)
-    assert "quote_events" not in json.dumps(result)
+    assert result["operations"][1]["quote_events"] == 2
+    assert result["operations"][1].get("continuous_feed_qualified") is not True
 
 
 def isolated_free_sample(at=NOW):
@@ -150,3 +151,45 @@ def test_isolated_free_probe_is_visible_but_not_admitted(tmp_path):
     assert result["historical_kline_observation"]["row_count"] == 5
     assert result["historical_kline_observation"]["summary"]["period"] == "1d"
     assert "timestamp_first" not in json.dumps(result)
+
+
+def test_websocket_evidence_is_allowlisted_and_not_a_continuous_feed(tmp_path):
+    payload = isolated_free_sample()
+    payload["operations"].append({
+        "name": "websocket_quote_smoke",
+        "operation": "OBSERVED",
+        "quote_callbacks": 3,
+        "quote_events": 6,
+        "unique_quote_samples": 4,
+        "initial_snapshot_candidates": 2,
+        "post_initial_update_candidates": 2,
+        "duplicate_timestamp_events": 1,
+        "out_of_order_timestamp_events": 0,
+        "unrequested_symbol_events": 0,
+        "invalid_timestamp_events": 0,
+        "error_callbacks": 0,
+        "connection_state": "UNKNOWN",
+        "subscription_state": "UNKNOWN",
+        "event_state": "PASS",
+        "lag_scope": "POST_INITIAL_CANDIDATES_ONLY_NOT_VERIFIED_LIVE",
+        "subscribed_ack_evidence": "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK",
+        "snapshot_vs_live_evidence": "NOT_VERIFIED",
+        "ping_pong_evidence": "NOT_VERIFIED",
+        "reconnect_resubscribe_evidence": "NOT_VERIFIED",
+        "sample_latency_qualification": "NOT_VERIFIED",
+        "clock_offset_qualification": "NOT_VERIFIED",
+        "continuous_feed_qualified": False,
+        "stale_drop_reconnect_qualified": False,
+        "provider_secret": "NEVER_LEAK",
+    })
+    path = tmp_path / "isolated.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    result = read_tickflow_probe_health(str(path), now_utc=NOW)
+    websocket = next(op for op in result["operations"] if op["name"] == "websocket_quote_smoke")
+    assert websocket["quote_events"] == 6
+    assert websocket["event_state"] == "PASS"
+    assert websocket["continuous_feed_qualified"] is False
+    assert websocket["reconnect_resubscribe_evidence"] == "NOT_VERIFIED"
+    text = json.dumps(result)
+    assert "provider_secret" not in text
+    assert "NEVER_LEAK" not in text

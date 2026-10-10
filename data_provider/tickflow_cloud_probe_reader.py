@@ -101,6 +101,30 @@ def read_tickflow_probe_health(path: str | None = None, *,
             val = op.get(field)
             if val in ("NOT_VERIFIED", "PROVEN", "UNPROVEN", "PASS", "BLOCKED"):
                 item[field] = val
+        if name == "websocket_quote_smoke":
+            for field in (
+                "quote_callbacks", "quote_events", "unique_quote_samples",
+                "initial_snapshot_candidates", "post_initial_update_candidates",
+                "duplicate_timestamp_events", "out_of_order_timestamp_events",
+                "unrequested_symbol_events", "invalid_timestamp_events",
+                "error_callbacks",
+            ):
+                val = op.get(field)
+                if type(val) is int and 0 <= val <= 100000000:
+                    item[field] = val
+            for field in (
+                "connection_state", "subscription_state", "event_state",
+                "lag_scope", "subscribed_ack_evidence",
+                "snapshot_vs_live_evidence", "ping_pong_evidence",
+                "reconnect_resubscribe_evidence", "sample_latency_qualification",
+                "clock_offset_qualification",
+            ):
+                val = op.get(field)
+                if isinstance(val, str) and len(val) <= 160:
+                    item[field] = val
+            for field in ("continuous_feed_qualified", "stale_drop_reconnect_qualified"):
+                if type(op.get(field)) is bool:
+                    item[field] = op[field]
         ops.append(item)
 
     sha = payload.get("repo_sha")
