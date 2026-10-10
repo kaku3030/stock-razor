@@ -13,6 +13,7 @@ import hashlib
 from typing import Protocol
 
 from .execution_engine import ExecutionBlocked, OrderIntent, OrderType, Side
+from .trade_plan import TradeDirection, TradePlan, TradePlanStatus, evaluate_trade_plan
 
 
 class ExecutionAdmissionEvidence(Protocol):
@@ -149,3 +150,54 @@ def build_paper_order_intent(
         broker_target="paper",
         allowed_session="RTH",
     )
+
+
+def build_paper_order_intent_from_trade_plan(
+    evidence: ExecutionAdmissionEvidence,
+    plan: TradePlan,
+    *,
+    entry_price: Decimal,
+    max_slippage: Decimal,
+    evidence_snapshot_id: str,
+    now: datetime,
+) -> OrderIntent:
+    """Translate a passed TradePlan into the existing paper admission contract.
+
+    The current quote/price and slippage budget must be supplied explicitly at
+    trigger time.  This prevents a precomputed plan from silently becoming an
+    executable order after its price context has changed.  The function only
+    builds an intent; it never submits one.
+    """
+
+    plan_result = evaluate_trade_plan(plan, now=now)
+    if plan_result.status is not TradePlanStatus.PLAN_PASS:
+        raise ExecutionBlocked(
+            "trade plan is not executable: " + ",".join(plan_result.reasons)
+        )
+    if plan.direction is TradeDirection.WAIT:
+        raise ExecutionBlocked("WAIT trade plan cannot create a paper intent")
+    try:
+        trigger_price = Decimal(str(entry_price))
+        slippage = Decimal(str(max_slippage))
+    except Exception as exc:
+        raise ExecutionBlocked("trigger price and slippage must be decimals") from exc
+    if trigger_price < plan.entry_low or trigger_price > plan.entry_high:
+        raise ExecutionBlocked("trigger price is outside the TradePlan entry band")
+    if slippage < 0:
+        raise ExecutionBlocked("slippage budget must not be negative")
+
+    side = Side.BUY if plan.direction is TradeDirection.LONG else Side.SELL
+    spec = PaperOrderSpec(
+        action_id=f"{plan.plan_id}:{plan.version}",
+        symbol=plan.symbol,
+        side=side,
+        qty=plan.quantity,
+        limit_price=trigger_price,
+        max_slippage=slippage,
+        strategy_id=plan.strategy,
+        evidence_snapshot_id=evidence_snapshot_id,
+        valid_until=plan.entry_ttl,
+        stop_price=plan.stop_price,
+        risk_budget_r=plan.risk_budget_r,
+    )
+    return build_paper_order_intent(evidence, spec, now=now)
