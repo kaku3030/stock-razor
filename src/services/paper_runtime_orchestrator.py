@@ -15,7 +15,7 @@ from decimal import Decimal
 from enum import StrEnum
 import threading
 
-from .execution_engine import ExecutionBlocked, ExecutionEngine, OrderState, RiskContext
+from .execution_engine import ExecutionBlocked, ExecutionEngine, ExecutionStore, OrderState, RiskContext
 from .live_shadow import ShadowExecutionCapability
 from .paper_execution_admission import (
     ExecutionAdmissionEvidence,
@@ -73,13 +73,18 @@ class PaperRuntimeOrchestrator:
         *,
         runtime_generation: str,
         account_generation: str,
+        shadow_store: ExecutionStore | None = None,
     ) -> None:
         if not runtime_generation.strip():
             raise ValueError("runtime_generation is required")
         if not account_generation.strip():
             raise ValueError("account_generation is required")
+        if shadow_store is None or not shadow_store.durable:
+            raise ExecutionBlocked("durable shadow store is required")
+        if shadow_store is engine.store:
+            raise ExecutionBlocked("shadow store must be separate from execution store")
         self._engine = engine
-        self._shadow = ShadowExecutionCapability(engine.risk_guard)
+        self._shadow = ShadowExecutionCapability(engine.risk_guard, shadow_store)
         self._runtime_generation = runtime_generation
         self._account_generation = account_generation
         self._lock = threading.RLock()
