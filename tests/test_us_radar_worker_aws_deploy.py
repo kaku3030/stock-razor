@@ -133,7 +133,8 @@ def test_source_sha_discovery_retries_during_livefeed_restart_window():
     assert "if [ -s /run/stock-razor-us-livefeed/latest-heartbeat.json ]; then" in discover
     assert "sleep 2" in discover
     assert "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT" in discover
-    assert "&& exit 0" in discover
+    assert 'if [ "$observed" = "$expected" ]; then' in discover
+    assert "exit 0" in discover
 
 
 def test_source_sha_discovery_waits_for_this_deployment_source_revision():
