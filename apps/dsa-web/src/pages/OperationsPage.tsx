@@ -1,6 +1,6 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
-import { Activity, BellRing, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Activity, BellRing, RefreshCw, ShieldCheck } from 'lucide-react';
 import { operationsApi, type OperationsStatus } from '../api/operations';
 import { ApiErrorAlert, AppPage, Card, Loading, PageHeader } from '../components/common';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
@@ -26,18 +26,54 @@ const notificationLabel = (channel: string): string => ({
 const OperationsPage: React.FC = () => {
   const [status, setStatus] = useState<OperationsStatus | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setStatus(await operationsApi.getStatus());
+      setError(null);
+      setCheckedAt(new Date());
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
     document.title = '运行控制台 - Stock Razor';
-    void operationsApi.getStatus().then(setStatus).catch((err) => setError(getParsedApiError(err)));
-  }, []);
+    void loadStatus();
+    const timer = window.setInterval(() => void loadStatus(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [loadStatus]);
 
   if (error) return <AppPage><ApiErrorAlert error={error} /></AppPage>;
   if (!status) return <AppPage><Loading /></AppPage>;
 
   return (
     <AppPage>
-      <PageHeader title="运行控制台" description="通知、数据门禁与 Paper Trading 状态" />
+      <PageHeader
+        title="运行控制台"
+        description="通知、数据门禁与 Paper Trading 状态"
+        actions={(
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-secondary-text">
+              {checkedAt ? `最近检查 ${checkedAt.toLocaleTimeString()}` : '正在检查'}
+            </span>
+            <button
+              type="button"
+              className="btn-secondary inline-flex items-center gap-2"
+              onClick={() => void loadStatus()}
+              disabled={refreshing}
+            >
+              <RefreshCw className={refreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden="true" />
+              刷新状态
+            </button>
+          </div>
+        )}
+      />
       <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
         本页面只读。LIVE_TRADE 永远显示为关闭，不能从 WebUI 解锁真实交易。
       </div>
