@@ -34,6 +34,44 @@ def test_combined_sources_are_observational_only(monkeypatch):
     assert "close" not in text and "operations" not in text
 
 
+def test_tickflow_historical_observation_is_exposed_without_promoting_admission(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True,
+        "status": "PROBE_ONLY",
+        "historical_kline_observation": {
+            "operation": "COMPLETED",
+            "row_count": 5,
+            "symbol": "159611",
+            "summary": {"period": "1d", "interval": "1d"},
+        },
+    })
+    result = status.read_market_source_status(now_utc=NOW)
+    observation = result["sources"]["cn_tickflow"]["historical_kline_observation"]
+    assert observation["operation"] == "COMPLETED"
+    assert observation["row_count"] == 5
+    assert observation["summary"]["period"] == "1d"
+    assert "timestamp_first" not in json.dumps(result)
+    assert result["sources"]["cn_tickflow"]["data_admission"] == "BLOCKED"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_historical_observation_defaults_to_not_requested(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True, "status": "PROBE_ONLY"})
+    result = status.read_market_source_status(now_utc=NOW)
+    assert result["sources"]["cn_tickflow"]["historical_kline_observation"] == "NOT_REQUESTED"
+
+
 def test_all_missing_is_fail_closed(monkeypatch):
     def missing(*args, **kwargs):
         raise OSError("SECRET")
@@ -44,6 +82,7 @@ def test_all_missing_is_fail_closed(monkeypatch):
     assert result["ok"] is False
     assert result["status"] == "UNAVAILABLE_OR_UNQUALIFIED"
     assert result["sources"]["cn_tickflow"]["status"] == "UNAVAILABLE"
+    assert result["sources"]["cn_tickflow"]["historical_kline_observation"] == "NOT_REQUESTED"
     assert "SECRET" not in json.dumps(result)
 
 
