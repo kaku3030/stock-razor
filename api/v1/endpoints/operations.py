@@ -5,6 +5,7 @@ import os
 from fastapi import APIRouter
 
 from api.v1.schemas.operations import OperationsStatusResponse
+from src.notification_routing import NOTIFICATION_ROUTE_CONFIGS, split_notification_route_channels
 
 router = APIRouter()
 
@@ -37,6 +38,21 @@ def _configured_channels() -> list[str]:
     return channels
 
 
+def _effective_notification_routes(channels: list[str]) -> dict[str, list[str]]:
+    """Expose effective route targets without exposing secrets or send proofs."""
+
+    configured = set(channels)
+    routes: dict[str, list[str]] = {}
+    for route_type, route_config in NOTIFICATION_ROUTE_CONFIGS.items():
+        raw = os.getenv(route_config["env_key"], "").strip()
+        if not raw:
+            routes[route_type] = list(channels)
+            continue
+        valid, _invalid = split_notification_route_channels(raw)
+        routes[route_type] = [channel for channel in valid if channel in configured]
+    return routes
+
+
 @router.get("/status", response_model=OperationsStatusResponse)
 def operations_status() -> OperationsStatusResponse:
     """Expose safety and notification readiness without mutating runtime state."""
@@ -59,6 +75,8 @@ def operations_status() -> OperationsStatusResponse:
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         paper_runtime_api_status="NOT_EXPOSED",
         notification_channels_configured=channels,
+        notification_routes=_effective_notification_routes(channels),
+        notification_delivery_evidence="NOT_VERIFIED",
         notification_ready=bool(channels),
         pending_acceptance=pending,
     )
