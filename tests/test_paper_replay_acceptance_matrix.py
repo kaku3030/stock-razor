@@ -40,9 +40,14 @@ def _fill(side, price, minute=0, quantity=Decimal("10")):
 
 
 def _lifecycle(decision, index):
+    reasons = {
+        LifecycleDecision.WAIT: ("WAIT_NO_ENTRY",),
+        LifecycleDecision.NO_TRADE: ("NO_TRADE_DECLARED",),
+        LifecycleDecision.ENTRY_BLOCKED: ("EXECUTION_EVIDENCE_NOT_READY",),
+    }.get(decision, ())
     return TradeLifecycleSnapshot(
         f"lifecycle-{index}", NOW, LifecycleStage.PLAN, decision,
-        f"plan-{index}", None, (),
+        f"plan-{index}", None, reasons,
     )
 
 
@@ -82,6 +87,12 @@ def test_offline_replay_acceptance_matrix_covers_long_short_and_failures():
     )
     assert (report.wait_count, report.no_trade_count) == (1, 1)
     assert (report.entry_blocked_count, report.plan_pass_count) == (1, 1)
+    assert report.non_trade_reasons == (
+        "WAIT_NO_ENTRY",
+        "NO_TRADE_DECLARED",
+        "EXECUTION_EVIDENCE_NOT_READY",
+    )
+    assert report.non_trade_reason_coverage_passed is True
     assert report.completed_review_count == 2
     assert report.blocked_review_count == 2
     assert report.realized_r_total == Decimal("4")

@@ -22,6 +22,8 @@ class PaperReplayReport:
     realized_r_total: Decimal
     blocked_reasons: tuple[str, ...]
     paper_auto_ready: bool = False
+    non_trade_reasons: tuple[str, ...] = ()
+    non_trade_reason_coverage_passed: bool = False
     radar_admission: str = "BLOCKED"
     source_arbiter_admission: str = "BLOCKED"
     live_trade: str = "NO"
@@ -45,6 +47,20 @@ def build_paper_replay_report(
     realized_pnl = sum((item.realized_pnl or Decimal("0") for item in completed), Decimal("0"))
     realized_r = sum((item.realized_r or Decimal("0") for item in completed), Decimal("0"))
     reasons = tuple(reason for item in blocked for reason in item.reasons)
+    non_trade_decisions = {
+        LifecycleDecision.WAIT,
+        LifecycleDecision.NO_TRADE,
+        LifecycleDecision.ENTRY_BLOCKED,
+    }
+    non_trade_items = [
+        item for item in lifecycles if item.decision in non_trade_decisions
+    ]
+    non_trade_reasons = tuple(
+        reason for item in non_trade_items for reason in item.reasons
+    )
+    non_trade_reason_coverage_passed = all(
+        bool(item.reasons) for item in non_trade_items
+    )
     return PaperReplayReport(
         report_id=report_id.strip(),
         lifecycle_count=len(lifecycles),
@@ -57,4 +73,6 @@ def build_paper_replay_report(
         realized_pnl_total=realized_pnl,
         realized_r_total=realized_r,
         blocked_reasons=reasons,
+        non_trade_reasons=non_trade_reasons,
+        non_trade_reason_coverage_passed=non_trade_reason_coverage_passed,
     )
