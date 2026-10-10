@@ -83,7 +83,7 @@ def _read_fixture(path: str) -> dict:
         raise FixtureError("UNSUPPORTED_SCHEMA")
     if doc["fixture_origin"] not in ("REAL_CAPTURED", "SYNTHETIC"):
         raise FixtureError("INVALID_FIXTURE_ORIGIN")
-    if doc["source"] not in ALLOWED_SOURCES:
+    if not isinstance(doc["source"], str) or doc["source"] not in ALLOWED_SOURCES:
         raise FixtureError("INVALID_SOURCE")
     symbol = doc["symbol"]
     if not (isinstance(symbol, str) and len(symbol) == 9
@@ -91,7 +91,7 @@ def _read_fixture(path: str) -> dict:
             and symbol[6:] in (".SH", ".SZ", ".BJ")):
         raise FixtureError("INVALID_SYMBOL")
     tf = doc["timeframe"]
-    if tf not in ALLOWED_TIMEFRAMES:
+    if not isinstance(tf, str) or tf not in ALLOWED_TIMEFRAMES:
         raise FixtureError("INVALID_TIMEFRAME")
     if (doc["timestamp_semantic"] != "BAR_END"
             or doc["adjustment"] != "NONE"
@@ -137,7 +137,7 @@ def compare_files(tickflow_path: str, reference_path: str, *,
         "continuity_qualification": "NOT_VERIFIED",
         "source_arbiter_admission": "BLOCKED",
         "radar_admission": "BLOCKED", "live_trade": False,
-        "canonical_write": False,
+        "canonical_write": False,\n        "provenance_verified": False,\n        "fixture_origin_self_declared": True,
     }
     if (not all(_finite_number(x) for x in
                 (price_abs_tol, price_rel_tol, volume_rel_tol))
@@ -178,7 +178,7 @@ def compare_files(tickflow_path: str, reference_path: str, *,
         "symbol": tick["symbol"], "timeframe": tick["timeframe"],
         "tickflow_sha256": tick["sha256"], "reference_sha256": ref["sha256"],
         "reference_source": ref["source"],
-        "fixture_origin": "REAL_CAPTURED" if all_real else "SYNTHETIC_OR_MIXED",
+        "fixture_origin": "REAL_CAPTURED" if all_real else "SYNTHETIC_OR_MIXED",\n        "comparison_agreement": agreement,
         "tickflow_rows": len(a), "reference_rows": len(b),
         "aligned_bars": len(common),
         "missing_in_tickflow": missing_tick, "missing_in_reference": missing_ref,
