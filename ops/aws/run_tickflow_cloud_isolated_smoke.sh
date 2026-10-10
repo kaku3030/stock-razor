@@ -87,6 +87,7 @@ fi
 echo 'TICKFLOW_CLOUD_SDK_IMPORT=PASS'
 echo "TICKFLOW_CLOUD_MODE=$mode"
 echo "TICKFLOW_CLOUD_PINNED_REVISION=$revision"
+export TICKFLOW_CLOUD_REVISION="$revision"
 
 # No raw provider payloads, keys, stdout notices or traceback bodies.
 # No WebSocket, retry loop, orders, canonical writes, provider service installs.
@@ -96,8 +97,9 @@ result="$("$venv/bin/python" "$stage/probe.py" --mode "$mode" \
   exit 1
 }
 printf '%s\n' "$result" | python3 -c '
-import json,sys
+import json,os,sys
 data=json.load(sys.stdin)
+data["repo_sha"]=os.environ.get("TICKFLOW_CLOUD_REVISION")
 assert data.get("schema") == "stock_razor_tickflow_isolated_probe_v0_1"
 assert data.get("location") == "AWS_TOKYO_SSM_ISOLATE"
 assert data.get("mode") in ("metadata", "free", "premium-contract")
@@ -123,6 +125,7 @@ else:
   assert ops and ops[0] == {"name":"sdk_import","operation":"COMPLETED"}
 print(json.dumps({
   "schema":data["schema"],
+  "repo_sha":data["repo_sha"],
   "location":data["location"],
   "mode":data["mode"],
   "sdk_version":data.get("sdk_version"),
