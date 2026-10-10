@@ -69,8 +69,12 @@ def convert_cn_mcp_observation(
     provider = observation.get("provider_used")
     if provider not in ("tencent", "eastmoney"):
         raise ConversionError("UNSUPPORTED_PROVIDER")
+    if observation["timestamp_qualification"].get("source_token") != provider:
+        raise ConversionError("TIMESTAMP_PROVIDER_MISMATCH")
     if not attested_volume_unit:
         raise ConversionError("VOLUME_UNIT_ATTESTATION_REQUIRED")
+    if not attested_unadjusted:
+        raise ConversionError("UNADJUSTED_PRICE_ATTESTATION_REQUIRED")
     if (type(min_capture_lag_seconds) is not int
             or not 60 <= min_capture_lag_seconds <= 86400):
         raise ConversionError("INVALID_CAPTURE_LAG")
