@@ -68,3 +68,35 @@ def test_mcp_registered_and_no_direct_sdk():
     assert "return read_market_source_status(cn_symbol)" in source
     assert "import tickflow" not in status.__dict__
     assert "query_subscription(" not in Path(status.__file__).read_text(encoding="utf-8")
+
+
+def test_reader_latency_is_local_only_and_cn_symbol_is_normalized(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": True, "status": "HEALTHY"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": True, "status": "PASS", "symbol": "159611"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True, "status": "PROBE_ONLY"})
+    result = status.read_market_source_status("159611.SZ", now_utc=NOW)
+    assert result["sources"]["cn_eastmoney_tencent"]["symbol"] == "159611.SZ"
+    assert result["latency_scope"] == "LOCAL_CACHE_READERS_ONLY"
+    assert result["end_to_end_latency"] == "NOT_MEASURED"
+    assert result["market_data_freshness_latency"] == "NOT_MEASURED"
+    assert result["read_latency_ms"] >= 0
+    for source in result["sources"].values():
+        assert isinstance(source["local_reader_latency_ms"], float)
+        assert source["local_reader_latency_ms"] >= 0
+    assert result["provider_requests"] == 0
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_symbol_mismatch_does_not_echo_unrelated_symbol(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": True, "status": "PASS", "symbol": "159363"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": False, "status": "UNAVAILABLE"})
+    result = status.read_market_source_status("159611.SZ", now_utc=NOW)
+    assert result["sources"]["cn_eastmoney_tencent"]["symbol"] is None
+    assert result["end_to_end_latency"] == "NOT_MEASURED"
