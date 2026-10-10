@@ -10,7 +10,7 @@ Each independently collected event must include a unique `(source_runtime_id, so
 2. `aws_ingest_utc`: AWS receipt.
 3. `radar_complete_utc`: completed Radar decision.
 4. `notification_dispatch_utc`: notification sent by the gateway.
-5. `notification_receipt_utc`: **actual device acknowledgement**, if available. A gateway HTTP 200 or enqueue acknowledgement is not device delivery.
+5. `notification_receipt_utc`: **actual device acknowledgement**, if available. A gateway HTTP 200 or enqueue acknowledgement is not device delivery. Any supplied receipt timestamp additionally requires `device_receipt_verified=True` from independently verified device-side evidence; otherwise the trace is rejected, not counted as delivered.
 
 All stage timestamps must be timezone-aware `datetime` values. A caller must independently prove `provider_timestamp_verified=True`, `clock_sync_verified=True`, and supply bounded `max_cross_host_clock_error_ms <= 10`. These are caller attestations, not proof from this helper. A negative/invalid chain, stale/delayed >120-second chain, unverified source, unsynchronized clock or duplicate source sequence is excluded. Unknown phone receipt is not silently inferred from dispatch.
 
