@@ -20,6 +20,7 @@ def report(**changes):
         realized_pnl_total=Decimal("1"),
         realized_r_total=Decimal("0.1"),
         blocked_reasons=(),
+        non_trade_reason_coverage_passed=True,
     )
     values.update(changes)
     return PaperReplayReport(**values)
@@ -59,3 +60,16 @@ def test_shadow_readiness_fails_closed_with_explicit_missing_evidence():
         "NON_TRADE_REASON_COVERAGE_NOT_PASSED",
         "AUDIT_INTEGRITY_NOT_PASSED",
     )
+
+
+def test_shadow_readiness_does_not_trust_external_coverage_flag_alone():
+    result = assess_read_only_shadow_readiness(
+        report(non_trade_reason_coverage_passed=False),
+        replay_passed=True,
+        restart_reconciliation_passed=True,
+        failure_injection_passed=True,
+        non_trade_reason_coverage_passed=True,
+        audit_integrity_passed=True,
+    )
+    assert result.status is ShadowReadiness.NOT_READY
+    assert result.reasons == ("REPORT_NON_TRADE_REASON_COVERAGE_NOT_PASSED",)
