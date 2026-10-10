@@ -136,6 +136,17 @@ def test_source_sha_discovery_retries_during_livefeed_restart_window():
     assert "&& exit 0" in discover
 
 
+def test_source_sha_discovery_waits_for_this_deployment_source_revision():
+    discover = WORKFLOW.split("      - name: Discover canonical source SHA", 1)[1].split(
+        "      - name: Deploy exact worker SHA over SSM", 1
+    )[0]
+    assert 'EXPECTED_SOURCE_SHA: "${{ steps.source.outputs.sha }}"' in discover
+    assert 'expected="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"' in discover
+    assert 'if [ "$observed" = "$expected" ]; then' in discover
+    assert "CANONICAL_SOURCE_SHA_MISMATCH" in discover
+    assert "export EXPECTED_SOURCE_SHA='$EXPECTED_SOURCE_SHA'" in discover
+
+
 def test_worker_consumes_daily_history_without_provider_access():
     assert "load_futu_us_daily_history_frames" in INSTALLER
     assert '"/run/stock-razor-us-livefeed/daily-history.json"' in INSTALLER
