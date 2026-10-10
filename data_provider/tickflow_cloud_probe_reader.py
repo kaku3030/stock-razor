@@ -14,9 +14,15 @@ DEFAULT_PATH = "/opt/stock-razor-tickflow-premium-probe/last-sanitized-probe.jso
 MAX_BYTES = 32768
 MAX_AGE_SECONDS = 3600
 SAFE_OPERATIONS = frozenset((
-    "sdk_import", "realtime_quote", "kline_1m", "kline_5m", "kline_15m",
-    "kline_30m", "kline_60m", "five_level_depth", "websocket_quote_smoke",
+    "sdk_import", "free_daily_kline", "realtime_quote", "kline_1m",
+    "kline_5m", "kline_15m", "kline_30m", "kline_60m",
+    "five_level_depth", "websocket_quote_smoke",
 ))
+SAFE_PROBE_SCHEMAS = frozenset((
+    "stock_razor_tickflow_sanitized_probe_v0_1",
+    "stock_razor_tickflow_isolated_probe_v0_1",
+))
+SAFE_ISOLATED_MODES = frozenset(("metadata", "free", "premium-contract"))
 
 
 def read_tickflow_probe_health(path: str | None = None, *,
@@ -48,9 +54,19 @@ def read_tickflow_probe_health(path: str | None = None, *,
     except (OSError, ValueError, TypeError, UnicodeError):
         return fail("UNAVAILABLE")
 
-    if not isinstance(payload, dict) or payload.get("schema") != "stock_razor_tickflow_sanitized_probe_v0_1":
+    if not isinstance(payload, dict) or payload.get("schema") not in SAFE_PROBE_SCHEMAS:
         return fail("INVALID")
-    if payload.get("mode") != "premium" or type(payload.get("operations")) is not list:
+    schema = payload.get("schema")
+    mode = payload.get("mode")
+    if type(payload.get("operations")) is not list:
+        return fail("INVALID")
+    if schema == "stock_razor_tickflow_sanitized_probe_v0_1":
+        if mode != "premium":
+            return fail("INVALID")
+    elif (
+        mode not in SAFE_ISOLATED_MODES
+        or payload.get("location") != "AWS_TOKYO_SSM_ISOLATE"
+    ):
         return fail("INVALID")
     if len(payload["operations"]) > 20:
         return fail("INVALID")
@@ -90,6 +106,35 @@ def read_tickflow_probe_health(path: str | None = None, *,
     sha = payload.get("repo_sha")
     if not isinstance(sha, str) or len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
         return fail("INVALID")
+    historical = "NOT_REQUESTED"
+    if schema == "stock_razor_tickflow_isolated_probe_v0_1":
+        raw_historical = payload.get("historical_kline_observation")
+        if not isinstance(raw_historical, dict):
+            return fail("INVALID")
+        summary = raw_historical.get("summary")
+        safe_summary = None
+        if isinstance(summary, dict):
+            safe_summary = {
+                field: summary.get(field)
+                for field in (
+                    "sample_count", "timestamp_monotonicity", "ohlcv_range_valid",
+                    "closure", "freshness", "entitlement_evidence", "period",
+                )
+                if field in summary
+            }
+        historical = {
+            "operation": raw_historical.get("operation"),
+            "period": raw_historical.get("period"),
+            "row_count": raw_historical.get("row_count"),
+            "qualification": raw_historical.get("qualification"),
+            "summary": safe_summary,
+        }
+        if (
+            historical["operation"] not in ("COMPLETED", "FAILED", "SKIPPED")
+            or historical["period"] != "1d"
+            or historical["qualification"] != "NOT_VERIFIED"
+        ):
+            return fail("INVALID")
     return {
         **common,
         "ok": True,
@@ -98,5 +143,6 @@ def read_tickflow_probe_health(path: str | None = None, *,
         "observed_at_utc": observed.isoformat(),
         "repo_sha": sha,
         "data_qualification": "NOT_VERIFIED",
+        "historical_kline_observation": historical,
         "operations": ops,
     }
