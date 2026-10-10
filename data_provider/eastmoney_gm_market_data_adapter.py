@@ -106,6 +106,14 @@ def _present(value: object) -> bool:
     return value is not None and not (isinstance(value, float) and pd.isna(value))
 
 
+def _timestamp_flags(provider_timestamp: datetime, received_at: datetime) -> list[str]:
+    """Expose provider/receiver clock disagreement instead of hiding it."""
+
+    if provider_timestamp > received_at:
+        return ["TIMESTAMP_MISMATCH", "PROVIDER_TIMESTAMP_IN_FUTURE"]
+    return []
+
+
 def _quality_flags(
     *,
     row: object,
@@ -226,6 +234,8 @@ class EastmoneyGMMarketDataAdapter(MarketDataAdapter):
         if source_timestamp is None:
             source_timestamp = received_at
             flags.append("MISSING_SOURCE_TIMESTAMP")
+        else:
+            flags.extend(_timestamp_flags(source_timestamp, received_at))
         price = _number(_value(row, "last_price", "price", "close"))
         if price <= 0:
             flags.append("NON_POSITIVE_PRICE")
@@ -311,6 +321,12 @@ class EastmoneyGMMarketDataAdapter(MarketDataAdapter):
                 values=values,
                 volume=volume,
             )
+            eob_utc = eob.astimezone(timezone.utc)
+            received_utc = received_at.astimezone(timezone.utc)
+            flags.extend(_timestamp_flags(eob_utc, received_utc))
+            is_closed = eob_utc <= received_utc
+            if not is_closed:
+                flags.append("PARTIAL_BAR")
             health = evaluate_health(
                 freshness=1,
                 completeness=1,
@@ -320,9 +336,7 @@ class EastmoneyGMMarketDataAdapter(MarketDataAdapter):
                 cross_check=0.5,
                 quality_flags=flags,
             )
-            eob_utc = eob.astimezone(timezone.utc)
-            received_utc = received_at.astimezone(timezone.utc)
-            latency_ms = max(0, int((received_utc - eob_utc).total_seconds() * 1000))
+            latency_ms = int((received_utc - eob_utc).total_seconds() * 1000)
             bars.append(Bar(
                 symbol=canonical,
                 market="cn",
@@ -338,8 +352,8 @@ class EastmoneyGMMarketDataAdapter(MarketDataAdapter):
                 source_timestamp=eob_utc,
                 received_at=received_utc,
                 session="closed",
-                is_closed=True,
-                is_complete=True,
+                is_closed=is_closed,
+                is_complete=is_closed and not inferred_bob,
                 latency_ms=latency_ms,
                 freshness_ms=latency_ms,
                 health=health,
