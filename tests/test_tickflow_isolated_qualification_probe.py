@@ -431,7 +431,7 @@ def test_ws_requires_explicit_premium_and_bounded_duration(monkeypatch):
             probe.build_probe(mode=mode, symbols=("159611.SZ",), ws_seconds=1)
     monkeypatch.setattr(probe.time, "sleep", lambda seconds: None)
     result = probe.build_probe(
-        mode="premium", symbols=("159611.SZ",), ws_seconds=60,
+        mode="premium", symbols=("159611.SZ", "518880.SH"), ws_seconds=60,
         client_factory=FakeClient, credential_present=True,
     )
     assert result["operations"][-1]["name"] == "websocket_quote_smoke"
