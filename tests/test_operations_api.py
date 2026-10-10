@@ -24,10 +24,13 @@ def test_operations_status_is_fail_closed(monkeypatch):
     assert response.paper_auto_ready is False
     assert response.paper_engine_status == "IMPLEMENTED_OFFLINE_ONLY"
     assert response.paper_runtime_api_status == "NOT_EXPOSED"
+    assert response.external_simulator_contract_status == "READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT"
+    assert response.simulated_account_evidence == "NOT_VERIFIED"
     assert response.notification_ready is False
     assert response.notification_routes == {"report": [], "alert": [], "system_error": []}
     assert response.notification_delivery_evidence == "NOT_VERIFIED"
     assert "真实手机接收回执" in response.pending_acceptance
+    assert "云端 OpenD SIMULATE 账户只读发现" in response.pending_acceptance
 
 
 def test_operations_status_reports_configured_notification_channel(monkeypatch):
