@@ -1,5 +1,4 @@
 """CN MCP local reference conversion: unit attestation, closure and redaction."""
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -60,7 +59,7 @@ def test_explicit_attested_hand_conversion_and_private_schema():
     (lambda d: d["rows"][0].update(quality_flags=["BAD"]), "ROW_QUALITY_UNVERIFIED"),
     (lambda d: d["rows"][0].update(close=2), "INVALID_OHLC"),
     (lambda d: d["rows"][0].update(volume_raw=-1), "INVALID_VOLUME"),
-    (lambda d: d["rows"][0].update(label="2026-10-10 08:00"),
+    (lambda d: d["rows"][0].update(label="2026-10-10 08:15"),
      "BAR_NOT_CLOSED_AT_CAPTURE"),
 ])
 def test_invalid_or_unqualified_observation_blocks(modify, reason):
