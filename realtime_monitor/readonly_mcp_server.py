@@ -8,6 +8,7 @@ from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
+from data_provider.market_source_status import read_market_source_status
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
     read_us_market_bars,
@@ -23,6 +24,12 @@ mcp = FastMCP("stock-razor-readonly")
 def get_futures_runtime_health() -> dict:
     """Return fail-closed Futures runtime heartbeat health evidence."""
     return read_futures_runtime_health()
+
+
+@mcp.tool()
+def get_market_source_status(cn_symbol: str = "159611.SZ") -> dict:
+    """Single cached status for US OpenD, CN Eastmoney/Tencent and TickFlow probe."""
+    return read_market_source_status(cn_symbol)
 
 
 @mcp.tool()
