@@ -10,6 +10,7 @@ router = APIRouter()
 
 
 _CHANNEL_ENV = {
+    "discord": ("DISCORD_WEBHOOK_URL",),
     "telegram": ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"),
     "wechat": ("WECHAT_WEBHOOK_URL",),
     "feishu": ("FEISHU_WEBHOOK_URL", "FEISHU_APP_ID"),
@@ -27,6 +28,12 @@ def _configured_channels() -> list[str]:
     for channel, keys in _CHANNEL_ENV.items():
         if all(os.getenv(key, "").strip() for key in keys):
             channels.append(channel)
+    # Radar alerts may intentionally use a dedicated Discord webhook while
+    # report notifications keep the legacy webhook. Either route means the
+    # Discord notification surface is configured, but this is not delivery
+    # proof; the UI still asks for a real phone receipt.
+    if os.getenv("DISCORD_RADAR_WEBHOOK_URL", "").strip() and "discord" not in channels:
+        channels.append("discord")
     return channels
 
 
