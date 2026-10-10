@@ -25,6 +25,7 @@ def trace(i=1, *, receipt=True):
     }
     if receipt:
         result["notification_receipt_utc"] = t + timedelta(milliseconds=300)
+        result["device_receipt_verified"] = True
     return result
 
 
@@ -105,3 +106,20 @@ def test_no_network_provider_notification_or_trading_paths():
     assert "import futu" not in source
     assert "send_notification(" not in source
     assert "place_order(" not in source
+
+
+def test_dispatch_ack_must_not_be_reported_as_phone_receipt():
+    unverified = trace(1)
+    unverified["device_receipt_verified"] = False
+    result = audit_market_to_notification_traces([unverified])
+    assert result["accepted_unique_events"] == 0
+    assert result["invalid_or_unqualified_skipped"] == 1
+    assert result["distributions"]["provider_to_receipt_ms"]["sample_count"] == 0
+
+
+def test_missing_receipt_attestation_is_rejected():
+    unverified = trace(1)
+    del unverified["device_receipt_verified"]
+    result = audit_market_to_notification_traces([unverified])
+    assert result["accepted_unique_events"] == 0
+    assert result["invalid_or_unqualified_skipped"] == 1
