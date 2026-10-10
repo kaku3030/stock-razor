@@ -23,7 +23,9 @@ def fixture(source, *, timeframe="15m", origin="SYNTHETIC", count=12):
             ((10, 30), (11, 30), (14, 0), (15, 0))
         ]
     else:
-        ends = ([start + timedelta(minutes=15 * i) for i in range(8)] +\n                [datetime(2026, 10, 9, 13, 15, tzinfo=CN) +\n                 timedelta(minutes=15 * i) for i in range(8)])[:count]
+        ends = ([start + timedelta(minutes=15 * i) for i in range(8)] +
+                [datetime(2026, 10, 9, 13, 15, tzinfo=CN) +
+                 timedelta(minutes=15 * i) for i in range(8)])[:count]
     rows = []
     for i, stamp in enumerate(ends):
         price = 1.5 + i * .001
