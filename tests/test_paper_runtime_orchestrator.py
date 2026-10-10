@@ -97,8 +97,36 @@ def runtime(tmp_path, fills=None):
         engine,
         runtime_generation="paper-runtime-generation-1",
         account_generation="paper-account-generation-1",
+        shadow_store=ExecutionStore(tmp_path / "shadow.sqlite"),
     )
     return owner, engine, capability.adapter
+
+
+def test_runtime_requires_durable_shadow_store(tmp_path):
+    capability = create_paper_adapter()
+    engine = ExecutionEngine(
+        capability, risk_guard(), ExecutionStore(tmp_path / "runtime.sqlite")
+    )
+    with pytest.raises(ExecutionBlocked, match="durable shadow store"):
+        PaperRuntimeOrchestrator(
+            engine,
+            runtime_generation="paper-runtime-generation-1",
+            account_generation="paper-account-generation-1",
+        )
+    with pytest.raises(ExecutionBlocked, match="durable shadow store"):
+        PaperRuntimeOrchestrator(
+            engine,
+            runtime_generation="paper-runtime-generation-1",
+            account_generation="paper-account-generation-1",
+            shadow_store=ExecutionStore(),
+        )
+    with pytest.raises(ExecutionBlocked, match="separate"):
+        PaperRuntimeOrchestrator(
+            engine,
+            runtime_generation="paper-runtime-generation-1",
+            account_generation="paper-account-generation-1",
+            shadow_store=engine.store,
+        )
 
 
 def context(**changes):
@@ -190,6 +218,7 @@ def test_restart_replays_without_auto_resubmit(tmp_path):
         reopened_engine,
         runtime_generation="paper-runtime-generation-2",
         account_generation="paper-account-generation-2",
+        shadow_store=ExecutionStore(tmp_path / "shadow.sqlite"),
     )
 
     replayed = reopened.start()
@@ -438,3 +467,52 @@ def test_process_trade_plan_uses_existing_paper_runtime_path(tmp_path):
     assert result.shadow_decision_id
     assert result.broker_order_id == "paper-order-1"
     assert adapter.calls == [("place", result.intent_id)]
+
+
+def test_blocked_shadow_decision_survives_runtime_reopen(tmp_path):
+    runtime_path = tmp_path / "runtime.sqlite"
+    shadow_path = tmp_path / "shadow.sqlite"
+    capability = create_paper_adapter()
+    capability.adapter.reconcile = lambda: ReconciliationSnapshot(
+        AccountSnapshot("paper", Decimal("100000"), Decimal("100000"), NOW, "paper"),
+        as_of=NOW,
+    )
+    engine = ExecutionEngine(
+        capability, risk_guard(), ExecutionStore(runtime_path)
+    )
+    owner = PaperRuntimeOrchestrator(
+        engine,
+        runtime_generation="paper-runtime-generation-1",
+        account_generation="paper-account-generation-1",
+        shadow_store=ExecutionStore(shadow_path),
+    )
+    owner.start()
+    with pytest.raises(ExecutionBlocked):
+        owner.process(
+            permission(20),
+            spec(20),
+            context(data_as_of=NOW - timedelta(seconds=61)),
+        )
+    assert len(ExecutionStore(shadow_path).events()) == 1
+    owner.stop()
+
+    reopened_capability = create_paper_adapter()
+    reopened_capability.adapter.reconcile = capability.adapter.reconcile
+    reopened_engine = ExecutionEngine(
+        reopened_capability, risk_guard(), ExecutionStore(tmp_path / "reopened.sqlite")
+    )
+    reopened = PaperRuntimeOrchestrator(
+        reopened_engine,
+        runtime_generation="paper-runtime-generation-2",
+        account_generation="paper-account-generation-2",
+        shadow_store=ExecutionStore(shadow_path),
+    )
+    reopened.start()
+    with pytest.raises(ExecutionBlocked):
+        reopened.process(
+            permission(20),
+            spec(20),
+            context(data_as_of=NOW - timedelta(seconds=61)),
+        )
+    assert len(ExecutionStore(shadow_path).events()) == 1
+    assert reopened_capability.adapter.calls == []
