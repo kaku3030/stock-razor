@@ -40,6 +40,7 @@ class DiscordSender:
             'bot_token': getattr(config, 'discord_bot_token', None),
             'channel_id': getattr(config, 'discord_main_channel_id', None),
             'webhook_url': getattr(config, 'discord_webhook_url', None),
+            'radar_webhook_url': getattr(config, 'discord_radar_webhook_url', None),
         }
         self._discord_max_words = self._normalize_max_words(
             getattr(config, 'discord_max_words', DISCORD_MAX_CONTENT_LENGTH)
@@ -58,10 +59,19 @@ class DiscordSender:
         """检查 Discord 配置是否完整（支持 Bot 或 Webhook）"""
         # 只要配置了 Webhook 或完整的 Bot Token+Channel，即视为可用
         bot_ok = bool(self._discord_config['bot_token'] and self._discord_config['channel_id'])
-        webhook_ok = bool(self._discord_config['webhook_url'])
+        webhook_ok = bool(
+            self._discord_config['webhook_url']
+            or self._discord_config['radar_webhook_url']
+        )
         return bot_ok or webhook_ok
     
-    def send_to_discord(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
+    def send_to_discord(
+        self,
+        content: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+        route_type: Optional[str] = None,
+    ) -> bool:
         """
         推送消息到 Discord（支持 Webhook 和 Bot API）
         
@@ -79,11 +89,20 @@ class DiscordSender:
         # 分割内容，避免单条消息超过 Discord 限制
         chunks = self._split_discord_content(sanitized_content)
 
+        # Alerts/Radar can use a dedicated webhook. All other routes retain
+        # the original webhook for backward compatibility.
+        webhook_url = self._discord_config['radar_webhook_url'] if route_type == "alert" else None
+        webhook_url = webhook_url or self._discord_config['webhook_url']
+
         # 优先使用 Webhook（配置简单，权限低）
-        if self._discord_config['webhook_url']:
+        if webhook_url:
             return self._send_discord_chunks(
                 chunks,
-                self._send_discord_webhook,
+                lambda chunk, timeout_seconds=None: self._send_discord_webhook(
+                    chunk,
+                    webhook_url=webhook_url,
+                    timeout_seconds=timeout_seconds,
+                ),
                 "Webhook",
                 timeout_seconds=timeout_seconds,
             )
@@ -148,7 +167,13 @@ class DiscordSender:
         return success_count == total_chunks
 
   
-    def _send_discord_webhook(self, content: str, *, timeout_seconds: Optional[float] = None) -> bool:
+    def _send_discord_webhook(
+        self,
+        content: str,
+        *,
+        webhook_url: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> bool:
         """
         使用 Webhook 发送消息到 Discord
         
@@ -167,7 +192,7 @@ class DiscordSender:
         }
 
         return self._post_discord_message(
-            self._discord_config['webhook_url'],
+            webhook_url or self._discord_config['webhook_url'],
             payload,
             success_statuses=(200, 204),
             verify=self._webhook_verify_ssl,
