@@ -23,7 +23,7 @@ def fixture(source, *, timeframe="15m", origin="SYNTHETIC", count=12):
             ((10, 30), (11, 30), (14, 0), (15, 0))
         ]
     else:
-        ends = [start + timedelta(minutes=15 * i) for i in range(count)]
+        ends = ([start + timedelta(minutes=15 * i) for i in range(8)] +\n                [datetime(2026, 10, 9, 13, 15, tzinfo=CN) +\n                 timedelta(minutes=15 * i) for i in range(8)])[:count]
     rows = []
     for i, stamp in enumerate(ends):
         price = 1.5 + i * .001
@@ -78,7 +78,7 @@ def test_real_labeled_agreement_still_does_not_admit_radar(tmp_path):
 
 def test_price_volume_and_missing_bars_are_counted(tmp_path):
     a, b = fixture("TICKFLOW"), fixture("TENCENT")
-    a["rows"][0]["close"] += .02
+    a["rows"][0]["close"] += .005
     a["rows"][1]["volume"] *= 2
     a["rows"].pop(2)
     result = compare_files(write(tmp_path, "a.json", a),
