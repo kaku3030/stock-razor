@@ -88,7 +88,7 @@ def test_provider_failure_and_ws_observed_are_valid_probe_evidence_only(tmp_path
     assert result["production_tickflow_feed"] is False
     assert "NetworkError" not in json.dumps(result)
     assert result["operations"][1]["quote_events"] == 2
-    assert result["operations"][1]["continuous_feed_qualified"] is not True
+    assert result["operations"][1].get("continuous_feed_qualified") is not True
 
 
 def isolated_free_sample(at=NOW):
