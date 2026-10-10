@@ -78,3 +78,12 @@ def test_operations_status_reports_effective_notification_routes(monkeypatch):
     assert response.notification_routes["system_error"] == ["telegram", "discord"]
     assert response.notification_delivery_evidence == "NOT_VERIFIED"
 
+
+
+def test_operations_status_reports_distinct_paper_store_configuration(monkeypatch, tmp_path):
+    monkeypatch.setenv("PAPER_EXECUTION_STORE_PATH", str(tmp_path / "runtime.sqlite"))
+    monkeypatch.setenv("PAPER_SHADOW_STORE_PATH", str(tmp_path / "shadow.sqlite"))
+
+    response = operations_status()
+
+    assert response.paper_runtime_store_config_status == "CONFIGURED_DISTINCT_DURABLE_PATHS"
