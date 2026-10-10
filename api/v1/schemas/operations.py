@@ -14,6 +14,7 @@ class OperationsStatusResponse(BaseModel):
     paper_engine_status: str
     paper_runtime_api_status: str
     execution_recovery_projection_status: str
+    paper_runtime_store_config_status: str
     external_simulator_contract_status: str
     simulated_account_evidence: str
     notification_channels_configured: list[str]
