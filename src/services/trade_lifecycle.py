@@ -68,8 +68,17 @@ def project_trade_lifecycle(
     lifecycle_id = f"{plan.plan_id}:{plan.version}:{int(as_of.timestamp())}"
 
     plan_result = evaluate_trade_plan(plan, now=as_of)
-    if plan_result.status is TradePlanStatus.ENTRY_BLOCKED:
-        decision = LifecycleDecision.WAIT if "WAIT_NO_ENTRY" in plan_result.reasons else LifecycleDecision.ENTRY_BLOCKED
+    if plan_result.status in (
+        TradePlanStatus.WAIT,
+        TradePlanStatus.NO_TRADE,
+        TradePlanStatus.ENTRY_BLOCKED,
+    ):
+        if plan_result.status is TradePlanStatus.WAIT:
+            decision = LifecycleDecision.WAIT
+        elif plan_result.status is TradePlanStatus.NO_TRADE:
+            decision = LifecycleDecision.NO_TRADE
+        else:
+            decision = LifecycleDecision.ENTRY_BLOCKED
         return TradeLifecycleSnapshot(
             lifecycle_id, as_of, LifecycleStage.PLAN, decision, plan.plan_id,
             position_id, plan_result.reasons,
