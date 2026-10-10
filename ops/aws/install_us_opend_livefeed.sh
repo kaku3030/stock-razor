@@ -24,6 +24,7 @@ from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
+from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache
 from src.services.live_feed.futu_us_daily_history import (
@@ -58,6 +59,7 @@ from src.services.live_feed.futu_k1m_closure_qualification import (
     derive_futu_k1m_bar_closure_state,
     summarize_futu_k1m_closure_qualification,
 )
+from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
     futu_us_market_state_to_session,
@@ -74,7 +76,7 @@ from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
 
-CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ")
+CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ","US.GLDM","US.LITE","US.AAOI","US.CIEN")
 runtime_id=os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 repo_sha=os.environ["STOCK_RAZOR_REPO_SHA"]
 status_path=os.environ.get("STOCK_RAZOR_US_LIVEFEED_STATUS_PATH","/run/stock-razor-us-livefeed/latest-heartbeat.json")
@@ -453,6 +455,18 @@ try:
                 "bar_count_1h":len(bars_1h),
                 "latest_1h_end_utc":latest_1h.bar_end.isoformat() if latest_1h else None,
             }
+        intraday_closure={
+            code:qualify_us_current_session_intraday_closure(
+                {"15m":canonical_snapshots[code].bars_15m,
+                 "1h":canonical_snapshots[code].bars_1h},
+                as_of=now,
+            )
+            for code in CODES
+        }
+        intraday_closure_summary=(
+            "PASS" if intraday_closure and all(item.get("status") == "PASS" for item in intraday_closure.values())
+            else "UNKNOWN"
+        )
         closure_qualification={
             code:closure_qualification_tracker.observe(
                 code,
@@ -502,6 +516,8 @@ try:
             currentness_summary=currentness_summary,
             closure_qualification_summary=closure_qualification_summary,
         )
+        if intraday_closure_summary != "PASS":
+            bar_closure_evidence_state="UNPROVEN"
         canonical_export_updated=False
         should_export=(
             consumer_result.bars_ingested > 0
@@ -589,6 +605,8 @@ try:
           "closure_pipeline":closure_diagnostics,
           "k1m_closure_qualification":closure_qualification_payload,
           "k1m_closure_qualification_summary":closure_qualification_summary,
+          "intraday_closure_15m_60m":intraday_closure,
+          "intraday_closure_15m_60m_summary":intraday_closure_summary,
           "bar_closure_evidence_state":bar_closure_evidence_state,
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,

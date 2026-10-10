@@ -138,10 +138,17 @@ for item in closure.values():
 expected_bar_closure = (
     "PROVEN"
     if currentness_summary == "PASS" and closure_summary == "PASS"
+    and heartbeat.get("intraday_closure_15m_60m_summary") == "PASS"
     else "UNPROVEN"
 )
 assert heartbeat.get("bar_closure_evidence_state") == expected_bar_closure
 assert heartbeat.get("bar_closure") == expected_bar_closure
+intraday = heartbeat.get("intraday_closure_15m_60m") or {}
+assert set(intraday) == expected_symbols
+assert heartbeat.get("intraday_closure_15m_60m_summary") in {"UNKNOWN", "PASS"}
+for item in intraday.values():
+    assert item.get("status") in {"UNKNOWN", "PASS"}
+    assert item.get("bar_closure_promotion_authorized") is False
 assert export.get("status") == "PASS"
 assert export.get("schema") == "stock_razor_canonical_market_snapshot_v1"
 assert export.get("repo_sha") == expected_sha
