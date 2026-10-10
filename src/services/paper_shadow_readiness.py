@@ -38,6 +38,8 @@ def assess_read_only_shadow_readiness(
         reasons.append("NO_REPLAY_LIFECYCLE")
     if report.completed_review_count == 0:
         reasons.append("NO_COMPLETED_PAPER_REVIEW")
+    if report.non_trade_reason_coverage_passed is not True:
+        reasons.append("REPORT_NON_TRADE_REASON_COVERAGE_NOT_PASSED")
     checks = (
         (replay_passed, "REPLAY_NOT_PASSED"),
         (restart_reconciliation_passed, "RESTART_RECONCILIATION_NOT_PASSED"),
