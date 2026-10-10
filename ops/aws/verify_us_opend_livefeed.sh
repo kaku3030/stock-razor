@@ -63,7 +63,31 @@ for symbol, item in warm_symbols.items():
         assert len(anchors) == 3
         assert item.get("closure_anchor_time_key")
     assert int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170
+    catchup_status = item.get("current_session_catchup_status")
+    assert catchup_status in {"PASS", "NOT_APPLICABLE"}
+    catchup_planned = int(item.get("current_session_catchup_planned_bar_count") or 0)
+    catchup_seeded = int(item.get("current_session_catchup_seeded_count") or 0)
+    catchup_unchanged = int(item.get("current_session_catchup_unchanged_count") or 0)
+    assert catchup_seeded + catchup_unchanged == catchup_planned
+    if catchup_status == "PASS":
+        assert catchup_planned > 0
+        assert item.get("current_session_catchup_date")
+        assert item.get("current_session_catchup_unresolved_tail_time_key")
+        assert item.get("current_session_catchup_closure_method") == "NEXT_TIME_KEY_PROGRESS"
+        assert item.get("current_session_catchup_reason") is None
+    else:
+        assert catchup_planned == 0
+        assert catchup_seeded == 0
+        assert catchup_unchanged == 0
 assert int(warm_start.get("seeded_total") or 0) + int(warm_start.get("unchanged_total") or 0) == 1170 * len(expected_symbols)
+assert int(warm_start.get("current_session_catchup_seeded_total") or 0) == sum(
+    int(item.get("current_session_catchup_seeded_count") or 0)
+    for item in warm_symbols.values()
+)
+assert int(warm_start.get("current_session_catchup_unchanged_total") or 0) == sum(
+    int(item.get("current_session_catchup_unchanged_count") or 0)
+    for item in warm_symbols.values()
+)
 
 daily_summary = heartbeat.get("daily_history") or {}
 assert daily_summary.get("status") == "PASS"
