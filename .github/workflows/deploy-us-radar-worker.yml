@@ -31,21 +31,30 @@ jobs:
       - name: Discover canonical source SHA
         id: canonical
         shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: "${{ steps.source.outputs.sha }}"
         run: |
           set -euo pipefail
           remote="$(cat <<'REMOTE'
+          expected="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"
           for _ in $(seq 1 30); do
             if [ -s /run/stock-razor-us-livefeed/latest-heartbeat.json ]; then
-              python3 -c 'import json; p=json.load(open("/run/stock-razor-us-livefeed/latest-heartbeat.json",encoding="utf-8")); s=str(p.get("repo_sha") or "").strip().lower(); assert len(s)==40 and all(c in "0123456789abcdef" for c in s), "INVALID_SOURCE_REPO_SHA"; print(s)' && exit 0
+              if observed="$(python3 -c 'import json; p=json.load(open("/run/stock-razor-us-livefeed/latest-heartbeat.json",encoding="utf-8")); s=str(p.get("repo_sha") or "").strip().lower(); assert len(s)==40 and all(c in "0123456789abcdef" for c in s), "INVALID_SOURCE_REPO_SHA"; print(s)')"; then
+                if [ "$observed" = "$expected" ]; then
+                  printf '%s\n' "$observed"
+                  exit 0
+                fi
+                echo "CANONICAL_SOURCE_SHA_MISMATCH observed=$observed expected=$expected" >&2
+              fi
             fi
             sleep 2
           done
-          echo "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT" >&2
+          echo "CANONICAL_SOURCE_HEARTBEAT_TIMEOUT expected=$expected" >&2
           exit 1
           REMOTE
           )"
           encoded="$(printf '%s' "$remote" | base64 -w0)"
-          params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
+          params="$(jq -cn --arg c "export EXPECTED_SOURCE_SHA='$EXPECTED_SOURCE_SHA'; printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
           status=""
           for _ in $(seq 1 30); do
