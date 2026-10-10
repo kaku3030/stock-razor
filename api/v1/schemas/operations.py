@@ -11,6 +11,8 @@ class OperationsStatusResponse(BaseModel):
     source_arbiter_admission: str
     live_trade: bool
     paper_auto_ready: bool
+    paper_engine_status: str
+    paper_runtime_api_status: str
     notification_channels_configured: list[str]
     notification_ready: bool
     pending_acceptance: list[str]
