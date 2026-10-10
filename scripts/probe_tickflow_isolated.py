@@ -543,7 +543,7 @@ def build_probe(
         raise ValueError("unsupported probe mode")
     if ws_seconds and mode != "premium":
         raise ValueError("WebSocket probe requires explicit premium mode")
-    if not 0 <= ws_seconds <= 15:
+    if not 0 <= ws_seconds <= 60:
         raise ValueError("invalid WebSocket duration")
 
     symbols = validate_symbols(list(symbols))

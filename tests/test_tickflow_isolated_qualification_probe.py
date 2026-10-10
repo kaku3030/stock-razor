@@ -430,7 +430,7 @@ def test_ws_requires_explicit_premium_and_bounded_duration():
         with pytest.raises(ValueError):
             probe.build_probe(mode=mode, symbols=("159611.SZ",), ws_seconds=1)
     with pytest.raises(ValueError):
-        probe.build_probe(mode="premium", symbols=("159611.SZ",), ws_seconds=16)
+        probe.build_probe(mode="premium", symbols=("159611.SZ",), ws_seconds=61)
 
 
 def test_provider_exceptions_are_class_only_not_secret_bodies():
@@ -447,7 +447,7 @@ def test_sdk_chinese_console_notice_is_suppressed_and_no_payload_printed(capsys)
     class NoisyFreeClient(FakeClient):
         @classmethod
         def free(cls):
-            print("免费数据提示：KEY_DO_NOT_LEAK")
+            print("åè´¹æ°æ®æç¤ºï¼KEY_DO_NOT_LEAK")
             return cls()
 
     result = probe.build_probe(
