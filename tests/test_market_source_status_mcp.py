@@ -139,3 +139,30 @@ def test_symbol_mismatch_does_not_echo_unrelated_symbol(monkeypatch):
     result = status.read_market_source_status("159611.SZ", now_utc=NOW)
     assert result["sources"]["cn_eastmoney_tencent"]["symbol"] is None
     assert result["end_to_end_latency"] == "NOT_MEASURED"
+
+
+def test_tickflow_websocket_observation_is_visible_without_admission(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True,
+        "status": "PROBE_ONLY",
+        "operations": [{
+            "name": "websocket_quote_smoke",
+            "operation": "OBSERVED",
+            "quote_events": 6,
+            "event_state": "PASS",
+            "continuous_feed_qualified": False,
+            "reconnect_resubscribe_evidence": "NOT_VERIFIED",
+            "provider_secret": "NEVER_LEAK",
+        }],
+    })
+    result = status.read_market_source_status(now_utc=NOW)
+    websocket = result["sources"]["cn_tickflow"]["websocket_observation"]
+    assert websocket["quote_events"] == 6
+    assert websocket["continuous_feed_qualified"] is False
+    assert websocket["reconnect_resubscribe_evidence"] == "NOT_VERIFIED"
+    assert result["sources"]["cn_tickflow"]["data_admission"] == "BLOCKED"
+    assert "NEVER_LEAK" not in json.dumps(result)
