@@ -13,6 +13,8 @@ class OperationsStatusResponse(BaseModel):
     paper_auto_ready: bool
     paper_engine_status: str
     paper_runtime_api_status: str
+    external_simulator_contract_status: str
+    simulated_account_evidence: str
     notification_channels_configured: list[str]
     notification_routes: dict[str, list[str]]
     notification_delivery_evidence: str
