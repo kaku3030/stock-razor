@@ -37,7 +37,7 @@ const OperationsPage: React.FC = () => {
 
   return (
     <AppPage>
-      <PageHeader title="运行控制台" subtitle="通知、数据门禁与 Paper Trading 状态" />
+      <PageHeader title="运行控制台" description="通知、数据门禁与 Paper Trading 状态" />
       <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
         本页面只读。LIVE_TRADE 永远显示为关闭，不能从 WebUI 解锁真实交易。
       </div>
