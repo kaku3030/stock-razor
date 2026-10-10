@@ -40,6 +40,13 @@ def _configured_channels() -> list[str]:
     return channels
 
 
+def _paper_runtime_store_config_status() -> str:
+    try:
+        return PaperRuntimeStoreConfig.from_env().status()
+    except ExecutionBlocked:
+        return "NOT_CONFIGURED_OR_INVALID"
+
+
 def _effective_notification_routes(channels: list[str]) -> dict[str, list[str]]:
     """Expose effective route targets without exposing secrets or send proofs."""
 
