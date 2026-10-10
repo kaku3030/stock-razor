@@ -99,6 +99,8 @@ const OperationsPage: React.FC = () => {
         <Card title="Paper Trading" subtitle="EXECUTION">
           <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
           <Gate label="Paper Auto" value={status.paper_auto_ready ? 'READY' : 'BLOCKED'} safe={status.paper_auto_ready} />
+          <Gate label="Paper 引擎" value={status.paper_engine_status} safe={status.paper_engine_status === 'IMPLEMENTED_OFFLINE_ONLY'} />
+          <Gate label="Web 自动执行入口" value={status.paper_runtime_api_status} />
           <Gate label="Live Trade" value={status.live_trade ? 'ON' : 'NO'} />
           <p className="pt-3 text-xs text-secondary-text">自动执行仍需独立重启、重连与对账验收。</p>
         </Card>

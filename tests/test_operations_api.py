@@ -18,6 +18,8 @@ def test_operations_status_is_fail_closed(monkeypatch):
     assert response.source_arbiter_admission == "BLOCKED"
     assert response.live_trade is False
     assert response.paper_auto_ready is False
+    assert response.paper_engine_status == "IMPLEMENTED_OFFLINE_ONLY"
+    assert response.paper_runtime_api_status == "NOT_EXPOSED"
     assert response.notification_ready is False
     assert "真实手机接收回执" in response.pending_acceptance
 

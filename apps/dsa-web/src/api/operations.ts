@@ -6,6 +6,8 @@ export type OperationsStatus = {
   source_arbiter_admission: string;
   live_trade: boolean;
   paper_auto_ready: boolean;
+  paper_engine_status: string;
+  paper_runtime_api_status: string;
   notification_channels_configured: string[];
   notification_ready: boolean;
   pending_acceptance: string[];
