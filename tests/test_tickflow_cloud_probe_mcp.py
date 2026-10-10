@@ -88,3 +88,65 @@ def test_provider_failure_and_ws_observed_are_valid_probe_evidence_only(tmp_path
     assert result["production_tickflow_feed"] is False
     assert "NetworkError" not in json.dumps(result)
     assert "quote_events" not in json.dumps(result)
+
+
+def isolated_free_sample(at=NOW):
+    return {
+        "schema": "stock_razor_tickflow_isolated_probe_v0_1",
+        "mode": "free",
+        "location": "AWS_TOKYO_SSM_ISOLATE",
+        "repo_sha": "b" * 40,
+        "observed_at_utc": at.isoformat(),
+        "operations": [
+            {
+                "name": "sdk_import",
+                "operation": "COMPLETED",
+            },
+            {
+                "name": "free_daily_kline",
+                "operation": "COMPLETED",
+                "row_count": 5,
+                "summary": {
+                    "sample_count": 5,
+                    "timestamp_monotonicity": "STRICTLY_INCREASING",
+                    "ohlcv_range_valid": True,
+                    "closure": "NOT_VERIFIED",
+                    "freshness": "NOT_VERIFIED",
+                    "entitlement_evidence": "UNKNOWN",
+                    "period": "1d",
+                    "timestamp_first": 1,
+                    "timestamp_last": 2,
+                },
+            },
+        ],
+        "historical_kline_observation": {
+            "operation": "COMPLETED",
+            "period": "1d",
+            "row_count": 5,
+            "qualification": "NOT_VERIFIED",
+            "summary": {
+                "sample_count": 5,
+                "timestamp_monotonicity": "STRICTLY_INCREASING",
+                "ohlcv_range_valid": True,
+                "closure": "NOT_VERIFIED",
+                "freshness": "NOT_VERIFIED",
+                "entitlement_evidence": "UNKNOWN",
+                "period": "1d",
+                "timestamp_first": 1,
+                "timestamp_last": 2,
+            },
+        },
+    }
+
+
+def test_isolated_free_probe_is_visible_but_not_admitted(tmp_path):
+    path = tmp_path / "isolated.json"
+    path.write_text(json.dumps(isolated_free_sample()), encoding="utf-8")
+    result = read_tickflow_probe_health(str(path), now_utc=NOW)
+    assert result["ok"] is True
+    assert result["data_admission"] == "BLOCKED"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["historical_kline_observation"]["operation"] == "COMPLETED"
+    assert result["historical_kline_observation"]["row_count"] == 5
+    assert result["historical_kline_observation"]["summary"]["period"] == "1d"
+    assert "timestamp_first" not in json.dumps(result)
