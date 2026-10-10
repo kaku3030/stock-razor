@@ -1,0 +1,186 @@
+name: AWS SSM SIM Account Discovery
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: aws-ssm-sim-account-discovery-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-1
+  TARGET_INSTANCE_ID: i-01738342af3efac72
+
+jobs:
+  read-only-sim-account-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: github-sim-discovery-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify fixed target instance
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          aws ec2 describe-instances \
+            --instance-ids "$TARGET_INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text | grep -Fx "$TARGET_INSTANCE_ID"
+          aws ssm describe-instance-information \
+            --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" \
+            --query 'InstanceInformationList[0].InstanceId' \
+            --output text | grep -Fx "$TARGET_INSTANCE_ID"
+
+      - name: Send fixed read-only account query
+        id: send-command
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r -d '' remote_script <<'REMOTE' || true
+          set -u
+          echo '=== OPEND US SIMULATE ACCOUNT DISCOVERY READ-ONLY PROBE ==='
+          echo 'ACCOUNT_MUTATIONS=NONE'
+          echo 'LIVE_TRADE=NO'
+          HOME=/root /opt/stock-razor-opend-client/venv/bin/python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          import futu as ft
+
+          out = {
+              "probe": "us_opend_sim_account_discovery_v0_1",
+              "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+              "opend_reachable": False,
+              "query_status": "UNKNOWN",
+              "accounts": [],
+              "simulated_us_account_count": 0,
+              "simulated_us_account_ids": [],
+              "account_evidence": "NOT_VERIFIED",
+              "radar_admission": "BLOCKED",
+              "source_arbiter_admission": "BLOCKED",
+              "live_trade": False,
+          }
+
+          def safe_rows(data):
+              if not hasattr(data, "to_dict"):
+                  return []
+              try:
+                  rows = data.to_dict("records")
+              except Exception:
+                  return []
+              result = []
+              for row in rows:
+                  if not isinstance(row, dict):
+                      continue
+                  account_id = row.get("acc_id")
+                  mode = row.get("trd_env")
+                  market = row.get("trdmarket", row.get("market"))
+                  if type(account_id) is not str or not account_id.strip():
+                      continue
+                  if type(mode) is not str or type(market) is not str:
+                      continue
+                  result.append({
+                      "acc_id": account_id.strip(),
+                      "trd_env": mode.upper(),
+                      "market": market.upper(),
+                      "authenticated": True,
+                  })
+              return result
+
+          ctx = None
+          try:
+              ctx = ft.OpenSecTradeContext(
+                  filter_trdmarket=ft.TrdMarket.US,
+                  host="127.0.0.1",
+                  port=11111,
+              )
+              out["opend_reachable"] = True
+              ret, data = ctx.get_acc_list()
+              if ret == ft.RET_OK:
+                  rows = safe_rows(data)
+                  out["query_status"] = "PASS"
+                  out["accounts"] = rows
+                  candidates = [
+                      row for row in rows
+                      if row["trd_env"] == "SIMULATE"
+                      and row["market"] == "US"
+                      and row["authenticated"] is True
+                  ]
+                  out["simulated_us_account_count"] = len(candidates)
+                  out["simulated_us_account_ids"] = [row["acc_id"] for row in candidates]
+                  if len(candidates) == 1:
+                      out["account_evidence"] = "PASS"
+                  elif len(candidates) == 0:
+                      out["account_evidence"] = "BLOCKED_NO_AUTHENTICATED_SIMULATE_US_ACCOUNT"
+                  else:
+                      out["account_evidence"] = "BLOCKED_MULTIPLE_SIMULATE_US_ACCOUNTS"
+              else:
+                  out["query_status"] = "PROVIDER_REJECTED"
+          except Exception as exc:
+              out["query_status"] = "ERROR"
+              out["error_class"] = type(exc).__name__
+          finally:
+              if ctx is not None:
+                  try:
+                      ctx.close()
+                  except Exception:
+                      pass
+
+          print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+          print("ACCOUNT_MUTATIONS=NONE")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("SOURCE_ARBITER_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          PY
+          REMOTE
+          commands="$(jq -c -n --arg script "$remote_script" '[ $script ]')"
+          command_id="$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$TARGET_INSTANCE_ID" \
+            --parameters "{\"commands\":$commands}" \
+            --query 'Command.CommandId' \
+            --output text)"
+          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for read-only result
+        shell: bash
+        env:
+          COMMAND_ID: ${{ steps.send-command.outputs.command_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$TARGET_INSTANCE_ID" \
+              --query 'Status' \
+              --output text)"
+            case "$status" in
+              Success)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$TARGET_INSTANCE_ID" \
+                  --query '{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
+                  --output json
+                exit 0
+                ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$TARGET_INSTANCE_ID" \
+                  --output json
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo 'Timed out waiting for read-only SSM result' >&2
+          exit 1
