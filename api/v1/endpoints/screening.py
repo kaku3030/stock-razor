@@ -151,14 +151,16 @@ def screening_start_screen_task(
         def report_progress(progress: int, message: str) -> None:
             task_queue.update_task_progress(task_id, progress, message)
 
-        result = _service(config, db_manager).screen(
-            strategy=request.strategy,
-            market=request.market,
-            max_results=request.max_results,
-            selection_seed=request.variant_seed,
-            cache_only=request.cache_only,
-            progress_callback=report_progress,
-        )
+        screen_kwargs: Dict[str, Any] = {
+            "strategy": request.strategy,
+            "market": request.market,
+            "max_results": request.max_results,
+            "selection_seed": request.variant_seed,
+            "progress_callback": report_progress,
+        }
+        if request.cache_only:
+            screen_kwargs["cache_only"] = True
+        result = _service(config, db_manager).screen(**screen_kwargs)
         task_queue.update_task_progress(
             task_id,
             98,
@@ -211,13 +213,15 @@ def screening_screen(
     config: Config = Depends(get_config_dep),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> Dict[str, Any]:
-    return _service(config, db_manager).screen(
-        strategy=request.strategy,
-        market=request.market,
-        max_results=request.max_results,
-        selection_seed=request.variant_seed,
-        cache_only=request.cache_only,
-    )
+    screen_kwargs: Dict[str, Any] = {
+        "strategy": request.strategy,
+        "market": request.market,
+        "max_results": request.max_results,
+        "selection_seed": request.variant_seed,
+    }
+    if request.cache_only:
+        screen_kwargs["cache_only"] = True
+    return _service(config, db_manager).screen(**screen_kwargs)
 
 
 @router.get("/history")
