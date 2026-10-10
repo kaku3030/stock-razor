@@ -34,15 +34,19 @@ def read_market_source_status(
         return {**safety, "ok": False, "status": "INVALID_CLOCK", "sources": {}}
 
     def read(call, *args, **kwargs):
+        source_started = perf_counter()
         try:
             result = call(*args, **kwargs)
-            return result if isinstance(result, dict) else {"ok": False, "status": "INVALID"}
+            value = result if isinstance(result, dict) else {"ok": False, "status": "INVALID"}
         except (OSError, ValueError, TypeError, RuntimeError):
-            return {"ok": False, "status": "UNAVAILABLE"}
+            value = {"ok": False, "status": "UNAVAILABLE"}
+        # Local cache-reader wall time only; excludes MCP transport, upstream
+        # provider latency, network, market-data age, Radar and notification.
+        return value, round((perf_counter() - source_started) * 1000, 3)
 
-    us = read(read_us_livefeed_health, now_utc=now)
-    cn = read(read_cn_market_data, cn_symbol, timeframe="15m", limit=1, now_utc=now)
-    tf = read(read_tickflow_probe_health, now_utc=now)
+    us, us_reader_ms = read(read_us_livefeed_health, now_utc=now)
+    cn, cn_reader_ms = read(read_cn_market_data, cn_symbol, timeframe="15m", limit=1, now_utc=now)
+    tf, tf_reader_ms = read(read_tickflow_probe_health, now_utc=now)
 
     # Project only a narrow allowlist. Never return raw bars, provider payloads,
     # credentials, errors, filesystem paths, or unverifiable provider metrics.
@@ -53,8 +57,16 @@ def read_market_source_status(
     cn_status = enum(cn.get("status"), {"PASS", "BLOCKED", "STALE", "NO_DATA", "UNAVAILABLE", "INVALID", "INVALID_ARGUMENT"})
     tf_status = enum(tf.get("status"), {"PROBE_ONLY", "STALE", "UNAVAILABLE", "INVALID"})
     us_ok = us.get("ok") is True and us_status == "HEALTHY"
-    cn_ok = cn.get("ok") is True and cn_status == "PASS"
     tf_evidence = tf.get("ok") is True and tf_status == "PROBE_ONLY"
+    # CN runtime observations currently return the six-digit symbol, while
+    # MCP callers use exchange-suffixed symbols such as 159611.SZ.
+    cn_symbol_observed = cn.get("symbol")
+    cn_symbol_matches = (
+        isinstance(cn_symbol, str)
+        and isinstance(cn_symbol_observed, str)
+        and cn_symbol_observed in (cn_symbol, cn_symbol.split(".")[0])
+    )
+    cn_ok = cn.get("ok") is True and cn_status == "PASS" and cn_symbol_matches
 
     result = {
         **safety,
@@ -65,11 +77,14 @@ def read_market_source_status(
             "us_opend": {
                 "status": us_status,
                 "observation_healthy": us_ok,
+                "local_reader_latency_ms": us_reader_ms,
                 "provider_to_radar_e2e": "NOT_VERIFIED",
             },
             "cn_eastmoney_tencent": {
                 "status": cn_status,
-                "symbol": cn.get("symbol") if cn.get("symbol") == cn_symbol else None,
+                "symbol": cn_symbol if cn_symbol_matches else None,
+                "symbol_exchange_verified": False,
+                "local_reader_latency_ms": cn_reader_ms,
                 "timeframe": "15m",
                 "observation_available": cn_ok,
                 "intraday_currentness_proven": False,
@@ -77,11 +92,15 @@ def read_market_source_status(
             "cn_tickflow": {
                 "status": tf_status,
                 "isolated_probe_evidence_available": tf_evidence,
+                "local_reader_latency_ms": tf_reader_ms,
                 "production_feed_connected": False,
                 "tickflow_to_radar_e2e": "NOT_VERIFIED",
                 "data_admission": "BLOCKED",
             },
         },
         "read_latency_ms": round((perf_counter() - started) * 1000, 3),
+        "latency_scope": "LOCAL_CACHE_READERS_ONLY",
+        "end_to_end_latency": "NOT_MEASURED",
+        "market_data_freshness_latency": "NOT_MEASURED",
     }
     return result
