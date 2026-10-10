@@ -40,6 +40,7 @@ def review_us_opend_subscription_capacity(
     quota_verified: bool,
     total_used: int | None,
     remain: int | None,
+    quota_observed_at_utc: datetime | None = None,
     now_utc: datetime | None = None,
     max_review: int = 16,
 ) -> dict:
@@ -75,6 +76,14 @@ def review_us_opend_subscription_capacity(
             or not isinstance(subscribed_symbols, (list, tuple))
             or len(subscribed_symbols) > _MAX_SUBSCRIBED):
         return blocked("INVALID_REVIEW_INPUT")
+    if (not isinstance(quota_observed_at_utc, datetime)
+            or quota_observed_at_utc.tzinfo is None
+            or quota_observed_at_utc.utcoffset() is None):
+        return blocked("QUOTA_OBSERVATION_TIMESTAMP_REQUIRED")
+    quota_age = (now.astimezone(timezone.utc) -
+                 quota_observed_at_utc.astimezone(timezone.utc)).total_seconds()
+    if not -5 <= quota_age <= _MAX_AGE_SECONDS:
+        return blocked("STALE_OR_FUTURE_QUOTA_OBSERVATION")
     if (quota_verified is not True or type(total_used) is not int
             or type(remain) is not int or not 0 <= total_used <= 10000
             or not 0 <= remain <= 10000 or total_used + remain > 10000):
@@ -115,6 +124,7 @@ def review_us_opend_subscription_capacity(
     return {
         **safety, "ok": True, "status": "REVIEW_ONLY",
         "watch_snapshot_age_seconds": round(age, 3),
+        "quota_observation_age_seconds": round(quota_age, 3),
         "aggregate_quota_verified": True,
         "aggregate_total_used": total_used,
         "aggregate_remaining": remain,
