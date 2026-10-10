@@ -84,3 +84,20 @@ def test_lifecycle_id_is_versioned_and_time_bound():
     second = project_trade_lifecycle(plan(), now=NOW + timedelta(seconds=1))
     assert first.lifecycle_id != second.lifecycle_id
     assert first.plan_id == second.plan_id == "plan-1"
+
+
+def test_existing_position_management_survives_expired_entry_ttl():
+    management = PositionManagementResult(
+        PositionManagementAction.REVIEW_2R,
+        Decimal("2"),
+        ("1R_AND_2R_REVIEW_DUE",),
+    )
+    result = project_trade_lifecycle(
+        plan(entry_ttl=NOW - timedelta(minutes=1)),
+        now=NOW,
+        position=management,
+        position_id="position-1",
+    )
+    assert result.stage is LifecycleStage.POSITION_MANAGEMENT
+    assert result.decision is LifecycleDecision.POSITION_REVIEW
+    assert result.reasons == ("1R_AND_2R_REVIEW_DUE",)
