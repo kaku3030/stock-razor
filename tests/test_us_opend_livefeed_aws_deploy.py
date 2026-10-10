@@ -384,6 +384,12 @@ def test_verify_gate_requires_full_research_warm_start_without_promotion():
     assert 'assert len(anchors) == 2' in VERIFY
     assert 'assert len(anchors) == 3' in VERIFY
     assert 'int(item.get("seeded_count") or 0) + int(item.get("unchanged_count") or 0) == 1170' in VERIFY
+    assert 'catchup_status = item.get("current_session_catchup_status")' in VERIFY
+    assert 'catchup_status in {"PASS", "NOT_APPLICABLE"}' in VERIFY
+    assert 'current_session_catchup_unresolved_tail_time_key' in VERIFY
+    assert 'current_session_catchup_closure_method' in VERIFY
+    assert 'current_session_catchup_seeded_total' in VERIFY
+    assert 'current_session_catchup_unchanged_total' in VERIFY
     assert 'int(item.get("bar_count") or 0) >= 1170' in VERIFY
     assert 'len(frames.get("1m") or []) >= 1170' in VERIFY
     assert 'len(frames.get("5m") or []) >= 234' in VERIFY
