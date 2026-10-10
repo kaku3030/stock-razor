@@ -18,6 +18,7 @@ from src.services.execution_engine import (
     create_paper_adapter,
 )
 from src.services.paper_execution_admission import PaperOrderSpec
+from src.services.trade_plan import TradeDirection, TradeHorizon, TradePlan
 from src.services.paper_runtime_orchestrator import (
     PaperRuntimeOrchestrator,
     PaperRuntimeState,
@@ -395,3 +396,45 @@ def test_runtime_module_has_no_live_broker_or_network_surface():
             "OpenD",
         )
     )
+
+
+def test_process_trade_plan_uses_existing_paper_runtime_path(tmp_path):
+    owner, _, adapter = runtime(tmp_path)
+    owner.start()
+    plan = TradePlan(
+        plan_id="plan-amd-001",
+        version="trade-plan-v0.2",
+        symbol="AMD",
+        direction=TradeDirection.LONG,
+        strategy="breakout-retest",
+        horizon=TradeHorizon.INTRADAY,
+        entry_low=Decimal("99"),
+        entry_high=Decimal("101"),
+        entry_ttl=NOW + timedelta(minutes=5),
+        trigger_frame="5m",
+        invalidation="failed retest",
+        stop_price=Decimal("97"),
+        target_price=Decimal("106"),
+        quantity=Decimal("10"),
+        risk_budget_r=Decimal("1"),
+        estimated_cost=Decimal("0.1"),
+        estimated_slippage=Decimal("0.05"),
+        source="opend-readonly",
+        quote_age_seconds=2,
+        monitoring_status="READY",
+        protection_status="PLANNED_NOT_ACKED",
+    )
+
+    result = owner.process_trade_plan(
+        permission(),
+        plan,
+        entry_price=Decimal("100"),
+        max_slippage=Decimal("0.001"),
+        evidence_snapshot_id="snapshot-amd-001",
+        context=context(),
+    )
+
+    assert result.order_state is OrderState.ACCEPTED
+    assert result.shadow_decision_id
+    assert result.broker_order_id == "paper-order-1"
+    assert adapter.calls == [("place", result.intent_id)]
