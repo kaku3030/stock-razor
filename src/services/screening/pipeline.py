@@ -151,6 +151,7 @@ def screen(
         fallback_max_age_hours=config.snapshot_fallback_max_age_hours,
         cache_ttl_seconds=config.snapshot_cache_ttl_seconds,
         market=market,
+        offline_only=config.cache_only,
     )
     effective_industry_map_files = (
         list(industry_map_files)
