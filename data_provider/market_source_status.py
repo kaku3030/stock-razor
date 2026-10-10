@@ -58,6 +58,11 @@ def read_market_source_status(
     tf_status = enum(tf.get("status"), {"PROBE_ONLY", "STALE", "UNAVAILABLE", "INVALID"})
     us_ok = us.get("ok") is True and us_status == "HEALTHY"
     tf_evidence = tf.get("ok") is True and tf_status == "PROBE_ONLY"
+    historical_kline_observation = (
+        tf.get("historical_kline_observation")
+        if isinstance(tf.get("historical_kline_observation"), dict)
+        else "NOT_REQUESTED"
+    )
     # CN runtime observations currently return the six-digit symbol, while
     # MCP callers use exchange-suffixed symbols such as 159611.SZ.
     cn_symbol_observed = cn.get("symbol")
@@ -92,6 +97,7 @@ def read_market_source_status(
             "cn_tickflow": {
                 "status": tf_status,
                 "isolated_probe_evidence_available": tf_evidence,
+                "historical_kline_observation": historical_kline_observation,
                 "local_reader_latency_ms": tf_reader_ms,
                 "production_feed_connected": False,
                 "tickflow_to_radar_e2e": "NOT_VERIFIED",
