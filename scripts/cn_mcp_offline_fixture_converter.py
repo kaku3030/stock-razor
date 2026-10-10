@@ -43,7 +43,7 @@ def _price(value) -> float:
 
 def convert_cn_mcp_observation(
     observation: dict, *, symbol: str, timeframe: str,
-    shares_per_hand: int | None = None, attested_volume_unit: bool = False,
+    shares_per_hand: int | None = None, attested_volume_unit: bool = False,\n    attested_unadjusted: bool = False,
     min_capture_lag_seconds: int = 60,
 ) -> dict:
     if not isinstance(observation, dict):
@@ -140,7 +140,7 @@ def main() -> int:
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--timeframe", choices=("15m", "60m"), required=True)
     parser.add_argument("--shares-per-hand", type=int)
-    parser.add_argument("--attest-volume-unit", action="store_true")
+    parser.add_argument("--attest-volume-unit", action="store_true")\n    parser.add_argument("--attest-unadjusted", action="store_true")
     args = parser.parse_args()
     try:
         with open(args.input, "rb") as handle:
@@ -151,7 +151,7 @@ def main() -> int:
         fixture = convert_cn_mcp_observation(
             observation, symbol=args.symbol, timeframe=args.timeframe,
             shares_per_hand=args.shares_per_hand,
-            attested_volume_unit=args.attest_volume_unit,
+            attested_volume_unit=args.attest_volume_unit,\n            attested_unadjusted=args.attest_unadjusted,
         )
         # Create a private new file; never overwrite or print bars/credentials.
         out = Path(args.output)
