@@ -70,13 +70,27 @@ def fetch_snapshot_with_fallback(
     fallback_max_age_hours: float | None = None,
     cache_ttl_seconds: float = 0.0,
     market: str = "cn",
+    offline_only: bool = False,
 ) -> pd.DataFrame:
     """Try live sources, optionally falling back to the last-good snapshot."""
-    if market == "us":
-        return _fetch_us_snapshot_with_fallback(required_columns)
-
     errors = []
     required = required_columns or []
+    if offline_only:
+        max_age = fallback_max_age_hours
+        if max_age is None and cache_ttl_seconds > 0:
+            max_age = cache_ttl_seconds / 3600.0
+        cached = _read_last_good_snapshot(
+            fallback_snapshot_path,
+            required_columns=required,
+            source_errors=[],
+            max_age_hours=max_age,
+        )
+        if cached is None:
+            raise RuntimeError("offline snapshot cache unavailable or stale")
+        cached.attrs["offline_only"] = True
+        return cached
+    if market == "us":
+        return _fetch_us_snapshot_with_fallback(required_columns)
     if cache_ttl_seconds > 0:
         cached = _read_last_good_snapshot(
             fallback_snapshot_path,
