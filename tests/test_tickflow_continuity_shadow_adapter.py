@@ -59,4 +59,4 @@ def test_failed_audit_derives_fail_not_unknown_or_pass():
         now_utc=NOW, max_age_seconds=5,
     )
     assert result.audit.status.value == "BLOCKED"
-    assert result.payload["continuity_qualified"] == "BLOCKED"
+    assert result.payload["continuity_qualified"] == "FAIL"
