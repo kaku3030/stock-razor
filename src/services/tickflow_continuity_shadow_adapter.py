@@ -10,6 +10,7 @@ from typing import Any
 
 from .tickflow_continuity_audit import (
     TickflowContinuityAudit,
+    TickflowContinuityStatus,
     TickflowObservation,
     audit_tickflow_continuity,
 )
@@ -29,7 +30,7 @@ def apply_tickflow_continuity_evidence(
     max_age_seconds: float,
     require_contiguous_sequence: bool = True,
 ) -> TickflowContinuityEnvelope:
-    """Return a copied payload with a derived continuity gate.
+    """Return a copied payload with a derived PASS/FAIL continuity gate.
 
     A failed audit becomes an explicit FAIL gate, so the existing Shadow
     arbiter rejects the candidate. No other qualification gate is upgraded.
@@ -41,7 +42,11 @@ def apply_tickflow_continuity_evidence(
         require_contiguous_sequence=require_contiguous_sequence,
     )
     derived = dict(payload)
-    derived["continuity_qualified"] = audit.status.value
+    derived["continuity_qualified"] = (
+        "PASS"
+        if audit.status is TickflowContinuityStatus.PASS
+        else "FAIL"
+    )
     if observations:
         latest = observations[-1]
         derived["sequence"] = latest.sequence
