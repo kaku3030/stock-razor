@@ -2329,6 +2329,31 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["webhook_secret_value"],
     },
+    "DISCORD_RADAR_WEBHOOK_URL": {
+        "title": "Discord Radar Webhook URL",
+        "description": "Dedicated Discord webhook URL for Radar alert notifications.",
+        "category": "notification",
+        "data_type": "string",
+        "ui_control": "password",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 35,
+        "help_key": "settings.notification.chat_bots",
+        "examples": [
+            "DISCORD_RADAR_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy",
+        ],
+        "docs": [
+            {
+                "label": "通知渠道与路由",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/notifications.md",
+            },
+        ],
+        "warning_codes": ["webhook_secret_value"],
+    },
     "DISCORD_BOT_TOKEN": {
         "title": "Discord Bot Token",
         "description": "Discord bot token for interactive bot mode.",
