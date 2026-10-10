@@ -10,6 +10,9 @@ export type OperationsStatus = {
   paper_runtime_api_status: string;
   execution_recovery_projection_status: string;
   paper_runtime_store_config_status: string;
+  trade_plan_status: string;
+  position_management_status: string;
+  trade_lifecycle_status: string;
   notification_channels_configured: string[];
   notification_routes: Record<string, string[]>;
   notification_delivery_evidence: string;
