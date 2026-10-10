@@ -192,6 +192,7 @@ class Config:
         _PROJECT_ROOT / "data" / "snapshot.last_good.json"
     )
     snapshot_cache_ttl_seconds: float = 300.0
+    cache_only: bool = False
 
     # Strategy directory
     strategies_dir: Path = field(default_factory=_default_strategies_dir)
@@ -324,6 +325,7 @@ class Config:
                 0.0,
                 _parse_float_env("SCREENING_SNAPSHOT_CACHE_TTL_SEC", 300.0),
             ),
+            cache_only=_parse_bool_env("SCREENING_CACHE_ONLY", False),
             snapshot_fallback_max_age_hours=_parse_optional_float_env(
                 "SNAPSHOT_FALLBACK_MAX_AGE_HOURS"
             ),
