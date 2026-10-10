@@ -106,7 +106,8 @@ class OrderRecord:
 class ExecutionStore:
     """Transactional event store with unique intent/order/fill identities."""
     def __init__(self, path: str | Path = ":memory:") -> None:
-        self.connection = sqlite3.connect(str(path)); self.connection.execute("PRAGMA foreign_keys=ON")
+        self.path = str(path)
+        self.connection = sqlite3.connect(self.path); self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.executescript("""
         CREATE TABLE IF NOT EXISTS intents(intent_id TEXT PRIMARY KEY, payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, intent_id TEXT NOT NULL, state TEXT, evidence_ids TEXT NOT NULL, at TEXT NOT NULL, details TEXT NOT NULL, UNIQUE(intent_id,kind,details));
@@ -117,6 +118,9 @@ class ExecutionStore:
         CREATE TRIGGER IF NOT EXISTS intents_immutable_update BEFORE UPDATE ON intents BEGIN SELECT RAISE(ABORT, 'intents are immutable'); END;
         CREATE TRIGGER IF NOT EXISTS intents_immutable_delete BEFORE DELETE ON intents BEGIN SELECT RAISE(ABORT, 'intents are immutable'); END;
         """); self.connection.commit()
+    @property
+    def durable(self) -> bool:
+        return self.path != ":memory:"
     def save_intent(self, intent: OrderIntent) -> None:
         payload = {"intent_id": intent.intent_id, "symbol": intent.symbol, "side": intent.side.value, "order_type": intent.order_type.value, "qty": str(intent.qty), "limit_price": str(intent.limit_price) if intent.limit_price is not None else None, "stop_price": str(intent.stop_price) if intent.stop_price is not None else None, "max_slippage": str(intent.max_slippage) if intent.max_slippage is not None else None, "invalidation": str(intent.invalidation) if intent.invalidation is not None else None, "risk_budget_r": str(intent.risk_budget_r) if intent.risk_budget_r is not None else None, "valid_until": intent.valid_until.isoformat() if intent.valid_until is not None else None, "strategy_id": intent.strategy_id, "evidence_snapshot_id": intent.evidence_snapshot_id, "account_target": intent.account_target, "broker_target": intent.broker_target, "allowed_session": intent.allowed_session}
         with self.connection: self.connection.execute("INSERT OR IGNORE INTO intents(intent_id,payload) VALUES(?,?)", (intent.intent_id, json.dumps(payload, sort_keys=True)))
