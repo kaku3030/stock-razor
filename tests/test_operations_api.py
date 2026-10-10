@@ -24,6 +24,7 @@ def test_operations_status_is_fail_closed(monkeypatch):
     assert response.paper_auto_ready is False
     assert response.paper_engine_status == "IMPLEMENTED_OFFLINE_ONLY"
     assert response.paper_runtime_api_status == "NOT_EXPOSED"
+    assert response.execution_recovery_projection_status == "IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING"
     assert response.external_simulator_contract_status == "READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT"
     assert response.simulated_account_evidence == "NOT_VERIFIED"
     assert response.notification_ready is False
