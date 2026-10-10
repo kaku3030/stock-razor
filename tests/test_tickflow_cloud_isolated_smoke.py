@@ -166,3 +166,19 @@ def test_free_mode_observes_historical_kline_shape_without_promoting_admission()
     assert result["data_qualification"] == "NOT_VERIFIED"
     assert result["source_arbiter_admission"] == "BLOCKED"
     assert result["radar_admission"] == "BLOCKED"
+
+
+def test_non_free_modes_keep_historical_observation_not_requested():
+    class NoInit:
+        @classmethod
+        def free(cls):
+            raise AssertionError("non-free mode must not initialize free client")
+
+    result = build_probe(
+        mode="metadata",
+        symbols=("159611.SZ",),
+        client_factory=NoInit,
+        credential_present=False,
+        sdk_version="test",
+    )
+    assert result["historical_kline_observation"] == "NOT_REQUESTED"
