@@ -24,6 +24,12 @@ const notificationLabel = (channel: string): string => ({
   serverchan3: 'Server酱',
 }[channel] ?? channel);
 
+const routeLabel = (route: string): string => ({
+  report: '报告',
+  alert: '告警',
+  system_error: '系统错误',
+}[route] ?? route);
+
 const OperationsPage: React.FC = () => {
   const [status, setStatus] = useState<OperationsStatus | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
@@ -90,6 +96,17 @@ const OperationsPage: React.FC = () => {
           <Gate label="Webhook 配置" value={status.notification_ready ? '已配置' : '未配置'} safe={status.notification_ready} />
           <div className="pt-3 text-sm text-secondary-text">
             渠道：{status.notification_channels_configured.length ? status.notification_channels_configured.map(notificationLabel).join('、') : '暂无'}
+          </div>
+          <div className="mt-3 space-y-1 text-xs text-secondary-text">
+            {Object.entries(status.notification_routes).map(([route, channels]) => (
+              <div key={route} className="flex justify-between gap-3">
+                <span>{routeLabel(route)}</span>
+                <span>{channels.length ? channels.map(notificationLabel).join('、') : '未配置可用渠道'}</span>
+              </div>
+            ))}
+          </div>
+          <div className="pt-2 text-xs text-warning">
+            手机接收证据：{status.notification_delivery_evidence}
           </div>
           <p className="pt-2 text-xs text-secondary-text">配置成功不等于手机已收到；需完成真实接收回执。</p>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">

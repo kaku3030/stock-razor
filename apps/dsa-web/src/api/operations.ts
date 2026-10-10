@@ -9,6 +9,8 @@ export type OperationsStatus = {
   paper_engine_status: string;
   paper_runtime_api_status: string;
   notification_channels_configured: string[];
+  notification_routes: Record<string, string[]>;
+  notification_delivery_evidence: string;
   notification_ready: boolean;
   pending_acceptance: string[];
 };
