@@ -25,6 +25,7 @@ class ScreeningScreenRequest(BaseModel):
     strategy: str = Field("dual_low", min_length=1, max_length=64)
     max_results: int = Field(20, ge=1, le=100)
     variant_seed: str = Field("", max_length=128)
+    cache_only: bool = Field(False, description="只使用已有快照缓存，不访问外部行情源")
 
 
 class ScreeningStrategyResponse(BaseModel):
@@ -155,6 +156,7 @@ def screening_start_screen_task(
             market=request.market,
             max_results=request.max_results,
             selection_seed=request.variant_seed,
+            cache_only=request.cache_only,
             progress_callback=report_progress,
         )
         task_queue.update_task_progress(
@@ -214,6 +216,7 @@ def screening_screen(
         market=request.market,
         max_results=request.max_results,
         selection_seed=request.variant_seed,
+        cache_only=request.cache_only,
     )
 
 
