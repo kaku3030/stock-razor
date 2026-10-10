@@ -518,6 +518,13 @@ class TestAkShareSingleFlightConcurrency:
             # 拉取持续挂起时，所有冷启动等待者（含触发拉取的那一个）都必须
             # 在超时上界内自行返回，而非无限等待
             t2.join(timeout=10)
+            # Do not release the fake fetch until both callers have completed
+            # their bounded wait; otherwise a scheduler delay can let one
+            # waiter observe the released fetch and make this test flaky.
+            assert _wait_until(
+                lambda: "value" in r1 and "value" in r2,
+                timeout=5.0,
+            )
         finally:
             fake.release_fetch.set()
             t1.join(timeout=10)
