@@ -123,3 +123,46 @@ def test_aws_ssm_report_selects_sorted_json_regardless_first_key():
     # a valid SSM report and failed a completed cloud smoke workflow.
     assert "grep -E '^[{]' | tail -n1" in WORKFLOW
     assert "grep -E '^\\\\{'" not in WORKFLOW
+
+
+def test_free_mode_observes_historical_kline_shape_without_promoting_admission():
+    class Klines:
+        @staticmethod
+        def get(symbol, *, period, count):
+            assert symbol == "159611.SZ"
+            assert period == "1d"
+            assert count == 5
+            return [
+                {"timestamp": 1_700_000_000, "open": 10, "high": 11,
+                 "low": 9, "close": 10.5, "volume": 100},
+                {"timestamp": 1_700_086_400, "open": 10.5, "high": 12,
+                 "low": 10, "close": 11, "volume": 120},
+            ]
+
+    class Client:
+        klines = Klines()
+
+    class Factory:
+        @classmethod
+        def free(cls):
+            return Client()
+
+    result = build_probe(
+        mode="free",
+        symbols=("159611.SZ",),
+        client_factory=Factory,
+        credential_present=False,
+        sdk_version="test",
+    )
+    operation = result["operations"][1]
+    assert operation["name"] == "free_daily_kline"
+    assert operation["operation"] == "COMPLETED"
+    assert operation["row_count"] == 2
+    assert operation["symbol"] == "159611.SZ"
+    assert operation["summary"]["period"] == "1d"
+    assert operation["summary"]["sample_count"] == 2
+    assert operation["summary"]["timestamp_monotonicity"] == "STRICTLY_INCREASING"
+    assert operation["summary"]["ohlcv_range_valid"] is True
+    assert result["data_qualification"] == "NOT_VERIFIED"
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert result["radar_admission"] == "BLOCKED"
