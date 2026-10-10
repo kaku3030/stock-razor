@@ -109,6 +109,10 @@ assert data.get("source_arbiter_admission") == "BLOCKED"
 assert data.get("live_trade") is False
 assert data.get("can_confirm_signal") is False
 assert data.get("data_qualification") == "NOT_VERIFIED"
+if data.get("mode") == "free":
+  historical=data.get("historical_kline_observation")
+  assert historical and historical.get("period") == "1d"
+  assert historical.get("qualification") == "NOT_VERIFIED"
 ops=data.get("operations",[])
 if data.get("mode") == "premium-contract":
   assert ops and ops[0]["name"] == "premium_execution_gate"
@@ -123,6 +127,7 @@ print(json.dumps({
   "mode":data["mode"],
   "sdk_version":data.get("sdk_version"),
   "operations":ops,
+  "historical_kline_observation":data.get("historical_kline_observation"),
   "premium_execution":data.get("premium_execution"),
   "premium_contract":data.get("premium_contract"),
   "source_arbiter_admission":"BLOCKED",
