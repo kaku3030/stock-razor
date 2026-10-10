@@ -15,6 +15,7 @@ const Gate: React.FC<{ label: string; value: string; safe?: boolean }> = ({ labe
 );
 
 const notificationLabel = (channel: string): string => ({
+  discord: 'Discord',
   wechat: '企业微信',
   telegram: 'Telegram',
   feishu: '飞书',
