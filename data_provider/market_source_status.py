@@ -57,7 +57,6 @@ def read_market_source_status(
     cn_status = enum(cn.get("status"), {"PASS", "BLOCKED", "STALE", "NO_DATA", "UNAVAILABLE", "INVALID", "INVALID_ARGUMENT"})
     tf_status = enum(tf.get("status"), {"PROBE_ONLY", "STALE", "UNAVAILABLE", "INVALID"})
     us_ok = us.get("ok") is True and us_status == "HEALTHY"
-    cn_ok = cn.get("ok") is True and cn_status == "PASS"
     tf_evidence = tf.get("ok") is True and tf_status == "PROBE_ONLY"
     # CN runtime observations currently return the six-digit symbol, while
     # MCP callers use exchange-suffixed symbols such as 159611.SZ.
@@ -67,6 +66,7 @@ def read_market_source_status(
         and isinstance(cn_symbol_observed, str)
         and cn_symbol_observed in (cn_symbol, cn_symbol.split(".")[0])
     )
+    cn_ok = cn.get("ok") is True and cn_status == "PASS" and cn_symbol_matches
 
     result = {
         **safety,
@@ -83,6 +83,7 @@ def read_market_source_status(
             "cn_eastmoney_tencent": {
                 "status": cn_status,
                 "symbol": cn_symbol if cn_symbol_matches else None,
+                "symbol_exchange_verified": False,
                 "local_reader_latency_ms": cn_reader_ms,
                 "timeframe": "15m",
                 "observation_available": cn_ok,
