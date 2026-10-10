@@ -55,7 +55,7 @@ def audit_json_bytes(payload: bytes) -> dict[str, Any]:
         return blocked("INVALID_OR_OVERSIZED_INPUT")
     try:
         raw = json.loads(payload)
-    except (ValueError, UnicodeDecodeError, TypeError):
+    except (ValueError, UnicodeDecodeError, TypeError, RecursionError):
         return blocked("INVALID_JSON")
     if not isinstance(raw, list) or len(raw) > MAX_TRACES:
         return blocked("INVALID_TRACE_LIST")
