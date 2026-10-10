@@ -36,3 +36,19 @@ def test_operations_status_reports_configured_notification_channel(monkeypatch):
     assert "真实手机接收回执" in response.pending_acceptance
     assert response.live_trade is False
 
+
+def test_operations_status_reports_radar_discord_webhook(monkeypatch):
+    for key in (
+        "DISCORD_WEBHOOK_URL",
+        "DISCORD_BOT_TOKEN",
+        "DISCORD_MAIN_CHANNEL_ID",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("DISCORD_RADAR_WEBHOOK_URL", "https://discord.example/radar")
+
+    response = operations_status()
+
+    assert response.notification_channels_configured == ["discord"]
+    assert response.notification_ready is True
+    assert response.live_trade is False
+
