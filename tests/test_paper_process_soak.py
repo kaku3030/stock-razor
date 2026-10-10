@@ -173,7 +173,9 @@ def test_crash_after_shadow_before_submit_is_ambiguous_and_not_success(tmp_path)
 
     assert child.returncode == 73
     assert len(ExecutionStore(shadow_path).events()) == 1
-    assert ExecutionStore(runtime_path).events() == []
+    runtime_events = ExecutionStore(runtime_path).events()
+    assert [event.kind for event in runtime_events] == ["VALIDATED", "SUBMITTING"]
+    assert not any(event.kind in {"ACCEPTED", "FILLED"} for event in runtime_events)
     assert not list(tmp_path.glob("*.broker-success"))
 
 
