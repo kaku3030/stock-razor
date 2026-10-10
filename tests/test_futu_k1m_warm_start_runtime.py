@@ -8,6 +8,7 @@ from src.services.realtime_market_data import RealtimeMarketDataService
 
 
 NOW = datetime(2026, 10, 7, 5, 0, tzinfo=timezone.utc)
+MARKET_NOW = datetime(2026, 10, 7, 13, 57, 48, tzinfo=timezone.utc)
 
 
 def _session(day: str, symbol: str):
@@ -136,6 +137,42 @@ def test_runtime_warm_start_seeds_prior_day_terminal_session_without_anchor():
         "NEXT_TIME_KEY_PROGRESS",
         "QUALIFIED_PRIOR_SESSION_FULL_GRID",
     )
+
+
+def test_runtime_catches_up_current_session_closed_bars_without_tail():
+    symbol = "US.AMD"
+    rows = [
+        *_session("2026-10-02", symbol),
+        *_session("2026-10-05", symbol),
+        *_session("2026-10-06", symbol),
+        *_session("2026-10-07", symbol)[:28],
+    ]
+    cache = _Cache()
+
+    result = seed_futu_k1m_research_cache(
+        [symbol],
+        fetch_page=lambda *args: (rows, None),
+        market_data=cache,
+        received_at=MARKET_NOW,
+    )
+
+    assert result.status == "PASS"
+    assert result.seeded_total == 1170
+    assert result.current_session_catchup_seeded_total == 27
+    assert result.current_session_catchup_unchanged_total == 0
+    assert len(cache.bars) == 1197
+    item = result.symbols[0]
+    assert item.current_session_catchup_status == "PASS"
+    assert item.current_session_catchup_date == "2026-10-07"
+    assert item.current_session_catchup_planned_bar_count == 27
+    assert item.current_session_catchup_seeded_count == 27
+    assert item.current_session_catchup_unchanged_count == 0
+    assert item.current_session_catchup_unresolved_tail_time_key == "2026-10-07 09:58:00"
+    assert item.current_session_catchup_closure_method == "NEXT_TIME_KEY_PROGRESS"
+    assert item.current_session_catchup_reason is None
+    latest = max(cache.bars.values(), key=lambda bar: bar.bar_end)
+    assert latest.bar_end == datetime(2026, 10, 7, 13, 57, tzinfo=timezone.utc)
+    assert latest.quality_flags == ("HISTORICAL_QUERY",)
 
 
 def test_page_limit_blocks_without_partial_seed():
