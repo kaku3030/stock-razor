@@ -14,6 +14,8 @@ class OperationsStatusResponse(BaseModel):
     paper_engine_status: str
     paper_runtime_api_status: str
     notification_channels_configured: list[str]
+    notification_routes: dict[str, list[str]]
+    notification_delivery_evidence: str
     notification_ready: bool
     pending_acceptance: list[str]
 
