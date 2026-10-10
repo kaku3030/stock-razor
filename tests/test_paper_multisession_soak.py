@@ -85,10 +85,12 @@ def _runtime(path, *, reconcile=None):
         )
     )
     engine = ExecutionEngine(capability, _risk_guard(), ExecutionStore(path))
+    shadow_path = path.with_name(path.stem + "-shadow.sqlite")
     owner = PaperRuntimeOrchestrator(
         engine,
         runtime_generation="paper-soak-runtime",
         account_generation="paper-soak-account",
+        shadow_store=ExecutionStore(shadow_path),
     )
     return owner, engine, capability.adapter
 
