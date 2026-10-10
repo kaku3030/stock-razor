@@ -64,6 +64,7 @@ def operations_status() -> OperationsStatusResponse:
         "TickFlow 实盘连续性与真实历史交叉验证",
         "真实手机接收回执",
         "PAPER_AUTO_READY 独立验收",
+        "云端 OpenD SIMULATE 账户只读发现",
     ]
     return OperationsStatusResponse(
         mode="research_only" if radar != "PASS" or arbiter != "PASS" else "paper_only",
@@ -74,6 +75,8 @@ def operations_status() -> OperationsStatusResponse:
         paper_auto_ready=os.getenv("PAPER_AUTO_READY", "NO").strip().upper() == "YES",
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         paper_runtime_api_status="NOT_EXPOSED",
+        external_simulator_contract_status="READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT",
+        simulated_account_evidence="NOT_VERIFIED",
         notification_channels_configured=channels,
         notification_routes=_effective_notification_routes(channels),
         notification_delivery_evidence="NOT_VERIFIED",
