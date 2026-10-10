@@ -21,7 +21,9 @@ from .paper_execution_admission import (
     ExecutionAdmissionEvidence,
     PaperOrderSpec,
     build_paper_order_intent,
+    build_paper_order_intent_from_trade_plan,
 )
+from .trade_plan import TradePlan
 
 
 class PaperRuntimeState(StrEnum):
@@ -136,6 +138,61 @@ class PaperRuntimeOrchestrator:
                 raise ExecutionBlocked("paper runtime requires the single-writer owner thread")
             try:
                 intent = build_paper_order_intent(evidence, spec, now=context.now)
+                reconciliation = self._engine.reconciliation
+                if reconciliation is None:
+                    raise ExecutionBlocked("startup reconciliation is required")
+                preview = self._shadow.preview(
+                    intent,
+                    context,
+                    reconciliation,
+                    self._account_generation,
+                )
+                if not preview.eligible_for_execution:
+                    raise ExecutionBlocked(
+                        preview.reason or "shadow preview is not eligible for execution"
+                    )
+                record = self._engine.submit(intent, context)
+            except ExecutionBlocked:
+                raise
+            except Exception:
+                self._state = PaperRuntimeState.FAILED
+                raise
+            return PaperRuntimeResult(
+                runtime_generation=self._runtime_generation,
+                intent_id=intent.intent_id,
+                shadow_decision_id=preview.decision_id,
+                order_state=record.state,
+                broker_order_id=record.broker_order_id,
+                fill_ids=tuple(record.fill_ids),
+                filled_qty=record.filled_qty,
+            )
+
+    def process_trade_plan(
+        self,
+        evidence: ExecutionAdmissionEvidence,
+        plan: TradePlan,
+        *,
+        entry_price: Decimal,
+        max_slippage: Decimal,
+        evidence_snapshot_id: str,
+        context: RiskContext,
+    ) -> PaperRuntimeResult:
+        """Translate one precomputed TradePlan and execute through the same paper path."""
+
+        with self._lock:
+            if self._state is not PaperRuntimeState.READY:
+                raise ExecutionBlocked("paper runtime is not READY")
+            if threading.get_ident() != self._owner_thread_id:
+                raise ExecutionBlocked("paper runtime requires the single-writer owner thread")
+            try:
+                intent = build_paper_order_intent_from_trade_plan(
+                    evidence,
+                    plan,
+                    entry_price=entry_price,
+                    max_slippage=max_slippage,
+                    evidence_snapshot_id=evidence_snapshot_id,
+                    now=context.now,
+                )
                 reconciliation = self._engine.reconciliation
                 if reconciliation is None:
                     raise ExecutionBlocked("startup reconciliation is required")
