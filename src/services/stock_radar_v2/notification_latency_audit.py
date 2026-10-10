@@ -112,7 +112,11 @@ def audit_market_to_notification_traces(
             rejected += 1
             continue
         receipt = trace.get("notification_receipt_utc")
-        if receipt is not None and not _valid_time(receipt):
+        if receipt is not None and (
+            not _valid_time(receipt)
+            or trace.get("device_receipt_verified") is not True
+        ):
+            # Dispatch/HTTP 200/queue acceptance is not phone delivery.
             rejected += 1
             continue
         times = [trace[stage] for stage in STAGES[:-1]]
