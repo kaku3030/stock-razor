@@ -1,4 +1,3 @@
-Warning: truncated output (original token count: 26994)
 Total output lines: 400
 
 # 变更记录
@@ -1102,7 +1101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 改进
 
 - 🖥️ **核心页面统一到同一套工作台视觉语言** — `Home / Chat / Backtest / Portfolio / Settings` 进一步收口到共享设计 token、`input-surface` 输入体系、空态/错误态表达和抽屉遮罩语义，减少页面之间的视觉割裂与局部私有样式漂移。
-Warning: truncated output (original token count: 15080)
 Total output lines: 400
 
 - 💬 **问股交互可达性与反馈增强** — 问股页补强了会话导出、通知发送、消息复制、历史删除与追问上下文提示；AI 回复操作不再过度依赖 hover，触屏设备和小屏场景下也能直接触达关键按钮。
