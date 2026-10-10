@@ -83,6 +83,13 @@ def _decimal(value: object, field: str) -> Decimal:
     return result
 
 
+def _enum_value(enum_type: type, value: object, field: str):
+    try:
+        return enum_type(str(value).upper())
+    except ValueError as exc:
+        raise ExternalSimulatorBlocked(f"{field} is unsupported") from exc
+
+
 def admit_external_sim_order(
     evidence: SimulatedAccountEvidence,
     request: ExternalSimOrderRequest,
@@ -100,9 +107,9 @@ def admit_external_sim_order(
     account_id = _text(evidence.account_id, "account_id")
     if account_id != _text(evidence.observed_account_id, "observed_account_id"):
         raise ExternalSimulatorBlocked("exact simulated account identity mismatch")
-    if SimulatorMode(str(evidence.mode).upper()) is not SimulatorMode.SIMULATE:
+    if _enum_value(SimulatorMode, evidence.mode, "mode") is not SimulatorMode.SIMULATE:
         raise ExternalSimulatorBlocked("external simulator requires SIMULATE mode")
-    if SimulatorMode(str(evidence.observed_mode).upper()) is not SimulatorMode.SIMULATE:
+    if _enum_value(SimulatorMode, evidence.observed_mode, "observed_mode") is not SimulatorMode.SIMULATE:
         raise ExternalSimulatorBlocked("observed account mode is not SIMULATE")
     if _text(evidence.market, "market").upper() != "US":
         raise ExternalSimulatorBlocked("external simulator contract is US-only")
@@ -119,7 +126,7 @@ def admit_external_sim_order(
         raise ExternalSimulatorBlocked("side must be BUY or SELL")
     if request.kill_switch:
         raise ExternalSimulatorBlocked("kill switch is active")
-    if SoftwareStopStatus(str(request.protective_stop_status)) is not SoftwareStopStatus.SIM_ONLY_UNPROTECTED_IF_DISCONNECTED:
+    if _enum_value(SoftwareStopStatus, request.protective_stop_status, "protective_stop_status") is not SoftwareStopStatus.SIM_ONLY_UNPROTECTED_IF_DISCONNECTED:
         raise ExternalSimulatorBlocked("protective stop status must disclose software-only protection")
 
     quantity = _decimal(request.quantity, "quantity")
