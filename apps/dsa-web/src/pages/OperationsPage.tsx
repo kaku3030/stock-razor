@@ -91,7 +91,10 @@ const OperationsPage: React.FC = () => {
             渠道：{status.notification_channels_configured.length ? status.notification_channels_configured.map(notificationLabel).join('、') : '暂无'}
           </div>
           <p className="pt-2 text-xs text-secondary-text">配置成功不等于手机已收到；需完成真实接收回执。</p>
-          <a className="mt-4 inline-block text-sm text-primary underline" href="/alerts">打开告警中心</a>
+          <div className="mt-4 flex flex-wrap gap-4 text-sm">
+            <a className="text-primary underline" href="/alerts">打开告警中心</a>
+            <a className="text-primary underline" href="/settings">通知设置与测试</a>
+          </div>
         </Card>
         <Card title="Paper Trading" subtitle="EXECUTION">
           <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
