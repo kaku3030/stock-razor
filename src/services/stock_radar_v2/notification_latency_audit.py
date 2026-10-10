@@ -99,7 +99,6 @@ def audit_market_to_notification_traces(
         if identity in seen:
             duplicates += 1
             continue
-        seen.add(identity)
         if (trace.get("provider_timestamp_verified") is not True
                 or trace.get("clock_sync_verified") is not True):
             rejected += 1
@@ -128,6 +127,7 @@ def audit_market_to_notification_traces(
         if _span_ms(times[0], times[-1]) > MAX_CHAIN_MS:
             rejected += 1
             continue
+        seen.add(identity)
         accepted += 1
         spans["provider_to_aws_ms"].append(intervals[0])
         spans["aws_to_radar_ms"].append(intervals[1])
