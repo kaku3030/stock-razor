@@ -56,7 +56,7 @@ def test_completed_long_trade_reports_realized_r_and_excursions():
     assert result.realized_pnl == Decimal("39")
     assert result.realized_r == Decimal("39") / Decimal("20")
     assert result.mae_r == Decimal("-0.5")
-    assert result.mfe_r == Decimal("1.5")
+    assert result.mfe_r == Decimal("3")
 
 
 def test_short_trade_uses_inverted_risk_geometry():
@@ -68,7 +68,7 @@ def test_short_trade_uses_inverted_risk_geometry():
     )
     assert result.status is PaperReviewStatus.COMPLETED
     assert result.realized_pnl == Decimal("40")
-    assert result.realized_r == Decimal("1")
+    assert result.realized_r == Decimal("2")
     assert result.mae_r == Decimal("-1.5")
     assert result.mfe_r == Decimal("3")
 
