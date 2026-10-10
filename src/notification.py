@@ -544,6 +544,7 @@ class NotificationService(
 
         if (
             getattr(config, "discord_webhook_url", None)
+            or getattr(config, "discord_radar_webhook_url", None)
             or (
                 getattr(config, "discord_bot_token", None)
                 and getattr(config, "discord_main_channel_id", None)
@@ -2632,7 +2633,7 @@ class NotificationService(
                 return self._send_custom_webhook_image(image_bytes, fallback_content=content)
             return self.send_to_custom(sanitized_content)
         if channel == NotificationChannel.DISCORD:
-            return self.send_to_discord(content)
+            return self.send_to_discord(content, route_type=route_type)
         if channel == NotificationChannel.SLACK:
             if use_image:
                 return self._send_slack_image(image_bytes, fallback_content=content)
