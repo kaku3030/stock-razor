@@ -27,7 +27,15 @@ class TradeHorizon(StrEnum):
 
 class TradePlanStatus(StrEnum):
     PLAN_PASS = "PLAN_PASS"
+    WAIT = "WAIT"
+    NO_TRADE = "NO_TRADE"
     ENTRY_BLOCKED = "ENTRY_BLOCKED"
+
+
+class TradeDecision(StrEnum):
+    ACTIONABLE = "ACTIONABLE"
+    WAIT = "WAIT"
+    NO_TRADE = "NO_TRADE"
 
 
 def _decimal(value: object | None, field: str) -> Decimal | None:
@@ -75,6 +83,7 @@ class TradePlan:
     quote_age_seconds: int | None
     monitoring_status: str | None
     protection_status: str | None
+    decision: TradeDecision = TradeDecision.ACTIONABLE
     short_permission: bool | None = None
     borrow_available: bool | None = None
     margin_available: bool | None = None
@@ -114,8 +123,10 @@ def evaluate_trade_plan(plan: TradePlan, *, now: datetime) -> TradePlanAdmission
         raise ValueError("now must be timezone-aware")
     now_utc = now.astimezone(timezone.utc)
 
-    if plan.direction is TradeDirection.WAIT:
-        return TradePlanAdmission(TradePlanStatus.ENTRY_BLOCKED, ("WAIT_NO_ENTRY",))
+    if plan.direction is TradeDirection.WAIT or plan.decision is TradeDecision.WAIT:
+        return TradePlanAdmission(TradePlanStatus.WAIT, ("WAIT_NO_ENTRY",))
+    if plan.decision is TradeDecision.NO_TRADE:
+        return TradePlanAdmission(TradePlanStatus.NO_TRADE, ("NO_TRADE_DECLARED",))
 
     missing = []
     required = {

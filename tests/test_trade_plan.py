@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from src.services.trade_plan import (
+    TradeDecision,
     TradeDirection,
     TradeHorizon,
     TradePlan,
@@ -50,8 +51,35 @@ def test_complete_long_plan_passes_without_creating_order():
 
 def test_wait_is_a_valid_no_trade_decision_but_not_an_entry_pass():
     result = evaluate_trade_plan(plan(direction=TradeDirection.WAIT), now=NOW)
-    assert result.status is TradePlanStatus.ENTRY_BLOCKED
+    assert result.status is TradePlanStatus.WAIT
     assert result.reasons == ("WAIT_NO_ENTRY",)
+
+
+def test_explicit_no_trade_is_distinct_and_does_not_require_entry_fields():
+    result = evaluate_trade_plan(
+        plan(
+            decision=TradeDecision.NO_TRADE,
+            entry_low=None,
+            entry_high=None,
+            entry_ttl=None,
+            trigger_frame=None,
+            invalidation=None,
+            stop_price=None,
+            target_price=None,
+            quantity=None,
+            risk_budget_r=None,
+            estimated_cost=None,
+            estimated_slippage=None,
+            source=None,
+            quote_age_seconds=None,
+            monitoring_status=None,
+            protection_status=None,
+        ),
+        now=NOW,
+    )
+    assert result.status is TradePlanStatus.NO_TRADE
+    assert result.passed is False
+    assert result.reasons == ("NO_TRADE_DECLARED",)
 
 
 def test_missing_protection_and_costs_fail_closed():
