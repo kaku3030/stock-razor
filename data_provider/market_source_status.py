@@ -63,6 +63,11 @@ def read_market_source_status(
         if isinstance(tf.get("historical_kline_observation"), dict)
         else "NOT_REQUESTED"
     )
+    websocket_observation = "NOT_REQUESTED"
+    for operation in tf.get("operations", []):
+        if isinstance(operation, dict) and operation.get("name") == "websocket_quote_smoke":
+            websocket_observation = operation
+            break
     # CN runtime observations currently return the six-digit symbol, while
     # MCP callers use exchange-suffixed symbols such as 159611.SZ.
     cn_symbol_observed = cn.get("symbol")
@@ -98,6 +103,7 @@ def read_market_source_status(
                 "status": tf_status,
                 "isolated_probe_evidence_available": tf_evidence,
                 "historical_kline_observation": historical_kline_observation,
+                "websocket_observation": websocket_observation,
                 "local_reader_latency_ms": tf_reader_ms,
                 "production_feed_connected": False,
                 "tickflow_to_radar_e2e": "NOT_VERIFIED",
