@@ -392,8 +392,8 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
     cached snapshot; even later samples are only update *candidates*.
     Never interpret the initial snapshot or any unqualified age as E2E lag.
     """
-    if not 0 < seconds <= 15:
-        raise ValueError("WebSocket probe duration must be (0,15] seconds")
+    if not 0 < seconds <= 60:
+        raise ValueError("WebSocket probe duration must be (0,60] seconds")
     counts = {
         "quote_callbacks": 0,
         "quote_events": 0,

@@ -425,10 +425,17 @@ def test_ws_diagnostics_keep_connection_failure_separate_from_subscription(monke
     assert ws["failure_class"] == "ConnectionError"
 
 
-def test_ws_requires_explicit_premium_and_bounded_duration():
+def test_ws_requires_explicit_premium_and_bounded_duration(monkeypatch):
     for mode in ("free", "metadata"):
         with pytest.raises(ValueError):
             probe.build_probe(mode=mode, symbols=("159611.SZ",), ws_seconds=1)
+    monkeypatch.setattr(probe.time, "sleep", lambda seconds: None)
+    result = probe.build_probe(
+        mode="premium", symbols=("159611.SZ", "518880.SH"), ws_seconds=60,
+        client_factory=FakeClient, credential_present=True,
+    )
+    assert result["operations"][-1]["name"] == "websocket_quote_smoke"
+    assert result["operations"][-1]["operation"] == "OBSERVED"
     with pytest.raises(ValueError):
         probe.build_probe(mode="premium", symbols=("159611.SZ",), ws_seconds=61)
 
@@ -447,7 +454,7 @@ def test_sdk_chinese_console_notice_is_suppressed_and_no_payload_printed(capsys)
     class NoisyFreeClient(FakeClient):
         @classmethod
         def free(cls):
-            print("åè´¹æ°æ®æç¤ºï¼KEY_DO_NOT_LEAK")
+            print("Ã¥ÂÂÃ¨Â´Â¹Ã¦ÂÂ°Ã¦ÂÂ®Ã¦ÂÂÃ§Â¤ÂºÃ¯Â¼ÂKEY_DO_NOT_LEAK")
             return cls()
 
     result = probe.build_probe(
