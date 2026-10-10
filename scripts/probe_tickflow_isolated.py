@@ -560,6 +560,7 @@ def build_probe(
         "api_key_present": credential_present,
         "symbols": list(symbols),
         "operations": [],
+        "historical_kline_observation": "NOT_REQUESTED",
         "cloud_independence": "NOT_VERIFIED",
         "real_market_slo": "NOT_VERIFIED",
         "schema_units_timezone_adjustment": "NOT_VERIFIED",
@@ -647,6 +648,14 @@ def build_probe(
         )
         operation["symbol"] = symbols[0]
         result["operations"].append(operation)
+        result["historical_kline_observation"] = {
+            "operation": operation["operation"],
+            "symbol": symbols[0],
+            "period": "1d",
+            "row_count": operation.get("row_count"),
+            "summary": operation.get("summary"),
+            "qualification": "NOT_VERIFIED",
+        }
         return result
 
     result["operations"].append(
