@@ -64,10 +64,50 @@ def read_market_source_status(
         else "NOT_REQUESTED"
     )
     websocket_observation = "NOT_REQUESTED"
+    websocket_operation_states = {
+        "COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED",
+        "FAILED", "BLOCKED", "SKIPPED", "ERROR",
+    }
+    websocket_string_allowlist = {
+        "connection_state": {"PASS", "FAIL", "UNKNOWN"},
+        "subscription_state": {"PASS", "FAIL", "UNKNOWN"},
+        "event_state": {"PASS", "UNKNOWN"},
+        "lag_scope": {"POST_INITIAL_CANDIDATES_ONLY_NOT_VERIFIED_LIVE"},
+        "subscribed_ack_evidence": {"NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"},
+        "snapshot_vs_live_evidence": {"NOT_VERIFIED"},
+        "ping_pong_evidence": {"NOT_VERIFIED"},
+        "reconnect_resubscribe_evidence": {"NOT_VERIFIED"},
+        "sample_latency_qualification": {"NOT_VERIFIED"},
+        "clock_offset_qualification": {"NOT_VERIFIED"},
+    }
+    websocket_count_fields = (
+        "quote_callbacks", "quote_events", "unique_quote_samples",
+        "initial_snapshot_candidates", "post_initial_update_candidates",
+        "duplicate_timestamp_events", "out_of_order_timestamp_events",
+        "unrequested_symbol_events", "invalid_timestamp_events", "error_callbacks",
+    )
     for operation in tf.get("operations", []):
-        if isinstance(operation, dict) and operation.get("name") == "websocket_quote_smoke":
-            websocket_observation = operation
+        if not isinstance(operation, dict) or operation.get("name") != "websocket_quote_smoke":
+            continue
+        if operation.get("operation") not in websocket_operation_states:
             break
+        projected = {
+            "name": "websocket_quote_smoke",
+            "operation": operation["operation"],
+        }
+        for field in websocket_count_fields:
+            value = operation.get(field)
+            if type(value) is int and 0 <= value <= 100000000:
+                projected[field] = value
+        for field, allowed in websocket_string_allowlist.items():
+            value = operation.get(field)
+            if value in allowed:
+                projected[field] = value
+        for field in ("continuous_feed_qualified", "stale_drop_reconnect_qualified"):
+            if type(operation.get(field)) is bool:
+                projected[field] = operation[field]
+        websocket_observation = projected
+        break
     # CN runtime observations currently return the six-digit symbol, while
     # MCP callers use exchange-suffixed symbols such as 159611.SZ.
     cn_symbol_observed = cn.get("symbol")
