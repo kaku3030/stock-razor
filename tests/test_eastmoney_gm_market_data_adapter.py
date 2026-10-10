@@ -87,6 +87,49 @@ def test_current_without_timestamp_is_watch_only_and_never_live_ready() -> None:
     assert quote.health.signal_permission is SignalPermission.WATCH_ONLY
 
 
+def test_current_future_timestamp_is_blocked_instead_of_fresh() -> None:
+    class FutureQuoteGM(FakeGM):
+        def current(self, **kwargs):
+            return [{
+                "last_price": 101,
+                "created_at": "2026-09-30 16:01:00",
+                "volume": 1200,
+                "amount": 121000,
+            }]
+
+    quote = EastmoneyGMMarketDataAdapter(FutureQuoteGM(), now=lambda: NOW).get_latest_quote("600519.SH")
+
+    assert {"TIMESTAMP_MISMATCH", "PROVIDER_TIMESTAMP_IN_FUTURE"}.issubset(quote.quality_flags)
+    assert quote.health is not None
+    assert quote.health.signal_permission is SignalPermission.BLOCKED
+
+
+def test_future_provider_timestamp_is_visible_and_blocks_health() -> None:
+    class FutureGM(FakeGM):
+        def history_n(self, **kwargs):
+            return pd.DataFrame([{
+                "bob": "2026-09-30 16:00",
+                "eob": "2026-09-30 16:15",
+                "open": 100, "high": 101, "low": 99, "close": 100.5,
+                "volume": 10, "amount": 1000,
+            }])
+
+    bars = EastmoneyGMMarketDataAdapter(FutureGM(), now=lambda: NOW).get_bars(
+        "600519.SH", "15m", limit=20
+    )
+
+    bar = bars[0]
+    assert bar.freshness_ms == -15 * 60 * 1000
+    assert bar.latency_ms == bar.freshness_ms
+    assert bar.is_closed is False
+    assert bar.is_complete is False
+    assert {"TIMESTAMP_MISMATCH", "PROVIDER_TIMESTAMP_IN_FUTURE", "PARTIAL_BAR"}.issubset(
+        bar.quality_flags
+    )
+    assert bar.health is not None
+    assert bar.health.signal_permission is SignalPermission.BLOCKED
+
+
 def test_end_only_daily_query_uses_bounded_history_n() -> None:
     client = FakeGM()
     adapter = EastmoneyGMMarketDataAdapter(client, now=lambda: NOW)
