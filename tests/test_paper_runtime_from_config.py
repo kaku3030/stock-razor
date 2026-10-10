@@ -89,4 +89,5 @@ def test_from_config_reads_environment_without_creating_store_files(tmp_path, mo
     )
 
     assert owner.state is PaperRuntimeState.NEW
-    assert not shadow_path.exists()
+    assert shadow_path.exists()
+    assert shadow_path != execution_path
