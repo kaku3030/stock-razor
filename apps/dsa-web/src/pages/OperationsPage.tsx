@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Activity, BellRing, ShieldCheck } from 'lucide-react';
 import { operationsApi, type OperationsStatus } from '../api/operations';
-import { ApiErrorAlert, AppPage, Card, InlineAlert, Loading, PageHeader } from '../components/common';
+import { ApiErrorAlert, AppPage, Card, Loading, PageHeader } from '../components/common';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 
 const Gate: React.FC<{ label: string; value: string; safe?: boolean }> = ({ label, value, safe = false }) => (
