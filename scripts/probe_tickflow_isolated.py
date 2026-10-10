@@ -640,12 +640,13 @@ def build_probe(
         })
         return result
     if mode == "free":
-        result["operations"].append(
-            _operation(
-                "free_daily_kline",
-                lambda: client.klines.get(symbols[0], period="1d", count=5),
-            )
+        operation = _operation(
+            "free_daily_kline",
+            lambda: client.klines.get(symbols[0], period="1d", count=5),
+            summarize=lambda value: _kline_summary(value, period="1d"),
         )
+        operation["symbol"] = symbols[0]
+        result["operations"].append(operation)
         return result
 
     result["operations"].append(
