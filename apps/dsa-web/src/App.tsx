@@ -25,6 +25,7 @@ const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
 const ResearchValidationPage = lazy(() => import('./pages/ResearchValidationPage'));
 const MarketVtiPage = lazy(() => import('./pages/MarketVtiPage'));
+const OperationsPage = lazy(() => import('./pages/OperationsPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -90,6 +91,7 @@ const AppContent: React.FC = () => {
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/research-validation" element={<ResearchValidationPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/operations" element={<OperationsPage />} />
         <Route path="/usage" element={<TokenUsagePage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
