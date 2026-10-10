@@ -120,6 +120,7 @@ const OperationsPage: React.FC = () => {
           <Gate label="Paper 引擎" value={status.paper_engine_status} safe={status.paper_engine_status === 'IMPLEMENTED_OFFLINE_ONLY'} />
           <Gate label="Web 自动执行入口" value={status.paper_runtime_api_status} />
           <Gate label="异常执行复核投影" value={status.execution_recovery_projection_status} />
+          <Gate label="Paper Store 配置" value={status.paper_runtime_store_config_status} />
           <Gate label="Live Trade" value={status.live_trade ? 'ON' : 'NO'} />
           <p className="pt-3 text-xs text-secondary-text">自动执行仍需独立重启、重连与对账验收。</p>
         </Card>

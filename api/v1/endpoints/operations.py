@@ -6,6 +6,8 @@ from fastapi import APIRouter
 
 from api.v1.schemas.operations import OperationsStatusResponse
 from src.notification_routing import NOTIFICATION_ROUTE_CONFIGS, split_notification_route_channels
+from src.services.execution_engine import ExecutionBlocked
+from src.services.paper_runtime_store_config import PaperRuntimeStoreConfig
 
 router = APIRouter()
 
@@ -36,6 +38,13 @@ def _configured_channels() -> list[str]:
     if os.getenv("DISCORD_RADAR_WEBHOOK_URL", "").strip() and "discord" not in channels:
         channels.append("discord")
     return channels
+
+
+def _paper_runtime_store_config_status() -> str:
+    try:
+        return PaperRuntimeStoreConfig.from_env().status()
+    except ExecutionBlocked:
+        return "NOT_CONFIGURED_OR_INVALID"
 
 
 def _effective_notification_routes(channels: list[str]) -> dict[str, list[str]]:
@@ -76,6 +85,7 @@ def operations_status() -> OperationsStatusResponse:
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         paper_runtime_api_status="NOT_EXPOSED",
         execution_recovery_projection_status="IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING",
+        paper_runtime_store_config_status=_paper_runtime_store_config_status(),
         external_simulator_contract_status="READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT",
         simulated_account_evidence="NOT_VERIFIED",
         notification_channels_configured=channels,
