@@ -66,3 +66,34 @@ def test_probe_requires_exact_sha_and_keeps_unobservable_latency_blocked(monkeyp
     assert result["continuous_live_quote_sequence"]["status"] == "NOT_VERIFIED"
     assert result["latency_ms"]["provider_to_callback"]["status"] == "NOT_VERIFIED"
     assert result["radar_admission"] == "BLOCKED"
+
+
+def test_probe_keeps_negative_end_label_age_out_of_latency_and_accepts_symbol_override(monkeypatch):
+    payload = {
+        "repo_sha": "a" * 40,
+        "sequence": 4,
+        "event_count": 8,
+        "last_push_utc": "2026-10-09T00:00:00+00:00",
+        "emitted_at_utc": "2026-10-09T00:00:00+00:00",
+        "latest_k1m_time_keys": {"US.GLDM": "2026-10-09 09:30:00"},
+        "k1m_currentness": {"US.GLDM": {"status": "PASS", "age_seconds": -2.5}},
+        "canonical_cache": {"US.GLDM": {"bar_count_15m": 1, "bar_count_1h": 1}},
+        "cache_session_us": "US_RTH",
+        "bar_closure": "UNPROVEN",
+        "adapter_diagnostics": {"provider_callback_latency_sample_count": 3, "provider_callback_latency_ms_max": 4.0},
+        "symbols": ["US.GLDM"],
+        "subscribed": ["US.GLDM"],
+        "quote_right_evidence": {"query_status": "PASS"},
+    }
+    monkeypatch.setattr("scripts.probe_us_cloud_exact._read_json", lambda path: payload)
+    monkeypatch.setattr("scripts.probe_us_cloud_exact._now", lambda: datetime(2026, 10, 9, tzinfo=timezone.utc))
+    clock = iter(range(100))
+    monkeypatch.setattr("time.monotonic", lambda: next(clock))
+    result = probe(expected_sha="a" * 40, symbols=("US.GLDM",), duration_seconds=5, interval_seconds=0.5, sleep=lambda _: None)
+    assert result["symbols"] == ["US.GLDM"]
+    assert result["timestamp_freshness"]["status"] == "NOT_VERIFIED"
+    assert result["latency_ms"]["provider_to_callback"]["status"] == "NOT_VERIFIED"
+    assert result["latency_ms"]["end_label_age"]["per_symbol"]["US.GLDM"]["classification"] == "NEGATIVE_END_LABEL_AGE_NOT_LATENCY"
+    assert result["latency_ms"]["callback_processing_only"]["status"] == "OBSERVED"
+    assert result["symbol_coverage"]["per_symbol"]["US.GLDM"]["status"] == "PASS"
+    assert result["holdings_integrity"]["status"] == "NOT_VERIFIED"
