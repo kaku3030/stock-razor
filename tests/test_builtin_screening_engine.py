@@ -686,6 +686,26 @@ def test_sina_snapshot_uses_timeout_wrapper(monkeypatch) -> None:
     assert captured["fetcher"] is screening_snapshot._fetch_sina
 
 
+def test_offline_snapshot_mode_uses_cache_without_calling_provider(tmp_path, monkeypatch) -> None:
+    cache_path = tmp_path / "snapshot.last_good.json"
+    expected = pd.DataFrame([{"code": "000001", "name": "Ping An", "price": 10.0}])
+    screening_snapshot._write_last_good_snapshot(cache_path, expected, source_priority=["sina"])
+
+    def fail_fetch(*args, **kwargs):
+        raise AssertionError("offline snapshot must not call a provider")
+
+    monkeypatch.setattr(screening_snapshot, "fetch_cn_snapshot", fail_fetch)
+    result = screening_snapshot.fetch_snapshot_with_fallback(
+        ["sina"],
+        fallback_snapshot_path=cache_path,
+        cache_ttl_seconds=300,
+        offline_only=True,
+    )
+
+    assert result["code"].tolist() == ["000001"]
+    assert result.attrs["offline_only"] is True
+
+
 def test_em_datacenter_snapshot_uses_timeout_wrapper(monkeypatch) -> None:
     expected = pd.DataFrame([{"code": "000001"}])
     captured: dict[str, object] = {}
