@@ -17,25 +17,25 @@ def test_installer_is_read_only_and_fail_closed():
     assert "adapter_diagnostics" in INSTALLER
 
 def test_deploy_binds_exact_sha_and_requires_heartbeat():
-    assert "REPO_REF=$REPO_REF" in WORKFLOW
-    assert "us_opend_livefeed_heartbeat" in WORKFLOW
-    assert '"event_count":[1-9][0-9]*' in WORKFLOW
-    assert '"last_push_utc":"[^"]+"' in WORKFLOW
-    assert '"live_trade":false' in WORKFLOW
-    assert '"delivery_mode":"(UNKNOWN|REALTIME)"' in WORKFLOW
-    assert '"quote_right_evidence":' in WORKFLOW
-    assert '"bar_closure":"(UNPROVEN|PROVEN)"' in WORKFLOW
-    assert '"radar_admission":"BLOCKED"' in WORKFLOW
-    assert '"closure_pipeline":' in WORKFLOW
-    assert '"k1m_closure_qualification":' in WORKFLOW
-    assert '"k1m_closure_qualification_summary":' in WORKFLOW
-    assert '"can_promote":false' in WORKFLOW
-    assert '"research_consumer":' in WORKFLOW
-    assert '"canonical_cache":' in WORKFLOW
-    assert '"canonical_snapshot_export":{"status":"PASS"' in WORKFLOW
+    # The GitHub runner no longer prints raw heartbeat into public logs.
+    # The pinned, independently SHA256-verified remote verifier performs
+    # the deep field checks, while the runner accepts only fixed markers.
+    assert "inputs.expected_main_sha == github.sha" in WORKFLOW
+    assert "inputs.approve_restart == true" in WORKFLOW
+    assert "ref: ${{ github.sha }}" in WORKFLOW
+    assert "REPO_REF='$REPO_REF' bash" in WORKFLOW
+    assert "verify_us_opend_livefeed.sh" in WORKFLOW
+    assert "sha256sum -c - >/dev/null" in WORKFLOW
+    assert "US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS" in WORKFLOW
     assert "CANONICAL_SNAPSHOT_EXPORT=PASS" in WORKFLOW
     assert "canonical-market-snapshot.json" in WORKFLOW
-    assert "US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS" in WORKFLOW
+    assert 'heartbeat.get("repo_sha") == expected_sha' in VERIFY
+    assert 'heartbeat.get("event_count") or 0' in VERIFY
+    assert 'heartbeat.get("radar_admission") == "BLOCKED"' in VERIFY
+    assert 'heartbeat.get("live_trade") is False' in VERIFY
+    assert 'heartbeat.get("bar_closure") == expected_bar_closure' in VERIFY
+    assert "quote_right_evidence" in VERIFY
+    assert "canonical_snapshot_export" in VERIFY
 
 
 def test_status_audit_is_read_only_and_covers_us_livefeed_runtime():
@@ -144,12 +144,14 @@ def test_installer_enables_only_explicit_sync_transport_lifecycle_evidence():
     assert '"live_trade":False' in installer
 
 def test_deploy_gate_waits_for_bounded_self_heal_and_exact_sha():
-    workflow=(ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
+    workflow = (ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
     assert "verify_us_opend_livefeed.sh" in workflow
-    assert "REPO_REF=$REPO_REF" in workflow
-    assert "event_count" in workflow
-    assert "sleep 5" in workflow
-
+    assert "REPO_REF='$REPO_REF' bash" in workflow
+    assert "event_count" in VERIFY
+    assert "sleep 5" in VERIFY
+    assert "expected_sha" in VERIFY
+    assert "cancel-in-progress: false" in workflow
+    assert 'printf \'%s\\n\' "$inv"' not in workflow
 
 
 def _embedded_runtime_python() -> str:
