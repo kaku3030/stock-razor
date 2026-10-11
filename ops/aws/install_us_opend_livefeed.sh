@@ -21,6 +21,7 @@ from data_provider.futu_k1m_streaming_adapter import (
     OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE,
 )
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
+from src.services.live_feed.opend_readonly_candidate_plan import plan_readonly_subscriptions
 from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
@@ -73,6 +74,7 @@ from src.services.live_feed.futu_us_daily_history import (
 )
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
+from src.services.live_feed.opend_readonly_candidate_plan import plan_readonly_subscriptions
 from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
 
@@ -138,6 +140,17 @@ def on_event_accepted(event):
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
+# Candidate changes are OBSERVED ONLY. Never add a provider call here.
+preview_csv=os.environ.get("STOCK_RAZOR_OPEND_PREVIEW_CANDIDATES")
+if preview_csv is None:
+    preview_desired=tuple(streams)
+elif len(preview_csv)>4096:
+    preview_desired=None
+else:
+    preview_desired=tuple(
+        SemanticStreamKey("futu","us",code,"K_1M","1m")
+        for code in preview_csv.split(",")
+    )
 def fetch_history_page(symbol,start_date,end_date,page_req_key):
     ret,data,next_page_req_key=ctx.request_history_kline(
         symbol,
@@ -581,9 +594,38 @@ try:
             "stopped_reason":consumer_result.stopped_reason,
             "recent_errors":research_consumer.diagnostics(),
         }
+        try:
+            if preview_desired is None:
+                candidate_preview={"status":"BLOCKED","reason":"PREVIEW_INPUT_TOO_LONG",
+                    "provider_calls":0,"subscription_changes":0,
+                    "radar_admission":"BLOCKED","source_arbiter_admission":"BLOCKED",
+                    "paper_auto_ready":False,"live_trade":False}
+            else:
+                result=plan_readonly_subscriptions(
+                    snap.subscribed,preview_desired,quota=None,now_utc=now,
+                )
+                candidate_preview={
+                    "status":result.status,"reason":result.reason,
+                    "acknowledged_count":len(result.currently_acknowledged),
+                    "proposed_additions":list(result.proposed_additions),
+                    "proposed_removals":list(result.proposed_removals),
+                    "evidence_scope":result.evidence_scope,
+                    "provider_calls":result.provider_calls,
+                    "subscription_changes":result.subscription_changes,
+                    "radar_admission":result.radar_admission,
+                    "source_arbiter_admission":result.source_arbiter_admission,
+                    "paper_auto_ready":result.paper_auto_ready,
+                    "live_trade":result.live_trade,
+                }
+        except Exception:
+            candidate_preview={"status":"BLOCKED","reason":"OBSERVER_EXCEPTION",
+                "provider_calls":0,"subscription_changes":0,
+                "radar_admission":"BLOCKED","source_arbiter_admission":"BLOCKED",
+                "paper_auto_ready":False,"live_trade":False}
         heartbeat={"type":"us_opend_livefeed_heartbeat","runtime_instance_id":runtime_id,
           "repo_sha":repo_sha,"host_id":host_id,"sequence":seq,"emitted_at_utc":now.isoformat(),
           "symbols":list(CODES),"subscribed":[k.symbol for k in snap.subscribed],
+          "dynamic_subscription_preview":candidate_preview,
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
           "controller_findings_tail":list(snap.controller.findings[-20:]),
