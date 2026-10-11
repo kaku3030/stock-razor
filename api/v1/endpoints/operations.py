@@ -70,8 +70,10 @@ def _effective_notification_routes(channels: list[str]) -> dict[str, list[str]]:
 def operations_status() -> OperationsStatusResponse:
     """Expose safety and notification readiness without mutating runtime state."""
 
-    radar = os.getenv("RADAR_ADMISSION", "BLOCKED").strip().upper() or "BLOCKED"
-    arbiter = os.getenv("SOURCE_ARBITER_ADMISSION", "BLOCKED").strip().upper() or "BLOCKED"
+    # These fields are effective, qualified admissions, not raw operator
+    # requests from environment variables. Until a verified source arbiter
+    # and Radar admission proof is wired to this read-only surface, an
+    # environment typo or "PASS" value must NEVER claim admission.
     channels = _configured_channels()
     pending = [
         "TickFlow 实盘连续性与真实历史交叉验证",
@@ -83,8 +85,8 @@ def operations_status() -> OperationsStatusResponse:
         # This surface is offline-only with no authorized external Paper operator.
         # Do not present PAPER mode because env flags happen to say PASS.
         mode="research_only",
-        radar_admission=radar,
-        source_arbiter_admission=arbiter,
+        radar_admission="BLOCKED",
+        source_arbiter_admission="BLOCKED",
         # This endpoint intentionally cannot unlock live trading.
         live_trade=False,
         # An environment toggle cannot substitute for independently verified
