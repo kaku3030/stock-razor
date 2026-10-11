@@ -80,6 +80,22 @@ supposed to run, but it is not a trade signal.
 5. Later enable guarded advisory alerts via the canonical AI Monitor owner.
    Trading remains out of scope.
 
+## Existing Radar notification sink — outbound privacy boundary
+
+The existing `NotificationServiceRadarSink` projects only a bounded
+allowlist of scalar research/status fields before formatting, deriving
+deduplication keys, or passing structured payloads into the configured
+notification provider. Nested broker/account details, unknown fields,
+provider URLs, credential-like values, control-character injection and
+oversized text are withheld or redacted. Third-party sender exceptions
+are reported by exception class only, never verbatim error messages that
+may contain webhook URLs or tokens. These are runtime **data-minimization**
+tests, not proof of a configured channel, provider ACK or phone receipt.
+
+The sink does **not** add a scheduler, grant Radar/Paper trading admission,
+perform an outbound notification as part of CI, or imply that mobile push
+notifications are enabled in the user's ChatGPT app.
+
 ## Immutable safety policy
 
 ```text
