@@ -134,3 +134,13 @@ def test_missing_private_file_is_not_published(tmp_path):
     )
     assert result["reason"] == "PRIVATE_INPUT_UNAVAILABLE"
     assert "private-id-999.json" not in json.dumps(result)
+
+
+def test_recursive_private_json_is_sanitized_instead_of_traceback(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    w.write_text("[" * 1200 + "0" + "]" * 1200)
+    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "PRIVATE_INPUT_INVALID"
+    assert "account_id" not in json.dumps(result)
