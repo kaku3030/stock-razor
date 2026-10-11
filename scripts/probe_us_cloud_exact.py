@@ -302,14 +302,51 @@ def probe(
     }
 
 
+def sanitized_ssm_summary(result: dict) -> dict:
+    """Strict allowlist for SSM stdout (never export heartbeat/Radar payloads)."""
+    if (
+        not isinstance(result, dict)
+        or result.get("schema") != "stock_razor_us_exact_cloud_probe_v1"
+        or result.get("radar_admission") != "BLOCKED"
+        or result.get("source_arbiter_admission") != "BLOCKED"
+        or result.get("live_trade") != "NO"
+    ):
+        raise ValueError("READ_ONLY_PROBE_SAFETY_ENVELOPE_INVALID")
+
+    def status(value: object) -> str:
+        if not isinstance(value, dict):
+            return "NOT_VERIFIED"
+        return value.get("status") if value.get("status") in ("PASS", "NOT_VERIFIED") else "NOT_VERIFIED"
+
+    sha_status = result.get("runtime_exact_sha")
+    if sha_status not in ("PASS", "NOT_VERIFIED"):
+        sha_status = "NOT_VERIFIED"
+    return {
+        "schema": "stock_razor_us_exact_cloud_probe_v1",
+        "radar_admission": "BLOCKED",
+        "source_arbiter_admission": "BLOCKED",
+        "live_trade": "NO",
+        "runtime_exact_sha": sha_status,
+        "continuous_live_quote_sequence": {
+            "status": status(result.get("continuous_live_quote_sequence"))
+        },
+        "timestamp_freshness": {"status": status(result.get("timestamp_freshness"))},
+        "bar_closure_15m_60m": {"status": status(result.get("bar_closure_15m_60m"))},
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--duration-seconds", type=int, default=30)
     parser.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
+    parser.add_argument("--ssm-summary-only", action="store_true")
     args = parser.parse_args()
     symbols = tuple(item.strip().upper() for item in args.symbols.split(",") if item.strip())
-    print(json.dumps(probe(expected_sha=args.expected_sha, symbols=symbols, duration_seconds=args.duration_seconds), sort_keys=True))
+    result = probe(expected_sha=args.expected_sha, symbols=symbols, duration_seconds=args.duration_seconds)
+    if args.ssm_summary_only:
+        result = sanitized_ssm_summary(result)
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 
