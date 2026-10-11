@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from scripts.audit_private_repo_deploy_dependencies import scan_private_repo_blockers
+from scripts.audit_private_repo_deploy_dependencies import (
+    PublicRepoDependency,
+    build_static_private_migration_report,
+    scan_private_repo_blockers,
+)
 
 
 def test_detects_raw_and_clone_public_dependencies_without_leaking_urls(tmp_path):
@@ -44,3 +48,31 @@ def test_current_repo_report_has_only_allowlisted_file_metadata():
         and entry.kind in {"PUBLIC_RAW_GITHUB", "UNAUTHENTICATED_GITHUB_CLONE"}
         for entry in hits
     )
+
+
+def test_zero_static_hits_does_not_grant_private_visibility():
+    # The former code reported private_migration_ready=True here even when
+    # authenticated cloud delivery, recovery and approval were unproven.
+    report = build_static_private_migration_report([])
+    assert report["static_public_source_dependencies_cleared"] is True
+    assert report["public_fetch_dependency_count"] == 0
+    assert report["private_migration_ready"] is False
+    assert report["repository_visibility_change_authorized"] is False
+    assert report["authenticated_source_delivery_verified"] is False
+    assert report["aws_restart_recovery_rollback_verified"] is False
+    assert report["user_visibility_approval_verified"] is False
+    assert report["aws_changes_performed"] is False
+    assert report["trading_gates_unchanged"] is True
+
+
+def test_static_blockers_remain_fail_closed_and_sanitized():
+    item = PublicRepoDependency(
+        file="ops/aws/install.sh", line=4, kind="UNAUTHENTICATED_GITHUB_CLONE"
+    )
+    report = build_static_private_migration_report([item])
+    assert report["static_public_source_dependencies_cleared"] is False
+    assert report["public_fetch_dependency_count"] == 1
+    assert report["blockers"] == [{"file": item.file, "line": 4, "kind": item.kind}]
+    assert report["private_migration_ready"] is False
+    assert report["repository_visibility_change_authorized"] is False
+    assert "https://" not in str(report)

@@ -1,8 +1,12 @@
 """Offline, read-only preflight for safely making STOCK RAZOR private.
 
 NEVER prints URL contents or any credential; emits only relative path, line
-number, and a controlled public-source dependency category. This is not a
-migration or an AWS deployment tool.
+number, and a controlled public-source dependency category.
+
+The static scan is NECESSARY but NOT SUFFICIENT for making the repo private:
+a zero-blocker result is not proof of authenticated delivery, IAM scoping,
+rollback, recovery, or explicit user approval. This is not a migration or
+an AWS deployment tool.
 """
 
 from __future__ import annotations
@@ -56,23 +60,40 @@ def scan_private_repo_blockers(repo_root: Path) -> list[PublicRepoDependency]:
     return hits
 
 
+def build_static_private_migration_report(
+    blockers: list[PublicRepoDependency],
+) -> dict[str, object]:
+    """Never turn a local grep result into permission to change repo visibility.
+
+    Separate authenticated, externally verified deployment + rollback evidence
+    and the user's explicit visibility approval are mandatory. This offline
+    script has no way to verify those facts and therefore MUST report them
+    unverified regardless of how many grep hits remain.
+    """
+    return {
+        "repository_visibility_change_authorized": False,
+        "private_migration_ready": False,
+        "static_public_source_dependencies_cleared": not bool(blockers),
+        "authenticated_source_delivery_verified": False,
+        "aws_restart_recovery_rollback_verified": False,
+        "user_visibility_approval_verified": False,
+        "public_fetch_dependency_count": len(blockers),
+        "blockers": [asdict(entry) for entry in blockers],
+        "aws_changes_performed": False,
+        "trading_gates_unchanged": True,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument(
         "--enforce", action="store_true",
-        help="Return nonzero while public-only cloud deployment dependencies remain",
+        help="Return nonzero while STATIC public-only dependencies remain; does not authorize PRIVATE",
     )
     args = parser.parse_args()
     blockers = scan_private_repo_blockers(args.repo)
-    print(json.dumps({
-        "repository_visibility_change_authorized": False,
-        "private_migration_ready": not bool(blockers),
-        "public_fetch_dependency_count": len(blockers),
-        "blockers": [asdict(entry) for entry in blockers],
-        "aws_changes_performed": False,
-        "trading_gates_unchanged": True,
-    }, sort_keys=True))
+    print(json.dumps(build_static_private_migration_report(blockers), sort_keys=True))
     return 2 if blockers and args.enforce else 0
 
 
