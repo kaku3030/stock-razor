@@ -18,8 +18,9 @@ from typing import Sequence
 # shortcuts or automatic approval for "get"/"read"/"list" named methods.
 # All quote tools here are observational/research-only.
 QUOTE_READ_SHADOW = frozenset((
+    "quote_market_snapshot", "quote_stock_quote", "quote_rt_data",
+    "quote_market_state", "quote_stock_basicinfo",
     "quote_future_info", "quote_economic_calendar_hot",
-    "quote_stock_feed", "quote_community_search",
 ))
 SIM_ACCOUNT_READ_SHADOW = frozenset((
     "sim_trade_cash_info", "sim_trade_position_list",
