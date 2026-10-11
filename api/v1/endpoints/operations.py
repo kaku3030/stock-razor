@@ -103,7 +103,10 @@ def operations_status() -> OperationsStatusResponse:
         notification_channels_configured=channels,
         notification_routes=_effective_notification_routes(channels),
         notification_delivery_evidence="NOT_VERIFIED",
-        notification_ready=bool(channels),
+        # Configured channel credentials are not a real phone receipt.
+        # Keep effective readiness BLOCKED until a separately authenticated
+        # end-to-end delivery receipt is consumed by the notification owner.
+        notification_ready=False,
         pending_acceptance=pending,
     )
 
