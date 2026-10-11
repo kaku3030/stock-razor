@@ -92,7 +92,7 @@ jobs:
                       and isinstance(auth, (list, tuple))
                       and any(isinstance(item, str) and item.upper() == "US" for item in auth)
                       and isinstance(kind, str)
-                      and kind.upper() in ("STOCK", "STOCK_AND_OPTION")
+                      and kind.upper() == "STOCK_AND_OPTION"
                       and isinstance(status, str)
                       and status.upper() == "ACTIVE"
                   ):

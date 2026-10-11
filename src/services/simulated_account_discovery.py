@@ -133,7 +133,7 @@ def discover_futu_us_stock_sim_account(
             and isinstance(auth, (list, tuple))
             and "US" in [item.upper() for item in auth if isinstance(item, str)]
             and isinstance(kind, str)
-            and kind.upper() in {"STOCK", "STOCK_AND_OPTION"}
+            and kind.upper() == "STOCK_AND_OPTION"
             and isinstance(status, str) and status.upper() == "ACTIVE"
         ):
             raise AccountDiscoveryBlocked("expected account is not an active US stock SIMULATE account")
