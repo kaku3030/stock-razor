@@ -33,7 +33,7 @@ class OfflinePaperSimulationReport:
     shadow_store_path: str
 
     @property
-    completed_without_external_io(self) -> bool:
+    def completed_without_external_io(self) -> bool:
         return self.result.order_state in {
             OrderState.ACCEPTED,
             OrderState.PARTIAL,
