@@ -7,6 +7,7 @@ export type OperationsStatus = {
   live_trade: boolean;
   paper_auto_ready: boolean;
   paper_engine_status: string;
+  offline_simulation_status: string;
   paper_runtime_api_status: string;
   execution_recovery_projection_status: string;
   paper_runtime_store_config_status: string;

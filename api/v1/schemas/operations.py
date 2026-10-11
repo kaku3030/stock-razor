@@ -12,6 +12,7 @@ class OperationsStatusResponse(BaseModel):
     live_trade: bool
     paper_auto_ready: bool
     paper_engine_status: str
+    offline_simulation_status: str
     paper_runtime_api_status: str
     execution_recovery_projection_status: str
     paper_runtime_store_config_status: str

@@ -118,6 +118,7 @@ const OperationsPage: React.FC = () => {
           <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
           <Gate label="Paper Auto" value={status.paper_auto_ready ? 'READY' : 'BLOCKED'} safe={status.paper_auto_ready} />
           <Gate label="Paper 引擎" value={status.paper_engine_status} safe={status.paper_engine_status === 'IMPLEMENTED_OFFLINE_ONLY'} />
+          <Gate label="离线模拟盘" value={status.offline_simulation_status} safe={status.offline_simulation_status.startsWith('READY_')} />
           <Gate label="Web 自动执行入口" value={status.paper_runtime_api_status} />
           <Gate label="异常执行复核投影" value={status.execution_recovery_projection_status} />
           <Gate label="Paper Store 配置" value={status.paper_runtime_store_config_status} />

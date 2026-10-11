@@ -83,6 +83,7 @@ def operations_status() -> OperationsStatusResponse:
         live_trade=False,
         paper_auto_ready=os.getenv("PAPER_AUTO_READY", "NO").strip().upper() == "YES",
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
+        offline_simulation_status="READY_EXPLICIT_OFFLINE_RUN_EXTERNAL_BROKER_NOT_CONNECTED",
         paper_runtime_api_status="NOT_EXPOSED",
         execution_recovery_projection_status="IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING",
         paper_runtime_store_config_status=_paper_runtime_store_config_status(),
