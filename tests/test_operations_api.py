@@ -146,6 +146,8 @@ def test_operations_status_never_promotes_unverified_external_paper_from_env(mon
     status = operations_status()
     controls = paper_operator_controls()
     assert status.mode == "research_only"
+    assert status.radar_admission == "BLOCKED"
+    assert status.source_arbiter_admission == "BLOCKED"
     assert status.paper_auto_ready is False
     assert status.paper_runtime_api_status == "NOT_EXPOSED"
     assert status.simulated_account_evidence == "NOT_VERIFIED"
@@ -174,3 +176,17 @@ def test_credentials_and_routes_never_count_as_verified_phone_receipt(monkeypatc
     assert "真实手机接收回执" in response.pending_acceptance
     assert response.paper_auto_ready is False
     assert response.live_trade is False
+
+
+def test_operation_effective_admission_ignores_permissive_env(monkeypatch):
+    # A configuration value is never independently qualified source evidence.
+    monkeypatch.setenv("RADAR_ADMISSION", "PASS")
+    monkeypatch.setenv("SOURCE_ARBITER_ADMISSION", "PASS")
+    monkeypatch.setenv("PAPER_AUTO_READY", "YES")
+    monkeypatch.setenv("LIVE_TRADE", "YES")
+    payload = operations_status()
+    assert payload.mode == "research_only"
+    assert payload.radar_admission == "BLOCKED"
+    assert payload.source_arbiter_admission == "BLOCKED"
+    assert payload.paper_auto_ready is False
+    assert payload.live_trade is False
