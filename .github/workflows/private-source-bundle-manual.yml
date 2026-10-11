@@ -62,11 +62,34 @@ jobs:
           from hashlib import sha256
           from pathlib import Path
           from src.services.private_source_artifact import verify_private_source_tar
+          from ops.aws.stage_verified_private_source import stage_verified_private_source
 
           archive = Path(os.environ["BUNDLE_PATH"]).read_bytes()
           receipt = verify_private_source_tar(
               archive, trusted_sha256=sha256(archive).hexdigest()
           )
+          # Exercise the EXACT produced bundle through #567 inactive staging.
+          # This checks archive-to-stage mechanics only. Passing the locally
+          # computed hash does NOT establish an independent trust root.
+          stage_root = Path(os.environ["RUNNER_TEMP"]) / "sr-inactive-source-probe"
+          stage_root.mkdir(mode=0o700, exist_ok=False)
+          stage = stage_verified_private_source(
+              Path(os.environ["BUNDLE_PATH"]),
+              release_root=stage_root,
+              expected_source_commit=os.environ["EXPECTED_SOURCE_SHA"],
+              independently_trusted_sha256=receipt.archive_sha256,
+          )
+          assert stage["source_commit_pin"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert stage["verified_source_sha256"] == receipt.archive_sha256
+          assert stage["service_activation_performed"] is False
+          assert stage["aws_deployment_performed"] is False
+          assert stage["live_trade"] is False
+          assert stage["radar_admission"] == "BLOCKED"
+          assert stage["source_arbiter_admission"] == "BLOCKED"
+          assert not (stage_root / "current").exists()
+          staged_src = stage_root / os.environ["EXPECTED_SOURCE_SHA"]
+          assert (staged_src / "realtime_monitor/readonly_mcp_server.py").is_file()
+          assert (staged_src / "ops/aws/install_readonly_mcp.sh").is_file()
           output = {
               "schema": "stock_razor_private_source_bundle_v0_1",
               "scope": "TRACKED_SOURCE_EXCLUDING_DOCS_ASSETS_AND_CLAUDE_LINK",
@@ -78,11 +101,16 @@ jobs:
               "trading_gates_unchanged": True,
               "authenticated_cloud_receipt": False,
               "private_migration_ready": False,
+              "inactive_runner_stage_mechanics_verified": True,
+              "independent_provenance_verified": False,
+              "aws_restart_recovery_verified": False,
           }
           Path(os.environ["RECEIPT_PATH"]).write_text(
               json.dumps(output, sort_keys=True) + "\n", encoding="utf-8"
           )
           print("SOURCE_BUNDLE_OFFLINE_VERIFIER=PASS")
+          print("SOURCE_BUNDLE_INACTIVE_RUNNER_STAGE=PASS")
+          print("SOURCE_BUNDLE_INDEPENDENT_PROVENANCE=NOT_VERIFIED")
           print("SOURCE_BUNDLE_CLOUD_DEPLOYMENT=NO")
           print("SOURCE_BUNDLE_PRIVATE_REPO_MIGRATION_READY=NO")
           PY
