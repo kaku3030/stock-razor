@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import re
 from typing import Any
 
 from .notifications import RadarNotification
@@ -16,6 +18,48 @@ EVENT_LABELS = {
     "confirmed_signal_alert": "已确认研究信号提醒",
 }
 logger = logging.getLogger(__name__)
+
+# Only research/status metadata may leave this sink. Upstream event payloads
+# can contain full provider errors, URLs, broker metadata or even credentials.
+# These fields are deliberately finite until each additional field is audited.
+_PUBLIC_FIELDS = frozenset({
+    "provider", "from", "level", "severity", "signal_type", "signal_id",
+    "review_id", "failure_count", "reason", "risk_gate", "signal_state",
+    "status", "symbol", "code", "timeframe", "session_state",
+    "data_quality", "source_revision", "observed_at_utc", "error_code",
+})
+_MAX_TEXT_BYTES = 160
+_SECRET_PATTERN = re.compile(
+    r"(?i)(?:api[_-]?key|token|authorization|cookie|secret|password|"
+    r"credential|account[_-]?id|session[_-]?id|access[_-]?key|"
+    r"https?://|(?:sk|ghp|gho|github_pat|xoxb)[_-][a-z0-9_-]{10,})"
+)
+
+
+def _public_payload(payload: dict[str, Any]) -> dict[str, str | int | float | bool]:
+    """Project only bounded, scalar, non-sensitive research metadata."""
+    safe: dict[str, str | int | float | bool] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or key not in _PUBLIC_FIELDS:
+            continue
+        if isinstance(value, bool):
+            safe[key] = value
+        elif type(value) is int:
+            safe[key] = value
+        elif type(value) is float:
+            if math.isfinite(value):
+                safe[key] = value
+        elif isinstance(value, str):
+            if (
+                len(value.encode("utf-8")) > _MAX_TEXT_BYTES
+                or "\n" in value or "\r" in value
+                or _SECRET_PATTERN.search(value)
+            ):
+                safe[key] = "[REDACTED]"
+            elif value:
+                safe[key] = value
+        # Nested data, arbitrary objects and bytes are intentionally dropped.
+    return safe
 
 
 class NotificationServiceRadarSink:
@@ -31,7 +75,7 @@ class NotificationServiceRadarSink:
         self.last_error: str | None = None
 
     def __call__(self, event: RadarNotification) -> None:
-        payload = dict(event.payload)
+        payload = _public_payload(dict(event.payload))
         severity = _severity(event.event_type, payload)
         content = format_radar_notification(event)
         identity = _event_identity(event.event_type, payload)
@@ -52,12 +96,13 @@ class NotificationServiceRadarSink:
             )
             self.last_error = None
         except Exception as exc:
-            self.last_error = str(exc)
-            logger.warning("Stock Radar notification dispatch failed: %s", exc)
+            # A channel exception can embed a webhook URL or access token.
+            self.last_error = type(exc).__name__
+            logger.warning("Stock Radar notification dispatch failed: %s", type(exc).__name__)
 
 
 def format_radar_notification(event: RadarNotification) -> str:
-    payload = dict(event.payload)
+    payload = _public_payload(dict(event.payload))
     lines = [
         f"⚠️ **Stock Radar V2：{EVENT_LABELS[event.event_type]}**",
         "",
