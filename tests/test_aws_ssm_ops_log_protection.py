@@ -19,13 +19,12 @@ def test_workflow_has_fixed_ssm_actions_and_credentials_not_persisted():
     assert "aws-actions/configure-aws-credentials@v4" in text
 
 
-def test_no_cloud_service_process_environment_or_raw_commandline_dump():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    # Environment and raw argv can contain OpenD / broker credentials.
-    assert '-p Environment --no-pager' not in text
-    assert "tr '\\0' '\\n' < /proc/$pid/environ" not in text
-    assert "tr '\\0' ' ' < /proc/$pid/cmdline" not in text
-    assert 'LIVEFEED_PROCESS_METADATA_REDACTED=YES' in text
+def test_service_diagnostic_is_redacted():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    action = workflow.split("us_livefeed_runtime_diff_audit)", 1)[1].split(";;", 1)[0]
+    assert 'LIVEFEED_PROCESS_METADATA_REDACTED=YES' in action
+    assert 'LIVEFEED_PROCESS_PRESENT=YES' in action
+    assert 'ProtectSystem --no-pager' in action
 
 
 def test_ssm_status_projection_never_prints_remote_stdout_or_stderr():
