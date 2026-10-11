@@ -10,8 +10,8 @@
 | Durable execution/shadow stores | IMPLEMENTED | Separate SQLite paths and fail-closed construction |
 | Trade Plan | Read-only V0.2 | Precomputed plan contract |
 | Trade Lifecycle | Read-only V0.3 projection | Runtime read-only projection wired |
-| External simulator/broker | NOT VERIFIED | No external account or broker connection |
-| Cloud market data | NOT VERIFIED | TickFlow and OpenD cloud acceptance incomplete |
+| External simulator/broker | LOCAL SIM READ-ONLY / PAPER BLOCKED | Windows OpenD US SIM account discovered, balance/positions/orders read back; four pre-existing positions require review; native simulated deals unsupported |
+| Cloud market data | PARTIAL / ADMISSION BLOCKED | AWS US controller healthy but canonical snapshot stale (weekend), US bar closure unproven; A-share cloud historical fallback PASS, currentness unproven; TickFlow cloud premium acceptance incomplete |
 | Notifications | CONFIGURED/UNVERIFIED | Configuration is not phone-receipt evidence |
 | Live trading | BLOCKED | `LIVE_TRADE=NO` |
 
@@ -38,6 +38,39 @@ PUBLIC Actions log and tests the Eastmoney UNKNOWN versus Tencent
 BAR_END timestamp semantics without upgrading them to currentness.
 These changes are only deployed after independently approved actual AWS
 deployment. CI proof is not proof that the running worker is updated.
+
+## AWS OpenD SIM-only readback readiness (2026-10-11)
+
+Windows local evidence: a single ACTIVE US `SIMULATE / STOCK_AND_OPTION`
+account was selected with `TrdMarket.US`. Queries using an explicit
+in-memory simulator account ID returned **one balance row**, **four existing
+position rows**, **zero current orders** and **zero historical orders** in
+the reviewed ~90-day period. This is genuine LOCAL read-only broker I/O,
+not cloud authorization, not a simulated fill receipt, and not an
+unblocked Paper runtime. Real-account rows were never used for account
+financial queries; no private account/position amounts are in GitHub.
+
+The preexisting, explicitly manual
+`.github/workflows/aws-ssm-sim-account-discovery.yml` now provides an
+AWS **read-only** continuation when separately dispatched and approved.
+The fixed SSM target queries at most one uniquely identified ACTIVE US SIM
+account with four non-mutating RPCs: `accinfo_query`,
+`position_list_query`, `order_list_query`, and
+`history_order_list_query`. It returns **only finite status labels and
+review-required booleans**, never account identifiers, position symbols,
+quantities, cash/asset amounts, or raw provider errors. Query source
+identity and the exact AWS runtime version must still be checked
+independently; the GitHub `source_revision` is the workflow commit, **not**
+proof of the OpenD worker version. A code merge does not execute this
+manual workflow or demonstrate that cloud OpenD authentication succeeds.
+
+The official OpenD `deal_list_query` SIM path is unsupported.
+Order-history `dealt_qty/dealt_avg_price` plus cash/position changes
+can provide **corroboration**, not a replacement for independent native
+broker fill acknowledgements. Pending a specifically reviewed alternative
+receipt source, the external SIM fill/readiness gate stays `BLOCKED`.
+Existing nonzero positions always demand operator review. No automatic
+or manual SIM order is authorized by the AWS readback workflow.
 
 ## Promotion stages
 
