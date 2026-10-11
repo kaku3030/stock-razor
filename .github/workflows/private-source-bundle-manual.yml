@@ -1,0 +1,80 @@
+name: Immutable Source Bundle Research (Manual Only)
+
+# Build a GitHub Actions artifact only. NO AWS dispatch, SSM, IAM or deploy.
+# Never treat the self-declared digest alone as an authenticated trust root.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-source-bundle-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  produce-source-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact immutable commit without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Build and validate bounded source bundle offline
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          BUNDLE_PATH: ${{ runner.temp }}/stock-razor-source.tar
+          RECEIPT_PATH: ${{ runner.temp }}/stock-razor-source-receipt.json
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SOURCE_SHA" || {
+            echo 'SOURCE_COMMIT_MISMATCH' >&2
+            exit 2
+          }
+          # Only Git-tracked commit content is archived. This step neither
+          # embeds an access token nor needs an unverified public raw URL.
+          git archive --format=tar --output="$BUNDLE_PATH" HEAD
+          python3 - <<'PY'
+          import json
+          import os
+          from hashlib import sha256
+          from pathlib import Path
+          from src.services.private_source_artifact import verify_private_source_tar
+
+          bundle = Path(os.environ["BUNDLE_PATH"]).read_bytes()
+          trusted = sha256(bundle).hexdigest()
+          receipt = verify_private_source_tar(bundle, trusted_sha256=trusted)
+          output = {
+              "schema": "stock_razor_private_source_bundle_v0_1",
+              "source_commit_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "bundle_sha256": receipt.archive_sha256,
+              "regular_file_count": receipt.file_count,
+              "total_uncompressed_bytes": receipt.total_uncompressed_bytes,
+              "cloud_deployment_performed": False,
+              "trading_gates_unchanged": True,
+              "authenticated_cloud_receipt": False,
+              "private_migration_ready": False,
+          }
+          Path(os.environ["RECEIPT_PATH"]).write_text(
+              json.dumps(output, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          print("SOURCE_BUNDLE_OFFLINE_VERIFIER=PASS")
+          print("SOURCE_BUNDLE_CLOUD_DEPLOYMENT=NO")
+          print("SOURCE_BUNDLE_PRIVATE_REPO_MIGRATION_READY=NO")
+          PY
+
+      - name: Upload immutable bundle and audit metadata (restricted Actions artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-razor-source-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/stock-razor-source.tar
+            ${{ runner.temp }}/stock-razor-source-receipt.json
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
