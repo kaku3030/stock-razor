@@ -13,10 +13,9 @@ from src.services.paper_execution_admission import PaperOrderSpec
 from src.services.stock_radar_v2.observation_ledger import Observation
 
 
-NOW = datetime.now(timezone.utc)
-
 
 def test_offline_paper_simulation_runs_canonical_path_without_external_io(tmp_path):
+    now = datetime.now(timezone.utc)
     capability = create_paper_adapter()
     evidence = Observation(
         observation_id="obs-sim-001",
@@ -27,9 +26,9 @@ def test_offline_paper_simulation_runs_canonical_path_without_external_io(tmp_pa
         portfolio_admissible=True,
         portfolio_block_reasons=(),
         execution_feasible=True,
-        decision_available_at=NOW.timestamp() - 2,
-        confirmed_at=NOW.timestamp() - 1,
-        earliest_executable_at=NOW.timestamp() - 1,
+        decision_available_at=now.timestamp() - 2,
+        confirmed_at=now.timestamp() - 1,
+        earliest_executable_at=now.timestamp() - 1,
         canonical_permission="PASS",
     )
     spec = PaperOrderSpec(
@@ -41,7 +40,7 @@ def test_offline_paper_simulation_runs_canonical_path_without_external_io(tmp_pa
         max_slippage=Decimal("0.001"),
         strategy_id="offline-simulation",
         evidence_snapshot_id="snapshot-sim-001",
-        valid_until=NOW + timedelta(minutes=5),
+        valid_until=now + timedelta(minutes=5),
     )
     guard = RiskGuard(
         RiskLimits(
@@ -62,7 +61,7 @@ def test_offline_paper_simulation_runs_canonical_path_without_external_io(tmp_pa
         guard,
         evidence,
         spec,
-        RiskContext(now=NOW, data_as_of=NOW, session="RTH"),
+        RiskContext(now=now, data_as_of=now, session="RTH"),
         root_path=tmp_path,
         runtime_generation="simulation-runtime-1",
         account_generation="simulation-account-1",
