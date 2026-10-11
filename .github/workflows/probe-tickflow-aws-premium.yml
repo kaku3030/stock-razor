@@ -120,7 +120,7 @@ jobs:
                 # Never echo untrusted AWS command stdout verbatim to PUBLIC
                 # Actions. Only a source-pinned, finite projection may leave.
                 output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
-                summary="$(printf '%s\n' "$output" | grep -E '^\\{' | tail -n 1 || true)"
+                summary="$(printf '%s\n' "$output" | grep -E '^[{]' | tail -n 1 || true)"
                 test -n "$summary" || { echo 'TICKFLOW_PREMIUM_SUMMARY_MISSING' >&2; exit 1; }
                 printf '%s' "$summary" | EXPECTED_REVISION="$revision" python3 -c '
           import json,os,sys
