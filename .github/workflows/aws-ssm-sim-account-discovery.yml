@@ -63,6 +63,15 @@ jobs:
               "query_status": "UNKNOWN",
               "simulated_us_account_count": 0,
               "account_evidence": "NOT_VERIFIED",
+              "balance_readback": "NOT_RUN",
+              "positions_readback": "NOT_RUN",
+              "orders_readback": "NOT_RUN",
+              "history_readback": "NOT_RUN",
+              "position_review": "UNKNOWN",
+              "order_review": "UNKNOWN",
+              "sim_native_fills": "UNSUPPORTED_BY_OPEND",
+              "paper_preflight": "BLOCKED",
+              "paper_auto_ready": False,
               "radar_admission": "BLOCKED",
               "source_arbiter_admission": "BLOCKED",
               "live_trade": False,
@@ -99,6 +108,96 @@ jobs:
                       count += 1
               return count
 
+          def select_us_sim_id(data):
+              # Account discovery may include REAL accounts; read no REAL
+              # account funds, positions, orders or order histories.
+              if count_sim_us_rows(data) != 1:
+                  return None
+              try:
+                  rows = data.to_dict("records")
+              except Exception:
+                  return None
+              candidates = [
+                  row.get("acc_id") for row in rows
+                  if isinstance(row, dict)
+                  and count_sim_us_rows(type("Rows", (), {
+                      "to_dict": lambda self, orient: [row]
+                  })()) == 1
+              ]
+              if len(candidates) != 1:
+                  return None
+              value = candidates[0]
+              if type(value) is int and 0 < value < 10**20:
+                  return value
+              if isinstance(value, str) and value.isascii() and value.isdigit():
+                  if 1 <= len(value) <= 20 and int(value) > 0:
+                      return int(value)
+              return None
+
+          def scoped_readback(call, *, required_rows=None):
+              # Return only (status, count) in memory; never print the
+              # broker's raw dataframe, error message, IDs, or dollar values.
+              try:
+                  ret, data = call()
+                  if ret != ft.RET_OK or not hasattr(data, "columns"):
+                      return "UNAVAILABLE", None
+                  n = len(data)
+                  if type(n) is not int or not 0 <= n <= 10000:
+                      return "INVALID", None
+                  if required_rows is not None and n != required_rows:
+                      return "INVALID", None
+                  return "PASS", n
+              except Exception:
+                  return "ERROR", None
+
+          def read_sim_account_baseline(ctx, acc_id):
+              # Four fixed, non-mutating calls against one explicit SIM ID.
+              # No trade unlock, order, cancel, paid provider or refresh.
+              from datetime import timedelta
+              now = datetime.now(timezone.utc)
+              start = (now - timedelta(days=89)).strftime("%Y-%m-%d")
+              end = now.strftime("%Y-%m-%d")
+              result = {}
+              b, _ = scoped_readback(
+                  lambda: ctx.accinfo_query(
+                      trd_env=ft.TrdEnv.SIMULATE, acc_id=acc_id,
+                      currency=ft.Currency.USD, refresh_cache=False
+                  ), required_rows=1
+              )
+              p, positions_n = scoped_readback(
+                  lambda: ctx.position_list_query(
+                      trd_env=ft.TrdEnv.SIMULATE, acc_id=acc_id,
+                      refresh_cache=False
+                  )
+              )
+              o, orders_n = scoped_readback(
+                  lambda: ctx.order_list_query(
+                      trd_env=ft.TrdEnv.SIMULATE, acc_id=acc_id,
+                      refresh_cache=False
+                  )
+              )
+              h, _ = scoped_readback(
+                  lambda: ctx.history_order_list_query(
+                      trd_env=ft.TrdEnv.SIMULATE, acc_id=acc_id,
+                      start=start, end=end
+                  )
+              )
+              result["balance_readback"] = b
+              result["positions_readback"] = p
+              result["orders_readback"] = o
+              result["history_readback"] = h
+              result["position_review"] = (
+                  "REQUIRED" if p == "PASS" and positions_n > 0
+                  else "NOT_REQUIRED" if p == "PASS" else "UNKNOWN"
+              )
+              result["order_review"] = (
+                  "REQUIRED" if o == "PASS" and orders_n > 0
+                  else "NOT_REQUIRED" if o == "PASS" else "UNKNOWN"
+              )
+              # Even four PASSes are scoped I/O evidence, not native SIM
+              # fills, broker permission, cloud deployment or Paper admission.
+              return result
+
           ctx = None
           try:
               ctx = ft.OpenSecTradeContext(
@@ -118,6 +217,12 @@ jobs:
                       "OBSERVED_NOT_VERIFIED" if count > 0
                       else "BLOCKED_NO_US_SIMULATE_ROWS"
                   )
+                  sim_id = select_us_sim_id(data)
+                  if count == 1 and sim_id is not None:
+                      # Sensitive SIM ID is local process memory only.
+                      out.update(read_sim_account_baseline(ctx, sim_id))
+                  # Zero/multiple/malformed candidate: never query any
+                  # potentially REAL account by default index.
               else:
                   out["query_status"] = "PROVIDER_REJECTED"
           except Exception as exc:
@@ -183,6 +288,15 @@ jobs:
                       then $v.simulated_us_account_count else 0 end
                     ),
                     account_evidence: (if ($v.account_evidence | type) == "string" and (["OBSERVED_NOT_VERIFIED","BLOCKED_NO_US_SIMULATE_ROWS","NOT_VERIFIED"] | index($v.account_evidence)) != null then $v.account_evidence else "NOT_VERIFIED" end),
+                    balance_readback: (if (["PASS","INVALID","ERROR","UNAVAILABLE","NOT_RUN"] | index($v.balance_readback)) != null then $v.balance_readback else "NOT_RUN" end),
+                    positions_readback: (if (["PASS","INVALID","ERROR","UNAVAILABLE","NOT_RUN"] | index($v.positions_readback)) != null then $v.positions_readback else "NOT_RUN" end),
+                    orders_readback: (if (["PASS","INVALID","ERROR","UNAVAILABLE","NOT_RUN"] | index($v.orders_readback)) != null then $v.orders_readback else "NOT_RUN" end),
+                    history_readback: (if (["PASS","INVALID","ERROR","UNAVAILABLE","NOT_RUN"] | index($v.history_readback)) != null then $v.history_readback else "NOT_RUN" end),
+                    position_review: (if (["UNKNOWN","REQUIRED","NOT_REQUIRED"] | index($v.position_review)) != null then $v.position_review else "UNKNOWN" end),
+                    order_review: (if (["UNKNOWN","REQUIRED","NOT_REQUIRED"] | index($v.order_review)) != null then $v.order_review else "UNKNOWN" end),
+                    sim_native_fills: "UNSUPPORTED_BY_OPEND",
+                    paper_preflight: "BLOCKED",
+                    paper_auto_ready: false,
                     radar_admission: "BLOCKED",
                     source_arbiter_admission: "BLOCKED",
                     live_trade: false
