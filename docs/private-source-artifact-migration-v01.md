@@ -26,6 +26,18 @@ and never curls the public GitHub raw endpoint. This is **one workflow**
 migration only, not a cloud execution result and not proof that all deployment
 paths work after changing visibility.
 
+The existing on-demand US exact cloud probe workflow
+`.github/workflows/probe-us-cloud-exact.yml` now independently uses a bounded
+compressed, SHA256-checked source payload over the same fixed-target SSM route
+instead of a public raw-source URL. It also validates workflow-dispatch symbol
+inputs before shell interpolation and projects only allowlisted, fail-closed
+research statuses into GitHub Actions logs; the prior raw heartbeat/Radar
+payload is withheld from the PUBLIC log. The SSM command's remote stdout
+remains visible to appropriately authorized AWS operators. Offline POSIX-sh
+source transfer and wrong-digest denial tests passed in CI, but this workflow
+is still manual-only and its actual AWS execution remains **NOT VERIFIED**.
+This does not grant cloud trading/radar admission or make the repository private-ready.
+
 Do **not** change repository visibility yet: AWS recovery currently still
 depends on unauthenticated public source.
 
