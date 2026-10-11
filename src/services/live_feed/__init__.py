@@ -26,6 +26,15 @@ from .controller import (
 )
 from .health import LiveFeedHealth, StreamFeedHealth, SymbolFeedHealth
 from .identity import ControllerGeneration, new_command_id, new_runtime_instance_id
+from .opend_subscription_manager import (
+    HistoryWarmStartEvidence,
+    HistoryWarmStartResult,
+    OpenDSubscriptionManager,
+    OpenDSubscriptionManagerSnapshot,
+    OpenDSubscriptionQuota,
+    SubscriptionMutationAdapter,
+    SubscriptionMutationResult,
+)
 from .registry import DesiredRegistryEntry, DesiredRegistrySnapshot, DesiredSubscriptionRegistry
 
 __all__ = [
@@ -36,15 +45,22 @@ __all__ = [
     "DesiredSubscriptionRegistry",
     "EnqueueResult",
     "FakeProviderCommandExecutor",
+    "HistoryWarmStartEvidence",
+    "HistoryWarmStartResult",
     "LiveFeedController",
     "LiveFeedControllerSnapshot",
     "LiveFeedHealth",
     "LivePromotionForbidden",
+    "OpenDSubscriptionManager",
+    "OpenDSubscriptionManagerSnapshot",
+    "OpenDSubscriptionQuota",
     "ProviderCommand",
     "ProviderCommandExecutor",
     "ProviderCommandResult",
     "ProviderCommandType",
     "StreamFeedHealth",
+    "SubscriptionMutationAdapter",
+    "SubscriptionMutationResult",
     "SymbolFeedHealth",
     "WriterConcurrencyViolation",
     "is_command_result_stale",
