@@ -11,6 +11,7 @@ changes broker/account truth semantics.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 import threading
@@ -25,6 +26,10 @@ from .paper_execution_admission import (
     build_paper_order_intent_from_trade_plan,
 )
 from .trade_plan import TradePlan
+from .trade_lifecycle import (
+    TradeLifecycleSnapshot,
+    project_trade_lifecycle,
+)
 
 
 class PaperRuntimeState(StrEnum):
@@ -327,6 +332,26 @@ class PaperRuntimeOrchestrator:
                 return self.snapshot()
             self._state = PaperRuntimeState.STOPPED
             return self.snapshot()
+
+    def project_lifecycle(
+        self,
+        plan: TradePlan,
+        *,
+        now: datetime,
+        trigger_ready: bool = False,
+        execution_evidence_ready: bool = False,
+        position=None,
+        position_id: str | None = None,
+    ) -> TradeLifecycleSnapshot:
+        """Return the read-only lifecycle projection owned by this runtime."""
+        return project_trade_lifecycle(
+            plan,
+            now=now,
+            trigger_ready=trigger_ready,
+            execution_evidence_ready=execution_evidence_ready,
+            position=position,
+            position_id=position_id,
+        )
 
     def snapshot(self) -> PaperRuntimeSnapshot:
         with self._lock:

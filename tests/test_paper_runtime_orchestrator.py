@@ -516,3 +516,37 @@ def test_blocked_shadow_decision_survives_runtime_reopen(tmp_path):
         )
     assert len(ExecutionStore(shadow_path).events()) == 1
     assert reopened_capability.adapter.calls == []
+
+def test_runtime_exposes_read_only_trade_lifecycle_projection(tmp_path):
+    owner, _, adapter = runtime(tmp_path)
+    owner.start()
+    plan = TradePlan(
+        plan_id="plan-projection-001",
+        version="trade-plan-v0.2",
+        symbol="AMD",
+        direction=TradeDirection.LONG,
+        strategy="breakout-retest",
+        horizon=TradeHorizon.INTRADAY,
+        entry_low=Decimal("99"),
+        entry_high=Decimal("101"),
+        entry_ttl=NOW + timedelta(minutes=5),
+        trigger_frame="5m",
+        invalidation="failed retest",
+        stop_price=Decimal("97"),
+        target_price=Decimal("106"),
+        quantity=Decimal("10"),
+        risk_budget_r=Decimal("1"),
+        estimated_cost=Decimal("0.1"),
+        estimated_slippage=Decimal("0.05"),
+        source="opend-readonly",
+        quote_age_seconds=2,
+        monitoring_status="READY",
+        protection_status="PLANNED_NOT_ACKED",
+    )
+
+    projection = owner.project_lifecycle(plan, now=NOW)
+
+    assert projection.stage.value == "FAST_TRIGGER"
+    assert projection.decision.value == "NO_TRADE"
+    assert projection.mutation_allowed is False
+    assert adapter.calls == []
