@@ -91,7 +91,7 @@ def test_notification_formatter_bounds_large_and_multiline_untrusted_strings() -
         "reason": "https://private-provider.example.com?auth=secret",
         "signal_id": "A" * 200,
         "severity": "warning",
-        "review_id": "note\\nFAKE ALERT HEADER",
+        "review_id": "note\nFAKE ALERT HEADER",
         "risk_gate": ["BLOCKED", {"secret": "hidden"}],
     })
     text, kwargs = service.calls[0]
