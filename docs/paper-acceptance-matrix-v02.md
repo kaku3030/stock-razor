@@ -107,7 +107,15 @@ Exit evidence:
 - broker acknowledgement and fill evidence are matched to local intent;
 - read-only fill evidence includes filled quantity and average price, and is
   cross-checked against the same-session position quantity delta and account
-  cash movement; missing or unsupported fill queries remain `BLOCKED`;
+  cash movement **with independently evidenced total fees/taxes in the cash
+  currency**: BUY outflow must equal notional + fees; SELL inflow must equal
+  notional - fees. Missing fee evidence, out-of-scope FX/conversion,
+  unrelated deposits/withdrawals, and unexplained cash deltas remain
+  `BLOCKED` (not tolerated or inferred);
+- missing or unsupported fill queries, including moomoo SIM
+  `deal_list_query=-1`, remain `BLOCKED` regardless of a plausible
+  order-history/position/cash correlation. That correlation is research
+  evidence and must not impersonate broker-native execution receipts;
 - any pre-existing non-zero position remains a manual-review condition even
   when the quantity/price/cash cross-check is internally consistent;
 - no live account or live endpoint is reachable from the Paper path.
