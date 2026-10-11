@@ -18,6 +18,7 @@ from .simulated_account_discovery import AccountMode, SimulatedAccountDiscovery
 
 FAMILIES = frozenset(("BALANCE", "POSITIONS", "OPEN_ORDERS", "FILLS"))
 IDENTIFIER = re.compile(r"^[a-zA-Z0-9_.:-]{1,64}$")
+US_SYMBOL = re.compile(r"US\.[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*\Z")
 MAX_AGE_SECONDS = 60
 MAX_ROWS = 10000
 
@@ -44,6 +45,7 @@ class PaperPositionBaseline:
     readonly_evidence_id: str
     position_quantity: Decimal
     evidence_kind: str = "READ_ONLY_PROVIDER"
+    symbol: str | None = None  # Bind quantity to one observed US instrument.
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,7 @@ class PaperRealizedFillEvidence:
     cash_after: Decimal
     total_fees: Decimal
     evidence_kind: str = "READ_ONLY_PROVIDER"
+    symbol: str | None = None  # Independently sourced instrument identity.
 
 
 @dataclass(frozen=True)
@@ -279,6 +282,10 @@ def _required_evidence_text(value: object) -> bool:
     return isinstance(value, str) and IDENTIFIER.fullmatch(value) is not None
 
 
+def _valid_us_symbol(value: object) -> bool:
+    return isinstance(value, str) and len(value) <= 32 and US_SYMBOL.fullmatch(value) is not None
+
+
 def _baseline_shape_reasons(baseline: object, *, now_utc: datetime) -> set[str]:
     reasons: set[str] = set()
     if not isinstance(baseline, PaperPositionBaseline):
@@ -291,6 +298,8 @@ def _baseline_shape_reasons(baseline: object, *, now_utc: datetime) -> set[str]:
         reasons.add("POSITION_BASELINE_SOURCE_UNKNOWN")
     if not _required_evidence_text(baseline.readonly_evidence_id):
         reasons.add("POSITION_BASELINE_READONLY_EVIDENCE_UNKNOWN")
+    if not _valid_us_symbol(baseline.symbol):
+        reasons.add("POSITION_BASELINE_SYMBOL_UNKNOWN")
     if baseline.evidence_kind != "READ_ONLY_PROVIDER":
         reasons.add("POSITION_BASELINE_NOT_READONLY_PROVIDER")
     if (
@@ -399,6 +408,12 @@ def assess_independent_realized_fill(
         reasons.add("REALIZED_FILL_SOURCE_UNKNOWN")
     if not _required_evidence_text(fill.readonly_evidence_id):
         reasons.add("REALIZED_FILL_READONLY_EVIDENCE_UNKNOWN")
+    if not _valid_us_symbol(fill.symbol):
+        reasons.add("REALIZED_FILL_SYMBOL_UNKNOWN")
+    if before.symbol != after.symbol:
+        reasons.add("POSITION_BASELINE_SYMBOL_MISMATCH")
+    if fill.symbol != before.symbol or fill.symbol != after.symbol:
+        reasons.add("REALIZED_FILL_SYMBOL_MISMATCH")
     if fill.evidence_kind != "READ_ONLY_PROVIDER":
         reasons.add("REALIZED_FILL_NOT_READONLY_PROVIDER")
     if (

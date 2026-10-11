@@ -39,6 +39,7 @@ def baseline(*, quantity: str, at: datetime, evidence: str) -> PaperPositionBase
         source="MOOMOO_OPEND_READONLY",
         readonly_evidence_id=evidence,
         position_quantity=Decimal(quantity),
+        symbol="US.AMD",
     )
 
 
@@ -56,6 +57,7 @@ def fill(**changes) -> PaperRealizedFillEvidence:
         cash_before=Decimal("1000"),
         cash_after=Decimal("799"),
         total_fees=Decimal("1"),
+        symbol="US.AMD",
     )
     values.update(changes)
     return PaperRealizedFillEvidence(**values)
