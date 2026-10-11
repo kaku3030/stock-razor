@@ -23,9 +23,12 @@ from realtime_monitor.readonly_mcp_server import (
     get_cn_market_analysis,
     get_cn_market_data,
     get_futures_runtime_health,
+    get_market_source_status,
+    get_tickflow_probe_health,
     get_livefeed_health,
     get_market_analysis,
     get_us_research_brief,
+    get_us_quick_scan,
     get_market_bars,
     get_market_snapshots,
     mcp,
@@ -42,6 +45,9 @@ for result in (
     get_market_bars("AMD", timeframe="1m", limit=1),
     get_market_analysis(["AMD"]),
     get_us_research_brief(["AMD"]),
+    get_us_quick_scan(["AMD"]),
+    get_market_source_status(),
+    get_tickflow_probe_health(),
 ):
     assert result["live_trade"] is False
     assert result["radar_admission"] == "BLOCKED"
