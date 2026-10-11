@@ -174,3 +174,42 @@ def test_incomplete_or_wrong_market_data_blocks_whole_batch():
         run_offline_cloud_replay_batch(
             source, payload("1h"), symbol="AMD", decisions=(decision(),),
         )
+
+
+def test_stop_target_collision_is_assumed_stop_first_through_entire_batch():
+    data = payload()
+    # Both stop and target may be touched after the entry open; 15m bars
+    # cannot resolve intrabar ordering. No hindsight selection of target.
+    data["bars"][4].update(open="100", low="97", high="105", close="101")
+    r = run_offline_cloud_replay_batch(
+        data, payload("1h"), symbol="AMD", decisions=(decision(3),),
+    )
+    assert r.hypothetical_result_count == 1
+    assert r.records[0].receipt.exit_reason == "STOP_FIRST_AMBIGUOUS"
+    assert r.hypothetical_total_r < Decimal("-1")
+
+
+def test_gapped_stop_uses_adverse_next_bar_open_not_plan_stop():
+    data = payload()
+    # Entry on bar 4 at 100, then bar 5 gaps from 100 to 95; fill at 95.
+    data["bars"][5].update(open="95", low="94", high="98", close="96")
+    r = run_offline_cloud_replay_batch(
+        data, payload("1h"), symbol="AMD", decisions=(decision(3),),
+    )
+    assert r.records[0].receipt.exit_reason == "STOP_GAP_OPEN"
+    assert r.records[0].receipt.exit == Decimal("95")
+    assert r.hypothetical_total_r < Decimal("-1")
+
+
+def test_mixed_blocked_and_filled_are_counted_without_promoting_paper():
+    r = run_offline_cloud_replay_batch(
+        payload(), payload("1h"), symbol="AMD",
+        decisions=(decision(0, id="early"), decision(3, id="valid"),
+                   decision(25, id="late")),
+    )
+    assert r.requested_count == 3
+    assert r.blocked_count == 2
+    assert r.hypothetical_result_count == 1
+    assert r.no_fill_count == 0
+    assert r.paper_auto_ready is False
+    assert r.external_order_ids_verified is False
