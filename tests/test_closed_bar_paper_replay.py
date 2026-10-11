@@ -148,9 +148,26 @@ def test_no_future_day_can_be_treated_as_continuous_rth_sequence():
                             end=START + timedelta(days=1, minutes=15)))
     r = replay_closed_bar_long(rows, decision_index=0, hourly=gate(), entry=plan())
     assert r.status == "BLOCKED"
-    assert r.reason == "BAR_GAP_OR_DUPLICATE"
+    assert r.reason == "CROSSES_UTC_SESSION_DAY"
 
 
 def test_invalid_signal_and_empty_series_fail_closed():
     assert replay_closed_bar_long((), decision_index=0, hourly=gate(), entry=plan()).status == "BLOCKED"
     assert replay_closed_bar_long((bar(0),), decision_index=True, hourly=gate(), entry=plan()).reason == "DECISION_INDEX_INVALID"
+
+
+def test_false_like_or_ambiguous_bar_closure_flag_is_invalid():
+    with pytest.raises(ValueError, match="BAR_CLOSURE_PROOF_INVALID"):
+        bar(0, closed="false")
+
+
+def test_contiguous_cross_midnight_series_still_blocks_as_single_day_research():
+    a = datetime(2026, 10, 9, 23, 30, tzinfo=timezone.utc)
+    rows = (
+        Closed15mBar(a, a + timedelta(minutes=15), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("10"), "futu"),
+        Closed15mBar(a + timedelta(minutes=15), a + timedelta(minutes=30), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("10"), "futu"),
+        Closed15mBar(a + timedelta(minutes=30), a + timedelta(minutes=45), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("10"), "futu"),
+    )
+    r = replay_closed_bar_long(rows, decision_index=0, hourly=gate(), entry=plan())
+    assert r.status == "BLOCKED"
+    assert r.reason == "CROSSES_UTC_SESSION_DAY"
