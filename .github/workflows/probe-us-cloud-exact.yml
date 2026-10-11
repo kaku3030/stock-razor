@@ -61,20 +61,20 @@ jobs:
           }
           # Avoid public-source cloud pulls. Transmit source bytes from the
           # exact reviewed runner checkout over existing fixed-target SSM.
-          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d\x27 \x27 -f1)"
+          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
           packed="$(gzip -n -9 -c scripts/probe_us_cloud_exact.py | base64 -w0)"
           test -n "$packed"
           # Target AWS-RunShellScript executes POSIX sh; no bash-only flags.
-          read -r -d \x27\x27 remote <<REMOTE || true
+          read -r -d '' remote <<REMOTE || true
           set -eu
           umask 077
           stage=\$(mktemp -d)
-          trap \x27rm -rf "\$stage"\x27 EXIT
-          printf \x27%s\x27 \x27$packed\x27 | base64 -d | gzip -d > "\$stage/probe.py"
-          printf \x27%s  %s\n\x27 \x27$probe_hash\x27 "\$stage/probe.py" | sha256sum -c - >/dev/null
-          python3 "\$stage/probe.py" --expected-sha \x27$revision\x27 --duration-seconds \x27$DURATION_SECONDS\x27 --symbols \x27$SYMBOLS\x27
+          trap 'rm -rf "\$stage"' EXIT
+          printf '%s' '$packed' | base64 -d | gzip -d > "\$stage/probe.py"
+          printf '%s  %s\n' '$probe_hash' "\$stage/probe.py" | sha256sum -c - >/dev/null
+          python3 "\$stage/probe.py" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS' --symbols '$SYMBOLS'
           REMOTE
-          test "$(printf \x27%s\x27 "$remote" | wc -c)" -le 16000 || {
+          test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
             echo "US_EXACT_CLOUD_PROBE_SSM_PAYLOAD_TOO_LARGE" >&2; exit 2;
           }
           command="$remote"
