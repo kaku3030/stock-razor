@@ -211,7 +211,7 @@ def test_cli_outputs_only_machine_safe_evidence_and_trading_stays_blocked(
 def test_no_network_or_aws_cli_in_offline_contract():
     script = Path("ops/aws/private_source_bundle.py").read_text(encoding="utf-8")
     assert "subprocess.run(" in script
-     assert "subprocess.run(\n            [\n                \"git\"" in script
+    assert "subprocess.run(\n            [\n                \"git\"" in script
     assert "import boto3" not in script
     assert "import requests" not in script
     assert "aws ssm" not in script
