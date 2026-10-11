@@ -42,3 +42,60 @@ def test_bundle_retention_is_short_and_source_identity_explicit():
     assert "retention-days: 3" in body
     assert '"source_commit_sha": os.environ["EXPECTED_SOURCE_SHA"]' in body
     assert '"bundle_sha256": receipt.archive_sha256' in body
+
+
+def test_bundle_excludes_docs_only_media_to_fit_strict_verifier_limit():
+    body = WORKFLOW.read_text(encoding="utf-8")
+    assert "HEAD ':(exclude)docs/assets' ':(exclude)CLAUDE.md'" in body
+    assert 'test "$(wc -c < "$BUNDLE_PATH")" -le 67108864' in body
+    assert "SOURCE_BUNDLE_EXCEEDS_VERIFIER_LIMIT" in body
+    assert "TRACKED_SOURCE_EXCLUDING_DOCS_ASSETS" in body
+    assert "source-tree-paths.txt" in body
+    assert "SOURCE_BUNDLE_DOC_ASSETS_NOT_EXCLUDED" in body
+    assert "SOURCE_BUNDLE_RUNTIME_PATH_MISSING" in body
+    for required in (
+        "src/services/private_source_artifact.py",
+        "realtime_monitor/readonly_mcp_server.py",
+        "ops/aws/install_readonly_mcp.sh",
+    ):
+        assert required in body
+
+
+def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available():
+    """Integration gate on checked-out CI commit, unlike a static YAML check."""
+    import hashlib
+    import io
+    import shutil
+    import subprocess
+    import tarfile
+
+    import pytest
+
+    from src.services.private_source_artifact import verify_private_source_tar
+
+    root = Path(__file__).resolve().parents[1]
+    if not shutil.which("git") or not (root / ".git").exists():
+        pytest.skip("requires a real Git checkout")
+    output = subprocess.run(
+        ["git", "archive", "--format=tar", "HEAD", ":(exclude)docs/assets", ":(exclude)CLAUDE.md"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    ).stdout
+    assert output, "archive must not be empty"
+    assert len(output) <= 64 * 1024 * 1024, "source bundle exceeds verifier limit"
+    receipt = verify_private_source_tar(
+        output, trusted_sha256=hashlib.sha256(output).hexdigest()
+    )
+    assert receipt.verified is True
+    assert receipt.aws_deployment_performed is False
+    assert receipt.extraction_allowed is False
+    with tarfile.open(fileobj=io.BytesIO(output), mode="r:") as archive:
+        paths = {member.name for member in archive.getmembers()}
+    assert not any(path.startswith("docs/assets/") for path in paths)
+    assert "CLAUDE.md" not in paths
+    assert {
+        "src/services/private_source_artifact.py",
+        "realtime_monitor/readonly_mcp_server.py",
+        "ops/aws/install_readonly_mcp.sh",
+    } <= paths

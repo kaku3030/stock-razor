@@ -19,7 +19,16 @@ The workflow `.github/workflows/private-source-bundle-manual.yml` has
 
 - GitHub Actions checks out the exact `github.sha` with credentials not
   persisted in checkout.
-- Builds tracked source as `git archive`, hashes the byte-for-byte tar,
+- Builds Git-tracked source as `git archive` with the explicit exclusion
+  `:(exclude)docs/assets` and `:(exclude)CLAUDE.md`: the current Git tree contains about 68 MiB
+  of documentation-only images/PSD assets, while CLAUDE.md is a symlink
+  (Git mode 120000) rejected by the strict no-links verifier. A full
+  unfiltered archive is
+  approximately 97 MiB, exceeding the 64 MiB hard cap of the existing
+  verifier. The filtered archive is estimated at ~29 MiB before execution;
+  the actual size must still be checked at manual run time. This does NOT
+  guarantee deployments needing documentation media will work unchanged.
+- Hashes the byte-for-byte tar,
   and calls `verify_private_source_tar` to reject unsafe paths, links,
   duplicates, overlarge bundles and SHA mismatch.
 - Uploads to short-retention GitHub Actions artifacts with a bounded
