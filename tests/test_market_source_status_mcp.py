@@ -221,3 +221,60 @@ def test_tickflow_historical_summary_is_strictly_allowlisted(monkeypatch):
     assert "NEVER_LEAK" not in json.dumps(result)
     assert "timestamp_first" not in json.dumps(result)
     assert result["sources"]["cn_tickflow"]["production_feed_connected"] is False
+
+
+def test_healthy_us_worker_does_not_qualify_stale_market_snapshot(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": True,
+        "status": "HEALTHY",
+        "repo_sha": "a" * 40,
+        "canonical_snapshot_status": "STALE",
+        "bar_closure_proven": False,
+    })
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False,
+        "status": "NO_DATA",
+        "repo_sha": "INVALID_PUBLIC_SECRET",
+    })
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True,
+        "status": "PROBE_ONLY",
+        "repo_sha": "c" * 40,
+    })
+    result = status.read_market_source_status(now_utc=NOW)
+
+    us = result["sources"]["us_opend"]
+    assert us["status"] == "HEALTHY"
+    assert us["worker_heartbeat_healthy"] is True
+    assert us["source_revision"] == "a" * 40
+    assert us["canonical_snapshot_status"] == "STALE"
+    assert us["canonical_snapshot_recent"] is False
+    assert us["bar_closure_proven"] is False
+    assert us["realtime_signal_permission"] == "BLOCKED"
+    assert result["sources"]["cn_eastmoney_tencent"]["source_revision"] == "UNKNOWN"
+    assert result["sources"]["cn_tickflow"]["source_revision"] == "c" * 40
+    assert "INVALID_PUBLIC_SECRET" not in json.dumps(result)
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_recent_cache_and_proven_closure_do_not_automatically_authorize_signals(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": True,
+        "status": "HEALTHY",
+        "repo_sha": "b" * 40,
+        "canonical_snapshot_status": "PASS",
+        "bar_closure_proven": True,
+    })
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": False, "status": "UNAVAILABLE"})
+    result = status.read_market_source_status(now_utc=NOW)
+    us = result["sources"]["us_opend"]
+
+    assert us["canonical_snapshot_recent"] is True
+    assert us["bar_closure_proven"] is True
+    assert us["realtime_signal_permission"] == "BLOCKED"
+    assert us["provider_to_radar_e2e"] == "NOT_VERIFIED"
+    assert result["source_arbiter_admission"] == "BLOCKED"

@@ -53,6 +53,14 @@ def read_market_source_status(
     def enum(value, allowed):
         return value if isinstance(value, str) and value in allowed else "UNKNOWN"
 
+    def source_revision(value):
+        """Code SHA provenance only; not proof the cloud binary matches main."""
+        return (
+            value if isinstance(value, str) and len(value) == 40
+            and all(c in "0123456789abcdef" for c in value)
+            else "UNKNOWN"
+        )
+
     us_status = enum(us.get("status"), {"HEALTHY", "DEGRADED", "STALE", "UNAVAILABLE", "INVALID"})
     cn_status = enum(cn.get("status"), {"PASS", "BLOCKED", "STALE", "NO_DATA", "UNAVAILABLE", "INVALID", "INVALID_ARGUMENT"})
     tf_status = enum(tf.get("status"), {"PROBE_ONLY", "STALE", "UNAVAILABLE", "INVALID"})
@@ -164,12 +172,26 @@ def read_market_source_status(
             "us_opend": {
                 "status": us_status,
                 "observation_healthy": us_ok,
+                "worker_heartbeat_healthy": us_ok,
+                "source_revision": source_revision(us.get("repo_sha")),
+                "canonical_snapshot_status": enum(
+                    us.get("canonical_snapshot_status"),
+                    {"PASS", "STALE", "UNAVAILABLE", "INVALID"},
+                ),
+                # A healthy worker and a fresh canonical snapshot are distinct.
+                # Snapshot recency does not establish real-time feed entitlement.
+                "canonical_snapshot_recent": (
+                    us_ok and us.get("canonical_snapshot_status") == "PASS"
+                ),
+                "bar_closure_proven": us.get("bar_closure_proven") is True,
+                "realtime_signal_permission": "BLOCKED",
                 "local_reader_latency_ms": us_reader_ms,
                 "provider_to_radar_e2e": "NOT_VERIFIED",
             },
             "cn_eastmoney_tencent": {
                 "status": cn_status,
                 "symbol": cn_symbol if cn_symbol_matches else None,
+                "source_revision": source_revision(cn.get("repo_sha")),
                 "symbol_exchange_verified": False,
                 "local_reader_latency_ms": cn_reader_ms,
                 "timeframe": "15m",
@@ -178,6 +200,7 @@ def read_market_source_status(
             },
             "cn_tickflow": {
                 "status": tf_status,
+                "source_revision": source_revision(tf.get("repo_sha")),
                 "isolated_probe_evidence_available": tf_evidence,
                 "historical_kline_observation": historical_kline_observation,
                 "websocket_observation": websocket_observation,
