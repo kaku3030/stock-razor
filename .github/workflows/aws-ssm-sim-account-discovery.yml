@@ -280,11 +280,12 @@ jobs:
                   {
                     probe: (if $v.probe == "us_opend_sim_account_discovery_v0_1" then $v.probe else "INVALID" end),
                     source_revision: (if ($sha | test("^[a-f0-9]{40}$")) then $sha else "UNKNOWN" end),
-                    observed_at_utc: (if ($v.observed_at_utc | type) == "string" and ($v.observed_at_utc | test("^[0-9T:+.Z-]{20,40}$")) then $v.observed_at_utc else "UNKNOWN" end),
+                    observed_at_utc: (if ($v.observed_at_utc | type) == "string" and ($v.observed_at_utc | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$")) then $v.observed_at_utc else "UNKNOWN" end),
                     query_status: (if ($v.query_status | type) == "string" and (["PASS","PROVIDER_REJECTED","ERROR","UNKNOWN"] | index($v.query_status)) != null then $v.query_status else "UNKNOWN" end),
                     opend_reachable: ($v.opend_reachable == true),
                     simulated_us_account_count: (
                       if ($v.simulated_us_account_count | type) == "number"
+                         and ($v.simulated_us_account_count | floor) == $v.simulated_us_account_count
                          and $v.simulated_us_account_count >= 0
                          and $v.simulated_us_account_count <= 1000
                       then $v.simulated_us_account_count else 0 end

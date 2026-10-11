@@ -26,6 +26,14 @@ def _guard() -> str:
     return text[start:end]
 
 
+def _sanitize() -> str:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    anchor = 'safe="$(jq -cen --arg sha "$SOURCE_SHA" --argjson v "${summary#SIM_ACCOUNT_DISCOVERY_SUMMARY=}" '
+    start = text.index(anchor) + len(anchor)
+    end = text.index("')\"", start)
+    return text[start:end].lstrip("'")
+
+
 def _valid_readback() -> dict:
     return {
         "probe": "us_opend_sim_account_discovery_v0_1",
@@ -113,6 +121,28 @@ def test_malformed_or_missing_summary_keys_cannot_create_green_job():
         example = _valid_readback()
         del example[key]
         assert not _passes(example)
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq executable absent")
+def test_sanitizer_rejects_malformed_timestamp_and_non_integer_count():
+    data = _valid_readback()
+    data["observed_at_utc"] = "--------------------"
+    data["simulated_us_account_count"] = 1.5
+    result = subprocess.run(
+        [
+            "jq", "-c", "-n", "--arg", "sha", SHA,
+            "--argjson", "v", json.dumps(data), _sanitize(),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
+    safe = json.loads(result.stdout)
+    assert safe["observed_at_utc"] == "UNKNOWN"
+    assert safe["simulated_us_account_count"] == 0
+    assert not _passes(safe)
 
 
 def test_conclusion_guard_only_emits_finite_public_status_and_no_orders():
