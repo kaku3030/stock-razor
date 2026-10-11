@@ -6,25 +6,76 @@ import subprocess
 from scripts.probe_us_cloud_exact import probe
 
 
-def test_workflow_fetches_probe_by_exact_sha_and_reports_safe_failure_diagnostics():
+def test_workflow_delivers_pinned_compressed_source_without_public_raw_or_leaky_logs():
     workflow = Path(".github/workflows/probe-us-cloud-exact.yml").read_text(encoding="utf-8")
-    assert "raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py" in workflow
-    assert "base64 -w0 scripts/probe_us_cloud_exact.py" not in workflow
-    assert "US_EXACT_CLOUD_PROBE_RESPONSE_CODE=" in workflow
-    assert 'command="set -eu;' in workflow
-    assert 'command="set -euo pipefail;' not in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "ref: ${{ github.sha }}" in workflow
+    assert 'test "$revision" = "${{ github.sha }}"' in workflow
+    assert "gzip -n -9 -c scripts/probe_us_cloud_exact.py | base64 -w0" in workflow
+    assert "sha256sum -c - >/dev/null" in workflow
+    assert "US_EXACT_CLOUD_PROBE_SSM_PAYLOAD_TOO_LARGE" in workflow
+    assert "US_EXACT_CLOUD_PROBE_INVALID_DURATION" in workflow
+    assert "US_EXACT_CLOUD_PROBE_INVALID_SYMBOLS" in workflow
+    assert "read -r -d '' remote <<REMOTE || true" in workflow
+    assert "          set -eu\n          umask 077" in workflow
+    assert "raw.githubusercontent.com" not in workflow
+    assert "curl -fsSL" not in workflow
+    assert "git clone" not in workflow
+    assert "StandardErrorContent" not in workflow
+    assert "tail -n 12" not in workflow
+    assert "print(json.dumps(x, sort_keys=True))" not in workflow
+    assert "US_EXACT_CLOUD_PROBE_SANITIZED=" in workflow
+    assert 'x.get("live_trade") == "NO"' in workflow
+    assert 'x.get("radar_admission") == "BLOCKED"' in workflow
+    assert 'x.get("source_arbiter_admission") == "BLOCKED"' in workflow
+    assert "systemctl restart" not in workflow
+    assert "LIVE_TRADE=NO" in workflow
 
 
-def test_remote_command_is_compatible_with_bin_sh_entrypoint():
-    if not shutil.which("sh"):
-        return
-    result = subprocess.run(
-        ["sh", "-c", "set -eu; command='set -eu; printf remote-shell-ok'; sh -c \"$command\""],
-        check=True,
-        capture_output=True,
-        text=True,
+def test_real_ssm_remote_template_reconstructs_and_verifies_compressed_source():
+    """Re-run the exact POSIX remote template locally, including tamper denial."""
+    import base64
+    import gzip
+    from hashlib import sha256
+
+    import pytest
+
+    if not all(shutil.which(c) for c in ("sh", "gzip", "sha256sum", "base64", "python3")):
+        pytest.skip("POSIX sh and source decoding tools required")
+    workflow = Path(".github/workflows/probe-us-cloud-exact.yml").read_text(encoding="utf-8")
+    fixture = b'print("SOURCE_COMPRESSED_SSM_ROUNDTRIP=PASS")\n'
+    digest = sha256(fixture).hexdigest()
+    packed = base64.b64encode(gzip.compress(fixture, mtime=0)).decode("ascii")
+    fragment = workflow.split("read -r -d '' remote <<REMOTE || true\n", 1)[1].split(
+        "\n          REMOTE", 1
+    )[0]
+    remote = "\n".join(
+        line[10:] if line.startswith("          ") else line
+        for line in fragment.splitlines()
     )
-    assert result.stdout == "remote-shell-ok"
+    remote = remote.replace("$packed", packed).replace("$probe_hash", digest)
+    remote = remote.replace("$revision", "a" * 40)
+    remote = remote.replace("$DURATION_SECONDS", "30")
+    remote = remote.replace("$SYMBOLS", "US.AMD")
+    remote = remote.replace("\\$", "$")
+    result = subprocess.run(
+        ["sh", "-c", remote], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    assert "SOURCE_COMPRESSED_SSM_ROUNDTRIP=PASS" in result.stdout
+    tampered = subprocess.run(
+        ["sh", "-c", remote.replace(digest, "0" * 64)],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert tampered.returncode != 0
+    assert "SOURCE_COMPRESSED_SSM_ROUNDTRIP=PASS" not in tampered.stdout
+
+
+def test_private_source_scanner_excludes_migrated_us_probe():
+    from scripts.audit_private_repo_deploy_dependencies import scan_private_repo_blockers
+
+    hits = scan_private_repo_blockers(Path(__file__).resolve().parents[1])
+    assert all(hit.file != ".github/workflows/probe-us-cloud-exact.yml" for hit in hits)
 
 
 def test_probe_requires_exact_sha_and_keeps_unobservable_latency_blocked(monkeypatch):
