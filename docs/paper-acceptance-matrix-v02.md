@@ -15,6 +15,30 @@
 | Notifications | CONFIGURED/UNVERIFIED | Configuration is not phone-receipt evidence |
 | Live trading | BLOCKED | `LIVE_TRADE=NO` |
 
+## A-share cloud read-only observation (2026-10-11 audit)
+
+An actual AWS-backed read-only MCP query for ETF `159363` returned
+`status=PASS`, `research_only=true`, a **Tencent fallback**
+(`fallback_from=eastmoney`, `fallback_reason=CloudObservationError`),
+and bounded historical daily/15m rows ending **2026-10-09**. The
+Tencent intraday timestamp grid/semantics were `PASS/BAR_END`, while
+`intraday_currentness_proven=false` and `can_confirm_signal=false`.
+This is **genuine cloud offline/historical data availability**, not a
+current/streaming TickFlow feed and not a live Entry Gate. On Sunday a
+Friday end-of-session bar must not trigger a false live-data outage or
+signal.
+
+The CN observer installer now has **code prepared** for a slower
+weekend provider-request cadence (default 900 seconds versus the
+existing 60-second weekday cadence); it preserves normal weekday polling
+and records the next interval in each actual provider observation.
+It does **not** fabricate a refreshed quote on sleep. The manual
+CN deployment workflow also withholds raw SSM stdout/stderr from the
+PUBLIC Actions log and tests the Eastmoney UNKNOWN versus Tencent
+BAR_END timestamp semantics without upgrading them to currentness.
+These changes are only deployed after independently approved actual AWS
+deployment. CI proof is not proof that the running worker is updated.
+
 ## Promotion stages
 
 ### Stage 0 — Offline deterministic simulation
