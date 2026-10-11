@@ -8,8 +8,9 @@ client, reads credentials, performs network I/O, or changes admission flags.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Callable, Mapping
 
 
@@ -69,9 +70,14 @@ class PaidHistoryBudget:
     budget_remaining: int | None = None
     quota_remaining: int | None = None
     request_cost: int = 1
+    _reservation_lock: Lock = field(default_factory=Lock, init=False, repr=False, compare=False)
 
     def reserve(self) -> str | None:
-        """Reserve one request, returning a fail-closed reason when refused."""
+        """Atomically reserve shared quota before any paid provider request."""
+        with self._reservation_lock:
+            return self._reserve_unlocked()
+
+    def _reserve_unlocked(self) -> str | None:
         if not self.enabled:
             return "DISABLED_DEFAULT"
         if type(self.request_cost) is not int or self.request_cost <= 0:
@@ -255,6 +261,31 @@ def crosscheck_history_batch(
     return HistoryCrosscheck(PASS, checks)
 
 
+def _preflight_request_reason(request: object) -> str | None:
+    """Reject malformed paid inputs before reserving quota or invoking the transport."""
+    if not isinstance(request, HistoryBatchRequest):
+        return "INVALID_HISTORY_REQUEST"
+    start = _as_utc(request.start_time)
+    end = _as_utc(request.end_time)
+    if start is None or end is None or start >= end:
+        return "INVALID_REQUEST_WINDOW"
+    if request.source != "TICKFLOW":
+        return "INVALID_REQUEST_SOURCE"
+    if not isinstance(request.symbols, (tuple, list)) or not request.symbols:
+        return "INVALID_REQUEST_SYMBOLS"
+    if any(
+        not isinstance(symbol, str) or not symbol.strip()
+        or symbol != symbol.strip() for symbol in request.symbols
+    ):
+        return "INVALID_REQUEST_SYMBOLS"
+    # Conservative cap from the reviewed Expert minute-batch entitlement.
+    if len(request.symbols) > 200:
+        return "REQUEST_SYMBOL_CAP_EXCEEDED"
+    if len(request.symbols) != len(set(request.symbols)):
+        return "DUPLICATE_REQUEST_SYMBOLS"
+    return None
+
+
 def fetch_history_batch(
     request: HistoryBatchRequest,
     transport: Callable[[HistoryBatchRequest], HistoryBatchResponse],
@@ -269,6 +300,10 @@ def fetch_history_batch(
             provider_requests=0,
             budget=None,
         )
+
+    invalid_request = _preflight_request_reason(request)
+    if invalid_request is not None:
+        return _result(BLOCKED, invalid_request, provider_requests=0, budget=budget)
 
     refusal = budget.reserve()
     if refusal is not None:
