@@ -96,6 +96,25 @@ receipt source, the external SIM fill/readiness gate stays `BLOCKED`.
 Existing nonzero positions always demand operator review. No automatic
 or manual SIM order is authorized by the AWS readback workflow.
 
+## Position baseline and realized-fill evidence policy
+
+The external SIM path now treats a position baseline as a separately bound
+read-only evidence object. It must carry the exact account identity, account
+generation, UTC observation timestamp, source, and read-only evidence ID.
+Missing or stale provenance is `UNKNOWN`; an account, generation, source, or
+evidence mismatch is `BLOCKED`.
+
+`PaperFillReconciliation` remains a numeric corroboration for supervised
+review. It is not a realized fill. A realized fill requires two distinct
+before/after position baselines and a separate read-only provider evidence
+record with filled quantity, average price, position delta, and exact
+fee-aware cash movement. Intent, broker ACK, dispatch success, fixtures, or a
+single readback cannot establish that fact. Until an independently authorized
+native receipt source exists, the external Paper admission remains
+`UNKNOWN`/`BLOCKED` and `PAPER_AUTO_READY=NO`. The pure
+`assess_external_paper_admission` result `READY_FOR_SUPERVISED_REVIEW` is an
+evidence disposition only; it never authorizes an order call.
+
 ## Promotion stages
 
 ### Stage 0 — Offline deterministic simulation

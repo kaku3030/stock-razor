@@ -9,9 +9,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from enum import StrEnum
 import hashlib
 from typing import Protocol
 
+from .external_simulator_readonly_preflight import (
+    PaperEvidenceAssessment,
+    PaperEvidenceStatus,
+    PaperReadOnlyScopeStatus,
+)
 from .execution_engine import ExecutionBlocked, OrderIntent, OrderType, Side
 from .trade_plan import TradeDirection, TradePlan, TradePlanStatus, evaluate_trade_plan
 
@@ -27,6 +33,70 @@ class ExecutionAdmissionEvidence(Protocol):
     confirmed_at: float | None
     earliest_executable_at: float | None
     canonical_permission: str
+
+
+class ExternalPaperAdmissionStatus(StrEnum):
+    READY_FOR_SUPERVISED_REVIEW = "READY_FOR_SUPERVISED_REVIEW"
+    UNKNOWN = "UNKNOWN"
+    BLOCKED = "BLOCKED"
+
+
+@dataclass(frozen=True)
+class ExternalPaperAdmission:
+    status: ExternalPaperAdmissionStatus
+    reasons: tuple[str, ...]
+    paper_auto_ready: bool = False
+    broker_mutation_allowed: bool = False
+    live_trade: bool = False
+
+
+def assess_external_paper_admission(
+    *,
+    position_baseline: PaperEvidenceAssessment | None,
+    readback_scope: PaperReadOnlyScopeStatus | None,
+    balance_readback_passed: bool | None,
+    open_orders_empty: bool | None,
+    independent_fill_source_available: bool | None,
+) -> ExternalPaperAdmission:
+    """Classify external SIM evidence without authorizing an order call."""
+
+    unknown: set[str] = set()
+    blocked: set[str] = set()
+    if not isinstance(position_baseline, PaperEvidenceAssessment):
+        unknown.add("POSITION_BASELINE_UNKNOWN")
+    elif position_baseline.status is PaperEvidenceStatus.UNKNOWN:
+        unknown.add("POSITION_BASELINE_UNKNOWN")
+    elif position_baseline.status is PaperEvidenceStatus.BLOCKED:
+        blocked.add("POSITION_BASELINE_BLOCKED")
+    elif position_baseline.reasons:
+        blocked.add("POSITION_BASELINE_CONFLICTING_REASONS")
+    if readback_scope is None:
+        unknown.add("READBACK_SCOPE_UNKNOWN")
+    elif readback_scope is not PaperReadOnlyScopeStatus.SCOPED_INPUTS_CONSISTENT:
+        blocked.add("READBACK_SCOPE_BLOCKED")
+    for value, unknown_reason, blocked_reason in (
+        (balance_readback_passed, "BALANCE_READBACK_UNKNOWN", "BALANCE_READBACK_BLOCKED"),
+        (open_orders_empty, "OPEN_ORDERS_UNKNOWN", "OPEN_ORDERS_NOT_EMPTY"),
+        (
+            independent_fill_source_available,
+            "INDEPENDENT_FILL_SOURCE_UNKNOWN",
+            "INDEPENDENT_FILL_SOURCE_UNAVAILABLE",
+        ),
+    ):
+        if value is None:
+            unknown.add(unknown_reason)
+        elif value is not True:
+            blocked.add(blocked_reason)
+    if blocked:
+        status = ExternalPaperAdmissionStatus.BLOCKED
+    elif unknown:
+        status = ExternalPaperAdmissionStatus.UNKNOWN
+    else:
+        status = ExternalPaperAdmissionStatus.READY_FOR_SUPERVISED_REVIEW
+    return ExternalPaperAdmission(
+        status=status,
+        reasons=tuple(sorted(unknown | blocked)),
+    )
 
 
 @dataclass(frozen=True)
