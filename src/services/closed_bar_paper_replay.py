@@ -70,11 +70,14 @@ class UpstreamHourlyGate:
     passed: bool
     bar_was_closed: bool
     source: str
+    bar_duration_minutes: int = 60
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "closed_bar_end", _t(self.closed_bar_end, "hourly_end"))
         if not isinstance(self.passed, bool) or not isinstance(self.bar_was_closed, bool):
             raise ValueError("HOURLY_GATE_FLAGS_INVALID")
+        if type(self.bar_duration_minutes) is not int or self.bar_duration_minutes not in (30, 60):
+            raise ValueError("HOURLY_BAR_DURATION_INVALID")
         if not isinstance(self.source, str) or not self.source.strip():
             raise ValueError("HOURLY_SOURCE_MISSING")
 
@@ -147,7 +150,8 @@ def replay_closed_bar_long(
     decision_time = bars[decision_index].end
     if not isinstance(hourly, UpstreamHourlyGate) or not isinstance(entry, HistoricalEntryBand):
         return ClosedBarResearchReceipt("BLOCKED", "UPSTREAM_GATE_OR_PLAN_MISSING", decision_time)
-    if (not hourly.passed or not hourly.bar_was_closed or hourly.source != bars[0].source
+    if (not hourly.passed or not hourly.bar_was_closed or hourly.bar_duration_minutes != 60
+        or hourly.source != bars[0].source
         or hourly.closed_bar_end > decision_time
         or decision_time - hourly.closed_bar_end > timedelta(minutes=60)):
         return ClosedBarResearchReceipt("BLOCKED", "60M_GATE_NOT_PIT_QUALIFIED", decision_time)
