@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import threading
 from urllib.parse import parse_qs, urlparse
 
@@ -7,6 +8,7 @@ import pytest
 from data_provider import cn_eastmoney_cloud_observer as observer
 from data_provider.cn_eastmoney_cloud_observer import (
     SCHEMA,
+    cn_cloud_observer_poll_interval,
     build_cn_cloud_observation,
     build_kline_url,
     build_tencent_kline_url,
@@ -461,3 +463,42 @@ def test_symbol_timeframes_are_observed_concurrently(monkeypatch):
 
     assert list(result["timeframes"]) == ["1d", "60m", "15m"]
     assert all(item["status"] == "PASS" for item in result["timeframes"].values())
+
+
+def test_cn_weekend_poll_reduces_provider_pressure_without_weekday_regression():
+    # These timestamps straddle the UTC/Asia-Shanghai date boundary.
+    for stamp, expected in (
+        (datetime(2026, 10, 9, 15, 59, tzinfo=timezone.utc), 60.0),
+        (datetime(2026, 10, 9, 16, 0, tzinfo=timezone.utc), 900.0),
+        (datetime(2026, 10, 10, 6, 30, tzinfo=timezone.utc), 900.0),
+        (datetime(2026, 10, 11, 15, 59, tzinfo=timezone.utc), 900.0),
+        (datetime(2026, 10, 11, 16, 0, tzinfo=timezone.utc), 60.0),
+    ):
+        assert cn_cloud_observer_poll_interval(stamp, regular_seconds=60) == expected
+    assert cn_cloud_observer_poll_interval(
+        datetime(2026, 10, 10, 12, tzinfo=timezone.utc),
+        regular_seconds=1200,
+    ) == 1200
+    assert cn_cloud_observer_poll_interval(
+        datetime(2026, 10, 10, 12, tzinfo=timezone.utc),
+        regular_seconds=60,
+        weekend_seconds=1800,
+    ) == 1800
+    assert cn_cloud_observer_poll_interval(
+        datetime(2026, 10, 10, 20, tzinfo=ZoneInfo("Asia/Shanghai")),
+        regular_seconds=60,
+    ) == 900
+
+
+@pytest.mark.parametrize("stamp,regular,weekend", [
+    (datetime(2026, 10, 10), 60, 900),
+    (datetime(2026, 10, 10, tzinfo=timezone.utc), 0, 900),
+    (datetime(2026, 10, 10, tzinfo=timezone.utc), 60, float("inf")),
+    (datetime(2026, 10, 10, tzinfo=timezone.utc), float("nan"), 900),
+    (datetime(2026, 10, 10, tzinfo=timezone.utc), True, 900),
+])
+def test_cn_weekend_poll_denies_invalid_schedule(stamp, regular, weekend):
+    with pytest.raises(ValueError):
+        cn_cloud_observer_poll_interval(
+            stamp, regular_seconds=regular, weekend_seconds=weekend
+        )
