@@ -24,6 +24,24 @@ SAFE_PROBE_SCHEMAS = frozenset((
 ))
 SAFE_ISOLATED_MODES = frozenset(("metadata", "free", "premium-contract"))
 
+# Direct MCP access must not forward *arbitrary* even short strings from cache.
+# All allowed values below are fixed protocol vocabulary, not provider text.
+SAFE_WS_DIAGNOSTIC_VALUES = frozenset((
+    "UNKNOWN", "PASS", "FAILED", "BLOCKED", "NOT_VERIFIED", "PROVEN",
+    "UNPROVEN", "OBSERVED", "NO_EVENTS_OBSERVED", "NOT_APPLICABLE",
+    "CONNECTED", "DISCONNECTED", "CONNECTING", "SUBSCRIBED",
+    "POST_INITIAL_CANDIDATES_ONLY_NOT_VERIFIED_LIVE",
+    "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK",
+))
+SAFE_HISTORICAL_SUMMARY_ENUMS = {
+    "timestamp_monotonicity": frozenset(("STRICTLY_INCREASING", "NON_MONOTONIC", "NOT_VERIFIED", "UNKNOWN")),
+    "closure": frozenset(("NOT_VERIFIED", "PROVEN", "UNPROVEN", "PASS", "BLOCKED")),
+    "freshness": frozenset(("NOT_VERIFIED", "PROVEN", "UNPROVEN", "PASS", "BLOCKED")),
+    "entitlement_evidence": frozenset(("NOT_VERIFIED", "UNKNOWN", "PASS", "BLOCKED")),
+    "period": frozenset(("1d",)),
+}
+
+
 
 def read_tickflow_probe_health(path: str | None = None, *,
                                now_utc: datetime | None = None,
@@ -54,7 +72,8 @@ def read_tickflow_probe_health(path: str | None = None, *,
     except (OSError, ValueError, TypeError, UnicodeError):
         return fail("UNAVAILABLE")
 
-    if not isinstance(payload, dict) or payload.get("schema") not in SAFE_PROBE_SCHEMAS:
+    if (not isinstance(payload, dict) or not isinstance(payload.get("schema"), str)
+            or payload.get("schema") not in SAFE_PROBE_SCHEMAS):
         return fail("INVALID")
     schema = payload.get("schema")
     mode = payload.get("mode")
@@ -64,7 +83,7 @@ def read_tickflow_probe_health(path: str | None = None, *,
         if mode != "premium":
             return fail("INVALID")
     elif (
-        mode not in SAFE_ISOLATED_MODES
+        not isinstance(mode, str) or mode not in SAFE_ISOLATED_MODES
         or payload.get("location") != "AWS_TOKYO_SSM_ISOLATE"
     ):
         return fail("INVALID")
@@ -85,10 +104,11 @@ def read_tickflow_probe_health(path: str | None = None, *,
 
     ops = []
     for op in payload["operations"]:
-        if not isinstance(op, dict) or op.get("name") not in SAFE_OPERATIONS:
+        if (not isinstance(op, dict) or not isinstance(op.get("name"), str)
+                or op.get("name") not in SAFE_OPERATIONS):
             return fail("INVALID")
         name, state = op["name"], op.get("operation")
-        if state not in ("COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED", "FAILED", "BLOCKED", "SKIPPED", "ERROR"):
+        if not isinstance(state, str) or state not in ("COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED", "FAILED", "BLOCKED", "SKIPPED", "ERROR"):
             return fail("INVALID")
         item = {"name": name, "operation": state}
         for field in ("elapsed_ms", "row_count"):
@@ -120,7 +140,7 @@ def read_tickflow_probe_health(path: str | None = None, *,
                 "clock_offset_qualification",
             ):
                 val = op.get(field)
-                if isinstance(val, str) and len(val) <= 160:
+                if isinstance(val, str) and val in SAFE_WS_DIAGNOSTIC_VALUES:
                     item[field] = val
             for field in ("continuous_feed_qualified", "stale_drop_reconnect_qualified"):
                 if type(op.get(field)) is bool:
@@ -138,18 +158,20 @@ def read_tickflow_probe_health(path: str | None = None, *,
         summary = raw_historical.get("summary")
         safe_summary = None
         if isinstance(summary, dict):
-            safe_summary = {
-                field: summary.get(field)
-                for field in (
-                    "sample_count", "timestamp_monotonicity", "ohlcv_range_valid",
-                    "closure", "freshness", "entitlement_evidence", "period",
-                )
-                if field in summary
-            }
+            safe_summary = {}
+            if type(summary.get("sample_count")) is int and 0 <= summary["sample_count"] <= 100000000:
+                safe_summary["sample_count"] = summary["sample_count"]
+            if type(summary.get("ohlcv_range_valid")) is bool:
+                safe_summary["ohlcv_range_valid"] = summary["ohlcv_range_valid"]
+            for field, allowed in SAFE_HISTORICAL_SUMMARY_ENUMS.items():
+                value = summary.get(field)
+                if isinstance(value, str) and value in allowed:
+                    safe_summary[field] = value
+        row_count = raw_historical.get("row_count")
         historical = {
             "operation": raw_historical.get("operation"),
             "period": raw_historical.get("period"),
-            "row_count": raw_historical.get("row_count"),
+            "row_count": row_count if type(row_count) is int and 0 <= row_count <= 100000000 else 0,
             "qualification": raw_historical.get("qualification"),
             "summary": safe_summary,
         }

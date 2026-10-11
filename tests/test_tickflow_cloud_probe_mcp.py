@@ -193,3 +193,92 @@ def test_websocket_evidence_is_allowlisted_and_not_a_continuous_feed(tmp_path):
     text = json.dumps(result)
     assert "provider_secret" not in text
     assert "NEVER_LEAK" not in text
+
+
+def test_direct_mcp_does_not_forward_arbitrary_short_websocket_diagnostics(tmp_path):
+    payload = isolated_free_sample()
+    payload["operations"].append({
+        "name": "websocket_quote_smoke",
+        "operation": "OBSERVED",
+        "connection_state": "SECRET_TOKEN_ABC123",
+        "subscription_state": "PROVIDER_PRIVATE_ACCOUNT",
+        "event_state": "PASS",
+        "lag_scope": "X_PRIVATE_PAYLOAD",
+        "subscribed_ack_evidence": "SECRET",
+        "sample_latency_qualification": "NOT_VERIFIED",
+    })
+    payload["historical_kline_observation"]["summary"].update({
+        "timestamp_monotonicity": "PRIVATE_PROBE_TOKEN",
+        "entitlement_evidence": "PRIVATE_ENTITLEMENT",
+        "sample_count": "ACCOUNT_ID_SHOULD_NOT_LEAK",
+        "ohlcv_range_valid": {"token": "SECRET"},
+        "closure": "RAW_USER_IDENTIFIER",
+    })
+    path = tmp_path / "malicious.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    result = read_tickflow_probe_health(str(path), now_utc=NOW)
+    assert result["status"] == "PROBE_ONLY"
+    ws = next(op for op in result["operations"] if op["name"] == "websocket_quote_smoke")
+    assert "connection_state" not in ws
+    assert "subscription_state" not in ws
+    assert "lag_scope" not in ws
+    assert ws["event_state"] == "PASS"
+    assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
+    summary = result["historical_kline_observation"]["summary"]
+    assert "timestamp_monotonicity" not in summary
+    assert "entitlement_evidence" not in summary
+    assert "sample_count" not in summary
+    assert "ohlcv_range_valid" not in summary
+    assert "closure" not in summary
+    assert "SECRET" not in json.dumps(result)
+    assert "PRIVATE" not in json.dumps(result)
+    assert "ACCOUNT_ID" not in json.dumps(result)
+
+
+def test_malformed_unhashable_probe_enums_fail_closed_without_exception(tmp_path):
+    for field, replacement in (
+        ("mode", {"secret": "X"}),
+        ("schema", ["malformed"]),
+    ):
+        payload = isolated_free_sample()
+        payload[field] = replacement
+        path = tmp_path / "invalid.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        result = read_tickflow_probe_health(str(path), now_utc=NOW)
+        assert result["ok"] is False and result["status"] == "INVALID"
+
+    for field, replacement in (
+        ("name", ["bad"]),
+        ("operation", {"bad": True}),
+    ):
+        payload = isolated_free_sample()
+        payload["operations"][0][field] = replacement
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        result = read_tickflow_probe_health(str(path), now_utc=NOW)
+        assert result["ok"] is False and result["status"] == "INVALID"
+
+
+def test_historical_summary_numeric_and_enum_allowlist(tmp_path):
+    payload = isolated_free_sample()
+    path = tmp_path / "valid.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    result = read_tickflow_probe_health(str(path), now_utc=NOW)
+    summary = result["historical_kline_observation"]["summary"]
+    assert summary["sample_count"] == 5
+    assert summary["timestamp_monotonicity"] == "STRICTLY_INCREASING"
+    assert summary["ohlcv_range_valid"] is True
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_canonical_mcp_installer_smokes_direct_cached_sources_without_io():
+    src = (ROOT / "ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
+    for tool in (
+        "get_market_source_status",
+        "get_tickflow_probe_health",
+        "get_us_quick_scan",
+    ):
+        assert f"    {tool}," in src
+        assert f"    {tool}(" in src
+    assert 'assert result["live_trade"] is False' in src
+    assert 'assert result["radar_admission"] == "BLOCKED"' in src
