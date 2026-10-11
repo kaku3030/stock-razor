@@ -42,7 +42,7 @@ def test_operations_status_reports_configured_notification_channel(monkeypatch):
     response = operations_status()
 
     assert response.notification_channels_configured == ["telegram"]
-    assert response.notification_ready is True
+    assert response.notification_ready is False
     # A configured webhook is not proof that the phone received a message.
     assert "真实手机接收回执" in response.pending_acceptance
     assert response.live_trade is False
@@ -60,7 +60,7 @@ def test_operations_status_reports_radar_discord_webhook(monkeypatch):
     response = operations_status()
 
     assert response.notification_channels_configured == ["discord"]
-    assert response.notification_ready is True
+    assert response.notification_ready is False
     assert response.live_trade is False
 
 
@@ -154,3 +154,23 @@ def test_operations_status_never_promotes_unverified_external_paper_from_env(mon
     assert controls.mutation_allowed is False
     assert controls.broker_io_allowed is False
     assert controls.external_paper_account_evidence == "NOT_VERIFIED"
+
+
+def test_credentials_and_routes_never_count_as_verified_phone_receipt(monkeypatch):
+    # A configured route can still have expired token, blocked account,
+    # network outage, no active consumer or undelivered mobile notification.
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("DISCORD_RADAR_WEBHOOK_URL", "https://discord.example/hook")
+    monkeypatch.setenv("NOTIFICATION_ALERT_CHANNELS", "telegram,discord")
+    monkeypatch.setenv("NOTIFICATION_SYSTEM_ERROR_CHANNELS", "discord")
+    monkeypatch.setenv("PAPER_AUTO_READY", "YES")
+
+    response = operations_status()
+    assert set(response.notification_channels_configured) >= {"telegram", "discord"}
+    assert response.notification_routes["alert"] == ["telegram", "discord"]
+    assert response.notification_delivery_evidence == "NOT_VERIFIED"
+    assert response.notification_ready is False
+    assert "真实手机接收回执" in response.pending_acceptance
+    assert response.paper_auto_ready is False
+    assert response.live_trade is False
