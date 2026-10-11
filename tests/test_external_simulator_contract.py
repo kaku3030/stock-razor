@@ -89,3 +89,21 @@ def test_ttl_and_order_count_are_bounded():
         admit(request={"valid_until": NOW + timedelta(minutes=16)})
     with pytest.raises(ExternalSimulatorBlocked, match="exactly one"):
         admit(max_orders=2)
+
+
+def test_simulated_account_observation_must_be_fresh():
+    with pytest.raises(ExternalSimulatorBlocked, match="stale"):
+        admit(evidence={"observed_at": NOW - timedelta(seconds=61)})
+    # Exact documented boundary remains valid; no runtime request occurs.
+    boundary = admit(evidence={"observed_at": NOW - timedelta(seconds=60)})
+    assert boundary.venue == "MOOMOO_SIMULATE_ONLY"
+
+
+def test_simulated_account_observation_cannot_be_from_future():
+    with pytest.raises(ExternalSimulatorBlocked, match="future"):
+        admit(evidence={"observed_at": NOW + timedelta(microseconds=1)})
+
+
+def test_account_freshness_does_not_override_simulation_mode():
+    with pytest.raises(ExternalSimulatorBlocked, match="SIMULATE"):
+        admit(evidence={"observed_at": NOW, "mode": SimulatorMode.REAL})
