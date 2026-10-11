@@ -62,6 +62,9 @@ class PaperFillReconciliation:
     position_quantity_after: Decimal
     cash_before: Decimal
     cash_after: Decimal
+    # Independently evidenced aggregate fees/taxes in the SAME currency as
+    # cash_before/after. Missing evidence is BLOCKED, not assumed zero.
+    total_fees: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -229,6 +232,8 @@ def _fill_reconciliation_reasons(
     if side not in {"BUY", "SELL"}:
         reasons.add("FILL_SIDE_UNVERIFIED")
 
+    if reconciliation.total_fees is None:
+        return reasons | {"FILL_FEE_EVIDENCE_MISSING"}
     values = (
         reconciliation.filled_quantity,
         reconciliation.average_fill_price,
@@ -236,6 +241,7 @@ def _fill_reconciliation_reasons(
         reconciliation.position_quantity_after,
         reconciliation.cash_before,
         reconciliation.cash_after,
+        reconciliation.total_fees,
     )
     try:
         decimals = tuple(Decimal(str(value)) for value in values)
@@ -251,7 +257,10 @@ def _fill_reconciliation_reasons(
         position_after,
         cash_before,
         cash_after,
+        total_fees,
     ) = decimals
+    if total_fees < 0:
+        reasons.add("FILL_FEES_INVALID")
     if filled_quantity <= 0 or average_price <= 0:
         reasons.add("FILL_QUANTITY_OR_AVERAGE_INVALID")
     if position_before < 0 or position_after < 0:
@@ -261,7 +270,21 @@ def _fill_reconciliation_reasons(
         if position_after - position_before != expected_delta:
             reasons.add("FILL_POSITION_DELTA_MISMATCH")
         notional = filled_quantity * average_price
-        cash_delta = cash_before - cash_after if side == "BUY" else cash_after - cash_before
-        if cash_delta < notional:
+        if notional.is_finite() and total_fees > notional:
+            reasons.add("FILL_FEES_EXCEED_NOTIONAL")
+        # Buyer pays notional + fees; seller receives notional - fees.
+        # Require exact Decimal equality: undocumented fee, rebate, FX,
+        # deposit/withdrawal or other cash movement must fail closed.
+        expected_cash_movement = (
+            notional + total_fees if side == "BUY" else notional - total_fees
+        )
+        cash_movement = (
+            cash_before - cash_after if side == "BUY"
+            else cash_after - cash_before
+        )
+        if (
+            not expected_cash_movement.is_finite()
+            or cash_movement != expected_cash_movement
+        ):
             reasons.add("FILL_CASH_FLOW_MISMATCH")
     return reasons
