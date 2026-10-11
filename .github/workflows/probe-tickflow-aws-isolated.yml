@@ -103,8 +103,8 @@ jobs:
                 printf '%s\n' "$report" | grep -Fx 'TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED'
                 printf '%s\n' "$report" | grep -Fx 'LIVE_TRADE=NO'
                 summary="$(printf '%s\n' "$report" | grep -E '^[{]' | tail -n1)"
-                printf '%s' "$summary" | python3 -c '
-          import json,sys
+                printf '%s' "$summary" | EXPECTED_REVISION="$script_sha" python3 -c '
+          import json,os,sys
           data=json.load(sys.stdin)
           assert data.get("schema") == "stock_razor_tickflow_isolated_probe_v0_1"
           assert data.get("location") == "AWS_TOKYO_SSM_ISOLATE"
@@ -118,7 +118,21 @@ jobs:
               assert data.get("premium_execution") == "BLOCKED"
               assert data.get("premium_contract", {}).get("network_execution") is False
               assert data.get("premium_contract", {}).get("blocked_reasons")
-          print(json.dumps(data,sort_keys=True))
+          print("TICKFLOW_ISOLATED_SANITIZED="+json.dumps({
+              "schema":data["schema"],
+              "mode":data["mode"],
+              "source_revision":os.environ["EXPECTED_REVISION"],
+              "data_qualification":"NOT_VERIFIED",
+              "source_arbiter_admission":"BLOCKED",
+              "radar_admission":"BLOCKED",
+              "live_trade":False,
+              "can_confirm_signal":False,
+              "historical_rows_observed":isinstance(data.get("historical_kline_observation"),dict),
+              "premium_execution":(
+                  "BLOCKED" if data.get("mode") == "premium-contract"
+                  else "NOT_APPLICABLE"
+              ),
+          },sort_keys=True))
           '
                 echo 'CLOUD_TICKFLOW_PREMIUM_ENTITLEMENT=NOT_VERIFIED'
                 echo 'CLOUD_TICKFLOW_PROVIDER_ADMISSION=BLOCKED'
