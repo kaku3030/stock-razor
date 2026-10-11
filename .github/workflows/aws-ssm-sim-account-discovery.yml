@@ -61,40 +61,43 @@ jobs:
               "observed_at_utc": datetime.now(timezone.utc).isoformat(),
               "opend_reachable": False,
               "query_status": "UNKNOWN",
-              "accounts": [],
               "simulated_us_account_count": 0,
-              "simulated_us_account_ids": [],
               "account_evidence": "NOT_VERIFIED",
               "radar_admission": "BLOCKED",
               "source_arbiter_admission": "BLOCKED",
               "live_trade": False,
           }
 
-          def safe_rows(data):
+          def count_sim_us_rows(data):
+              # Official get_acc_list rows expose trdmarket_auth as a list,
+              # while acc_id may be an integer. Account IDs/card numbers are
+              # never copied into the SSM workflow summary.
               if not hasattr(data, "to_dict"):
-                  return []
+                  return 0
               try:
                   rows = data.to_dict("records")
               except Exception:
-                  return []
-              result = []
+                  return 0
+              count = 0
               for row in rows:
                   if not isinstance(row, dict):
                       continue
-                  account_id = row.get("acc_id")
-                  mode = row.get("trd_env")
-                  market = row.get("trdmarket", row.get("market"))
-                  if type(account_id) is not str or not account_id.strip():
-                      continue
-                  if type(mode) is not str or type(market) is not str:
-                      continue
-                  result.append({
-                      "acc_id": account_id.strip(),
-                      "trd_env": mode.upper(),
-                      "market": market.upper(),
-                      "authenticated": True,
-                  })
-              return result
+                  env = row.get("trd_env")
+                  auth = row.get("trdmarket_auth")
+                  kind = row.get("sim_acc_type")
+                  status = row.get("acc_status")
+                  if (
+                      isinstance(env, str)
+                      and env.upper() == "SIMULATE"
+                      and isinstance(auth, (list, tuple))
+                      and any(isinstance(item, str) and item.upper() == "US" for item in auth)
+                      and isinstance(kind, str)
+                      and kind.upper() in ("STOCK", "STOCK_AND_OPTION")
+                      and isinstance(status, str)
+                      and status.upper() == "ACTIVE"
+                  ):
+                      count += 1
+              return count
 
           ctx = None
           try:
@@ -103,26 +106,18 @@ jobs:
                   host="127.0.0.1",
                   port=11111,
               )
-              out["opend_reachable"] = True
               ret, data = ctx.get_acc_list()
+              out["opend_reachable"] = (ret == ft.RET_OK)
               if ret == ft.RET_OK:
-                  rows = safe_rows(data)
+                  count = count_sim_us_rows(data)
                   out["query_status"] = "PASS"
-                  out["accounts"] = rows
-                  candidates = [
-                      row for row in rows
-                      if row["trd_env"] == "SIMULATE"
-                      and row["market"] == "US"
-                      and row["authenticated"] is True
-                  ]
-                  out["simulated_us_account_count"] = len(candidates)
-                  out["simulated_us_account_ids"] = [row["acc_id"] for row in candidates]
-                  if len(candidates) == 1:
-                      out["account_evidence"] = "PASS"
-                  elif len(candidates) == 0:
-                      out["account_evidence"] = "BLOCKED_NO_AUTHENTICATED_SIMULATE_US_ACCOUNT"
-                  else:
-                      out["account_evidence"] = "BLOCKED_MULTIPLE_SIMULATE_US_ACCOUNTS"
+                  out["simulated_us_account_count"] = count
+                  # Account-list presence does NOT independently prove
+                  # authenticated identity, current positions or order truth.
+                  out["account_evidence"] = (
+                      "OBSERVED_NOT_VERIFIED" if count > 0
+                      else "BLOCKED_NO_US_SIMULATE_ROWS"
+                  )
               else:
                   out["query_status"] = "PROVIDER_REJECTED"
           except Exception as exc:
@@ -135,7 +130,7 @@ jobs:
                   except Exception:
                       pass
 
-          print(json.dumps(out, separators=(",", ":"), sort_keys=True))
+          print("SIM_ACCOUNT_DISCOVERY_SUMMARY=" + json.dumps(out, separators=(",", ":"), sort_keys=True))
           print("ACCOUNT_MUTATIONS=NONE")
           print("RADAR_ADMISSION=BLOCKED")
           print("SOURCE_ARBITER_ADMISSION=BLOCKED")
@@ -155,6 +150,7 @@ jobs:
         shell: bash
         env:
           COMMAND_ID: ${{ steps.send-command.outputs.command_id }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
@@ -165,18 +161,39 @@ jobs:
               --output text)"
             case "$status" in
               Success)
-                aws ssm get-command-invocation \
+                # AWS SDK/SSM raw output can include account data. Project
+                # only the tagged, allowlisted JSON, never raw stdout/stderr.
+                raw="$(aws ssm get-command-invocation \
                   --command-id "$COMMAND_ID" \
                   --instance-id "$TARGET_INSTANCE_ID" \
-                  --query '{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
-                  --output json
+                  --query StandardOutputContent --output text)"
+                summary="$(grep -E '^SIM_ACCOUNT_DISCOVERY_SUMMARY=' <<<"$raw" | tail -n 1 || true)"
+                test -n "$summary" || { echo 'SIM_DISCOVERY_SUMMARY_MISSING' >&2; exit 1; }
+                safe="$(jq -cen --arg sha "$SOURCE_SHA" --argjson v "${summary#SIM_ACCOUNT_DISCOVERY_SUMMARY=}" '
+                  {
+                    probe: (if $v.probe == "us_opend_sim_account_discovery_v0_1" then $v.probe else "INVALID" end),
+                    source_revision: (if ($sha | test("^[a-f0-9]{40}$")) then $sha else "UNKNOWN" end),
+                    observed_at_utc: (if ($v.observed_at_utc | type) == "string" and ($v.observed_at_utc | test("^[0-9T:+.Z-]{20,40}$")) then $v.observed_at_utc else "UNKNOWN" end),
+                    query_status: (if ($v.query_status | type) == "string" and (["PASS","PROVIDER_REJECTED","ERROR","UNKNOWN"] | index($v.query_status)) != null then $v.query_status else "UNKNOWN" end),
+                    opend_reachable: ($v.opend_reachable == true),
+                    simulated_us_account_count: (
+                      if ($v.simulated_us_account_count | type) == "number"
+                         and $v.simulated_us_account_count >= 0
+                         and $v.simulated_us_account_count <= 1000
+                      then $v.simulated_us_account_count else 0 end
+                    ),
+                    account_evidence: (if ($v.account_evidence | type) == "string" and (["OBSERVED_NOT_VERIFIED","BLOCKED_NO_US_SIMULATE_ROWS","NOT_VERIFIED"] | index($v.account_evidence)) != null then $v.account_evidence else "NOT_VERIFIED" end),
+                    radar_admission: "BLOCKED",
+                    source_arbiter_admission: "BLOCKED",
+                    live_trade: false
+                  }
+                ')"
+                echo "SIM_ACCOUNT_DISCOVERY_SUMMARY=$safe"
                 exit 0
                 ;;
               Failed|Cancelled|TimedOut|Cancelling)
-                aws ssm get-command-invocation \
-                  --command-id "$COMMAND_ID" \
-                  --instance-id "$TARGET_INSTANCE_ID" \
-                  --output json
+                echo "SIM_DISCOVERY_SSM_STATUS=$status" >&2
+                # No raw stdout/stderr or provider account data in Actions.
                 exit 1
                 ;;
             esac
