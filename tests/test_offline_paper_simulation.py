@@ -13,7 +13,7 @@ from src.services.paper_execution_admission import PaperOrderSpec
 from src.services.stock_radar_v2.observation_ledger import Observation
 
 
-NOW = datetime(2026, 10, 11, 0, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def test_offline_paper_simulation_runs_canonical_path_without_external_io(tmp_path):
