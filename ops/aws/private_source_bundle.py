@@ -124,7 +124,7 @@ def _load_manifest(path: Path) -> dict:
             data = json.load(stream, object_pairs_hook=_strict_json)
     except BundleError:
         raise
-    except (OSError, ValueError, TypeError, UnicodeError):
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
         raise BundleError("MANIFEST_INVALID") from None
     if not isinstance(data, dict) or data.keys() != MANIFEST_FIELDS:
         raise BundleError("MANIFEST_SCHEMA_INVALID")
@@ -185,9 +185,14 @@ def build_bundle(
         expected_source_sha
     ):
         raise BundleError("EXPECTED_SOURCE_SHA_INVALID")
-    root = Path(repo_root).resolve(strict=True)
-    archive = Path(archive_path).absolute()
-    manifest = Path(manifest_path).absolute()
+    try:
+        root = Path(repo_root).resolve(strict=True)
+        archive_input = Path(archive_path).absolute()
+        manifest_input = Path(manifest_path).absolute()
+        archive = archive_input.parent.resolve(strict=True) / archive_input.name
+        manifest = manifest_input.parent.resolve(strict=True) / manifest_input.name
+    except (OSError, ValueError, RuntimeError):
+        raise BundleError("LOCAL_PATH_UNAVAILABLE") from None
     if (
         archive == manifest
         or root == archive or root == manifest
@@ -252,7 +257,7 @@ def build_bundle(
         }
     except BundleError:
         raise
-    except (OSError, subprocess.TimeoutExpired, ValueError):
+    except (OSError, subprocess.TimeoutExpired, ValueError, RuntimeError):
         raise BundleError("BUNDLE_BUILD_FAILED") from None
     finally:
         if installed and not manifest.is_file():
