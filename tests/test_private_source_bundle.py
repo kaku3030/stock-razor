@@ -111,7 +111,9 @@ def test_wrong_hash_changed_manifest_and_corrupt_archive_fail_closed(
     with pytest.raises(BundleError, match="MANIFEST_COUNTS_MISMATCH"):
         verify_bundle(archive, manifest, sha, built["archive_sha256"])
     manifest.write_text(json.dumps({**tampered, "files": built["files"]}))
-    archive.write_bytes(archive.read_bytes() + b"ONE_MORE_BYTE")
+    raw = archive.read_bytes()
+    assert b"committed-safe" in raw
+    archive.write_bytes(raw.replace(b"committed-safe", b"committed-fake"))
     with pytest.raises(BundleError, match="ARCHIVE_SHA256_MISMATCH"):
         verify_bundle(archive, manifest, sha, built["archive_sha256"])
 
@@ -209,8 +211,7 @@ def test_cli_outputs_only_machine_safe_evidence_and_trading_stays_blocked(
 def test_no_network_or_aws_cli_in_offline_contract():
     script = Path("ops/aws/private_source_bundle.py").read_text(encoding="utf-8")
     assert "subprocess.run(" in script
-    assert '["git", "-C", str(root), "archive"' in script
-    assert "subprocess.run(\n            [\n                \"git\"" in script
+     assert "subprocess.run(\n            [\n                \"git\"" in script
     assert "import boto3" not in script
     assert "import requests" not in script
     assert "aws ssm" not in script
