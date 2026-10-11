@@ -8,6 +8,7 @@ from src.services.moomoo_mcp_catalog_firewall import (
 
 def test_quote_only_uses_exact_small_candidates_not_live_account_tools():
     r = classify_moomoo_mcp_catalog([
+        "quote_market_snapshot", "quote_stock_quote",
         "quote_future_info", "quote_economic_calendar_hot",
         "sim_trade_cash_info", "account_positions",
         "trading_order_place", "sim_trade_account_list",
@@ -15,6 +16,7 @@ def test_quote_only_uses_exact_small_candidates_not_live_account_tools():
     ])
     assert r.candidate_quote_tools == (
         "quote_economic_calendar_hot", "quote_future_info",
+        "quote_market_snapshot", "quote_stock_quote",
     )
     assert r.candidate_paper_read_tools == ()
     assert r.blocked_first_read_side_effect_count == 1
