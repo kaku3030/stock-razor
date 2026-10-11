@@ -58,25 +58,31 @@ jobs:
           [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
           [[ "$WS_SECONDS" =~ ^(0|10|15|30|60)$ ]]
           revision="$(git rev-parse HEAD)"
+          [[ "$revision" == "${{ github.sha }}" ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
           probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
           requirements_hash="$(sha256sum ops/requirements/tickflow-isolated-v0.1.txt | cut -d' ' -f1)"
+          # Send source from the immutable Actions checkout rather than
+          # downloading a public GitHub URL on AWS. No credential is packed.
+          bootstrap_payload="$(gzip -n -9 -c ops/aws/run_tickflow_premium_probe.sh | base64 -w0)"
+          test -n "$bootstrap_payload"
           read -r -d '' remote <<REMOTE || true
           set -eu
           umask 077
           bootstrap_stage=REMOTE_INIT
           temp_dir=\$(mktemp -d -t sr-tickflow-premium-bootstrap.XXXXXXXX)
           trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "TICKFLOW_PREMIUM_BOOTSTRAP_STAGE=%s\\n" "\$bootstrap_stage"; fi; rm -rf "\$temp_dir"' EXIT
-          bootstrap_stage=DOWNLOAD_BOOTSTRAP
+          bootstrap_stage=DECODE_BOOTSTRAP
           export TICKFLOW_PREMIUM_PROBE_ENABLED=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
-          curl --fail --silent --show-error --max-time 20 \
-            'https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/ops/aws/run_tickflow_premium_probe.sh' \
-            -o "\$temp_dir/bootstrap.sh" 2>/dev/null
+          printf '%s' '$bootstrap_payload' | base64 -d | gzip -d > "\$temp_dir/bootstrap.sh"
           bootstrap_stage=VERIFY_BOOTSTRAP_HASH
           printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
           bootstrap_stage=RUN_BOOTSTRAP
           bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash' '$WS_SECONDS'
           REMOTE
+          test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
+            echo 'TICKFLOW_PREMIUM_SSM_PAYLOAD_TOO_LARGE' >&2; exit 2;
+          }
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')" --timeout-seconds 300 --query 'Command.CommandId' --output text)"
           report_terminal_failure() {
             local response_code output error_output status_details safe_stage
@@ -110,7 +116,43 @@ jobs:
           for _ in $(seq 1 100); do
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
             case "$status" in
-              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text; exit 0 ;;
+              Success)
+                # Never echo untrusted AWS command stdout verbatim to PUBLIC
+                # Actions. Only a source-pinned, finite projection may leave.
+                output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
+                summary="$(printf '%s\n' "$output" | grep -E '^[{]' | tail -n 1 || true)"
+                test -n "$summary" || { echo 'TICKFLOW_PREMIUM_SUMMARY_MISSING' >&2; exit 1; }
+                printf '%s' "$summary" | EXPECTED_REVISION="$revision" python3 -c '
+          import json,os,sys
+          data=json.load(sys.stdin)
+          assert data.get("schema") == "stock_razor_tickflow_sanitized_probe_v0_1"
+          assert data.get("repo_sha") == os.environ["EXPECTED_REVISION"]
+          assert data.get("mode") == "premium"
+          assert data.get("data_qualification") == "NOT_VERIFIED"
+          assert data.get("radar_admission") == "BLOCKED"
+          assert data.get("source_arbiter_admission") == "BLOCKED"
+          assert data.get("live_trade") is False
+          names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","five_level_depth","websocket_quote_smoke"}
+          states={"COMPLETED","OBSERVED","NO_EVENTS_OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
+          raw=data.get("operations")
+          assert isinstance(raw,list) and len(raw)<=20
+          operations=[]
+          for item in raw:
+              assert isinstance(item,dict)
+              name,state=item.get("name"),item.get("operation")
+              assert name in names and state in states
+              operations.append({"name":name,"operation":state})
+          print("TICKFLOW_PREMIUM_SANITIZED="+json.dumps({
+              "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
+              "source_revision":os.environ["EXPECTED_REVISION"],
+              "operations":operations,
+              "data_qualification":"NOT_VERIFIED",
+              "radar_admission":"BLOCKED",
+              "source_arbiter_admission":"BLOCKED",
+              "live_trade":False,
+          },sort_keys=True))
+          '
+                exit 0 ;;
               Failed|TimedOut|Cancelled|Cancelling) echo "TICKFLOW_PREMIUM_PROBE=$status" >&2; report_terminal_failure; exit 1 ;;
             esac
             sleep 3

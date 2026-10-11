@@ -32,7 +32,7 @@ jobs:
       - name: Checkout pinned main source
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Configure AWS temporary GitHub OIDC credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -57,19 +57,27 @@ jobs:
           [[ "$PROBE_MODE" == metadata || "$PROBE_MODE" == free || "$PROBE_MODE" == premium-contract ]]
           script_sha="$(git rev-parse HEAD)"
           [[ "$script_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$script_sha" == "${{ github.sha }}" ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_cloud_isolated_smoke.sh | cut -d' ' -f1)"
           probe_hash="$(sha256sum scripts/probe_tickflow_isolated.py | cut -d' ' -f1)"
           requirements_hash="$(sha256sum ops/requirements/tickflow-isolated-v0.1.txt | cut -d' ' -f1)"
-          url="https://raw.githubusercontent.com/kaku3030/stock-razor/$script_sha/ops/aws/run_tickflow_cloud_isolated_smoke.sh"
-
+          # The AWS host cannot assume this public GitHub raw URL remains
+          # reachable once the repository becomes private. Deliver immutable
+          # checkout bytes over the existing bounded SSM command instead.
+          bootstrap_payload="$(gzip -n -9 -c ops/aws/run_tickflow_cloud_isolated_smoke.sh | base64 -w0)"
+          test -n "$bootstrap_payload"
           read -r -d '' remote <<REMOTE || true
-          set -euo pipefail
+          set -eu
+          umask 077
           temp_dir=\$(mktemp -d -t sr-tickflow-bootstrap.XXXXXXXX)
           trap 'rm -rf "\$temp_dir"' EXIT
-          curl --fail --silent --show-error --max-time 20 '$url' -o "\$temp_dir/bootstrap.sh" 2>/dev/null
+          printf '%s' '$bootstrap_payload' | base64 -d | gzip -d > "\$temp_dir/bootstrap.sh"
           printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
           bash "\$temp_dir/bootstrap.sh" '$script_sha' '$PROBE_MODE' '$probe_hash' '$requirements_hash'
           REMOTE
+          test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
+            echo 'TICKFLOW_ISOLATED_SSM_PAYLOAD_TOO_LARGE' >&2; exit 2;
+          }
 
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           parameters="$(jq -cn --arg cmd "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$cmd]}')"
@@ -95,8 +103,8 @@ jobs:
                 printf '%s\n' "$report" | grep -Fx 'TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED'
                 printf '%s\n' "$report" | grep -Fx 'LIVE_TRADE=NO'
                 summary="$(printf '%s\n' "$report" | grep -E '^[{]' | tail -n1)"
-                printf '%s' "$summary" | python3 -c '
-          import json,sys
+                printf '%s' "$summary" | EXPECTED_REVISION="$script_sha" python3 -c '
+          import json,os,sys
           data=json.load(sys.stdin)
           assert data.get("schema") == "stock_razor_tickflow_isolated_probe_v0_1"
           assert data.get("location") == "AWS_TOKYO_SSM_ISOLATE"
@@ -110,7 +118,21 @@ jobs:
               assert data.get("premium_execution") == "BLOCKED"
               assert data.get("premium_contract", {}).get("network_execution") is False
               assert data.get("premium_contract", {}).get("blocked_reasons")
-          print(json.dumps(data,sort_keys=True))
+          print("TICKFLOW_ISOLATED_SANITIZED="+json.dumps({
+              "schema":data["schema"],
+              "mode":data["mode"],
+              "source_revision":os.environ["EXPECTED_REVISION"],
+              "data_qualification":"NOT_VERIFIED",
+              "source_arbiter_admission":"BLOCKED",
+              "radar_admission":"BLOCKED",
+              "live_trade":False,
+              "can_confirm_signal":False,
+              "historical_rows_observed":isinstance(data.get("historical_kline_observation"),dict),
+              "premium_execution":(
+                  "BLOCKED" if data.get("mode") == "premium-contract"
+                  else "NOT_APPLICABLE"
+              ),
+          },sort_keys=True))
           '
                 echo 'CLOUD_TICKFLOW_PREMIUM_ENTITLEMENT=NOT_VERIFIED'
                 echo 'CLOUD_TICKFLOW_PROVIDER_ADMISSION=BLOCKED'
