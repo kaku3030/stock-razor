@@ -42,6 +42,12 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_main_sha }}
         run: |
           set -euo pipefail
+          # This workflow currently depends on PUBLIC raw.github and EC2 git
+          # fetch. Do not start AWS operations after a visibility change.
+          if [[ "${{ github.event.repository.private }}" == "true" ]]; then
+            echo "PRIVATE_REPO_CLOUD_SOURCE_TRANSPORT_NOT_MIGRATED" >&2
+            exit 3
+          fi
           revision="$(git rev-parse HEAD)"
           [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
           [[ "$revision" == "${{ github.sha }}" ]]
