@@ -33,6 +33,11 @@ def test_source_bundle_is_from_pinned_git_commit_and_never_deployed():
     assert '"authenticated_cloud_receipt": False' in body
     assert '"cloud_deployment_performed": False' in body
     assert '"private_migration_ready": False' in body
+    assert '"inactive_runner_stage_mechanics_verified": True' in body
+    assert '"independent_provenance_verified": False' in body
+    assert '"aws_restart_recovery_verified": False' in body
+    assert '"SOURCE_BUNDLE_INDEPENDENT_PROVENANCE=NOT_VERIFIED"' in body
+    assert 'stage_verified_private_source(' in body
 
 
 def test_bundle_retention_is_short_and_source_identity_explicit():
@@ -61,7 +66,7 @@ def test_bundle_excludes_docs_only_media_to_fit_strict_verifier_limit():
         assert required in body
 
 
-def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available():
+def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available(tmp_path):
     """Integration gate on checked-out CI commit, unlike a static YAML check."""
     import hashlib
     import io
@@ -72,6 +77,7 @@ def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available():
     import pytest
 
     from src.services.private_source_artifact import verify_private_source_tar
+    from ops.aws.stage_verified_private_source import stage_verified_private_source
 
     root = Path(__file__).resolve().parents[1]
     if not shutil.which("git") or not (root / ".git").exists():
@@ -100,6 +106,30 @@ def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available():
         "ops/aws/install_readonly_mcp.sh",
     } <= paths
 
+    # Replay the exact real Git archive (not a synthetic tar) through the
+    # inactive stager in an isolated CI temp dir; no external AWS/broker IO.
+    archive_path = tmp_path / "tracked-source.tar"
+    archive_path.write_bytes(output)
+    staging_root = tmp_path / "inactive-releases"
+    staging_root.mkdir()
+    exact_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    staged = stage_verified_private_source(
+        archive_path, release_root=staging_root,
+        expected_source_commit=exact_head,
+        independently_trusted_sha256=receipt.archive_sha256,
+    )
+    assert staged["verified_source_sha256"] == receipt.archive_sha256
+    assert staged["source_commit_pin"] == exact_head
+    assert staged["aws_deployment_performed"] is False
+    assert staged["service_activation_performed"] is False
+    assert staged["paper_auto_ready"] is False
+    assert staged["live_trade"] is False
+    assert not (staging_root / "current").exists()
+    assert (staging_root / exact_head / "realtime_monitor/readonly_mcp_server.py").is_file()
+
 
 def test_workflow_is_well_formed_and_contains_exactly_one_job_and_steps_section():
     """Guard against accidental YAML concatenation after the upload-artifact step."""
@@ -113,3 +143,7 @@ def test_workflow_is_well_formed_and_contains_exactly_one_job_and_steps_section(
     assert document["jobs"]["produce-source-bundle"]["steps"][-1]["uses"] == "actions/upload-artifact@v4"
     assert source.count("      - name: Upload immutable bundle") == 1
     assert source.count('test "$(wc -c < "$BUNDLE_PATH")"') == 1
+    assert source.count("SOURCE_BUNDLE_INACTIVE_RUNNER_STAGE=PASS") == 1
+    assert "aws-actions/configure-aws-credentials" not in source
+    assert "aws ssm " not in source
+    assert "SOURCE_BUNDLE_CLOUD_DEPLOYMENT=NO" in source

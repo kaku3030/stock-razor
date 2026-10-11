@@ -36,7 +36,20 @@ only; it never deploys to AWS.
 - The self-declared digest in the artifact is **NOT independent proof of
   provenance**. No IAM, SSM, network delivery, service mutation or trading.
 
-Manual workflow execution and artifact readback remain **NOT VERIFIED**.
+The manual workflow now also exercises #567's inactive stager with the same exact
+archived tar on an isolated, disposable GitHub Actions runner. It records
+`inactive_runner_stage_mechanics_verified=true` only after verifying staged
+files and that no active release pointer was created. This runner-local
+mechanics check uses a locally computed digest and **does not prove an
+independent build provenance/trust root**. The audit receipt explicitly keeps
+`independent_provenance_verified=false`,
+`aws_restart_recovery_verified=false`,
+`authenticated_cloud_receipt=false` and
+`private_migration_ready=false`.
+
+Manual workflow execution and artifact readback remain **NOT VERIFIED** unless
+a concrete workflow run ID and produced artifact are independently inspected.
+Even a successful manual run is NOT AWS deployment or broker Paper validation.
 
 ## Stage 2 — authenticated private delivery (NOT IMPLEMENTED)
 
