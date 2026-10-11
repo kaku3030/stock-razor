@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 import re
 from typing import Sequence
@@ -42,6 +43,25 @@ class PaperReadOnlySlice:
     observed_at_utc: datetime
     query_ok: bool
     row_count: int
+    supported: bool = True
+
+
+@dataclass(frozen=True)
+class PaperFillReconciliation:
+    """Sanitized aggregate evidence for a read-only fill cross-check.
+
+    The before/after values must come from the same account/session as the
+    fill query.  This is evidence for supervised review only; it never grants
+    an order capability.
+    """
+
+    side: str
+    filled_quantity: Decimal
+    average_fill_price: Decimal
+    position_quantity_before: Decimal
+    position_quantity_after: Decimal
+    cash_before: Decimal
+    cash_after: Decimal
 
 
 @dataclass(frozen=True)
@@ -62,6 +82,7 @@ def assess_external_sim_readonly_preflight(
     *,
     expected_session_generation: str,
     now_utc: datetime,
+    fill_reconciliation: PaperFillReconciliation | None = None,
 ) -> PaperReadOnlyPreflight:
     """Check source/account/time consistency of 4 non-mutating observations.
 
@@ -145,6 +166,10 @@ def assess_external_sim_readonly_preflight(
             reasons.add("READBACK_SESSION_MISMATCH")
         if part.query_ok is not True:
             reasons.add("READBACK_QUERY_FAILED")
+        if part.supported is not True:
+            reasons.add("READBACK_UNSUPPORTED")
+            if part.family == "FILLS":
+                reasons.add("FILLS_EVIDENCE_UNAVAILABLE")
         if type(part.row_count) is not int or not 0 <= part.row_count <= MAX_ROWS:
             reasons.add("READBACK_ROW_COUNT_INVALID")
         else:
@@ -167,6 +192,23 @@ def assess_external_sim_readonly_preflight(
 
     if observed != FAMILIES:
         reasons.add("MISSING_READBACK_FAMILY")
+    fills = next(
+        (
+            part
+            for part in observations
+            if isinstance(part, PaperReadOnlySlice) and part.family == "FILLS"
+        ),
+        None,
+    )
+    if fills is not None and fills.supported is True and fills.query_ok is True:
+        if type(fills.row_count) is int and fills.row_count == 0:
+            if fill_reconciliation is not None:
+                reasons.add("UNEXPECTED_FILL_RECONCILIATION")
+        elif type(fills.row_count) is int and fills.row_count > 0:
+            if fill_reconciliation is None:
+                reasons.add("FILLS_RECONCILIATION_REQUIRED")
+            else:
+                reasons.update(_fill_reconciliation_reasons(fill_reconciliation))
     return PaperReadOnlyPreflight(
         status=(
             PaperReadOnlyScopeStatus.SCOPED_INPUTS_CONSISTENT
@@ -175,3 +217,51 @@ def assess_external_sim_readonly_preflight(
         reasons=tuple(sorted(reasons)),
         observations_checked=len(observations),
     )
+
+
+def _fill_reconciliation_reasons(
+    reconciliation: PaperFillReconciliation,
+) -> set[str]:
+    reasons: set[str] = set()
+    if not isinstance(reconciliation, PaperFillReconciliation):
+        return {"MALFORMED_FILL_RECONCILIATION"}
+    side = reconciliation.side.upper() if isinstance(reconciliation.side, str) else ""
+    if side not in {"BUY", "SELL"}:
+        reasons.add("FILL_SIDE_UNVERIFIED")
+
+    values = (
+        reconciliation.filled_quantity,
+        reconciliation.average_fill_price,
+        reconciliation.position_quantity_before,
+        reconciliation.position_quantity_after,
+        reconciliation.cash_before,
+        reconciliation.cash_after,
+    )
+    try:
+        decimals = tuple(Decimal(str(value)) for value in values)
+    except (InvalidOperation, TypeError, ValueError):
+        return reasons | {"FILL_RECONCILIATION_VALUE_INVALID"}
+    if not all(value.is_finite() for value in decimals):
+        reasons.add("FILL_RECONCILIATION_VALUE_INVALID")
+        return reasons
+    (
+        filled_quantity,
+        average_price,
+        position_before,
+        position_after,
+        cash_before,
+        cash_after,
+    ) = decimals
+    if filled_quantity <= 0 or average_price <= 0:
+        reasons.add("FILL_QUANTITY_OR_AVERAGE_INVALID")
+    if position_before < 0 or position_after < 0:
+        reasons.add("POSITION_QUANTITY_INVALID")
+    if side in {"BUY", "SELL"} and filled_quantity > 0:
+        expected_delta = filled_quantity if side == "BUY" else -filled_quantity
+        if position_after - position_before != expected_delta:
+            reasons.add("FILL_POSITION_DELTA_MISMATCH")
+        notional = filled_quantity * average_price
+        cash_delta = cash_before - cash_after if side == "BUY" else cash_after - cash_before
+        if cash_delta < notional:
+            reasons.add("FILL_CASH_FLOW_MISMATCH")
+    return reasons

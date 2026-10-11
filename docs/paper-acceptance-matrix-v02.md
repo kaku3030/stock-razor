@@ -105,6 +105,11 @@ Exit evidence:
 
 - controlled test order only after a separate approval;
 - broker acknowledgement and fill evidence are matched to local intent;
+- read-only fill evidence includes filled quantity and average price, and is
+  cross-checked against the same-session position quantity delta and account
+  cash movement; missing or unsupported fill queries remain `BLOCKED`;
+- any pre-existing non-zero position remains a manual-review condition even
+  when the quantity/price/cash cross-check is internally consistent;
 - no live account or live endpoint is reachable from the Paper path.
 
 ### Stage 4 — Automation consideration

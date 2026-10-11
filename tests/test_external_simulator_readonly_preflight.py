@@ -2,12 +2,14 @@
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
 from src.services.external_simulator_readonly_preflight import (
     PaperReadOnlyScopeStatus,
     PaperReadOnlySlice,
+    PaperFillReconciliation,
     assess_external_sim_readonly_preflight,
 )
 from src.services.simulated_account_discovery import (
@@ -41,10 +43,14 @@ def observations():
     ]
 
 
-def assess(*, account=ACCOUNT, rows=None, session="session-1011", now=NOW):
+def assess(
+    *, account=ACCOUNT, rows=None, session="session-1011", now=NOW,
+    fill_reconciliation=None,
+):
     return assess_external_sim_readonly_preflight(
         account, observations() if rows is None else rows,
         expected_session_generation=session, now_utc=now,
+        fill_reconciliation=fill_reconciliation,
     )
 
 
@@ -131,3 +137,85 @@ def test_no_private_account_identity_is_in_failure_reasons():
     assert "SENSITIVE_ACCOUNT_ID" not in str(status)
     assert "123456789" not in str(status)
     assert status.broker_mutation_allowed is False
+
+
+def test_unsupported_fill_query_is_blocked_without_inference():
+    rows = observations()
+    rows[-1] = replace(rows[-1], supported=False)
+    result = assess(rows=rows)
+    assert result.status is PaperReadOnlyScopeStatus.BLOCKED
+    assert "FILLS_EVIDENCE_UNAVAILABLE" in result.reasons
+    assert result.paper_auto_ready is False
+
+
+def test_invalid_fill_row_count_remains_blocked_without_runtime_error():
+    rows = observations()
+    rows[-1] = replace(rows[-1], row_count="one")
+    result = assess(rows=rows)
+    assert result.status is PaperReadOnlyScopeStatus.BLOCKED
+    assert "READBACK_ROW_COUNT_INVALID" in result.reasons
+
+
+def test_nonempty_fills_require_quantity_average_and_account_cross_check():
+    rows = observations()
+    rows[-1] = replace(rows[-1], row_count=1)
+    assert "FILLS_RECONCILIATION_REQUIRED" in assess(rows=rows).reasons
+
+    reconciliation = PaperFillReconciliation(
+        side="BUY",
+        filled_quantity=Decimal("2"),
+        average_fill_price=Decimal("100"),
+        position_quantity_before=Decimal("4"),
+        position_quantity_after=Decimal("6"),
+        cash_before=Decimal("1000"),
+        cash_after=Decimal("799"),
+    )
+    result = assess(rows=rows, fill_reconciliation=reconciliation)
+    assert result.status is PaperReadOnlyScopeStatus.SCOPED_INPUTS_CONSISTENT
+    assert result.broker_mutation_allowed is False
+
+
+def test_existing_positions_still_require_manual_review_after_cross_check():
+    rows = observations()
+    rows[1] = replace(rows[1], row_count=4)
+    rows[-1] = replace(rows[-1], row_count=1)
+    reconciliation = PaperFillReconciliation(
+        side="BUY",
+        filled_quantity=Decimal("2"),
+        average_fill_price=Decimal("100"),
+        position_quantity_before=Decimal("4"),
+        position_quantity_after=Decimal("6"),
+        cash_before=Decimal("1000"),
+        cash_after=Decimal("799"),
+    )
+    result = assess(rows=rows, fill_reconciliation=reconciliation)
+    assert result.status is PaperReadOnlyScopeStatus.BLOCKED
+    assert "EXISTING_POSITIONS_REQUIRE_OPERATOR_REVIEW" in result.reasons
+    assert result.broker_mutation_allowed is False
+
+
+@pytest.mark.parametrize(
+    "changes,reason",
+    [
+        ({"position_quantity_after": Decimal("7")}, "FILL_POSITION_DELTA_MISMATCH"),
+        ({"cash_after": Decimal("900")}, "FILL_CASH_FLOW_MISMATCH"),
+        ({"average_fill_price": Decimal("0")}, "FILL_QUANTITY_OR_AVERAGE_INVALID"),
+    ],
+)
+def test_fill_cross_check_mismatch_is_fail_closed(changes, reason):
+    rows = observations()
+    rows[-1] = replace(rows[-1], row_count=1)
+    values = dict(
+        side="BUY",
+        filled_quantity=Decimal("2"),
+        average_fill_price=Decimal("100"),
+        position_quantity_before=Decimal("4"),
+        position_quantity_after=Decimal("6"),
+        cash_before=Decimal("1000"),
+        cash_after=Decimal("799"),
+    )
+    values.update(changes)
+    result = assess(rows=rows, fill_reconciliation=PaperFillReconciliation(**values))
+    assert result.status is PaperReadOnlyScopeStatus.BLOCKED
+    assert reason in result.reasons
+    assert result.paper_auto_ready is False
