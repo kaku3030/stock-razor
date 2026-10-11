@@ -313,6 +313,7 @@ jobs:
                 if ! jq -en --argjson v "$safe" --arg sha "$SOURCE_SHA" '
                   $v.probe == "us_opend_sim_account_discovery_v0_1"
                   and $v.source_revision == $sha
+                  and ($v.observed_at_utc | type) == "string"
                   and $v.observed_at_utc != "UNKNOWN"
                   and $v.query_status == "PASS"
                   and $v.opend_reachable == true
