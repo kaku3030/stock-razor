@@ -41,6 +41,56 @@ warm_symbols = warm_start.get("symbols") or {}
 expected_symbols = set(heartbeat.get("symbols") or [])
 assert set(warm_symbols) == expected_symbols
 assert expected_symbols
+
+# Runtime dynamic candidate observation is intentionally read-only.
+# The existing nine US quote streams remain the protected baseline.
+# A known-but-unverified provider quota may block a proposed addition,
+# but the acceptance gate must never claim it subscribed/unsubscribed.
+acknowledged = heartbeat.get("subscribed")
+assert isinstance(acknowledged, list)
+assert len(acknowledged) == len(expected_symbols)
+assert all(isinstance(symbol, str) for symbol in acknowledged)
+assert set(acknowledged) == expected_symbols
+
+candidate = heartbeat.get("dynamic_subscription_preview")
+assert isinstance(candidate, dict)
+assert candidate.get("evidence_scope") == (
+    "EXISTING_BRIDGE_ACK_ONLY_NOT_PROVIDER_RECONCILIATION"
+)
+assert type(candidate.get("acknowledged_count")) is int
+assert candidate["acknowledged_count"] == len(expected_symbols)
+assert type(candidate.get("provider_calls")) is int
+assert candidate["provider_calls"] == 0
+assert type(candidate.get("subscription_changes")) is int
+assert candidate["subscription_changes"] == 0
+assert candidate.get("radar_admission") == "BLOCKED"
+assert candidate.get("source_arbiter_admission") == "BLOCKED"
+assert candidate.get("paper_auto_ready") is False
+assert candidate.get("live_trade") is False
+additions = candidate.get("proposed_additions")
+removals = candidate.get("proposed_removals")
+assert isinstance(additions, list)
+assert len(additions) <= 200
+assert len(additions) == len(set(additions))
+assert all(
+    isinstance(symbol, str)
+    and symbol.startswith("US.")
+    and 4 <= len(symbol) <= 16
+    for symbol in additions
+)
+assert removals == []  # Protected baseline cannot be proposed for removal.
+if candidate.get("status") == "NO_CHANGE_PLAN":
+    assert candidate.get("reason") == "DRY_RUN_NEVER_MUTATES"
+    assert additions == []
+elif candidate.get("status") == "BLOCKED":
+    # The AWS owner has no verified fresh quota, so proposals to add
+    # symbols are a blocked preview, not a new provider subscription.
+    assert candidate.get("reason") == "FRESH_PROVIDER_QUOTA_NOT_VERIFIED"
+    assert additions
+else:
+    # PLAN_ONLY, OBSERVER_EXCEPTION, invalid policy and absent evidence
+    # must not masquerade as an accepted runtime deployment.
+    raise AssertionError("US_OPEND_DYNAMIC_OBSERVER_UNQUALIFIED")
 for symbol, item in warm_symbols.items():
     assert item.get("status") == "PASS"
     assert int(item.get("planned_bar_count") or 0) == 1170
@@ -219,6 +269,7 @@ PY
       printf '\n'
       echo "CANONICAL_SNAPSHOT_EXPORT=PASS"
       echo "CANONICAL_SNAPSHOT_PATH=$snapshot"
+      echo "OPEND_CANDIDATE_PREVIEW=READONLY_PASS"
       exit 0
     fi
   fi
