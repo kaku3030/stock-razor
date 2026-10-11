@@ -39,6 +39,7 @@ def plan_readonly_subscriptions(
     quota: OpenDSubscriptionQuota | None = None,
     now_utc: datetime | None = None,
     max_candidates: int = 200,
+    protected: Sequence[SemanticStreamKey] = (),
 ) -> ReadonlyCandidatePlan:
     """Dry-run only; unknown entitlement blocks additions.
 
@@ -46,19 +47,30 @@ def plan_readonly_subscriptions(
     not broker-side subscription truth. Report never authorizes mutation.
     """
     try:
-        prior, proposed = tuple(owner_acknowledged), tuple(desired)
+        prior, proposed, must_keep = (
+            tuple(owner_acknowledged), tuple(desired), tuple(protected)
+        )
     except (TypeError, ValueError):
         return ReadonlyCandidatePlan("BLOCKED", "INVALID_STREAM_LIST")
     if (
         type(max_candidates) is not int or max_candidates < 1
         or len(prior) > max_candidates or len(proposed) > max_candidates
+        or len(must_keep) > max_candidates
     ):
         return ReadonlyCandidatePlan("BLOCKED", "CANDIDATE_LIMIT")
-    if any(_validate_key(k) is not None for k in (*prior, *proposed)):
+    if any(_validate_key(k) is not None for k in (*prior, *proposed, *must_keep)):
         return ReadonlyCandidatePlan("BLOCKED", "INVALID_STREAM_KEY")
-    if len(set(prior)) != len(prior) or len(set(proposed)) != len(proposed):
+    if (
+        len(set(prior)) != len(prior)
+        or len(set(proposed)) != len(proposed)
+        or len(set(must_keep)) != len(must_keep)
+    ):
         return ReadonlyCandidatePlan("BLOCKED", "DUPLICATE_STREAM_KEY")
-    before, after = set(prior), set(proposed)
+    before, after, retained = set(prior), set(proposed), set(must_keep)
+    if not retained.issubset(before):
+        return ReadonlyCandidatePlan("BLOCKED", "PROTECTED_STREAM_NOT_ACKNOWLEDGED")
+    if not retained.issubset(after):
+        return ReadonlyCandidatePlan("BLOCKED", "PROTECTED_BASELINE_REMOVAL")
     add = tuple(sorted((k.symbol for k in after - before)))
     remove = tuple(sorted((k.symbol for k in before - after)))
     acknowledged = tuple(sorted(k.symbol for k in before))
