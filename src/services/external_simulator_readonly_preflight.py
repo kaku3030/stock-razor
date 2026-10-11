@@ -27,6 +27,55 @@ class PaperReadOnlyScopeStatus(StrEnum):
     SCOPED_INPUTS_CONSISTENT = "SCOPED_INPUTS_CONSISTENT"
 
 
+class PaperEvidenceStatus(StrEnum):
+    PASS = "PASS"
+    UNKNOWN = "UNKNOWN"
+    BLOCKED = "BLOCKED"
+
+
+@dataclass(frozen=True)
+class PaperPositionBaseline:
+    """One position snapshot with explicit account and read-only provenance."""
+
+    account_id: str
+    account_generation: str
+    observed_at_utc: datetime
+    source: str
+    readonly_evidence_id: str
+    position_quantity: Decimal
+    evidence_kind: str = "READ_ONLY_PROVIDER"
+
+
+@dataclass(frozen=True)
+class PaperRealizedFillEvidence:
+    """Independent read-only evidence for a realized fill.
+
+    This model intentionally has no intent, acknowledgement, or dispatch
+    fields.  Those lifecycle facts can be correlated later, but none can
+    establish a realized fill on its own.
+    """
+
+    fill_id: str
+    account_id: str
+    account_generation: str
+    observed_at_utc: datetime
+    source: str
+    readonly_evidence_id: str
+    side: str
+    filled_quantity: Decimal
+    average_fill_price: Decimal
+    cash_before: Decimal
+    cash_after: Decimal
+    total_fees: Decimal
+    evidence_kind: str = "READ_ONLY_PROVIDER"
+
+
+@dataclass(frozen=True)
+class PaperEvidenceAssessment:
+    status: PaperEvidenceStatus
+    reasons: tuple[str, ...]
+
+
 @dataclass(frozen=True)
 class PaperReadOnlySlice:
     """One *already sanitized* read-only broker query observation.
@@ -219,6 +268,200 @@ def assess_external_sim_readonly_preflight(
         ),
         reasons=tuple(sorted(reasons)),
         observations_checked=len(observations),
+    )
+
+
+def _assessment(status: PaperEvidenceStatus, reasons: set[str]) -> PaperEvidenceAssessment:
+    return PaperEvidenceAssessment(status=status, reasons=tuple(sorted(reasons)))
+
+
+def _required_evidence_text(value: object) -> bool:
+    return isinstance(value, str) and IDENTIFIER.fullmatch(value) is not None
+
+
+def _baseline_shape_reasons(baseline: object, *, now_utc: datetime) -> set[str]:
+    reasons: set[str] = set()
+    if not isinstance(baseline, PaperPositionBaseline):
+        return {"POSITION_BASELINE_UNKNOWN"}
+    if not _required_evidence_text(baseline.account_id):
+        reasons.add("POSITION_BASELINE_ACCOUNT_UNKNOWN")
+    if not _required_evidence_text(baseline.account_generation):
+        reasons.add("POSITION_BASELINE_GENERATION_UNKNOWN")
+    if not _required_evidence_text(baseline.source):
+        reasons.add("POSITION_BASELINE_SOURCE_UNKNOWN")
+    if not _required_evidence_text(baseline.readonly_evidence_id):
+        reasons.add("POSITION_BASELINE_READONLY_EVIDENCE_UNKNOWN")
+    if baseline.evidence_kind != "READ_ONLY_PROVIDER":
+        reasons.add("POSITION_BASELINE_NOT_READONLY_PROVIDER")
+    if (
+        not isinstance(baseline.observed_at_utc, datetime)
+        or baseline.observed_at_utc.tzinfo is None
+        or baseline.observed_at_utc.utcoffset() is None
+    ):
+        reasons.add("POSITION_BASELINE_TIMESTAMP_UNKNOWN")
+    elif (
+        not isinstance(now_utc, datetime)
+        or now_utc.tzinfo is None
+        or now_utc.utcoffset() is None
+    ):
+        reasons.add("POSITION_BASELINE_NOW_UNKNOWN")
+    else:
+        age = (
+            now_utc.astimezone(timezone.utc)
+            - baseline.observed_at_utc.astimezone(timezone.utc)
+        ).total_seconds()
+        if not 0 <= age <= MAX_AGE_SECONDS:
+            reasons.add("POSITION_BASELINE_FUTURE_OR_STALE")
+    try:
+        quantity = Decimal(str(baseline.position_quantity))
+    except (InvalidOperation, TypeError, ValueError):
+        reasons.add("POSITION_BASELINE_QUANTITY_UNKNOWN")
+    else:
+        if not quantity.is_finite() or quantity < 0:
+            reasons.add("POSITION_BASELINE_QUANTITY_UNKNOWN")
+    return reasons
+
+
+def assess_position_baseline(
+    baseline: PaperPositionBaseline | None,
+    account: SimulatedAccountDiscovery,
+    *,
+    expected_account_generation: str,
+    expected_source: str,
+    expected_readonly_evidence_id: str,
+    now_utc: datetime,
+) -> PaperEvidenceAssessment:
+    """Validate a position baseline without performing provider or broker I/O."""
+
+    reasons = _baseline_shape_reasons(baseline, now_utc=now_utc)
+    if reasons:
+        return _assessment(
+            PaperEvidenceStatus.BLOCKED
+            if "POSITION_BASELINE_NOT_READONLY_PROVIDER" in reasons
+            else PaperEvidenceStatus.UNKNOWN,
+            reasons,
+        )
+    assert isinstance(baseline, PaperPositionBaseline)
+    if (
+        not isinstance(account, SimulatedAccountDiscovery)
+        or account.mode is not AccountMode.SIMULATE
+        or account.market != "US"
+        or account.authenticated is not True
+    ):
+        return _assessment(PaperEvidenceStatus.UNKNOWN, {"SIM_ACCOUNT_DISCOVERY_UNVERIFIED"})
+    if baseline.account_id != account.account_id:
+        reasons.add("POSITION_BASELINE_ACCOUNT_MISMATCH")
+    if baseline.account_generation != expected_account_generation:
+        reasons.add("POSITION_BASELINE_GENERATION_MISMATCH")
+    if baseline.source != expected_source:
+        reasons.add("POSITION_BASELINE_SOURCE_MISMATCH")
+    if baseline.readonly_evidence_id != expected_readonly_evidence_id:
+        reasons.add("POSITION_BASELINE_READONLY_EVIDENCE_MISMATCH")
+    if not _required_evidence_text(expected_account_generation):
+        reasons.add("POSITION_BASELINE_GENERATION_UNKNOWN")
+    if not _required_evidence_text(expected_source):
+        reasons.add("POSITION_BASELINE_SOURCE_UNKNOWN")
+    if not _required_evidence_text(expected_readonly_evidence_id):
+        reasons.add("POSITION_BASELINE_READONLY_EVIDENCE_UNKNOWN")
+    return _assessment(
+        PaperEvidenceStatus.BLOCKED if reasons else PaperEvidenceStatus.PASS,
+        reasons,
+    )
+
+
+def assess_independent_realized_fill(
+    before: PaperPositionBaseline | None,
+    after: PaperPositionBaseline | None,
+    fill: PaperRealizedFillEvidence | None,
+    *,
+    now_utc: datetime,
+) -> PaperEvidenceAssessment:
+    """Require two bound baselines and a separate read-only fill observation."""
+
+    reasons = set()
+    before_reasons = _baseline_shape_reasons(before, now_utc=now_utc)
+    after_reasons = _baseline_shape_reasons(after, now_utc=now_utc)
+    if before_reasons or after_reasons or not isinstance(fill, PaperRealizedFillEvidence):
+        reasons.update(before_reasons or {"POSITION_BASELINE_UNKNOWN"})
+        reasons.update(after_reasons or {"POSITION_BASELINE_UNKNOWN"})
+        if not isinstance(fill, PaperRealizedFillEvidence):
+            reasons.add("REALIZED_FILL_UNKNOWN")
+        return _assessment(PaperEvidenceStatus.UNKNOWN, reasons)
+    assert isinstance(before, PaperPositionBaseline)
+    assert isinstance(after, PaperPositionBaseline)
+    if not _required_evidence_text(fill.fill_id):
+        reasons.add("REALIZED_FILL_ID_UNKNOWN")
+    if not _required_evidence_text(fill.account_id):
+        reasons.add("REALIZED_FILL_ACCOUNT_UNKNOWN")
+    if not _required_evidence_text(fill.account_generation):
+        reasons.add("REALIZED_FILL_GENERATION_UNKNOWN")
+    if not _required_evidence_text(fill.source):
+        reasons.add("REALIZED_FILL_SOURCE_UNKNOWN")
+    if not _required_evidence_text(fill.readonly_evidence_id):
+        reasons.add("REALIZED_FILL_READONLY_EVIDENCE_UNKNOWN")
+    if fill.evidence_kind != "READ_ONLY_PROVIDER":
+        reasons.add("REALIZED_FILL_NOT_READONLY_PROVIDER")
+    if (
+        not isinstance(fill.observed_at_utc, datetime)
+        or fill.observed_at_utc.tzinfo is None
+        or fill.observed_at_utc.utcoffset() is None
+    ):
+        reasons.add("REALIZED_FILL_TIMESTAMP_UNKNOWN")
+    elif (
+        not isinstance(now_utc, datetime)
+        or now_utc.tzinfo is None
+        or now_utc.utcoffset() is None
+        or not 0 <= (
+            now_utc.astimezone(timezone.utc)
+            - fill.observed_at_utc.astimezone(timezone.utc)
+        ).total_seconds() <= MAX_AGE_SECONDS
+    ):
+        reasons.add("REALIZED_FILL_FUTURE_OR_STALE")
+    if (
+        fill.account_id != before.account_id
+        or fill.account_id != after.account_id
+    ):
+        reasons.add("REALIZED_FILL_ACCOUNT_MISMATCH")
+    if (
+        fill.account_generation != before.account_generation
+        or fill.account_generation != after.account_generation
+    ):
+        reasons.add("REALIZED_FILL_GENERATION_MISMATCH")
+    if before.source != after.source or fill.source != before.source:
+        reasons.add("REALIZED_FILL_SOURCE_MISMATCH")
+    if before.readonly_evidence_id == after.readonly_evidence_id:
+        reasons.add("POSITION_BASELINES_NOT_INDEPENDENT")
+    if fill.readonly_evidence_id in {
+        before.readonly_evidence_id,
+        after.readonly_evidence_id,
+    }:
+        reasons.add("REALIZED_FILL_READONLY_EVIDENCE_NOT_INDEPENDENT")
+    timestamps = (before.observed_at_utc, fill.observed_at_utc, after.observed_at_utc)
+    if any(
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+        for value in timestamps
+    ):
+        reasons.add("REALIZED_FILL_TIMESTAMP_UNKNOWN")
+    elif not before.observed_at_utc <= fill.observed_at_utc <= after.observed_at_utc:
+        reasons.add("REALIZED_FILL_TIMESTAMP_ORDER_MISMATCH")
+    if reasons:
+        return _assessment(PaperEvidenceStatus.BLOCKED, reasons)
+    numeric = PaperFillReconciliation(
+        side=fill.side,
+        filled_quantity=fill.filled_quantity,
+        average_fill_price=fill.average_fill_price,
+        position_quantity_before=before.position_quantity,
+        position_quantity_after=after.position_quantity,
+        cash_before=fill.cash_before,
+        cash_after=fill.cash_after,
+        total_fees=fill.total_fees,
+    )
+    reasons.update(_fill_reconciliation_reasons(numeric))
+    return _assessment(
+        PaperEvidenceStatus.BLOCKED if reasons else PaperEvidenceStatus.PASS,
+        reasons,
     )
 
 
