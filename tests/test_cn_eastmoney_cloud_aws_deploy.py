@@ -55,7 +55,7 @@ def test_workflow_deploys_exact_main_over_ssm_only():
     assert "EASTMONEY_PRIMARY_TENCENT_FALLBACK" in WORKFLOW
     assert 'intraday_currentness_proven\":(true|false)' in WORKFLOW
     assert 'grep -Eq' in WORKFLOW
-    assert 'intraday_timestamp_semantics_proven\\":(true|false)' in WORKFLOW
+    assert 'intraday_timestamp_semantics_proven":(true|false)' in WORKFLOW
     assert 'CN_EASTMONEY_SSM_RAW_OUTPUT=WITHHELD' in WORKFLOW
     assert "--query '{Status:Status,ResponseCode:ResponseCode}'" in WORKFLOW
     assert "printf '%s\\n' \"$inv\"" not in WORKFLOW
