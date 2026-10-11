@@ -89,6 +89,7 @@ def test_future_or_unclosed_or_stale_hour_cannot_launder_lookahead():
         gate(closed_bar_end=START+timedelta(minutes=60)),
         gate(closed_bar_end=START-timedelta(minutes=120)),
         gate(bar_was_closed=False),
+        gate(bar_duration_minutes=30),  # The last RTH \"1h\" candle is only 30m.
         gate(passed=False),
         gate(source="other-provider"),
     ):
@@ -171,3 +172,13 @@ def test_contiguous_cross_midnight_series_still_blocks_as_single_day_research():
     r = replay_closed_bar_long(rows, decision_index=0, hourly=gate(), entry=plan())
     assert r.status == "BLOCKED"
     assert r.reason == "CROSSES_UTC_SESSION_DAY"
+
+
+def test_last_30m_of_us_rth_is_not_mislabeled_full_60m_confirmation():
+    # Historical Futu "1h" has 6 full 60m candles + a final 30m candle.
+    rows = (bar(0), bar(1))
+    evidence = gate(bar_duration_minutes=30)
+    r = replay_closed_bar_long(rows, decision_index=0, hourly=evidence, entry=plan())
+    assert r.status == "BLOCKED"
+    assert r.reason == "60M_GATE_NOT_PIT_QUALIFIED"
+    assert r.broker_paper_order_submitted is False
