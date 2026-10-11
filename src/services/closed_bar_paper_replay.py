@@ -58,6 +58,8 @@ class Closed15mBar:
             raise ValueError("BAR_OHLC_INVALID")
         if not isinstance(self.source, str) or not self.source.strip():
             raise ValueError("BAR_SOURCE_MISSING")
+        if not isinstance(self.closed, bool):
+            raise ValueError("BAR_CLOSURE_PROOF_INVALID")
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,8 @@ def replay_closed_bar_long(
         return ClosedBarResearchReceipt("BLOCKED", "BAR_TYPE_INVALID")
     if any(not b.closed for b in bars):
         return ClosedBarResearchReceipt("BLOCKED", "UNCLOSED_15M_BAR")
+    if any(b.start.date() != bars[0].start.date() or b.end.date() != bars[0].start.date() for b in bars):
+        return ClosedBarResearchReceipt("BLOCKED", "CROSSES_UTC_SESSION_DAY")
     if any(b.start != bars[0].start + timedelta(minutes=15 * i) for i, b in enumerate(bars)):
         return ClosedBarResearchReceipt("BLOCKED", "BAR_GAP_OR_DUPLICATE")
     if any(b.source != bars[0].source for b in bars):
