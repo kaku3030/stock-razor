@@ -132,6 +132,6 @@ def test_operator_response_cannot_claim_mutation_authority():
     with pytest.raises(ValidationError):
         # Literal invariant is enforced by the schema.
         PaperOperatorControlsResponse(
-            mutation_allowed="not-a-bool",
+            mutation_allowed=True,
             actions=[],
         )
