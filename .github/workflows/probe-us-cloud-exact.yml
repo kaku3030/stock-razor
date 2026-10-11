@@ -50,9 +50,34 @@ jobs:
         run: |
           set -euo pipefail
           revision="$(git rev-parse HEAD)"
-          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
-          probe_url="https://raw.githubusercontent.com/kaku3030/stock-razor/$revision/scripts/probe_us_cloud_exact.py"
-          command="set -eu; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl -fsSL --max-time 20 '$probe_url' -o \"\$stage/probe.py\"; test \"\$(sha256sum \"\$stage/probe.py\" | cut -d' ' -f1)\" = '$probe_hash'; python3 \"\$stage/probe.py\" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS' --symbols '$SYMBOLS'"
+          test "$revision" = "${{ github.sha }}"
+          test -f scripts/probe_us_cloud_exact.py
+          [[ "$DURATION_SECONDS" == "30" || "$DURATION_SECONDS" == "60" ]] || {
+            echo "US_EXACT_CLOUD_PROBE_INVALID_DURATION" >&2; exit 2;
+          }
+          # Never put unvalidated workflow_dispatch input into the SSM shell.
+          [[ "$SYMBOLS" =~ ^US\.[A-Z0-9.]{1,12}(,US\.[A-Z0-9.]{1,12}){0,11}$ ]] || {
+            echo "US_EXACT_CLOUD_PROBE_INVALID_SYMBOLS" >&2; exit 2;
+          }
+          # Avoid public-source cloud pulls. Transmit source bytes from the
+          # exact reviewed runner checkout over existing fixed-target SSM.
+          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d\x27 \x27 -f1)"
+          packed="$(gzip -n -9 -c scripts/probe_us_cloud_exact.py | base64 -w0)"
+          test -n "$packed"
+          # Target AWS-RunShellScript executes POSIX sh; no bash-only flags.
+          read -r -d \x27\x27 remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap \x27rm -rf "\$stage"\x27 EXIT
+          printf \x27%s\x27 \x27$packed\x27 | base64 -d | gzip -d > "\$stage/probe.py"
+          printf \x27%s  %s\n\x27 \x27$probe_hash\x27 "\$stage/probe.py" | sha256sum -c - >/dev/null
+          python3 "\$stage/probe.py" --expected-sha \x27$revision\x27 --duration-seconds \x27$DURATION_SECONDS\x27 --symbols \x27$SYMBOLS\x27
+          REMOTE
+          test "$(printf \x27%s\x27 "$remote" | wc -c)" -le 16000 || {
+            echo "US_EXACT_CLOUD_PROBE_SSM_PAYLOAD_TOO_LARGE" >&2; exit 2;
+          }
+          command="$remote"
           params="$(jq -cn --arg c "$command" '{commands:[$c]}')"
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 180 --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 80); do
@@ -60,7 +85,27 @@ jobs:
             case "$status" in
               Success)
                 report="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
-                printf '%s\n' "$report" | python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema"] == "stock_razor_us_exact_cloud_probe_v1"; assert x["radar_admission"] == "BLOCKED"; assert x["source_arbiter_admission"] == "BLOCKED"; assert x["live_trade"] == "NO"; print(json.dumps(x, sort_keys=True))'
+                # The original report embeds detailed cloud heartbeat and Radar
+                # payloads; never mirror it into PUBLIC GitHub Actions logs.
+                printf '%s' "$report" | python3 -c '
+          import json,sys
+          x=json.load(sys.stdin)
+          assert x.get("schema") == "stock_razor_us_exact_cloud_probe_v1"
+          assert x.get("radar_admission") == "BLOCKED"
+          assert x.get("source_arbiter_admission") == "BLOCKED"
+          assert x.get("live_trade") == "NO"
+          def qual(value):
+              return value if value in ("PASS", "NOT_VERIFIED") else "NOT_VERIFIED"
+          print("US_EXACT_CLOUD_PROBE_SANITIZED="+json.dumps({
+              "runtime_exact_sha":qual(x.get("runtime_exact_sha")),
+              "sequence":qual((x.get("continuous_live_quote_sequence") or {}).get("status")),
+              "timestamp_freshness":qual((x.get("timestamp_freshness") or {}).get("status")),
+              "bar_closure_15m_60m":qual((x.get("bar_closure_15m_60m") or {}).get("status")),
+              "radar_admission":"BLOCKED",
+              "source_arbiter_admission":"BLOCKED",
+              "live_trade":"NO",
+          },sort_keys=True))
+          '
                 echo 'US_EXACT_CLOUD_PROBE_EXECUTED=YES'
                 echo 'RADAR_ADMISSION=BLOCKED'
                 echo 'SOURCE_ARBITER_ADMISSION=BLOCKED'
@@ -70,7 +115,7 @@ jobs:
               Failed|TimedOut|Cancelled|Cancelling)
                 echo "US_EXACT_CLOUD_PROBE=$status" >&2
                 aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query 'ResponseCode' --output text 2>/dev/null | sed 's/^/US_EXACT_CLOUD_PROBE_RESPONSE_CODE=/' >&2 || true
-                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query 'StandardErrorContent' --output text 2>/dev/null | tail -n 12 | sed -E 's/(TICKFLOW_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN)=[^ ]+/<redacted>/g' >&2 || true
+                echo 'US_EXACT_CLOUD_PROBE_SSM_STDERR_WITHHELD=YES' >&2
                 exit 1
                 ;;
             esac
