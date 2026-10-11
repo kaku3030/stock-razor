@@ -8,6 +8,7 @@ REPO_REF="${REPO_REF:?REPO_REF exact commit SHA is required}"
 STATUS_PATH="${STATUS_PATH:-/run/stock-razor-cn-eastmoney/latest-observation.json}"
 SYMBOLS="${SYMBOLS:-512730,159611,159363,518880}"
 POLL_SECONDS="${POLL_SECONDS:-60}"
+WEEKEND_POLL_SECONDS="${WEEKEND_POLL_SECONDS:-900}"
 
 case "$REPO_REF" in
   (*[!0-9a-f]*|"") echo "REPO_REF must be lowercase hex" >&2; exit 2;;
@@ -33,10 +34,12 @@ fi
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from data_provider.cn_eastmoney_cloud_observer import (
     build_cn_cloud_observation,
+    cn_cloud_observer_poll_interval,
     build_kline_url,
     build_tencent_kline_url,
 )
 assert "push2his.eastmoney.com" in build_kline_url("512730", "15m")
+assert callable(cn_cloud_observer_poll_interval)
 assert "ifzq.gtimg.cn" in build_tencent_kline_url("159611", "15m")
 print("CN_EASTMONEY_IMPORT_SMOKE=PASS")
 PY
@@ -49,7 +52,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from data_provider.cn_eastmoney_cloud_observer import build_cn_cloud_observation
+from data_provider.cn_eastmoney_cloud_observer import (
+    build_cn_cloud_observation, cn_cloud_observer_poll_interval,
+)
 
 repo_sha = os.environ["STOCK_RAZOR_REPO_SHA"].strip().lower()
 status_path = os.environ.get(
@@ -69,6 +74,16 @@ symbols = tuple(
 poll_seconds = max(
     30.0,
     float(os.environ.get("STOCK_RAZOR_CN_POLL_SECONDS", "60")),
+)
+weekend_poll_seconds = float(
+    os.environ.get("STOCK_RAZOR_CN_WEEKEND_POLL_SECONDS", "900")
+)
+# Validate environment once BEFORE any provider call; do not let an invalid
+# NaN/inf setting cause a rapid systemd restart/request storm.
+cn_cloud_observer_poll_interval(
+    datetime.now(timezone.utc),
+    regular_seconds=poll_seconds,
+    weekend_seconds=weekend_poll_seconds,
 )
 runtime_id = os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 host_id = socket.gethostname()
@@ -117,10 +132,22 @@ while True:
             "radar_admission": "BLOCKED",
             "live_trade": False,
         }
+    now_for_poll = datetime.now(timezone.utc)
+    next_poll_seconds = cn_cloud_observer_poll_interval(
+        now_for_poll,
+        regular_seconds=poll_seconds,
+        weekend_seconds=weekend_poll_seconds,
+    )
     payload["host_id"] = host_id
+    payload["poll_cadence"] = (
+        "WEEKEND_REDUCED" if next_poll_seconds > poll_seconds else "REGULAR"
+    )
+    payload["next_poll_seconds"] = next_poll_seconds
+    # One true provider observation per loop; never refresh timestamps without
+    # fetching data or present a cached bar as newly qualified.
     publish(payload)
     print(json.dumps(payload, separators=(",", ":"), allow_nan=False), flush=True)
-    time.sleep(poll_seconds)
+    time.sleep(next_poll_seconds)
 PY
 
 cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
@@ -138,6 +165,7 @@ Environment=STOCK_RAZOR_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_CN_EASTMONEY_STATUS_PATH=$STATUS_PATH
 Environment=STOCK_RAZOR_CN_SYMBOLS=$SYMBOLS
 Environment=STOCK_RAZOR_CN_POLL_SECONDS=$POLL_SECONDS
+Environment=STOCK_RAZOR_CN_WEEKEND_POLL_SECONDS=$WEEKEND_POLL_SECONDS
 RuntimeDirectory=stock-razor-cn-eastmoney
 RuntimeDirectoryMode=0755
 ExecStart=$INSTALL_ROOT/venv/bin/python $INSTALL_ROOT/run.py

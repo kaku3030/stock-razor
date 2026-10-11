@@ -15,6 +15,7 @@ from time import perf_counter, sleep
 from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from src.services.a_share_intraday_currentness import (
     qualify_same_session_currentness,
@@ -28,6 +29,43 @@ EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 TENCENT_MINUTE_URL = "https://ifzq.gtimg.cn/appstock/app/kline/mkline"
 TENCENT_DAILY_URL = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
 SCHEMA = "stock_razor_cn_eastmoney_observation_v1"
+CN_MARKET_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def cn_cloud_observer_poll_interval(
+    observed_at_utc: datetime,
+    *,
+    regular_seconds: float,
+    weekend_seconds: float = 900.0,
+) -> float:
+    """Slow *new provider requests* on CN weekends, never admit stale data.
+
+    Mainland A-share exchanges do not run their regular sessions on Sat/Sun.
+    Do not depend on an optional holiday calendar or claim that any weekday
+    is an open market. Keep weekday cadence unchanged, including holidays,
+    so Monday restarts/pre-market and unknown closures fail conservatively.
+    This function performs no network, provider, cache, broker or trade I/O.
+    """
+    if (
+        not isinstance(observed_at_utc, datetime)
+        or observed_at_utc.tzinfo is None
+        or observed_at_utc.utcoffset() is None
+    ):
+        raise ValueError("timezone-aware observation timestamp required")
+    if (
+        isinstance(regular_seconds, bool)
+        or isinstance(weekend_seconds, bool)
+        or not all(
+            isinstance(v, (int, float)) and math.isfinite(v) and v > 0
+            for v in (regular_seconds, weekend_seconds)
+        )
+    ):
+        raise ValueError("poll intervals must be positive finite seconds")
+    regular = float(regular_seconds)
+    if observed_at_utc.astimezone(CN_MARKET_TIMEZONE).weekday() >= 5:
+        return max(regular, float(weekend_seconds))
+    return regular
+
 TIMEFRAME_KLT = {"15m": "15", "60m": "60", "1d": "101"}
 DEFAULT_LIMITS = {"15m": 480, "60m": 240, "1d": 260}
 FIELDS1 = "f1,f2,f3,f4,f5,f6"
