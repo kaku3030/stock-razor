@@ -11,6 +11,7 @@ changes broker/account truth semantics.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 import threading
@@ -336,7 +337,7 @@ class PaperRuntimeOrchestrator:
         self,
         plan: TradePlan,
         *,
-        now,
+        now: datetime,
         trigger_ready: bool = False,
         execution_evidence_ready: bool = False,
         position=None,
