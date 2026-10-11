@@ -1,77 +1,99 @@
-# Safe PUBLIC → PRIVATE Source Migration (stage 1: offline artifact)
+# Safe PUBLIC → PRIVATE Source Migration — controlled acceptance stages
 
-STOCK RAZOR repo is **PUBLIC** until infrastructure migration passes each separate
-deployment acceptance. Creating a private plugin does **not** change GitHub
-repository visibility. This page is a plan, not evidence of deployment.
+STOCK RAZOR GitHub source is **PUBLIC** until every separate infrastructure
+acceptance passes. A private ChatGPT plugin is not GitHub repository privacy.
 
-## Existing blockers
+## Existing blockers and preflight meaning
 
-The source preflight in `scripts/audit_private_repo_deploy_dependencies.py`
-detects the current unauthenticated public `raw.githubusercontent.com`
-references in AWS GitHub workflows and direct `git clone` defaults in
-`ops/aws/install_*.sh`. **Do not change repository visibility yet**: older
-cloud reinstall/recovery flows may then fail when the code becomes private.
+`python scripts/audit_private_repo_deploy_dependencies.py --enforce`
+finds known unauthenticated `raw.githubusercontent.com` workflow references
+and direct public `git clone` defaults in `ops/aws/install_*.sh`. It is
+an **offline static dependency scan, not an authorization engine**.
 
-## Stage 1 — manual GitHub artifact only (implemented)
+A future zero-blocker report sets
+`static_public_source_dependencies_cleared=true` while deliberately leaving
+`private_migration_ready=false` and
+`repository_visibility_change_authorized=false`. Authenticated cloud delivery,
+restart/recovery/rollback and explicit user approval are separately required.
+`--enforce` only checks known static URL patterns; it does not prove every
+network dependency has been identified.
 
-The workflow `.github/workflows/private-source-bundle-manual.yml` has
-`workflow_dispatch` only; **not** scheduled or automatically invoked.
+Do **not** change repository visibility yet: AWS recovery currently still
+depends on unauthenticated public source.
 
-- GitHub Actions checks out the exact `github.sha` with credentials not
-  persisted in checkout.
-- Builds Git-tracked source as `git archive` with the explicit exclusion
-  `:(exclude)docs/assets` and `:(exclude)CLAUDE.md`: the current Git tree contains about 68 MiB
-  of documentation-only images/PSD assets, while CLAUDE.md is a symlink
-  (Git mode 120000) rejected by the strict no-links verifier. A full
-  unfiltered archive is
-  approximately 97 MiB, exceeding the 64 MiB hard cap of the existing
-  verifier. The filtered archive is estimated at ~29 MiB before execution;
-  the actual size must still be checked at manual run time. This does NOT
-  guarantee deployments needing documentation media will work unchanged.
-- Hashes the byte-for-byte tar,
-  and calls `verify_private_source_tar` to reject unsafe paths, links,
-  duplicates, overlarge bundles and SHA mismatch.
-- Uploads to short-retention GitHub Actions artifacts with a bounded
-  JSON receipt. Actions artifact is **not** an AWS source artifact.
-- Hash printed/packaged alongside its archive is **not** an independent
-  authentication root; a recipient must bind hash to separately verified
-  GitHub workflow run identity, reviewed immutable commit SHA and trusted
-  artifact attestation/signature before any installation.
-- No AWS creds, network calls to brokers, production services, IAM or
-  infrastructure deployment. No active Paper/real-trade permissions.
+## Stage 1 — manual GitHub artifact only (implemented but not dispatched)
 
-## Stage 2 — future signed, private cloud delivery (NOT IMPLEMENTED)
+`.github/workflows/private-source-bundle-manual.yml` is `workflow_dispatch`
+only; it never deploys to AWS.
 
-A separately reviewed and explicitly dispatched GitHub CI job may later
-acquire AWS short-lived OIDC credentials and publish the exact source
-artifact to a **private, versioned S3 bucket**. Must restrict IAM to a
-specific bucket key prefix, force SSE-KMS, audit access, and issue signed,
-independently authenticated provenance (commit SHA, workflow run identity,
-SHA256 and signature). AWS instance role should have **read-only GetObject**
-on the immutable version/key. Never copy a personal GitHub token to EC2,
-embed signed URLs in logs, or allow public bucket ACLs.
+- Exact `github.sha` checkout without persisted credentials.
+- `git archive` excludes `docs/assets` and the tracked `CLAUDE.md`
+  symlink. The unfiltered tree exceeded the 64 MiB verifier cap, so runtime
+  functionality needing excluded media must be audited separately.
+- Bounded tar size/path/link verification via the existing
+  `verify_private_source_tar`.
+- A 3-day GitHub Actions artifact with a source commit and SHA256 receipt.
+- The self-declared digest in the artifact is **NOT independent proof of
+  provenance**. No IAM, SSM, network delivery, service mutation or trading.
 
-## Stage 3 — future separate staging + cutover (NOT IMPLEMENTED)
+Manual workflow execution and artifact readback remain **NOT VERIFIED**.
 
-- Cloud instance downloads using its least-privileged role and verifies
-  provenance **independently**; ensure untrusted archive cannot escape a
-  new isolated staging path. Existing `verify_private_source_tar` does
-  not extract and explicitly sets `extraction_allowed=False`.
-- Stage immutable source, run import tests and health/rollback checks, and
-  **only then** switch systemd services atomically. Preserve original
-  working release and failure rollback; never replace the live directory
-  directly from unauthenticated tar bytes.
-- Migrate all workflow public-raw downloads and all AWS installer clone
-  dependencies with explicit code review and scoped acceptance.
-- Prove a clean independent cloud recovery/reinstall and source revision
-  alignment. Rerun static preflight with `--enforce` and verify zero
-  known public-only dependencies. These are necessary, not sufficient.
-- After old recovery paths are proven to work with private artifacts,
-  the user can explicitly authorize the final GitHub visibility change.
+## Stage 2 — authenticated private delivery (NOT IMPLEMENTED)
+
+Future independently authorized delivery must use a short-lived GitHub OIDC
+identity tied to an exact protected source revision, a scoped IAM role,
+private **versioned S3**, SSE-KMS, write-once/replay-safe object identity,
+auditable cloud receipt, and an independently verifiable signature or
+authenticated provenance. Cloud instance role: read-only `GetObject` on
+an allowlisted key/version; no personal GitHub token on EC2. Untrusted
+`source_commit_sha` fields or the archive's own SHA do not authenticate
+a release.
+
+**GitHub plan caveat:** GitHub-hosted artifact attestations for a *private*
+repository require GitHub Enterprise Cloud according to GitHub's published
+eligibility rules (current docs:
+https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
+Do not make a personal/free/private deployment dependent on GitHub hosted
+attestations being available after the visibility switch. Design a
+plan-compatible independently verifiable signing path instead, and test
+it with the actual target account before declaring private-ready.
+
+## Stage 2a — inactive on-host staging (implemented, NOT deployed)
+
+PR #567 added `ops/aws/stage_verified_private_source.py`, which accepts
+an **already downloaded** local source tar, an independently trusted digest,
+an exact source SHA pin and an existing release root. It reuses the strict
+tar verifier, denies duplicates, links, unsafe paths, oversized bundles and
+replacements; extracts into an isolated temporary path and stages a
+new inactive SHA-named release. This is preparatory code only:
+
+- Does not establish the independent trust chain or fetch S3 objects.
+- Does not alter active systemd services or the running code.
+- Does not establish that cloud imports, restart, rollback or recovery work.
+- Does not provide permission for Paper or real trading.
+
+## Stage 3 — authenticated cloud cutover and recovery (NOT IMPLEMENTED)
+
+- Download the pinned S3 object/version with the instance read role and
+  verify cryptographic provenance independently of its bundled receipt.
+- Stage in a non-active path; perform import, runtime, endpoint and
+  fail-closed gate checks on the exact staged SHA.
+- Preserve the running release and test an atomic, reversible service
+  cutover in a controlled maintenance window.
+- Prove clean restart/reinstall and recovery using only authenticated
+  private source; test rollback from actual failure conditions.
+- Migrate **all** public-raw workflow source paths and unauthenticated
+  installer clones; audit other potential links, not just known patterns.
+- Re-run the static scan with `--enforce`, require independent authenticated
+  deployment receipts, then seek the user's explicit final GitHub PRIVATE
+  permission. Never flip visibility as an unattended inference.
 
 ## Trading independence
 
-Repo visibility migration **never** promotes trading readiness. Required
-defaults remain `PAPER_AUTO_READY=NO`, `RADAR_ADMISSION=BLOCKED`,
-`SOURCE_ARBITER_ADMISSION=BLOCKED`, `LIVE_TRADE=NO`; source deployment
-and trade authorization are separate decisions.
+Source migration never grants market-data freshness, broker account identity
+or trading readiness. Required defaults throughout:
+
+`PAPER_AUTO_READY=NO`; `RADAR_ADMISSION=BLOCKED`;
+`SOURCE_ARBITER_ADMISSION=BLOCKED`; `LIVE_TRADE=NO`.
+
+No AWS/source deployment or broker API call is performed by this document.
