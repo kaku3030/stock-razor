@@ -90,7 +90,7 @@ def test_missing_timestamp_even_if_both_feeds_agree_is_rejected(tmp_path):
 
 def test_ohlcv_price_disagreement_is_independently_blocked(tmp_path):
     a, b = fixture("TICKFLOW"), fixture("TENCENT")
-    a["rows"][4]["close"] += 0.1
+    a["rows"][4]["close"] += 0.003  # outside tolerance, inside OHLC range
     result = compare(tmp_path, a, b)
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "BAR_PARITY_OR_OVERLAP_MISMATCH"
