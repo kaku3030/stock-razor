@@ -71,7 +71,10 @@ def audit_offline_full_day(
 
     cross = compare_files(
         tickflow_path, reference_path,
-        min_overlap=required[tick["timeframe"]],
+        # The independent session grid below, not overlap alone, proves
+        # complete 15m/60m timestamp coverage. Allow partial overlap through
+        # comparison so a shared missing bar gets a precise grid diagnosis.
+        min_overlap=4,
     )
     # compare_files retains independent source, OHLCV/unit and alignment checks.
     if not cross.get("comparison_agreement", False):
