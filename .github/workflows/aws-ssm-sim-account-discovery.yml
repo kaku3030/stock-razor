@@ -120,9 +120,11 @@ jobs:
               candidates = [
                   row.get("acc_id") for row in rows
                   if isinstance(row, dict)
-                  and count_sim_us_rows(type("Rows", (), {
-                      "to_dict": lambda self, orient: [row]
-                  })()) == 1
+                  and row.get("trd_env") == "SIMULATE"
+                  and isinstance(row.get("trdmarket_auth"), (list, tuple))
+                  and "US" in row.get("trdmarket_auth")
+                  and row.get("sim_acc_type") == "STOCK_AND_OPTION"
+                  and row.get("acc_status") == "ACTIVE"
               ]
               if len(candidates) != 1:
                   return None
