@@ -143,4 +143,5 @@ def test_recursive_private_json_is_sanitized_instead_of_traceback(tmp_path):
     result = verify_private_readbacks(str(w), str(a), now_utc=now)
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "PRIVATE_INPUT_INVALID"
-    assert "account_id" not in json.dumps(result)
+    assert "999000123" not in json.dumps(result)
+    assert "US.TEST" not in json.dumps(result)
