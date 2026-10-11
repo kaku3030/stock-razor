@@ -80,6 +80,20 @@ class SubscriptionMutationResult:
 
 
 @dataclass(frozen=True)
+class SubscriptionPreview:
+    """Side-effect-free candidate diff. A preview is never an authorization."""
+
+    status: str
+    reason: str | None
+    to_add: tuple[SemanticStreamKey, ...] = ()
+    to_remove: tuple[SemanticStreamKey, ...] = ()
+    transport_mutations_attempted: int = 0
+    radar_admission: str = "BLOCKED"
+    source_arbiter_admission: str = "BLOCKED"
+    live_trade: bool = False
+
+
+@dataclass(frozen=True)
 class OpenDSubscriptionManagerSnapshot:
     runtime_instance_id: str
     candidate_pool: tuple[SemanticStreamKey, ...]
@@ -172,6 +186,38 @@ class OpenDSubscriptionManager:
                 history_warm_start=tuple(
                     self._history[key] for key in sorted(self._history, key=_key_sort)
                 ),
+            )
+
+    def preview_candidates(
+        self,
+        candidates: Sequence[SemanticStreamKey],
+        *,
+        quota: OpenDSubscriptionQuota | None = None,
+    ) -> SubscriptionPreview:
+        """Inspect desired deltas without altering pool, adapter, or provider."""
+        with self._lock:
+            try:
+                incoming = tuple(candidates)
+            except TypeError:
+                return SubscriptionPreview("BLOCKED", "INVALID_CANDIDATE_POOL")
+            for key in incoming:
+                reason = _validate_key(key)
+                if reason:
+                    return SubscriptionPreview("BLOCKED", reason)
+            if self._transport_state == "UNKNOWN":
+                return SubscriptionPreview("BLOCKED", "TRANSPORT_STATE_UNKNOWN")
+            desired = set(incoming)
+            additions = self._ordered(desired - self._applied)
+            removals = self._ordered(self._applied - desired)
+            if additions:
+                reason = self._quota_reason(quota, required_additions=len(additions))
+                if reason:
+                    return SubscriptionPreview("BLOCKED", reason)
+            return SubscriptionPreview(
+                "PLAN_ONLY" if additions or removals else "NOOP",
+                None if additions or removals else "ALREADY_RECONCILED",
+                additions,
+                removals,
             )
 
     def add(
