@@ -167,7 +167,7 @@ def test_cli_offline_only_prints_sanitized_aggregate(tmp_path, monkeypatch, caps
     out = capsys.readouterr().out
     assert '"status": "REVIEW_ONLY"' in out
     assert '"provider_requests": 0' in out
-    assert "close\": 2." not in out
+    assert '"open": 2.0' not in out
 
 
 def test_composition_source_implementation_has_no_network_or_canonical_write():
