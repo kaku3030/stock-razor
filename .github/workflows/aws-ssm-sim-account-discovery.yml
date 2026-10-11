@@ -305,6 +305,37 @@ jobs:
                   }
                 ')"
                 echo "SIM_ACCOUNT_DISCOVERY_SUMMARY=$safe"
+                # SSM Success means the shell finished, NOT that a unique
+                # SIM account or any of the four readbacks succeeded.
+                # Independently gate the job conclusion on the sanitized
+                # finite fields only. Keep position review as an explicit
+                # condition, not an excuse to hide completed read-only I/O.
+                if ! jq -en --argjson v "$safe" --arg sha "$SOURCE_SHA" '
+                  $v.probe == "us_opend_sim_account_discovery_v0_1"
+                  and $v.source_revision == $sha
+                  and ($v.observed_at_utc | type) == "string"
+                  and $v.observed_at_utc != "UNKNOWN"
+                  and $v.query_status == "PASS"
+                  and $v.opend_reachable == true
+                  and $v.simulated_us_account_count == 1
+                  and $v.account_evidence == "OBSERVED_NOT_VERIFIED"
+                  and $v.balance_readback == "PASS"
+                  and $v.positions_readback == "PASS"
+                  and $v.orders_readback == "PASS"
+                  and $v.history_readback == "PASS"
+                  and ($v.position_review == "REQUIRED" or $v.position_review == "NOT_REQUIRED")
+                  and ($v.order_review == "REQUIRED" or $v.order_review == "NOT_REQUIRED")
+                  and $v.sim_native_fills == "UNSUPPORTED_BY_OPEND"
+                  and $v.paper_preflight == "BLOCKED"
+                  and $v.paper_auto_ready == false
+                  and $v.radar_admission == "BLOCKED"
+                  and $v.source_arbiter_admission == "BLOCKED"
+                  and $v.live_trade == false
+                ' >/dev/null; then
+                  echo "SIM_READBACK=BLOCKED_OR_INCOMPLETE" >&2
+                  exit 1
+                fi
+                echo "SIM_READBACK=PASS_PAPER_BLOCKED"
                 exit 0
                 ;;
               Failed|Cancelled|TimedOut|Cancelling)

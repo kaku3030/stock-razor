@@ -10,7 +10,7 @@
 | Durable execution/shadow stores | IMPLEMENTED | Separate SQLite paths and fail-closed construction |
 | Trade Plan | Read-only V0.2 | Precomputed plan contract |
 | Trade Lifecycle | Read-only V0.3 projection | Runtime read-only projection wired |
-| External simulator/broker | LOCAL SIM READ-ONLY / PAPER BLOCKED | Windows OpenD US SIM account discovered, balance/positions/orders read back; four pre-existing positions require review; native simulated deals unsupported |
+| External simulator/broker | LOCAL + AWS SIM READ-ONLY PASS / PAPER BLOCKED | Verified manual AWS SSM workflow run #38135716291: one active US SIM account, four scoped readbacks PASS; existing positions require review, native simulated deals unsupported; local↔cloud exact account identity unproven |
 | Cloud market data | PARTIAL / ADMISSION BLOCKED | AWS US controller healthy but canonical snapshot stale (weekend), US bar closure unproven; A-share cloud historical fallback PASS, currentness unproven; TickFlow cloud premium acceptance incomplete |
 | Notifications | CONFIGURED/UNVERIFIED | Configuration is not phone-receipt evidence |
 | Live trading | BLOCKED | `LIVE_TRADE=NO` |
@@ -63,6 +63,30 @@ identity and the exact AWS runtime version must still be checked
 independently; the GitHub `source_revision` is the workflow commit, **not**
 proof of the OpenD worker version. A code merge does not execute this
 manual workflow or demonstrate that cloud OpenD authentication succeeds.
+
+**Executed evidence** (2026-10-11 11:29 UTC): the first authorized
+manual `AWS SSM SIM Account Discovery` run
+[38135716291](https://github.com/kaku3030/stock-razor/actions/runs/38135716291)
+completed `SUCCESS` at workflow source SHA
+`7df56f2ce8ea562f5e7906ccc8b339fad9590b25`. Its public-safe summary
+reported `opend_reachable=true`, `query_status=PASS`,
+`simulated_us_account_count=1`, and all of
+`balance_readback`, `positions_readback`, `orders_readback`,
+`history_readback` equal `PASS`. `position_review=REQUIRED`,
+`order_review=NOT_REQUIRED`, `sim_native_fills=UNSUPPORTED_BY_OPEND`,
+`paper_preflight=BLOCKED`, and `live_trade=false`. This proves the
+**AWS-hosted OpenD accepts four SIM-only read-only RPCs** at that time,
+without using the user's Windows machine as a source. It does *not*
+independently attest that AWS and Windows refer to the exact same
+simulated account ID, prove any SIM fills, change the persistent cloud
+US market-data worker's older SHA, or authorize broker mutation.
+
+The next workflow revision also gates GitHub job `SUCCESS` on **all four**
+SIM readbacks and a single uniquely identified US SIM account. Without
+that guard a shell-only SSM `Success` could conceal a provider-level
+`ERROR`, `NOT_RUN`, multiple candidates, or missing funds/positions.
+Position review can remain `REQUIRED` while read-only connectivity
+passes; Paper admission continues `BLOCKED`.
 
 The official OpenD `deal_list_query` SIM path is unsupported.
 Order-history `dealt_qty/dealt_avg_price` plus cash/position changes
