@@ -72,7 +72,7 @@ jobs:
           trap 'rm -rf "\$stage"' EXIT
           printf '%s' '$packed' | base64 -d | gzip -d > "\$stage/probe.py"
           printf '%s  %s\n' '$probe_hash' "\$stage/probe.py" | sha256sum -c - >/dev/null
-          python3 "\$stage/probe.py" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS' --symbols '$SYMBOLS'
+          python3 "\$stage/probe.py" --expected-sha '$revision' --duration-seconds '$DURATION_SECONDS' --symbols '$SYMBOLS' --ssm-summary-only
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
             echo "US_EXACT_CLOUD_PROBE_SSM_PAYLOAD_TOO_LARGE" >&2; exit 2;
