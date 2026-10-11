@@ -66,15 +66,15 @@ def review_a_share_minute_session(
 
     if type(trading_day) is not date or trading_day.weekday() >= 5:
         return stop("UNKNOWN", "TRADING_DAY_CALENDAR_UNVERIFIED")
-    if timeframe not in _MINUTE_PERIODS:
+    if not isinstance(timeframe, str) or timeframe not in _MINUTE_PERIODS:
         return stop("BLOCKED", "UNSUPPORTED_MINUTE_TIMEFRAME")
     if timestamp_semantic not in ("BAR_START", "BAR_END"):
         return stop("UNKNOWN", "TIMESTAMP_SEMANTIC_UNKNOWN")
     if not (
         isinstance(expected_symbols, tuple)
         and 1 <= len(expected_symbols) <= _MAX_SYMBOLS
-        and len(set(expected_symbols)) == len(expected_symbols)
         and all(isinstance(x, str) and _SYMBOL.fullmatch(x) for x in expected_symbols)
+        and len(set(expected_symbols)) == len(expected_symbols)
     ):
         return stop("BLOCKED", "INVALID_ETF_SYMBOL_SET")
     if not isinstance(rows, (tuple, list)) or len(rows) > _MAX_BARS:
