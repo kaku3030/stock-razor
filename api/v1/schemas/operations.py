@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -27,3 +29,23 @@ class OperationsStatusResponse(BaseModel):
     notification_ready: bool
     pending_acceptance: list[str]
 
+
+class PaperOperatorAction(BaseModel):
+    """Capability disclosure, not an execution permission."""
+
+    action: str
+    available: bool = Field(default=False, description="True only for read-only inspections")
+    reason: str
+
+
+class PaperOperatorControlsResponse(BaseModel):
+    """Explicitly non-mutating operator surface for future controlled Paper."""
+
+    schema_version: str = "paper_operator_controls_v0_1"
+    read_only: Literal[True] = True
+    mutation_allowed: Literal[False] = False
+    broker_io_allowed: Literal[False] = False
+    provider_io_allowed: Literal[False] = False
+    external_paper_account_evidence: str = "NOT_VERIFIED"
+    phone_notification_receipt: str = "NOT_VERIFIED"
+    actions: list[PaperOperatorAction]

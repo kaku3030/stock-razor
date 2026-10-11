@@ -1,4 +1,4 @@
-from api.v1.endpoints.operations import operations_status
+from api.v1.endpoints.operations import operations_status, paper_operator_controls, router
 
 
 def test_operations_status_is_fail_closed(monkeypatch):
@@ -87,3 +87,51 @@ def test_operations_status_reports_distinct_paper_store_configuration(monkeypatc
     response = operations_status()
 
     assert response.paper_runtime_store_config_status == "CONFIGURED_DISTINCT_DURABLE_PATHS"
+
+
+def test_paper_controls_exposes_read_only_capabilities_only(monkeypatch):
+    for key, value in (
+        ("PAPER_AUTO_READY", "YES"),
+        ("RADAR_ADMISSION", "PASS"),
+        ("SOURCE_ARBITER_ADMISSION", "PASS"),
+        ("LIVE_TRADE", "YES"),
+    ):
+        monkeypatch.setenv(key, value)
+
+    response = paper_operator_controls()
+
+    assert response.schema_version == "paper_operator_controls_v0_1"
+    assert response.read_only is True
+    assert response.mutation_allowed is False
+    assert response.broker_io_allowed is False
+    assert response.provider_io_allowed is False
+    assert response.external_paper_account_evidence == "NOT_VERIFIED"
+    assert response.phone_notification_receipt == "NOT_VERIFIED"
+    actions = {action.action: action for action in response.actions}
+    assert actions["inspect_operator_controls"].available is True
+    assert all(
+        not action.available
+        for action in response.actions
+        if action.action != "inspect_operator_controls"
+    )
+    # No POST/PATCH/DELETE on this router: even a permissive environment
+    # cannot convert the operator disclosure interface into a trading API.
+    assert all(route.methods == {"GET"} for route in router.routes)
+
+
+def test_operator_response_cannot_claim_mutation_authority():
+    from pydantic import ValidationError
+    from api.v1.schemas.operations import PaperOperatorControlsResponse
+
+    import pytest
+
+    # Projection model defaults to fail-closed; implementation must never
+    # obtain mutation authority via this informational endpoint.
+    status = paper_operator_controls()
+    assert status.model_dump()["mutation_allowed"] is False
+    with pytest.raises(ValidationError):
+        # Literal invariant is enforced by the schema.
+        PaperOperatorControlsResponse(
+            mutation_allowed=True,
+            actions=[],
+        )
