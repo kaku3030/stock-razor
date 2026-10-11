@@ -18,6 +18,14 @@ restart/recovery/rollback and explicit user approval are separately required.
 `--enforce` only checks known static URL patterns; it does not prove every
 network dependency has been identified.
 
+The first narrow public-source dependency can be removed without any new
+AWS/S3 infrastructure: `.github/workflows/audit-cloud-independent-runtime.yml`
+now transmits the exact SHA-pinned checked-out read-only audit Python source
+inside its existing bounded SSM command, verifies its SHA256 on the target,
+and never curls the public GitHub raw endpoint. This is **one workflow**
+migration only, not a cloud execution result and not proof that all deployment
+paths work after changing visibility.
+
 Do **not** change repository visibility yet: AWS recovery currently still
 depends on unauthenticated public source.
 

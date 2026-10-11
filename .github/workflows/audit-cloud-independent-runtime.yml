@@ -22,7 +22,7 @@ jobs:
       - name: Checkout immutable main source
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Configure temporary GitHub OIDC credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,11 +43,30 @@ jobs:
         run: |
           set -euo pipefail
           script_sha="$(git rev-parse HEAD)"
-          test "${#script_sha}" -eq 40
-          url="https://raw.githubusercontent.com/kaku3030/stock-razor/$script_sha/scripts/audit_cloud_runtime_readonly.py"
-          remote="set -euo pipefail; curl -fsSL '$url' | python3 - --interval-seconds 15"
-          encoded="$(printf '%s' "$remote" | base64 -w0)"
-          params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
+          # Use the reviewed immutable workflow commit, never a mutable ref.
+          test "$script_sha" = "${{ github.sha }}"
+          test -f scripts/audit_cloud_runtime_readonly.py
+          # Deliver checked-out bytes through existing SSM, no external Git
+          # fetch, additional S3/SSH/PAT credentials or remote Git checkout.
+          source_hash="$(sha256sum scripts/audit_cloud_runtime_readonly.py | cut -d' ' -f1)"
+          source_b64="$(base64 -w0 < scripts/audit_cloud_runtime_readonly.py)"
+          # SSM AWS-RunShellScript invokes /bin/sh on the target; keep
+          # the remote payload POSIX-compatible (no bash-only pipefail).
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          printf '%s' '$source_b64' | base64 -d > "\$stage/audit.py"
+          printf '%s  %s\n' '$source_hash' "\$stage/audit.py" | sha256sum -c - >/dev/null
+          python3 "\$stage/audit.py" --interval-seconds 15
+          REMOTE
+          # Refuse oversized SSM requests; do not fall back to public URLs.
+          test "$(printf '%s' "$remote" | wc -c)" -le 18000 || {
+            echo 'PRIVATE_SAFE_AUDIT_SSM_PAYLOAD_TOO_LARGE' >&2
+            exit 2
+          }
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
           command_id="$(aws ssm send-command \
             --document-name AWS-RunShellScript \
             --instance-ids "$TARGET_INSTANCE_ID" \
