@@ -179,3 +179,89 @@ def test_ssm_workflow_is_read_only_and_uses_pinned_main():
     assert "systemctl restart" not in source
     assert "systemctl stop" not in source
     assert "pip install" not in source
+
+
+def test_ssm_cloud_runtime_audit_is_private_repo_compatible_and_sha_pinned():
+    """Deliver the existing read-only probe from immutable CI checkout.
+
+    A workflow that curls public raw GitHub will fail the moment the repo
+    changes to PRIVATE, even if the local source bundle verifier succeeds.
+    """
+    import base64
+
+    workflow = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
+        encoding="utf-8"
+    )
+    source_bytes = Path("scripts/audit_cloud_runtime_readonly.py").read_bytes()
+    assert "workflow_dispatch:" in workflow
+    assert 'ref: ${{ github.sha }}' in workflow
+    assert 'test "$script_sha" = "${{ github.sha }}"' in workflow
+    assert 'source_b64="$(base64 -w0 < scripts/audit_cloud_runtime_readonly.py)"' in workflow
+    assert "source_hash=" in workflow
+    assert "sha256sum -c - >/dev/null" in workflow
+    assert "PRIVATE_SAFE_AUDIT_SSM_PAYLOAD_TOO_LARGE" in workflow
+    assert "          set -eu\n          umask 077" in workflow
+    assert "remote <<REMOTE || true" in workflow
+    assert "https://raw.githubusercontent.com/" not in workflow
+    assert "curl -fsSL" not in workflow
+    assert "git clone" not in workflow
+    assert "systemctl restart" not in workflow
+    assert "systemctl stop" not in workflow
+    assert "LIVE_TRADE=NO" in workflow
+    assert "RADAR_ADMISSION=BLOCKED" in workflow
+    # An extra margin covers the remote shell wrapper and JSON escaping.
+    assert len(base64.b64encode(source_bytes)) + 1600 < 18000
+
+
+def test_private_source_dependency_scan_excludes_migrated_ssm_cloud_audit():
+    from scripts.audit_private_repo_deploy_dependencies import scan_private_repo_blockers
+
+    repo_root = Path(__file__).resolve().parents[1]
+    hits = scan_private_repo_blockers(repo_root)
+    assert all(
+        hit.file != ".github/workflows/audit-cloud-independent-runtime.yml"
+        for hit in hits
+    )
+
+
+def test_ssm_inline_source_transport_executes_under_posix_sh():
+    """Exercise the actual remote template with harmless synthetic Python.
+
+    This catches dash/sh syntax, bash-only pipefail and checksum transport
+    regressions without connecting to AWS or executing a provider client.
+    """
+    import base64
+    from hashlib import sha256
+    import shutil
+    import subprocess
+
+    if not shutil.which("sh"):
+        pytest.skip("requires a POSIX shell")
+    source = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
+        encoding="utf-8"
+    )
+    marker = "read -r -d '' remote <<REMOTE || true\n"
+    embedded = source.split(marker, 1)[1].split("\n          REMOTE", 1)[0]
+    embedded = "\n".join(
+        line[10:] if line.startswith("          ") else line
+        for line in embedded.splitlines()
+    )
+    # A real runner expands these two values when constructing the here-doc.
+    # Our local test performs the same substitution without any credentials.
+    fixture = b'print("SSM_PRIVATE_TRANSPORT_ROUNDTRIP=PASS")\n'
+    source_b64 = base64.b64encode(fixture).decode("ascii")
+    source_digest = sha256(fixture).hexdigest()
+    remote = embedded.replace("$source_b64", source_b64)
+    remote = remote.replace("$source_hash", source_digest)
+    remote = remote.replace("\\$", "$")
+    good = subprocess.run(
+        ["sh", "-c", remote], capture_output=True, text=True, timeout=10
+    )
+    assert good.returncode == 0, good.stderr
+    assert "SSM_PRIVATE_TRANSPORT_ROUNDTRIP=PASS" in good.stdout
+    failed = subprocess.run(
+        ["sh", "-c", remote.replace(source_digest, "0" * 64)],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert failed.returncode != 0
+    assert "SSM_PRIVATE_TRANSPORT_ROUNDTRIP=PASS" not in failed.stdout
