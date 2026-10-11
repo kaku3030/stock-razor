@@ -13,6 +13,9 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 
 
+MAX_SIMULATED_ACCOUNT_EVIDENCE_AGE_SECONDS = 60
+
+
 class ExternalSimulatorBlocked(RuntimeError):
     """Raised whenever external paper admission cannot be proven safe."""
 
@@ -118,6 +121,11 @@ def admit_external_sim_order(
     observed_at = _utc(evidence.observed_at, "observed_at")
     if observed_at > now_utc:
         raise ExternalSimulatorBlocked("account evidence is from the future")
+    # An account-list snapshot from an earlier login/session cannot authorize
+    # a new external Paper intent. Re-read + reconcile via the canonical
+    # provider owner; this pure contract never performs the refresh itself.
+    if (now_utc - observed_at).total_seconds() > MAX_SIMULATED_ACCOUNT_EVIDENCE_AGE_SECONDS:
+        raise ExternalSimulatorBlocked("simulated account evidence is stale")
 
     symbol = _text(request.symbol, "symbol").upper()
     if symbol not in {item.upper() for item in allowed_symbols}:
