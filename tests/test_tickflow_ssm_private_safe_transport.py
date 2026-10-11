@@ -106,7 +106,7 @@ def test_premium_manual_probe_bounds_success_output_and_retains_diagnostics():
     assert 'Success) aws ssm get-command-invocation' not in workflow
     assert 'echo "$output"' not in workflow
     assert "TICKFLOW_API_KEY" not in workflow
-    assert "LIVE_TRADE=NO" in workflow or "live_trade\" is False" in workflow
+    assert 'assert data.get("live_trade") is False' in workflow
     assert "systemctl restart" not in workflow
 
 
