@@ -82,6 +82,7 @@ def review_legacy_sim_strategy_deltas(
     baseline_observed_at_utc: datetime,
     strategy_started_at_utc: datetime,
     current_observed_at_utc: datetime,
+    now_utc: datetime,
     operator_accepted_legacy: bool = False,
 ) -> ShadowAttributionReview:
     """Require exact old inventory + hypothetical deltas to equal current readback.
@@ -105,10 +106,13 @@ def review_legacy_sim_strategy_deltas(
     baseline_time = _utc(baseline_observed_at_utc)
     started = _utc(strategy_started_at_utc)
     observed = _utc(current_observed_at_utc)
-    if None in (baseline_time, started, observed):
+    current_time = _utc(now_utc)
+    if None in (baseline_time, started, observed, current_time):
         return stop("BLOCKED", "OBSERVATION_TIMESTAMPS_UNKNOWN")
-    if not baseline_time <= started <= observed:
+    if not baseline_time <= started <= observed <= current_time:
         return stop("BLOCKED", "OBSERVATION_TIME_ORDER_INVALID")
+    if (current_time - observed).total_seconds() > 120:
+        return stop("BLOCKED", "BROKER_OBSERVATION_STALE")
     if (
         not isinstance(legacy_baseline, (list, tuple))
         or not isinstance(current_broker_positions, (list, tuple))
