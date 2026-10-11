@@ -8,6 +8,7 @@ feed as realtime/live.
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -109,6 +110,9 @@ def _key_sort(key: SemanticStreamKey) -> tuple[str, ...]:
     )
 
 
+_OPEND_US_SYMBOL = re.compile(r"US\.[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*\Z")
+
+
 def _validate_key(key: object) -> str | None:
     if not isinstance(key, SemanticStreamKey):
         return "INVALID_STREAM_KEY"
@@ -117,8 +121,9 @@ def _validate_key(key: object) -> str | None:
         or key.market != "us"
         or key.stream_type != "K_1M"
         or key.timeframe != "1m"
-        or not key.symbol.startswith("US.")
-        or key.symbol != key.symbol.upper()
+        or not isinstance(key.symbol, str)
+        or len(key.symbol) > 32
+        or _OPEND_US_SYMBOL.fullmatch(key.symbol) is None
     ):
         return "UNSUPPORTED_OPEND_STREAM_KEY"
     return None
@@ -363,7 +368,7 @@ class OpenDSubscriptionManager:
         if not isinstance(observed, datetime) or observed.tzinfo is None or observed.utcoffset() is None:
             return "QUOTA_OBSERVATION_TIMESTAMP_REQUIRED"
         now = self._now_utc()
-        if now.tzinfo is None or now.utcoffset() is None:
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
             return "INVALID_CLOCK"
         age = (now.astimezone(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds()
         if not -5 <= age <= self._quota_max_age_seconds:
