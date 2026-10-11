@@ -130,3 +130,30 @@ or trading readiness. Required defaults throughout:
 `SOURCE_ARBITER_ADMISSION=BLOCKED`; `LIVE_TRADE=NO`.
 
 No AWS/source deployment or broker API call is performed by this document.
+
+### TickFlow manual probes: outer bootstrap transport and Actions log boundary
+
+The manual `.github/workflows/probe-tickflow-aws-isolated.yml` and
+`.github/workflows/probe-tickflow-aws-premium.yml` now transmit their respective
+**outer** bootstrap scripts as compressed, SHA256-checked bytes from immutable
+`${{ github.sha }}` runner checkouts through the existing bounded SSM command.
+Neither workflow needs a public GitHub raw URL for that **outer** bootstrap.
+Both workflows enforce an SSM payload size cap and were subjected to local
+POSIX-shell decode, exact digest and negative-tamper tests.
+
+The premium workflow no longer mirrors its unrestricted SSM success stdout
+into PUBLIC GitHub Actions. Success reporting validates the expected source
+SHA, fixed research-only contract, allowed operation names and enumerated
+status values before outputting a sanitized finite summary. The isolated
+workflow likewise projects only allowlisted qualification states, not its
+full provider report. Existing restricted failure-stage diagnostics remain.
+No AWS command or provider credential was invoked by these CI changes.
+
+**This is only partial private-source migration.** Both inner TickFlow
+bootstrap implementations still download the exact SHA-pinned Python probe
+and requirements from public GitHub raw addresses; the premium implementation
+also self-downloads the bootstrap for a second comparison. These paths,
+other installers and authenticated private delivery/recovery are still
+blocking PRIVATE migration. No workflow dispatch, AWS execution, paid
+TickFlow qualification, phone receipt or broker SIM account read occurred.
+
