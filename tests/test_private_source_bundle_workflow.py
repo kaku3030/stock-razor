@@ -49,9 +49,9 @@ def test_bundle_excludes_docs_only_media_to_fit_strict_verifier_limit():
     assert "HEAD ':(exclude)docs/assets' ':(exclude)CLAUDE.md'" in body
     assert 'test "$(wc -c < "$BUNDLE_PATH")" -le 67108864' in body
     assert "SOURCE_BUNDLE_EXCEEDS_VERIFIER_LIMIT" in body
-    assert "TRACKED_SOURCE_EXCLUDING_DOCS_ASSETS" in body
+    assert "TRACKED_SOURCE_EXCLUDING_DOCS_ASSETS_AND_CLAUDE_LINK" in body
     assert "source-tree-paths.txt" in body
-    assert "SOURCE_BUNDLE_DOC_ASSETS_NOT_EXCLUDED" in body
+    assert "SOURCE_BUNDLE_EXCLUDED_PATH_PRESENT" in body
     assert "SOURCE_BUNDLE_RUNTIME_PATH_MISSING" in body
     for required in (
         "src/services/private_source_artifact.py",
@@ -99,3 +99,17 @@ def test_actual_git_archive_is_bounded_and_verifiable_when_checkout_available():
         "realtime_monitor/readonly_mcp_server.py",
         "ops/aws/install_readonly_mcp.sh",
     } <= paths
+
+
+def test_workflow_is_well_formed_and_contains_exactly_one_job_and_steps_section():
+    """Guard against accidental YAML concatenation after the upload-artifact step."""
+    from pathlib import Path
+    import yaml
+
+    source = WORKFLOW.read_text(encoding="utf-8")
+    document = yaml.safe_load(source)
+    assert document["jobs"]["produce-source-bundle"]["runs-on"] == "ubuntu-latest"
+    assert len(document["jobs"]["produce-source-bundle"]["steps"]) == 3
+    assert document["jobs"]["produce-source-bundle"]["steps"][-1]["uses"] == "actions/upload-artifact@v4"
+    assert source.count("      - name: Upload immutable bundle") == 1
+    assert source.count('test "$(wc -c < "$BUNDLE_PATH")"') == 1
