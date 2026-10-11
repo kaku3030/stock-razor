@@ -4,7 +4,11 @@ import os
 
 from fastapi import APIRouter
 
-from api.v1.schemas.operations import OperationsStatusResponse
+from api.v1.schemas.operations import (
+    OperationsStatusResponse,
+    PaperOperatorAction,
+    PaperOperatorControlsResponse,
+)
 from src.notification_routing import NOTIFICATION_ROUTE_CONFIGS, split_notification_route_channels
 from src.services.execution_engine import ExecutionBlocked
 from src.services.paper_runtime_store_config import PaperRuntimeStoreConfig
@@ -99,3 +103,44 @@ def operations_status() -> OperationsStatusResponse:
         pending_acceptance=pending,
     )
 
+
+
+@router.get("/paper-controls", response_model=PaperOperatorControlsResponse)
+def paper_operator_controls() -> PaperOperatorControlsResponse:
+    """Expose operator capability boundaries; never activate Paper from HTTP.
+
+    This deliberately ignores permissive environment variables: an operator
+    read must not turn a deployment typo into execution permission.  A future
+    command endpoint requires separate identity, authorization, CSRF/replay
+    protection, account reconciliation and review.
+    """
+
+    return PaperOperatorControlsResponse(
+        actions=[
+            PaperOperatorAction(
+                action="inspect_operator_controls",
+                available=True,
+                reason="READ_ONLY_NO_SIDE_EFFECTS",
+            ),
+            PaperOperatorAction(
+                action="run_offline_simulation",
+                reason="LIBRARY_ONLY_EXPLICIT_INPUT_NO_HTTP_TRIGGER",
+            ),
+            PaperOperatorAction(
+                action="discover_external_paper_account",
+                reason="CLOUD_ACCOUNT_IDENTITY_NOT_VERIFIED",
+            ),
+            PaperOperatorAction(
+                action="submit_external_paper_order",
+                reason="NO_AUTHORIZED_OPERATOR_OR_VERIFIED_ACCOUNT",
+            ),
+            PaperOperatorAction(
+                action="cancel_or_replace_external_paper_order",
+                reason="NO_AUTHORIZED_OPERATOR_OR_VERIFIED_ACCOUNT",
+            ),
+            PaperOperatorAction(
+                action="send_phone_alert",
+                reason="NO_VERIFIED_PHONE_RECEIPT_OR_SEND_APPROVAL",
+            ),
+        ]
+    )
