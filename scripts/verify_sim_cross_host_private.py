@@ -57,7 +57,7 @@ def _read_snapshot(path: str) -> SimAccountHostObservation:
         obj = json.loads(raw, object_pairs_hook=_unique_object)
     except InvalidReadback:
         raise
-    except (OSError, UnicodeError, ValueError, TypeError):
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
         raise InvalidReadback("PRIVATE_INPUT_INVALID") from None
     if not isinstance(obj, dict) or obj.keys() != FIELDS:
         raise InvalidReadback("PRIVATE_SCHEMA_INVALID")
