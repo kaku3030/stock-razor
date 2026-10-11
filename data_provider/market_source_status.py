@@ -58,11 +58,46 @@ def read_market_source_status(
     tf_status = enum(tf.get("status"), {"PROBE_ONLY", "STALE", "UNAVAILABLE", "INVALID"})
     us_ok = us.get("ok") is True and us_status == "HEALTHY"
     tf_evidence = tf.get("ok") is True and tf_status == "PROBE_ONLY"
-    historical_kline_observation = (
-        tf.get("historical_kline_observation")
-        if isinstance(tf.get("historical_kline_observation"), dict)
-        else "NOT_REQUESTED"
-    )
+    # Defense in depth: never forward an untrusted cached dict wholesale.
+    # The underlying TickFlow reader already sanitizes the probe; this outer
+    # MCP projection must preserve the same boundary if that reader changes.
+    historical_kline_observation = "NOT_REQUESTED"
+    historical = tf.get("historical_kline_observation")
+    if (
+        isinstance(historical, dict)
+        and isinstance(historical.get("operation"), str)
+        and historical["operation"] in {"COMPLETED", "FAILED", "SKIPPED"}
+    ):
+        projected_historical = {"operation": historical["operation"]}
+        if historical.get("period") == "1d":
+            projected_historical["period"] = "1d"
+        if type(historical.get("row_count")) is int and 0 <= historical["row_count"] <= 100000000:
+            projected_historical["row_count"] = historical["row_count"]
+        if historical.get("qualification") == "NOT_VERIFIED":
+            projected_historical["qualification"] = "NOT_VERIFIED"
+        summary = historical.get("summary")
+        if isinstance(summary, dict):
+            safe_summary = {}
+            summary_enums = {
+                "timestamp_monotonicity": {"STRICTLY_INCREASING", "NON_MONOTONIC", "NOT_VERIFIED"},
+                "closure": {"NOT_VERIFIED", "PROVEN", "UNPROVEN"},
+                "freshness": {"NOT_VERIFIED", "PROVEN", "UNPROVEN"},
+                "entitlement_evidence": {"UNKNOWN", "NOT_VERIFIED", "PROVEN", "UNPROVEN"},
+                "period": {"1d"},
+                "interval": {"1d"},
+            }
+            for field, allowed in summary_enums.items():
+                value = summary.get(field)
+                if isinstance(value, str) and value in allowed:
+                    safe_summary[field] = value
+            range_valid = summary.get("ohlcv_range_valid")
+            if type(range_valid) is bool or range_valid == "NOT_VERIFIED":
+                safe_summary["ohlcv_range_valid"] = range_valid
+            count = summary.get("sample_count")
+            if type(count) is int and 0 <= count <= 100000000:
+                safe_summary["sample_count"] = count
+            projected_historical["summary"] = safe_summary
+        historical_kline_observation = projected_historical
     websocket_observation = "NOT_REQUESTED"
     websocket_operation_states = {
         "COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED",
@@ -86,10 +121,12 @@ def read_market_source_status(
         "duplicate_timestamp_events", "out_of_order_timestamp_events",
         "unrequested_symbol_events", "invalid_timestamp_events", "error_callbacks",
     )
-    for operation in tf.get("operations", []):
+    # Malformed operations must not break source health readouts or leak data.
+    raw_operations = tf.get("operations")
+    for operation in (raw_operations if isinstance(raw_operations, list) else []):
         if not isinstance(operation, dict) or operation.get("name") != "websocket_quote_smoke":
             continue
-        if operation.get("operation") not in websocket_operation_states:
+        if not isinstance(operation.get("operation"), str) or operation["operation"] not in websocket_operation_states:
             break
         projected = {
             "name": "websocket_quote_smoke",
@@ -101,7 +138,7 @@ def read_market_source_status(
                 projected[field] = value
         for field, allowed in websocket_string_allowlist.items():
             value = operation.get(field)
-            if value in allowed:
+            if isinstance(value, str) and value in allowed:
                 projected[field] = value
         for field in ("continuous_feed_qualified", "stale_drop_reconnect_qualified"):
             if type(operation.get(field)) is bool:

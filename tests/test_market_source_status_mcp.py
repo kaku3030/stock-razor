@@ -166,3 +166,58 @@ def test_tickflow_websocket_observation_is_visible_without_admission(monkeypatch
     assert websocket["reconnect_resubscribe_evidence"] == "NOT_VERIFIED"
     assert result["sources"]["cn_tickflow"]["data_admission"] == "BLOCKED"
     assert "NEVER_LEAK" not in json.dumps(result)
+
+
+def test_tickflow_malformed_operations_fail_closed_without_mcp_failure(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True, "status": "PROBE_ONLY",
+        "operations": {"name": "websocket_quote_smoke", "provider_key": "SECRET"},
+    })
+
+    result = status.read_market_source_status(now_utc=NOW)
+
+    assert result["sources"]["cn_tickflow"]["websocket_observation"] == "NOT_REQUESTED"
+    assert result["sources"]["cn_tickflow"]["data_admission"] == "BLOCKED"
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert "SECRET" not in json.dumps(result)
+
+
+def test_tickflow_historical_summary_is_strictly_allowlisted(monkeypatch):
+    monkeypatch.setattr(status, "read_us_livefeed_health", lambda **kw: {
+        "ok": False, "status": "STALE"})
+    monkeypatch.setattr(status, "read_cn_market_data", lambda *args, **kw: {
+        "ok": False, "status": "NO_DATA"})
+    monkeypatch.setattr(status, "read_tickflow_probe_health", lambda **kw: {
+        "ok": True, "status": "PROBE_ONLY",
+        "historical_kline_observation": {
+            "operation": "COMPLETED",
+            "period": "1d",
+            "row_count": 5,
+            "qualification": "NOT_VERIFIED",
+            "provider_secret": "NEVER_LEAK",
+            "summary": {
+                "sample_count": 5,
+                "period": "1d",
+                "timestamp_monotonicity": "STRICTLY_INCREASING",
+                "ohlcv_range_valid": True,
+                "entitlement_evidence": "UNKNOWN",
+                "freshness": "NEVER_LEAK",
+                "credentials": "NEVER_LEAK",
+                "timestamp_first": 12345,
+            },
+        },
+    })
+    result = status.read_market_source_status(now_utc=NOW)
+
+    observation = result["sources"]["cn_tickflow"]["historical_kline_observation"]
+    assert observation["row_count"] == 5
+    assert observation["summary"]["timestamp_monotonicity"] == "STRICTLY_INCREASING"
+    assert observation["summary"]["ohlcv_range_valid"] is True
+    assert "freshness" not in observation["summary"]
+    assert "NEVER_LEAK" not in json.dumps(result)
+    assert "timestamp_first" not in json.dumps(result)
+    assert result["sources"]["cn_tickflow"]["production_feed_connected"] is False
