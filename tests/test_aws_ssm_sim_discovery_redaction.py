@@ -28,7 +28,7 @@ class FakeRows:
         return self.rows
 
 
-def test_cloud_discovery_uses_official_futu_market_authority_list():
+def test_cloud_discovery_requires_us_stock_and_option_account_subtype():
     count = _candidate_counter()
     rows = FakeRows([
         {"acc_id": 123456789, "trd_env": "SIMULATE",
@@ -45,7 +45,7 @@ def test_cloud_discovery_uses_official_futu_market_authority_list():
          "sim_acc_type": "STOCK", "acc_status": "ACTIVE"},
         {"acc_id": 2, "trd_env": "SIMULATE", "trdmarket_auth": ["US"],
          "sim_acc_type": "STOCK_AND_OPTION", "acc_status": "ACTIVE"},
-    ])) == 2
+    ])) == 1
 
 
 def test_malformed_or_absent_market_auth_is_not_promoted():

@@ -84,6 +84,7 @@ def test_official_futu_account_identity_matches_numeric_sdk_id():
     {"trdmarket_auth": ["HK"]},
     {"trdmarket_auth": "US"},
     {"sim_acc_type": "FUTURES"},
+    {"sim_acc_type": "STOCK"},
     {"acc_status": "DISABLED"},
 ])
 def test_official_futu_account_enforces_simulate_stock_active_us(change):
