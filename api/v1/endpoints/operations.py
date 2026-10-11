@@ -80,12 +80,16 @@ def operations_status() -> OperationsStatusResponse:
         "云端 OpenD SIMULATE 账户只读发现",
     ]
     return OperationsStatusResponse(
-        mode="research_only" if radar != "PASS" or arbiter != "PASS" else "paper_only",
+        # This surface is offline-only with no authorized external Paper operator.
+        # Do not present PAPER mode because env flags happen to say PASS.
+        mode="research_only",
         radar_admission=radar,
         source_arbiter_admission=arbiter,
         # This endpoint intentionally cannot unlock live trading.
         live_trade=False,
-        paper_auto_ready=os.getenv("PAPER_AUTO_READY", "NO").strip().upper() == "YES",
+        # An environment toggle cannot substitute for independently verified
+        # broker/account/position/order evidence and an exposed operator.
+        paper_auto_ready=False,
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         offline_simulation_status="READY_EXPLICIT_OFFLINE_RUN_EXTERNAL_BROKER_NOT_CONNECTED",
         paper_runtime_api_status="NOT_EXPOSED",

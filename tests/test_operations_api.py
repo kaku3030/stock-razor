@@ -135,3 +135,22 @@ def test_operator_response_cannot_claim_mutation_authority():
             mutation_allowed=True,
             actions=[],
         )
+
+
+def test_operations_status_never_promotes_unverified_external_paper_from_env(monkeypatch):
+    # Env flags are requests, not qualification of a broker's account,
+    # balance, open orders, fills or currently absent Paper operator API.
+    for key in ("RADAR_ADMISSION", "SOURCE_ARBITER_ADMISSION", "PAPER_AUTO_READY", "LIVE_TRADE"):
+        monkeypatch.setenv(key, "YES" if key.endswith(("READY", "TRADE")) else "PASS")
+
+    status = operations_status()
+    controls = paper_operator_controls()
+    assert status.mode == "research_only"
+    assert status.paper_auto_ready is False
+    assert status.paper_runtime_api_status == "NOT_EXPOSED"
+    assert status.simulated_account_evidence == "NOT_VERIFIED"
+    assert status.live_trade is False
+    assert controls.read_only is True
+    assert controls.mutation_allowed is False
+    assert controls.broker_io_allowed is False
+    assert controls.external_paper_account_evidence == "NOT_VERIFIED"
