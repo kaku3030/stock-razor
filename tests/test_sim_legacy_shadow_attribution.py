@@ -141,7 +141,9 @@ def test_operator_acceptance_mandatory_and_stale_observations_block():
         "LEGACY_INVENTORY_NOT_ACCEPTED"
     )
     result = review(
-        current_observed_at_utc=NOW - timedelta(minutes=10)
+        baseline_observed_at_utc=NOW - timedelta(minutes=12),
+        strategy_started_at_utc=NOW - timedelta(minutes=11),
+        current_observed_at_utc=NOW - timedelta(minutes=10),
     )
     assert result.status == "BLOCKED"
     assert result.reason == "BROKER_OBSERVATION_STALE"
