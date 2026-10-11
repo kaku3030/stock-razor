@@ -75,9 +75,15 @@ poll_seconds = max(
     30.0,
     float(os.environ.get("STOCK_RAZOR_CN_POLL_SECONDS", "60")),
 )
-weekend_poll_seconds = max(
-    poll_seconds,
-    float(os.environ.get("STOCK_RAZOR_CN_WEEKEND_POLL_SECONDS", "900")),
+weekend_poll_seconds = float(
+    os.environ.get("STOCK_RAZOR_CN_WEEKEND_POLL_SECONDS", "900")
+)
+# Validate environment once BEFORE any provider call; do not let an invalid
+# NaN/inf setting cause a rapid systemd restart/request storm.
+cn_cloud_observer_poll_interval(
+    datetime.now(timezone.utc),
+    regular_seconds=poll_seconds,
+    weekend_seconds=weekend_poll_seconds,
 )
 runtime_id = os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 host_id = socket.gethostname()
