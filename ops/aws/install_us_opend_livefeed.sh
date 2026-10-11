@@ -603,6 +603,7 @@ try:
             else:
                 result=plan_readonly_subscriptions(
                     snap.subscribed,preview_desired,quota=None,now_utc=now,
+                    protected=tuple(streams),
                 )
                 candidate_preview={
                     "status":result.status,"reason":result.reason,
