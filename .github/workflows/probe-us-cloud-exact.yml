@@ -96,8 +96,9 @@ jobs:
           assert x.get("live_trade") == "NO"
           def qual(value):
               return value if value in ("PASS", "NOT_VERIFIED") else "NOT_VERIFIED"
+          exact_sha = qual(x.get("runtime_exact_sha"))
           print("US_EXACT_CLOUD_PROBE_SANITIZED="+json.dumps({
-              "runtime_exact_sha":qual(x.get("runtime_exact_sha")),
+              "runtime_exact_sha":exact_sha,
               "sequence":qual((x.get("continuous_live_quote_sequence") or {}).get("status")),
               "timestamp_freshness":qual((x.get("timestamp_freshness") or {}).get("status")),
               "bar_closure_15m_60m":qual((x.get("bar_closure_15m_60m") or {}).get("status")),
@@ -105,6 +106,11 @@ jobs:
               "source_arbiter_admission":"BLOCKED",
               "live_trade":"NO",
           },sort_keys=True))
+          # A successful SSM transport is not proof that deployed US services
+          # match the immutable git revision of this probe.
+          if exact_sha != "PASS":
+              print("US_EXACT_CLOUD_RUNTIME_SHA=NOT_VERIFIED", file=sys.stderr)
+              sys.exit(3)
           '
                 echo 'US_EXACT_CLOUD_PROBE_EXECUTED=YES'
                 echo 'RADAR_ADMISSION=BLOCKED'
