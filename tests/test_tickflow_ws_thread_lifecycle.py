@@ -6,21 +6,34 @@ import threading
 import pytest
 
 from scripts import probe_tickflow_isolated as probe
-from tests.test_tickflow_isolated_qualification_probe import FakeClient
+class LocalStream:
+    def __init__(self, thread=None):
+        self._thread = thread
+        self.closed = False
+
+    def on_quotes(self, fn):
+        self.quotes_fn = fn
+        return fn
+
+    def on_error(self, fn):
+        self.error_fn = fn
+        return fn
+
+    def subscribe(self, channel, symbols):
+        assert channel == "quotes"
+        assert symbols == ["159611.SZ", "518880.SH"]
+
+    def connect(self, *, block):
+        assert block is False
+
+    def close(self):
+        self.closed = True
 
 
 def _observe(monkeypatch, thread=None):
-    client = FakeClient()
-    if thread is not None:
-        client.stream._thread = thread
+    fake = LocalStream(thread=thread)
     monkeypatch.setattr(probe.time, "sleep", lambda _seconds: None)
-    return probe.build_probe(
-        mode="premium",
-        symbols=("159611.SZ", "518880.SH"),
-        ws_seconds=1,
-        client_factory=lambda: client,
-        credential_present=True,
-    )["operations"][-1]
+    return probe._stream_probe(fake, ("159611.SZ", "518880.SH"), 1)
 
 
 def test_unobservable_sdk_worker_never_implies_real_connection(monkeypatch):
@@ -38,7 +51,7 @@ def test_dead_sdk_background_thread_is_distinguished_from_no_callbacks(monkeypat
     assert ws["background_thread_state"] == "STOPPED"
     assert ws["connection_call"] == "PASS"
     assert ws["connection_state"] == "UNKNOWN"
-    assert ws["radar_admission"] if "radar_admission" in ws else True
+    assert ws["continuous_feed_qualified"] is False
 
 
 def test_alive_thread_is_not_connected_provider_ack(monkeypatch):
