@@ -408,3 +408,12 @@ def test_no_inferred_vwap_pass_from_plausible_units_without_provider_parity():
     assert _turnover_vwap_input_status(
         rows, "15m", currentness_proven=True,
     ) == ("BLOCKED", "TURNOVER_AMOUNT_UNIT_UNVERIFIED")
+    rows[0]["amount_raw"] = 10**1000
+    assert _turnover_vwap_input_status(
+        rows, "15m", currentness_proven=True,
+    ) == ("BLOCKED", "TURNOVER_AMOUNT_UNIT_UNVERIFIED")
+    rows[0]["amount_raw"] = 1000
+    rows[0]["volume_raw"] = 10**1000
+    assert _turnover_vwap_input_status(
+        rows, "15m", currentness_proven=True,
+    ) == ("BLOCKED", "VOLUME_SHARE_UNIT_UNVERIFIED")
