@@ -21,10 +21,10 @@ def test_legacy_livefeed_mutation_is_blocked_before_aws_oidc():
     assert source.index(guard_marker) < source.index(aws_marker)
     pre_oidc = source[:source.index(aws_marker)]
     assert re.search(
-        r'case "\\$REQUESTED_ACTION" in\\s*'
-        r'us_opend_start_order_probe\\|us_livefeed_controlled_restart_probe\\)\\s*'
-        r"echo 'US_LIVEFEED_LEGACY_MUTATION_VETO=BLOCKED' >&2\\s*"
-        r'exit 2\\s*;;',
+        r'case "\$REQUESTED_ACTION" in\s*'
+        r'us_opend_start_order_probe\|us_livefeed_controlled_restart_probe\)\s*'
+        r"echo 'US_LIVEFEED_LEGACY_MUTATION_VETO=BLOCKED' >&2\s*"
+        r'exit 2\s*;;',
         pre_oidc,
     ), "Legacy stop/restart selectors must fail closed before AWS credentials"
     assert "inputs.action" in pre_oidc
