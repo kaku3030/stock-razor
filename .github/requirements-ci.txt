@@ -5,3 +5,4 @@
 flake8
 pytest
 pytest-timeout>=2.3.0
+hypothesis>=6.0,<7
