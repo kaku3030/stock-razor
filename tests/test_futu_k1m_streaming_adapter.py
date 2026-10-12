@@ -270,7 +270,9 @@ def test_runtime_bridge_reaches_connected_only_from_explicit_transport_evidence_
 
     assert snapshot.controller.lifecycle_state is LifecycleState.CONNECTED
     assert snapshot.controller.lifecycle_state is not LifecycleState.LIVE
-    assert "UNHANDLED_EVIDENCE_KIND:SUBSCRIPTION_RESULT" in snapshot.controller.findings
+    assert snapshot.controller.findings == (
+        "SUBSCRIPTION_RESULT_RECORDED:accepted=True administrative_only=True no_lifecycle_change",
+    )
 
 
 def test_arbitrary_transport_claim_cannot_manufacture_connected_evidence():

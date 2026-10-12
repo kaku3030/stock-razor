@@ -880,17 +880,54 @@ def test_f04_entitlement_event_not_silently_dropped() -> None:
 
 def test_f04_subscription_result_event_not_silently_dropped() -> None:
     controller = _controller()
-    controller.submit_event(_event(ProviderEventKind.SUBSCRIPTION_RESULT))
+    controller.submit_event(
+        _event(
+            ProviderEventKind.SUBSCRIPTION_RESULT,
+            payload={"accepted": True},
+            diagnostic_fields={"administrative_only": True},
+        )
+    )
     controller.process_pending()
     snap = controller.snapshot()
-    assert "UNHANDLED_EVIDENCE_KIND:SUBSCRIPTION_RESULT" in snap.findings
+    assert snap.findings == (
+        "SUBSCRIPTION_RESULT_RECORDED:accepted=True administrative_only=True no_lifecycle_change",
+    )
+    assert snap.lifecycle_state is LifecycleState.DISCONNECTED
+
+
+@pytest.mark.parametrize(
+    ("accepted", "administrative_only", "expected_accepted", "expected_admin"),
+    [
+        ("api_key=DO_NOT_LEAK", "TOKEN_DO_NOT_LEAK", "UNKNOWN", "UNKNOWN"),
+        ({"secret": "DO_NOT_LEAK"}, ["TOKEN_DO_NOT_LEAK"], "UNKNOWN", "UNKNOWN"),
+        (1, 0, "UNKNOWN", "UNKNOWN"),
+        (False, True, "False", "True"),
+    ],
+)
+def test_f04_subscription_diagnostics_never_echo_untrusted_values(
+    accepted, administrative_only, expected_accepted, expected_admin,
+) -> None:
+    controller = _controller()
+    controller.submit_event(_event(
+        ProviderEventKind.SUBSCRIPTION_RESULT,
+        payload={"accepted": accepted},
+        diagnostic_fields={"administrative_only": administrative_only},
+    ))
+    controller.process_pending()
+    snap = controller.snapshot()
+    assert snap.findings == (
+        "SUBSCRIPTION_RESULT_RECORDED:"
+        f"accepted={expected_accepted} administrative_only={expected_admin} "
+        "no_lifecycle_change",
+    )
+    assert "DO_NOT_LEAK" not in str(snap.findings)
+    assert snap.lifecycle_state is LifecycleState.DISCONNECTED
 
 
 @pytest.mark.parametrize(
     "kind",
     [
         ProviderEventKind.ENTITLEMENT,
-        ProviderEventKind.SUBSCRIPTION_RESULT,
         ProviderEventKind.HEARTBEAT,
         ProviderEventKind.TRANSPORT_RECONNECTING,
     ],
@@ -915,7 +952,7 @@ def test_f04_unhandled_evidence_does_not_advance_lifecycle() -> None:
     # findings are the only trace -- nothing else authoritative changed
     assert snap.findings == (
         "UNHANDLED_EVIDENCE_KIND:ENTITLEMENT",
-        "UNHANDLED_EVIDENCE_KIND:SUBSCRIPTION_RESULT",
+        "SUBSCRIPTION_RESULT_RECORDED:accepted=UNKNOWN administrative_only=UNKNOWN no_lifecycle_change",
     )
 
 

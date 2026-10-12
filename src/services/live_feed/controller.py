@@ -57,6 +57,7 @@ from __future__ import annotations
 import contextvars
 import threading
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
@@ -624,11 +625,39 @@ class LiveFeedController:
                 # has accepted identity/STOP relevance and the desired-stream
                 # check below succeeds.
                 should_stage_data = True
+            elif event.event_kind is ProviderEventKind.SUBSCRIPTION_RESULT:
+                # A provider subscribe return is an administrative fact only.
+                # Record it explicitly, but never treat accepted=True as
+                # entitlement, delivery, realtime, or trading success.
+                payload = event.payload
+                raw_accepted = (
+                    payload.get("accepted") if isinstance(payload, Mapping)
+                    else None
+                )
+                raw_administrative_only = (
+                    event.diagnostic_fields.get("administrative_only")
+                    if isinstance(event.diagnostic_fields, Mapping)
+                    else None
+                )
+                # Findings are log-facing diagnostics. Never interpolate raw
+                # provider-supplied payloads, even on an administrative event.
+                accepted = (
+                    str(raw_accepted) if type(raw_accepted) is bool else "UNKNOWN"
+                )
+                administrative_only = (
+                    str(raw_administrative_only)
+                    if type(raw_administrative_only) is bool else "UNKNOWN"
+                )
+                self._findings.append(
+                    "SUBSCRIPTION_RESULT_RECORDED:"
+                    f"accepted={accepted} administrative_only={administrative_only} "
+                    "no_lifecycle_change"
+                )
             else:
                 # Fail-loud (frozen contract section 16): any other control /
                 # priority evidence kind that reaches the writer with no
-                # semantic handler (ENTITLEMENT, SUBSCRIPTION_RESULT,
-                # HEARTBEAT, TRANSPORT_RECONNECTING, or any future kind)
+                # semantic handler (ENTITLEMENT, HEARTBEAT,
+                # TRANSPORT_RECONNECTING, or any future kind)
                 # must never be silently dropped. This emits an explicit
                 # diagnostic finding only -- no lifecycle mutation, no
                 # DeliveryMode / REALTIME inference, no authoritative
