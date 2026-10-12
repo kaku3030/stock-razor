@@ -67,6 +67,7 @@ if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
   audit_stage=EXTRACT_EPHEMERAL_AWS_CLI
   python3 -m zipfile -e "$tmp_dir/awscliv2.zip" "$tmp_dir/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$tmp_dir/awscli-installer/aws/install"
+  find "$tmp_dir/awscli-installer" -type f -name aws -exec chmod u+x {} + 2>/dev/null || true
   echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=EXTRACT_PASS'
   audit_stage=VERIFY_EPHEMERAL_AWS_CLI
   aws_cli="$tmp_dir/awscli-installer/aws/dist/aws"
