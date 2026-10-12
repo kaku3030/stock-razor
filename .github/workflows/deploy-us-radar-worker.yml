@@ -1,6 +1,16 @@
 name: Deploy Read-Only US Radar Worker
 on:
   workflow_dispatch:
+    inputs:
+      approve_restart:
+        description: "Explicit consent: restart the existing read-only US Radar Worker"
+        type: boolean
+        required: true
+        default: false
+      expected_main_sha:
+        description: "Exact full GitHub main SHA; must equal this workflow run commit"
+        type: string
+        required: true
 permissions:
   id-token: write
   contents: read
@@ -10,17 +20,38 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.approve_restart == true && inputs.expected_main_sha == github.sha }}
     runs-on: ubuntu-latest
+    timeout-minutes: 14
     env:
       AWS_REGION: ap-northeast-1
       TARGET_INSTANCE_ID: i-01738342af3efac72
     steps:
       - uses: actions/checkout@v4
-        with: {ref: main}
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - id: source
         shell: bash
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event.repository.private }}" == "true" ]]; then
+            echo 'PRIVATE_REPO_CLOUD_SOURCE_TRANSPORT_NOT_MIGRATED' >&2
+            exit 3
+          fi
+          revision="$(git rev-parse HEAD)"
+          [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$revision" == "${{ github.sha }}" && "$revision" == "$EXPECTED_SHA" ]]
+          current_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          [[ "$revision" == "$current_main" ]] || { echo 'US_RADAR_MAIN_MOVED_ABORT' >&2; exit 2; }
+          test -s ops/aws/install_us_radar_worker.sh
+          test -s ops/aws/verify_us_radar_worker.sh
+          echo "sha=$revision" >> "$GITHUB_OUTPUT"
+          echo "install_sha=$(sha256sum ops/aws/install_us_radar_worker.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "verify_sha=$(sha256sum ops/aws/verify_us_radar_worker.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -63,7 +94,7 @@ jobs:
             sleep 2
           done
           inv="$(aws ssm get-command-invocation --command-id "$id" --instance-id "$TARGET_INSTANCE_ID" --output json)"
-          printf '%s\n' "$inv"
+          # Keep raw SSM response strictly inside the job process (not Actions logs).
           test "$status" = Success
           source_sha="$(jq -r '.StandardOutputContent // ""' <<<"$inv" | tr -d '\r' | awk '/^[0-9a-f]{40}$/ {sha=$0} END {print sha}')"
           if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -102,7 +133,7 @@ jobs:
             sleep 5
           done
           inv="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --output json)"
-          printf '%s\n' "$inv"
+          # Keep raw SSM response strictly inside the job process (not Actions logs).
           test "$status" = Success
           out="$(jq -r '.StandardOutputContent // ""' <<<"$inv")"
           grep -q '^enabled$' <<<"$out"
