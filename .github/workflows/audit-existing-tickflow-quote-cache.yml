@@ -67,6 +67,7 @@ jobs:
               "ws_initial_snapshot_candidates": 0,
               "ws_connection_call": "UNKNOWN",
               "ws_subscription_call": "UNKNOWN",
+              "ws_background_thread_state": "UNOBSERVABLE",
               "ws_provider_live_qualified": False,
               "revision_matches": False,
               "data_admission": "BLOCKED",
@@ -138,6 +139,13 @@ jobs:
                           call_state = item.get(field)
                           if call_state in ("PASS", "FAIL", "NOT_VERIFIED"):
                               output[alias] = call_state
+                      thread_state=item.get("background_thread_state")
+                      if thread_state in ("ALIVE","STOPPED","UNOBSERVABLE"):
+                          output["ws_background_thread_state"]=thread_state
+                      if state != "SKIPPED" and item.get(
+                          "background_thread_not_provider_connection_proof"
+                      ) is not True:
+                          raise ValueError("WS_THREAD_PROVENANCE_UNKNOWN")
                       # Only callback candidates; never infer server ACK/live.
                       if state != "SKIPPED" and (
                           item.get("subscription_ack_evidence") != (
@@ -207,6 +215,7 @@ jobs:
               "ws_initial_snapshot_candidates":d["ws_initial_snapshot_candidates"] if type(d.get("ws_initial_snapshot_candidates")) is int and 0 <= d["ws_initial_snapshot_candidates"] <= 1000000 else 0,
               "ws_connection_call":d["ws_connection_call"] if d.get("ws_connection_call") in ("PASS","FAIL","NOT_VERIFIED","UNKNOWN") else "UNKNOWN",
               "ws_subscription_call":d["ws_subscription_call"] if d.get("ws_subscription_call") in ("PASS","FAIL","NOT_VERIFIED","UNKNOWN") else "UNKNOWN",
+              "ws_background_thread_state":d["ws_background_thread_state"] if d.get("ws_background_thread_state") in ("ALIVE","STOPPED","UNOBSERVABLE") else "UNOBSERVABLE",
               "ws_provider_live_qualified":False,
               "radar_admission":"BLOCKED","data_admission":"BLOCKED",
               "source_arbiter_admission":"BLOCKED","live_trade":"NO",
