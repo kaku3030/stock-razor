@@ -115,7 +115,8 @@ def classify_journal_lines(lines: Iterable[str], *, truncated: bool = False) -> 
         return result
     result["reason"] = "MANAGER_EVENTS_INCOMPLETE"
     # Request-phase messages alone are never proof that a restart finished.
-    if any(stop <= start for stop in confirmed_stops for start in confirmed_starts):
+    # Truncated whole-second labels cannot establish ordering inside one second.
+    if any(stop < start for stop in confirmed_stops for start in confirmed_starts):
         result["status"] = "RESTART_SEQUENCE_OBSERVED"
         result["manager_restart_pair"] = "OBSERVED"
         result["reason"] = None
