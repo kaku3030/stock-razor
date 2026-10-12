@@ -58,6 +58,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The legacy action chooser is historically labelled read-only but
+      # contains two actions which STOP/RESTART the authoritative US LiveFeed.
+      # A restart during RTH caused a correlated nine-symbol K1M data gap.
+      # Retire these ungoverned mutation paths rather than pretending the
+      # separate guarded deployment workflow also covers this SSM router.
+      - name: Veto ungoverned LiveFeed stop/restart actions before AWS OIDC
+        shell: bash
+        env:
+          REQUESTED_ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_ACTION" in
+            us_opend_start_order_probe|us_livefeed_controlled_restart_probe)
+              echo 'US_LIVEFEED_LEGACY_MUTATION_VETO=BLOCKED' >&2
+              exit 2
+              ;;
+          esac
+
       - name: Configure short-lived AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
