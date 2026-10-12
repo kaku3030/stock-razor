@@ -20,6 +20,9 @@ def test_secret_access_audit_is_explicit_and_secret_safe():
     assert "BOOTSTRAP_EPHEMERAL_AWS_CLI" in script
     assert "awscli.amazonaws.com/awscli-exe" in script
     assert "-i \"$tmp_dir/aws-cli\" -b \"$tmp_dir/bin\"" in script
+    assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=DOWNLOAD_PASS" in script
+    assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=EXTRACT_PASS" in script
+    assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=INSTALL_PASS" in script
     assert "get-secret-value" in script
     assert "--query VersionId" in script
     assert "get-resource-policy" in script
