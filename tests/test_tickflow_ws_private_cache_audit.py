@@ -134,3 +134,17 @@ def test_workflow_audit_is_read_only_for_all_provider_interfaces():
     for unsafe in ("quotes.get(","klines.get(","stream.subscribe(","import tickflow",
                    "get-secret-value","aws s3 cp"):
         assert unsafe not in wf
+
+
+def test_old_quote_only_cache_with_skipped_ws_remains_review_only(tmp_path):
+    old={
+        "name":"websocket_quote_smoke",
+        "operation":"SKIPPED",
+        "reason":"NOT_REQUESTED",
+    }
+    result,_=_run_cached_audit(tmp_path,ws=old)
+    assert result["status"]=="REVIEW_ONLY"
+    assert result["reason"]=="CACHED_QUOTE_OPERATION_NOT_FRESHNESS_PROOF"
+    assert result["ws_operation"]=="SKIPPED"
+    assert result["ws_quote_events"]==0
+    assert result["ws_provider_live_qualified"] is False
