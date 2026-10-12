@@ -159,3 +159,33 @@ def test_existing_premium_seven_argument_mode_remains_and_protocol_only_avoids_r
     assert 'exit 0\nfi\n\nprobe_stage=RUN_PREMIUM_PROBE' in s
     assert "unset TICKFLOW_API_KEY secret_json" in s
     assert "TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED" in s
+
+
+@pytest.mark.parametrize("count,seconds,quote_only,protocol_hash", [
+    (9, "0", "false", "a" * 64),
+    (9, "30", "true", "a" * 64),
+    (9, "30", "false", "INVALID_HASH"),
+    (8, "30", "false", "a" * 64),
+])
+def test_invalid_ws_scope_hash_or_arg_count_vetoes_before_any_provider_io(
+    count, seconds, quote_only, protocol_hash,
+):
+    args = [
+        "a" * 40, "stock-razor/tickflow/premium-api-key",
+        "b" * 64, "c" * 64, "d" * 64, seconds, quote_only,
+        protocol_hash, "e" * 64,
+    ][:count]
+    import os
+    env = os.environ.copy()
+    env.update({
+        "TICKFLOW_PREMIUM_PROBE_ENABLED": "false",
+        "TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED": "false",
+        "TICKFLOW_API_KEY": "DONT_READ_OR_LOG",
+    })
+    p = subprocess.run(
+        ["bash", str(BOOTSTRAP), *args],
+        text=True, capture_output=True, timeout=5, check=False, env=env,
+    )
+    assert p.returncode != 0
+    assert "DONT_READ_OR_LOG" not in p.stdout + p.stderr
+    assert "TICKFLOW_PREMIUM_PROBE_EXECUTED=YES" not in p.stdout
