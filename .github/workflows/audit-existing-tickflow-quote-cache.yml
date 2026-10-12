@@ -60,6 +60,14 @@ jobs:
               "quote_request": "UNKNOWN",
               "quote_rows": 0,
               "scope_field": "MISSING",
+              "ws_operation": "UNKNOWN",
+              "ws_quote_callbacks": 0,
+              "ws_quote_events": 0,
+              "ws_post_initial_update_candidates": 0,
+              "ws_initial_snapshot_candidates": 0,
+              "ws_connection_call": "UNKNOWN",
+              "ws_subscription_call": "UNKNOWN",
+              "ws_provider_live_qualified": False,
               "revision_matches": False,
               "data_admission": "BLOCKED",
               "radar_admission": "BLOCKED",
@@ -112,6 +120,31 @@ jobs:
                       rows = item.get("row_count")
                       if type(rows) is int and 0 <= rows <= 1000:
                           output["quote_rows"] = rows
+                  if name == "websocket_quote_smoke" and matches:
+                      output["ws_operation"] = state
+                      for field, alias in (
+                          ("quote_callbacks", "ws_quote_callbacks"),
+                          ("quote_events", "ws_quote_events"),
+                          ("post_initial_update_candidates", "ws_post_initial_update_candidates"),
+                          ("initial_snapshot_candidates", "ws_initial_snapshot_candidates"),
+                      ):
+                          count = item.get(field)
+                          if type(count) is int and 0 <= count <= 1000000:
+                              output[alias] = count
+                      for field, alias in (
+                          ("connection_call", "ws_connection_call"),
+                          ("subscription_call", "ws_subscription_call"),
+                      ):
+                          call_state = item.get(field)
+                          if call_state in ("PASS", "FAIL", "NOT_VERIFIED"):
+                              output[alias] = call_state
+                      # Only callback candidates; never infer server ACK/live.
+                      if state != "SKIPPED" and (
+                          item.get("subscription_ack_evidence") != (
+                              "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+                          ) or item.get("sample_latency_qualification") != "NOT_VERIFIED"
+                      ):
+                          raise ValueError("WS_SCOPE_NOT_QUALIFIED")
               if matches:
                   output["status"] = "REVIEW_ONLY"
                   output["reason"] = "CACHED_QUOTE_OPERATION_NOT_FRESHNESS_PROOF"
@@ -164,6 +197,17 @@ jobs:
                   "MISSING","ONE_REALTIME_QUOTE_BATCH_ONLY","STANDARD_ISOLATED_PROBE"
               ) else "MISSING",
               "revision_matches":d.get("revision_matches") is True,
+              "ws_operation":d["ws_operation"] if d.get("ws_operation") in (
+                  "UNKNOWN","OBSERVED","NO_EVENTS_OBSERVED","SKIPPED",
+                  "FAILED","CLOSE_FAILED"
+              ) else "UNKNOWN",
+              "ws_quote_callbacks":d["ws_quote_callbacks"] if type(d.get("ws_quote_callbacks")) is int and 0 <= d["ws_quote_callbacks"] <= 1000000 else 0,
+              "ws_quote_events":d["ws_quote_events"] if type(d.get("ws_quote_events")) is int and 0 <= d["ws_quote_events"] <= 1000000 else 0,
+              "ws_post_initial_update_candidates":d["ws_post_initial_update_candidates"] if type(d.get("ws_post_initial_update_candidates")) is int and 0 <= d["ws_post_initial_update_candidates"] <= 1000000 else 0,
+              "ws_initial_snapshot_candidates":d["ws_initial_snapshot_candidates"] if type(d.get("ws_initial_snapshot_candidates")) is int and 0 <= d["ws_initial_snapshot_candidates"] <= 1000000 else 0,
+              "ws_connection_call":d["ws_connection_call"] if d.get("ws_connection_call") in ("PASS","FAIL","NOT_VERIFIED","UNKNOWN") else "UNKNOWN",
+              "ws_subscription_call":d["ws_subscription_call"] if d.get("ws_subscription_call") in ("PASS","FAIL","NOT_VERIFIED","UNKNOWN") else "UNKNOWN",
+              "ws_provider_live_qualified":False,
               "radar_admission":"BLOCKED","data_admission":"BLOCKED",
               "source_arbiter_admission":"BLOCKED","live_trade":"NO",
               "provider_requests":0,
