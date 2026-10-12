@@ -17,6 +17,9 @@ def test_secret_access_audit_is_explicit_and_secret_safe():
     assert "TICKFLOW_SECRET_AUDIT_SECRETSTRING=NOT_EMITTED" in script
     assert "TICKFLOW_SECRET_AUDIT_MUTATIONS=NONE" in script
     assert "TICKFLOW_SECRET_AUDIT_FAILED_STAGE" in script
+    assert "BOOTSTRAP_EPHEMERAL_AWS_CLI" in script
+    assert "awscli.amazonaws.com/awscli-exe" in script
+    assert "-i \"$tmp_dir/aws-cli\" -b \"$tmp_dir/bin\"" in script
     assert "get-secret-value" in script
     assert "--query VersionId" in script
     assert "get-resource-policy" in script
