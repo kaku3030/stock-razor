@@ -108,8 +108,17 @@ class ProtocolEvidence:
             self.invalid_frames += 1
 
     def summary(self, *, ws_handshake: bool) -> dict[str, Any]:
+        # A preceding ACK cannot overrule a subsequent server-level error.
+        # PASS here means only the protocol exchange, NOT continuous quotes.
+        protocol_acceptance = (
+            "FAIL" if self.protocol_error_frames or self.invalid_ack_messages
+            else "PASS" if ws_handshake and self.ack_verified
+            else "NOT_VERIFIED"
+        )
         return {
             "schema": "stock_razor_tickflow_ws_ack_evidence_v0_1",
+            "protocol_acceptance": protocol_acceptance,
+            "protocol_acceptance_scope": "ACK_ONLY_NOT_LIVE_QUALIFICATION",
             "ws_handshake": "PASS" if ws_handshake else "NOT_VERIFIED",
             "subscription_ack": "PASS" if self.ack_verified else "NOT_VERIFIED",
             "ack_messages": self.ack_messages,
@@ -210,7 +219,7 @@ def main() -> int:
             "radar_admission": "BLOCKED", "live_trade": False,
         }
     print(json.dumps(result, sort_keys=True))
-    return 0 if result.get("subscription_ack") == "PASS" else 2
+    return 0 if result.get("protocol_acceptance") == "PASS" else 2
 
 
 if __name__ == "__main__":
