@@ -13,6 +13,10 @@ CLAUDE = ROOT / "CLAUDE.md"
 COPILOT = ROOT / ".github" / "copilot-instructions.md"
 INSTRUCTIONS_DIR = ROOT / ".github" / "instructions"
 CLAUDE_SKILLS_DIR = ROOT / ".claude" / "skills"
+CANONICAL_REPOSITORY = "kaku3030/stock-razor"
+FORBIDDEN_REPOSITORY_REFERENCES = (
+    "ZhuLinsen/daily_stock_analysis",
+)
 
 REQUIRED_INSTRUCTION_FILES = {
     "backend.instructions.md",
@@ -113,6 +117,17 @@ def ensure_no_tracked_claude_artifacts() -> None:
         fail(f"tracked .claude artifact outside skills/: {path}")
 
 
+def ensure_skill_repository_references() -> None:
+    for path in CLAUDE_SKILLS_DIR.rglob("*.md"):
+        content = path.read_text(encoding="utf-8")
+        for forbidden in FORBIDDEN_REPOSITORY_REFERENCES:
+            if forbidden in content:
+                fail(
+                    f"{path.relative_to(ROOT)} contains stale repository reference: "
+                    f"{forbidden}; use {CANONICAL_REPOSITORY}"
+                )
+
+
 def main() -> None:
     ensure_symlink()
     ensure_copilot_entry()
@@ -120,6 +135,7 @@ def main() -> None:
     ensure_skill_files()
     ensure_gitignore_rules()
     ensure_no_tracked_claude_artifacts()
+    ensure_skill_repository_references()
     print("[ai-assets] OK")
 
 
