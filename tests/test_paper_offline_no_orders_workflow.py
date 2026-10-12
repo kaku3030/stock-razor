@@ -45,3 +45,19 @@ def test_paper_ci_runs_real_deterministic_recovery_and_no_order_tests():
     assert "Cloud broker/SIM account or independent fills: NOT_TESTED" in text
     assert "Cloud live market data/15m/60m closure: NOT_TESTED" in text
     assert "- Paper external orders: NONE" in text
+
+def test_offline_paper_acceptance_runs_on_protected_main_changes_without_pc():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in text  # independent manual replay preserved
+    assert "  push:\n    branches: [main]" in text
+    assert '"src/services/paper_*.py"' in text
+    assert '"tests/test_paper_*.py"' in text
+    assert '".github/workflows/paper-offline-no-orders.yml"' in text
+    assert "  pull_request:" not in text
+    assert "  schedule:" not in text
+    assert "runs-on: ubuntu-latest" in text
+    assert "permissions:\n  contents: read" in text
+    assert "id-token: write" not in text
+    assert "aws-actions/" not in text
+    assert "PAPER_AUTO_READY: \"NO\"" in text
+    assert "TRADE_EXECUTION: \"NO\"" in text
