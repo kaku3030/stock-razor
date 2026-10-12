@@ -12,8 +12,13 @@ on:
         description: "Exact Tokyo Secrets Manager ARN; never enter the API key"
         required: false
         type: string
+      quote_only:
+        description: "Default true: one batch realtime quote (up to two ETF symbols); zero K-lines, depth and WS"
+        required: true
+        type: boolean
+        default: true
       ws_seconds:
-        description: "Explicit optional bounded WebSocket smoke duration in seconds (not a live-feed qualification)"
+        description: "Must be 0 for quote_only=true; broader historical/WS diagnostics need explicit quote_only=false"
         required: true
         type: choice
         default: "0"
@@ -52,11 +57,17 @@ jobs:
         env:
           SECRET_ARN: ${{ inputs.secret_arn }}
           WS_SECONDS: ${{ inputs.ws_seconds }}
+          QUOTE_ONLY: ${{ inputs.quote_only }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
           [[ "$WS_SECONDS" =~ ^(0|10|15|30|60)$ ]]
+          [[ "$QUOTE_ONLY" == "true" || "$QUOTE_ONLY" == "false" ]]
+          if [[ "$QUOTE_ONLY" == "true" && "$WS_SECONDS" != "0" ]]; then
+            echo 'TICKFLOW_PREMIUM_QUOTE_ONLY_FORBIDS_WS' >&2
+            exit 2
+          fi
           revision="$(git rev-parse HEAD)"
           [[ "$revision" == "${{ github.sha }}" ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
@@ -78,7 +89,7 @@ jobs:
           bootstrap_stage=VERIFY_BOOTSTRAP_HASH
           printf '%s  %s\n' '$bootstrap_hash' "\$temp_dir/bootstrap.sh" | sha256sum -c - >/dev/null
           bootstrap_stage=RUN_BOOTSTRAP
-          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash' '$WS_SECONDS'
+          bash "\$temp_dir/bootstrap.sh" '$revision' '$SECRET_ARN' '$probe_hash' '$requirements_hash' '$bootstrap_hash' '$WS_SECONDS' '$QUOTE_ONLY'
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
             echo 'TICKFLOW_PREMIUM_SSM_PAYLOAD_TOO_LARGE' >&2; exit 2;
@@ -128,6 +139,11 @@ jobs:
           assert data.get("schema") == "stock_razor_tickflow_sanitized_probe_v0_1"
           assert data.get("repo_sha") == os.environ["EXPECTED_REVISION"]
           assert data.get("mode") == "premium"
+          assert data.get("request_scope") in {
+              "ONE_REALTIME_QUOTE_BATCH_ONLY", "STANDARD_ISOLATED_PROBE"
+          }
+          if data.get("request_scope") == "ONE_REALTIME_QUOTE_BATCH_ONLY":
+              assert len(data.get("operations") or []) <= 2
           assert data.get("data_qualification") == "NOT_VERIFIED"
           assert data.get("radar_admission") == "BLOCKED"
           assert data.get("source_arbiter_admission") == "BLOCKED"
@@ -145,6 +161,7 @@ jobs:
           print("TICKFLOW_PREMIUM_SANITIZED="+json.dumps({
               "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
               "source_revision":os.environ["EXPECTED_REVISION"],
+              "request_scope":data.get("request_scope"),
               "operations":operations,
               "data_qualification":"NOT_VERIFIED",
               "radar_admission":"BLOCKED",
