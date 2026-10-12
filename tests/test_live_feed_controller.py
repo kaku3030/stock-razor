@@ -896,15 +896,6 @@ def test_f04_subscription_result_event_not_silently_dropped() -> None:
 
 
 @pytest.mark.parametrize(
-    "kind",
-    [
-        ProviderEventKind.ENTITLEMENT,
-        ProviderEventKind.HEARTBEAT,
-        ProviderEventKind.TRANSPORT_RECONNECTING,
-    ],
-)
-
-@pytest.mark.parametrize(
     ("accepted", "administrative_only", "expected_accepted", "expected_admin"),
     [
         ("api_key=DO_NOT_LEAK", "TOKEN_DO_NOT_LEAK", "UNKNOWN", "UNKNOWN"),
@@ -933,6 +924,14 @@ def test_f04_subscription_diagnostics_never_echo_untrusted_values(
     assert snap.lifecycle_state is LifecycleState.DISCONNECTED
 
 
+@pytest.mark.parametrize(
+    "kind",
+    [
+        ProviderEventKind.ENTITLEMENT,
+        ProviderEventKind.HEARTBEAT,
+        ProviderEventKind.TRANSPORT_RECONNECTING,
+    ],
+)
 def test_f04_unhandled_control_kind_is_fail_loud(kind) -> None:
     controller = _controller()
     controller.submit_event(_event(kind))
