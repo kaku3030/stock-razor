@@ -138,3 +138,24 @@ def test_time_and_symbol_validation_fail_closed():
     assert out.status == "UNKNOWN"
     assert out.reason == "EXPECTED_SYMBOL_SET_INVALID"
     _assert_never_promotes(out)
+
+
+def test_missing_or_naive_source_timestamp_and_non_sequence_flags_block():
+    for missing in (None, datetime(2026, 10, 12, 9, 36)):
+        actual = _grid()
+        actual[SYMBOLS[0]][5] = replace(
+            actual[SYMBOLS[0]][5], source_timestamp=missing,
+        )
+        result = _audit(actual)
+        assert result.status == "UNKNOWN"
+        assert result.reason == "CANONICAL_BAR_TIMEZONE_INVALID"
+        _assert_never_promotes(result)
+
+    actual = _grid()
+    actual[SYMBOLS[0]][5] = replace(
+        actual[SYMBOLS[0]][5], quality_flags=None,
+    )
+    result = _audit(actual)
+    assert result.status == "UNKNOWN"
+    assert result.reason == "CANONICAL_PROVENANCE_OR_CLOSURE_INVALID"
+    _assert_never_promotes(result)
