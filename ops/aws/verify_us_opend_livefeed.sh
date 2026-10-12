@@ -27,7 +27,16 @@ assert heartbeat.get("research_only") is True
 assert heartbeat.get("can_confirm_signal") is False
 assert heartbeat.get("radar_admission") == "BLOCKED"
 assert heartbeat.get("live_trade") is False
-assert int(heartbeat.get("event_count") or 0) > 0
+# No RTH minute callbacks are required on a provider-confirmed closed
+# or extended-hours session. This is NOT proof of fresh realtime delivery.
+observed_data_events = int(heartbeat.get("event_count") or 0)
+verified_non_regular = (
+    heartbeat.get("market_state_evidence") == "PASS"
+    and heartbeat.get("cache_session_us") in {
+        "closed", "premarket", "afterhours", "overnight"
+    }
+)
+assert observed_data_events > 0 or verified_non_regular
 
 warm_start = heartbeat.get("warm_start") or {}
 assert warm_start.get("status") == "PASS"
