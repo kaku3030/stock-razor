@@ -22,7 +22,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-if [[ "$#" -ne 7 ]]; then
+if [[ "$#" -ne 7 && "$#" -ne 9 ]]; then
   echo 'TICKFLOW_PREMIUM_SETUP=INVALID_ARGUMENTS'
   exit 2
 fi
@@ -34,10 +34,25 @@ requirements_hash="$4"
 bootstrap_hash="$5"
 ws_seconds="$6"
 quote_only="$7"
+# The two extra SHA256s select only the reviewed direct WS ACK evidence path.
+# Legacy seven-argument Premium requests are unchanged.
+protocol_only=false
+protocol_hash=""
+sanitizer_hash=""
+if [[ "$#" -eq 9 ]]; then
+  protocol_only=true
+  protocol_hash="$8"
+  sanitizer_hash="$9"
+fi
 [[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]
 [[ "$quote_only" == true || "$quote_only" == false ]]
 if [[ "$quote_only" == true ]]; then
   [[ "$ws_seconds" == 0 ]]
+fi
+if [[ "$protocol_only" == true ]]; then
+  [[ "$quote_only" == false && "$ws_seconds" != 0 ]]
+  [[ "$protocol_hash" =~ ^[0-9a-f]{64}$ ]]
+  [[ "$sanitizer_hash" =~ ^[0-9a-f]{64}$ ]]
 fi
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
 [[ "$probe_hash" =~ ^[0-9a-f]{64}$ ]]
@@ -65,6 +80,12 @@ curl --fail --silent --show-error --max-time 20 "$base/scripts/probe_tickflow_is
 curl --fail --silent --show-error --max-time 20 "$base/ops/requirements/tickflow-isolated-v0.1.txt" -o "$stage/requirements.txt" 2>/dev/null
 printf '%s  %s\n' "$probe_hash" "$stage/probe.py" | sha256sum -c - >/dev/null
 printf '%s  %s\n' "$requirements_hash" "$stage/requirements.txt" | sha256sum -c - >/dev/null
+if [[ "$protocol_only" == true ]]; then
+  curl --fail --silent --show-error --max-time 20 "$base/scripts/tickflow_ws_protocol_probe.py" -o "$stage/ws_protocol.py" 2>/dev/null
+  curl --fail --silent --show-error --max-time 20 "$base/scripts/sanitize_tickflow_ws_protocol_probe.py" -o "$stage/ws_sanitizer.py" 2>/dev/null
+  printf '%s  %s\n' "$protocol_hash" "$stage/ws_protocol.py" | sha256sum -c - >/dev/null
+  printf '%s  %s\n' "$sanitizer_hash" "$stage/ws_sanitizer.py" | sha256sum -c - >/dev/null
+fi
 
 probe_stage=VERIFY_ARTIFACTS
 mkdir -p "$root"
@@ -178,6 +199,24 @@ probe_stage=PARSE_SECRET
 export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); v=d.get("api_key") if isinstance(d,dict) and set(d)=={"api_key"} else None; assert isinstance(v,str) and v.strip(); print(v,end="")')"
 [[ -n "$TICKFLOW_API_KEY" ]]
 unset secret_json
+
+if [[ "$protocol_only" == true ]]; then
+  # Only one bounded quote-channel WebSocket; ZERO REST/K-line/depth calls.
+  # Exit 2 means complete/partial protocol evidence lacking updates, not a
+  # transport or market-data qualification. Emit only the validated schema.
+  probe_stage=RUN_DIRECT_WS_PROTOCOL
+  protocol_rc=0
+  protocol_summary="$(TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true "$venv/bin/python" "$stage/ws_protocol.py" --execute --symbols 159611.SZ 518880.SH --seconds "$ws_seconds" 2>/dev/null)" || protocol_rc=$?
+  [[ "$protocol_rc" == 0 || "$protocol_rc" == 2 ]]
+  probe_stage=SANITIZE_DIRECT_WS_PROTOCOL
+  printf '%s\n' "$protocol_summary" | "$venv/bin/python" "$stage/ws_sanitizer.py" --repo-sha "$revision"
+  probe_stage=COMPLETE
+  echo "TICKFLOW_WS_ACK_PROBE_EXECUTED=YES"
+  echo "TICKFLOW_CLOUD_DATA_ADMISSION=BLOCKED"
+  echo "RADAR_ADMISSION=BLOCKED"
+  echo "LIVE_TRADE=NO"
+  exit 0
+fi
 
 probe_stage=RUN_PREMIUM_PROBE
 # One-quote mode: one REST request, no K-line, depth or WebSocket.
