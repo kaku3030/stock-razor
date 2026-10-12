@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,7 +34,7 @@ class LocalStream:
 def _observe(monkeypatch, thread=None):
     fake = LocalStream(thread=thread)
     monkeypatch.setattr(probe.time, "sleep", lambda _seconds: None)
-    return probe._stream_probe(fake, ("159611.SZ", "518880.SH"), 1)
+    return probe._stream_probe(SimpleNamespace(stream=fake), ("159611.SZ", "518880.SH"), 1)
 
 
 def test_unobservable_sdk_worker_never_implies_real_connection(monkeypatch):
