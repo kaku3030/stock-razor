@@ -165,6 +165,37 @@ def _validate_symbol_currentness(
     return evaluated, None
 
 
+def _turnover_vwap_input_status(rows: list[dict], timeframe: str, *, currentness_proven: bool) -> tuple[str, str]:
+    """Display only an explicit bounded evidence gap, never infer trade readiness.
+
+    The Tencent fallback exposes volume in HAND but turnover as UNAVAILABLE.
+    Fresh BAR_END timestamps cannot establish normalized turnover or VWAP.
+    Even verified-looking units require independent price/volume parity.
+    """
+    if timeframe not in {"15m", "60m"}:
+        return "NOT_APPLICABLE", "INTRADAY_TIMEFRAME_REQUIRED"
+    if not rows:
+        return "BLOCKED", "NO_INTRADAY_ROWS"
+    if not currentness_proven:
+        return "BLOCKED", "INTRADAY_CURRENTNESS_UNPROVEN"
+    for row in rows:
+        if row.get("quality_flags") != []:
+            return "BLOCKED", "ROW_QUALITY_UNVERIFIED"
+        amount = row.get("amount_raw")
+        if (row.get("amount_unit") != "CNY"
+                or type(amount) not in (int, float)
+                or amount < 0 or amount > 10**20 or not isfinite(amount)):
+            return "BLOCKED", "TURNOVER_AMOUNT_UNIT_UNVERIFIED"
+        volume = row.get("volume_raw")
+        if (row.get("volume_unit") != "SHARES"
+                or type(volume) not in (int, float)
+                or volume < 0 or volume > 10**20 or not isfinite(volume)):
+            return "BLOCKED", "VOLUME_SHARE_UNIT_UNVERIFIED"
+    # No normalized-provider parity contract is present in this source.
+    # Never upgrade this diagnostic to PASS merely from plausible numbers.
+    return "NOT_VERIFIED", "INDEPENDENT_TURNOVER_PARITY_MISSING"
+
+
 def read_cn_market_data(
     symbol: object,
     timeframe: str = "1d",
@@ -356,6 +387,12 @@ def read_cn_market_data(
     rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
     selected = rows[-limit:]
     source_status = "PASS" if age <= max_age_seconds else "STALE"
+    vwap_status, vwap_reason = _turnover_vwap_input_status(
+        selected, frame,
+        currentness_proven=(
+            source_status == "PASS" and symbol_currentness_proven is True
+        ),
+    )
     return _finish(started_at, {
         "ok": bool(selected),
         "status": source_status if selected else "NO_DATA",
@@ -393,6 +430,9 @@ def read_cn_market_data(
         "total_row_count": len(rows),
         "row_count": len(selected),
         "rows": selected,
+        "turnover_vwap_input_status": vwap_status,
+        "turnover_vwap_input_reason": vwap_reason,
+        "turnover_vwap_input_does_not_admit_trading": True,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
