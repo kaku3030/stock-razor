@@ -537,6 +537,7 @@ def build_probe(
     sdk_version: str | None = None,
     credential_present: bool | None = None,
     location: str = "LOCAL_ISOLATE",
+    quote_only: bool = False,
 ) -> dict:
     """Requires explicit mode premium; never reads or returns the actual key."""
     if mode not in {"metadata", "free", "premium", "premium-contract"}:
@@ -545,8 +546,14 @@ def build_probe(
         raise ValueError("WebSocket probe requires explicit premium mode")
     if not 0 <= ws_seconds <= 60:
         raise ValueError("invalid WebSocket duration")
+    if type(quote_only) is not bool or (
+        quote_only and (mode != "premium" or ws_seconds != 0)
+    ):
+        raise ValueError("one quote requires premium mode and zero WebSocket time")
 
     symbols = validate_symbols(list(symbols))
+    if quote_only and len(symbols) > 2:
+        raise ValueError("one quote is limited to 1 or 2 ETF symbols")
     if location not in {"LOCAL_ISOLATE", "AWS_TOKYO_SSM_ISOLATE"}:
         raise ValueError("unsupported location")
     credential_present = bool(os.environ.get("TICKFLOW_API_KEY")) if credential_present is None else credential_present
@@ -554,6 +561,7 @@ def build_probe(
         "schema": "stock_razor_tickflow_isolated_probe_v0_1",
         "observed_at_utc": _utc(),
         "mode": mode,
+        "request_scope": ("ONE_REALTIME_QUOTE_BATCH_ONLY" if quote_only else "STANDARD_ISOLATED_PROBE"),
         "provider": "TICKFLOW_SDK",
         "location": location,
         "sdk_version": sdk_version,
@@ -661,6 +669,10 @@ def build_probe(
     result["operations"].append(
         _operation("realtime_quote", lambda: client.quotes.get(symbols=list(symbols)))
     )
+    if quote_only:
+        # Exactly one REST provider request; no K-line, depth, WS or retries.
+        # This is a capability observation, not currentness or source proof.
+        return result
     for period in PERIODS:
         kline_symbols = symbols if period in {"15m", "60m"} else (symbols[0],)
         for symbol in kline_symbols:
@@ -695,6 +707,7 @@ def main() -> int:
     )
     parser.add_argument("--symbols", nargs="+", default=list(DEFAULT_SYMBOLS))
     parser.add_argument("--ws-seconds", type=float, default=0)
+    parser.add_argument("--quote-only", action="store_true")
     parser.add_argument("--location", choices=("LOCAL_ISOLATE", "AWS_TOKYO_SSM_ISOLATE"), default="LOCAL_ISOLATE")
     args = parser.parse_args()
     try:
@@ -705,7 +718,8 @@ def main() -> int:
         )
         result = build_probe(mode=args.mode, symbols=symbols,
                              ws_seconds=args.ws_seconds,
-                             sdk_version=version, location=args.location)
+                             sdk_version=version, location=args.location,
+                             quote_only=args.quote_only)
     except (ValueError, importlib.metadata.PackageNotFoundError) as exc:
         # Avoid exception text; the failure class alone is enough.
         result = {
