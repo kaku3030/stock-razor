@@ -60,8 +60,12 @@ class ProtocolEvidence:
             total = item.get("total")
             if (item.get("channel") == "quotes" and isinstance(syms, list)
                     and all(isinstance(s, str) for s in syms)
-                    and self.symbols.issubset(set(syms))
-                    and type(total) is int and total >= len(self.symbols)):
+                    # One isolated connection sends exactly one subscription.
+                    # Extra/duplicate symbols or inaccurate counts are not proof
+                    # that only the requested bounded scope was acknowledged.
+                    and len(syms) == len(self.symbols)
+                    and set(syms) == self.symbols
+                    and type(total) is int and total == len(self.symbols)):
                 self.ack_messages += 1
                 self.ack_verified = True
             else:
