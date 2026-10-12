@@ -214,6 +214,26 @@ for raw in d["operations"]:
         for field in ("freshness","closure"):
             if summary.get(field) in ("NOT_VERIFIED","PROVEN","UNPROVEN","PASS","BLOCKED"):
                 item[field]=summary[field]
+    if raw["name"] == "websocket_quote_smoke":
+        # Only finite bounded counters from provider callbacks, never
+        # symbols, quote payload, raw error text or unqualified latency.
+        for field in (
+            "quote_callbacks", "quote_events", "unique_quote_samples",
+            "initial_snapshot_candidates", "post_initial_update_candidates",
+            "duplicate_timestamp_events", "out_of_order_timestamp_events",
+            "unrequested_symbol_events", "invalid_timestamp_events",
+            "error_callbacks",
+        ):
+            value=raw.get(field)
+            if type(value) is int and 0 <= value <= 1000000:
+                item[field]=value
+        for field in ("connection_call","subscription_call"):
+            value=raw.get(field)
+            if value in ("PASS","FAIL","NOT_VERIFIED"):
+                item[field]=value
+        item["subscription_ack_evidence"]="NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+        item["sample_latency_qualification"]="NOT_VERIFIED"
+        item["post_initial_candidates_not_confirmed_live"]=True
     ops.append(item)
 safe={
     "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
