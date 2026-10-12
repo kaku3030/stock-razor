@@ -45,7 +45,11 @@ fi
 [[ "$bootstrap_hash" =~ ^[0-9a-f]{64}$ ]]
 [[ "${TICKFLOW_PREMIUM_PROBE_ENABLED:-false}" == true ]]
 [[ "${TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED:-false}" == true ]]
-[[ "$secret_arn" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+# Allow either the original exact ARN or the single fixed existing secret name.
+# IAM still determines whether this EC2 identity may read it.
+if [[ "$secret_arn" != 'stock-razor/tickflow/premium' ]]; then
+  [[ "$secret_arn" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+fi
 
 unset TICKFLOW_PREMIUM_PROBE_ENABLED TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED
 export PYTHONIOENCODING=utf-8 PYTHONDONTWRITEBYTECODE=1 PIP_CONFIG_FILE=/dev/null

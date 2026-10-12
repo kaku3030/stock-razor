@@ -9,7 +9,7 @@ on:
         type: boolean
         default: false
       secret_arn:
-        description: "Exact Tokyo Secrets Manager ARN; never enter the API key"
+        description: "Optional exact Tokyo Secrets Manager ARN; blank uses the fixed existing TickFlow secret name (never a key)"
         required: false
         type: string
       quote_only:
@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   premium-probe:
-    if: ${{ inputs.enable_premium_probe == true && inputs.secret_arn != '' }}
+    if: ${{ inputs.enable_premium_probe == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -61,7 +61,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+          # Empty operator reference selects only the preapproved AWS secret name.
+          # AWS resolves the name via existing EC2 IAM; no ARN or key is logged.
+          if [[ -z "$SECRET_ARN" ]]; then
+            SECRET_ARN='stock-razor/tickflow/premium'
+          fi
+          if [[ "$SECRET_ARN" != 'stock-razor/tickflow/premium' ]]; then
+            [[ "$SECRET_ARN" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]
+          fi
           [[ "$WS_SECONDS" =~ ^(0|10|15|30|60)$ ]]
           [[ "$QUOTE_ONLY" == "true" || "$QUOTE_ONLY" == "false" ]]
           if [[ "$QUOTE_ONLY" == "true" && "$WS_SECONDS" != "0" ]]; then
