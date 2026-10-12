@@ -88,6 +88,8 @@ def classify_journal_lines(lines: Iterable[str], *, truncated: bool = False) -> 
         return result
     stops: list[str] = []
     starts: list[str] = []
+    confirmed_stops: list[str] = []
+    confirmed_starts: list[str] = []
     count = 0
     for line in lines:
         count += 1
@@ -101,14 +103,19 @@ def classify_journal_lines(lines: Iterable[str], *, truncated: bool = False) -> 
         action, stamp = item
         if action in ("STOPPING", "STOPPED"):
             stops.append(stamp)
+            if action == "STOPPED":
+                confirmed_stops.append(stamp)
         elif action in ("STARTING", "STARTED"):
             starts.append(stamp)
+            if action == "STARTED":
+                confirmed_starts.append(stamp)
     result["manager_stops_utc"] = sorted(set(stops))[:10]
     result["manager_starts_utc"] = sorted(set(starts))[:10]
     if not stops and not starts:
         return result
     result["reason"] = "MANAGER_EVENTS_INCOMPLETE"
-    if any(stop <= start for stop in stops for start in starts):
+    # Request-phase messages alone are never proof that a restart finished.
+    if any(stop <= start for stop in confirmed_stops for start in confirmed_starts):
         result["status"] = "RESTART_SEQUENCE_OBSERVED"
         result["manager_restart_pair"] = "OBSERVED"
         result["reason"] = None
