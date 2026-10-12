@@ -637,6 +637,23 @@ def build_probe(
     })
     if mode == "metadata":
         return result
+    if mode == "premium" and ws_seconds > 0 and is_official_sdk:
+        # Required optional dependency for the official TickFlow WS transport.
+        # A silent ImportError in its worker must never be interpreted as a
+        # market session with zero quote callbacks.
+        try:
+            with _hide_provider_output():
+                import websockets  # noqa: F401
+        except Exception as exc:
+            result["operations"].append({
+                "name": "websocket_quote_smoke",
+                "operation": "BLOCKED",
+                "reason": "TICKFLOW_REALTIME_EXTRA_UNAVAILABLE",
+                "failure_class": type(exc).__name__,
+                "subscription_ack_evidence": "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK",
+                "sample_latency_qualification": "NOT_VERIFIED",
+            })
+            return result
     if mode == "premium" and not credential_present:
         result["operations"].append(_skip("premium_probe", "NO_API_KEY"))
         return result

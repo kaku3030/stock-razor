@@ -68,6 +68,15 @@ venv="$root/venv"
 [[ -x "$venv/bin/python" ]] || python3 -m venv "$venv" >/dev/null 2>&1
 probe_stage=INSTALL_DEPENDENCIES
 "$venv/bin/python" -m pip install --disable-pip-version-check --no-input --quiet -r "$stage/requirements.txt" >/dev/null 2>&1
+# Fail before reading a key or issuing REST when the official realtime
+# transport extra is unavailable in the isolated AWS venv.
+probe_stage=VERIFY_REALTIME_EXTRA
+if [[ "$ws_seconds" != "0" ]]; then
+  if ! "$venv/bin/python" -c 'import importlib.metadata as m; import websockets; assert m.version("websockets") == "15.0.1"' >/dev/null 2>&1; then
+    echo 'TICKFLOW_WS_DEPENDENCY=UNAVAILABLE' >&2
+    exit 1
+  fi
+fi
 
 # The key is returned only into this process environment; never echo it, pass
 # it as an argument, write it to disk, or include it in a report.
