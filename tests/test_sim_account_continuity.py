@@ -25,6 +25,7 @@ AWS = replace(
 
 
 def compare(w=WINDOWS, a=AWS, **options):
+    options.setdefault("expected_account_id", "123456")
     return compare_local_cloud_sim(w, a, now_utc=NOW, **options)
 
 
@@ -65,3 +66,34 @@ def test_cannot_treat_duplicate_position_rows_as_legacy_baseline():
     assert compare(a=replace(AWS, positions=POSITIONS+POSITIONS[:1])).reason == (
         "MALFORMED_READBACK_POSITIONS"
     )
+
+
+def test_matching_hosts_never_authorize_unapproved_or_missing_sim_identity():
+    missing = compare(expected_account_id=None)
+    assert missing.status == "BLOCKED"
+    assert missing.reason == "APPROVED_SIM_ACCOUNT_ID_REQUIRED"
+    mismatch = compare(expected_account_id="987654")
+    assert mismatch.status == "BLOCKED"
+    assert mismatch.reason == "APPROVED_SIM_ACCOUNT_ID_MISMATCH"
+    assert not mismatch.same_account_id
+    for review in (missing, mismatch):
+        assert not review.paper_auto_ready
+        assert not review.broker_mutation_allowed
+        assert "123456" not in str(review)
+        assert "987654" not in str(review)
+
+
+def test_invalid_private_approved_sim_id_cannot_become_matched_for_review():
+    for supplied in ("", "123456x", "1" * 21, True, 123456, "１２３４５６"):
+        result = compare(expected_account_id=supplied)
+        assert result.status == "BLOCKED"
+        assert result.reason == "APPROVED_SIM_ACCOUNT_ID_REQUIRED"
+
+
+def test_matching_cross_host_data_only_reaches_non_executable_review_state():
+    result = compare(expected_account_id="123456")
+    assert result.status == "MATCHED_FOR_REVIEW"
+    assert result.same_positions and result.same_account_id
+    assert result.paper_auto_ready is False
+    assert result.broker_mutation_allowed is False
+    assert result.live_trade is False
