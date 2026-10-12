@@ -218,6 +218,7 @@ for raw in d["operations"]:
 safe={
     "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
     "mode":"premium",
+    "request_scope":d["request_scope"],
     "observed_at_utc":datetime.now(timezone.utc).isoformat(),
     "repo_sha":os.environ["STOCK_RAZOR_PROBE_REPO_SHA"],
     "operations":ops,
