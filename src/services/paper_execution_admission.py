@@ -180,8 +180,9 @@ def _validate_permission(
     # BEFORE comparing availability or deriving an executable Paper intent.
     if any(
         type(value) not in (int, float)
-        or not math.isfinite(value)
         or value <= 0
+        or value > 10**12  # impossible application epoch; protects huge-int conversion
+        or not math.isfinite(value)
         for value in times
     ):
         raise ExecutionBlocked("causal timestamps must be positive finite numbers")
