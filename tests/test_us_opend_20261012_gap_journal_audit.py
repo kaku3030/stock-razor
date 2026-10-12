@@ -71,6 +71,15 @@ def test_request_phase_stopping_starting_does_not_prove_completed_restart():
     assert only_requested["reason"] == "MANAGER_EVENTS_INCOMPLETE"
 
 
+def test_same_second_stop_and_start_does_not_prove_strict_chronology():
+    ambiguous = audit.classify_journal_lines([
+        _manager("Stopped", "2026-10-12T14:58:41Z"),
+        _manager("Started", "2026-10-12T14:58:41Z"),
+    ])
+    assert ambiguous["status"] == "NOT_VERIFIED"
+    assert ambiguous["manager_restart_pair"] == "NOT_VERIFIED"
+
+
 def test_truncated_session_or_missing_pair_never_promotes_gap_repair():
     pair = [
         _manager("Stopped", "2026-10-12T14:58:41Z"),
