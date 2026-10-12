@@ -6,11 +6,11 @@
 
 | Layer | Current state | Evidence |
 |---|---|---|
-| Offline Paper runner | READY | PR #539, canonical reconcile → Shadow → Paper Engine path |
+| Offline Paper runner | READY (OFFLINE ONLY) | PR #539 canonical reconcile → Shadow → Paper Engine; PR #627 same-store eight-restart deterministic soak exact-head CI PASS |
 | Durable execution/shadow stores | IMPLEMENTED | Separate SQLite paths and fail-closed construction |
 | Trade Plan | Read-only V0.2 | Precomputed plan contract |
 | Trade Lifecycle | Read-only V0.3 projection | Runtime read-only projection wired |
-| External simulator/broker | LOCAL + AWS SIM READ-ONLY PASS / PAPER BLOCKED | Verified manual AWS SSM workflow run #38135716291: one active US SIM account, four scoped readbacks PASS; existing positions require review, native simulated deals unsupported; local↔cloud exact account identity unproven |
+| External simulator/broker | LOCAL + AWS SIM READ-ONLY PASS / PAPER BLOCKED | Last read-only cloud run #38201521471 (2026-10-12): one active US SIM account, four scoped readbacks PASS; old positions require review, native SIM deal APIs unsupported, exact account identity unproven |
 | Cloud market data | PARTIAL / ADMISSION BLOCKED | AWS US controller healthy but canonical snapshot stale (weekend), US bar closure unproven; A-share cloud historical fallback PASS, currentness unproven; TickFlow cloud premium acceptance incomplete |
 | Notifications | CONFIGURED/UNVERIFIED | Configuration is not phone-receipt evidence |
 | Live trading | BLOCKED | `LIVE_TRADE=NO` |
@@ -217,3 +217,44 @@ LIVE_TRADE=NO
 ```
 
 A passing offline simulation is evidence that the local Paper path works. It is not evidence of cloud data reliability, external simulator access, phone delivery, or live-trading readiness.
+
+## Current 2026-10-12 status: Paper is not yet an autonomous cloud simulator
+
+The AWS read-only [SIM Account Discovery #38201521471](https://github.com/kaku3030/stock-razor/actions/runs/38201521471)
+was completed at 03:53 UTC. Its **sanitized** workflow evidence is
+`opend_reachable=true`, `query_status=PASS`,
+`simulated_us_account_count=1` and `balance_readback`,
+`positions_readback`, `orders_readback`,
+`history_readback=PASS`. Previously held SIM positions remain
+`position_review=REQUIRED`; no current order review is required.
+`account_evidence=OBSERVED_NOT_VERIFIED`,
+`sim_native_fills=UNSUPPORTED_BY_OPEND`,
+`paper_preflight=BLOCKED`, `paper_auto_ready=false`.
+Source workflow revision is not an attested OpenD deployment revision.
+
+This is *real non-mutating cloud OpenD/SIM API access*, **not** a placed
+SIM order, automatic strategy fill, proof that the account equals the
+local simulator account, or evidence of an approved cloud Paper runtime.
+Futu's current `deal_list_query` and `history_deal_list_query`
+do not support `TrdEnv.SIMULATE`:
+[official docs](https://openapi.futunn.com/futu-api-doc/en/trade/get-order-fill-list.html).
+No fake broker receipt should be manufactured by trusting an ACK or a
+simulator fill fixture.
+
+Offline Paper restart evidence improved independently via
+[PR #627](https://github.com/kaku3030/stock-razor/pull/627):
+eight restarts using the same durable execution journal and Shadow
+store, followed by a ninth recovery, rejected duplicate intents,
+verified unique monotonically restored simulated broker order IDs and
+no duplicate adapter placements. Exact-head
+[CI #38236252954](https://github.com/kaku3030/stock-razor/actions/runs/38236252954)
+and [Radar #38236253028](https://github.com/kaku3030/stock-razor/actions/runs/38236253028)
+PASS. That is **offline P4 partial evidence**; external SIM orders,
+cloud soak, market source qualification and phone alert delivery are
+still not proven. No Paper or live order is permitted by this note.
+
+**Promotion disposition**:
+`OFFLINE_PAPER=IMPLEMENTED` · `AWS_SIM_READBACK=PASS` ·
+`EXISTING_POSITION_BASELINE=REVIEW_REQUIRED` ·
+`SIM_FILL_RECEIPT=UNSUPPORTED_UNRESOLVED` ·
+`PAPER_AUTO_READY=NO` · `RADAR_ADMISSION=BLOCKED` · `LIVE_TRADE=NO`.

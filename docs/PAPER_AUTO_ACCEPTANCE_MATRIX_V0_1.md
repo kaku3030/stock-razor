@@ -11,9 +11,11 @@ Separate three claims that must not be conflated:
 2. the Paper runtime is safe under restart, rejection, and fault conditions;
 3. qualified market data can safely drive a cloud Paper session.
 
-Only the first claim is currently supported by implementation evidence. The
-third remains blocked until TickFlow/OpenD data qualification and an explicit
-end-to-end evidence binding are complete.
+The first claim is supported by offline implementation and exact-head CI.
+Parts of the second now have bounded deterministic evidence, including
+same-store restart/replay; cloud failure recovery is **not** yet qualified.
+The third remains blocked until TickFlow/OpenD data qualification and an
+explicit end-to-end evidence binding are complete.
 
 ## Gates
 
@@ -23,7 +25,7 @@ end-to-end evidence binding are complete.
 | P1 startup barrier | Runtime starts only after reconciliation | `NEW -> READY` only after account reconciliation | PASS in CI |
 | P2 restart recovery | Persisted journal reopened with a new Paper adapter | Existing orders replay; duplicate retry does not place again | PASS in CI |
 | P3 negative/fault matrix | Unknown permission, stale data, thread mismatch, reconcile failure, ambiguous submission | No adapter mutation; expected failures remain fail-closed | PASS in CI; expand soak evidence |
-| P4 multi-session soak | Repeated start/refresh/process/stop across isolated sessions | No duplicate intent, fill, broker identity, or journal corruption | NOT_RUN as a bounded soak |
+| P4 multi-session soak | Repeated start/refresh/process/stop across isolated sessions | No duplicate intent, fill, broker identity, or journal corruption | **PASS_OFFLINE_PARTIAL**: PR #627 (eight same-store restarts + ninth recovery, duplicate intent veto); external/broker/cloud soak NOT_RUN |
 | P5 qualified data binding | Timestamped qualified snapshot/currentness and account generation bound to permission | Data evidence is fresh, complete, and causally before execution | BLOCKED: TickFlow/OpenD qualification pending |
 | P6 cloud Paper E2E | Cloud runtime, notification trace, restart and reconciliation evidence | Realistic cloud Paper loop with no live side effect | BLOCKED: no AWS deployment authorized |
 
@@ -56,3 +58,39 @@ Each executed gate should record:
 
 Unknown evidence is not converted to PASS. A failed or incomplete gate keeps
 the corresponding admission blocked.
+
+## 2026-10-12 external SIM readback / offline soak checkpoint
+
+**Separate evidence claims — never combine these into Paper automation readiness:**
+
+- Offline deterministic runner and Journal/Shadow stores: **IMPLEMENTED**.
+  PR [#627](https://github.com/kaku3030/stock-razor/pull/627) merged after
+  exact-head [CI #38236252954](https://github.com/kaku3030/stock-razor/actions/runs/38236252954)
+  and [Research Radar #38236253028](https://github.com/kaku3030/stock-razor/actions/runs/38236253028)
+  both passed. New regression tests reuse **one** durable SQLite journal
+  across eight successive owner startups and ninth recovery, testing
+  monotonic IDs and duplicate-replay veto. All transactions are synthetic.
+- AWS OpenD SIM-only **READBACK PASS**, **PAPER BLOCKED**: read-only run
+  [#38201521471](https://github.com/kaku3030/stock-razor/actions/runs/38201521471)
+  on 2026-10-12 03:53 UTC returned one ACTIVE US SIMULATE/STOCK_AND_OPTION
+  account; funds, positions, orders and historical orders all **PASS**.
+  Existing positions require operator review; current orders do not.
+  `account_evidence=OBSERVED_NOT_VERIFIED` and
+  `paper_preflight=BLOCKED`. The workflow GitHub SHA is **not**
+  independent proof that the running OpenD service is on that revision.
+- Futu OpenAPI `deal_list_query` and `history_deal_list_query` are
+  documented as **real-trading-only**, not supported for paper trading.
+  `history_order_list_query` and funds/positions can corroborate order
+  execution but cannot replace independent simulated fill receipts.
+  Official docs: [today's deals](https://openapi.futunn.com/futu-api-doc/en/trade/get-order-fill-list.html)
+  and [historical deals](https://openapi.futunn.com/futu-api-doc/en/trade/get-history-order-fill-list.html).
+
+**Remaining live blockers**: independently bind the approved SIM account
+identity and pre-existing position baseline to the actual cloud runtime,
+qualify source currentness and bar closure, determine a separately reviewed
+simulated fill/receipt approach or retain deterministic internal Paper only,
+and validate cloud Paper orchestration and phone notification delivery.
+No order mutation was performed by the AWS readback.
+
+`PAPER_AUTO_READY=NO` · `RADAR_ADMISSION=BLOCKED` ·
+`SOURCE_ARBITER_ADMISSION=BLOCKED` · `LIVE_TRADE=NO`.
