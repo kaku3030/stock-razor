@@ -11,6 +11,7 @@ test -x "$OPEND_CLIENT_ROOT/venv/bin/python"
 # Independent EC2-side market-hours gate BEFORE git fetch, in-place repo
 # checkout, daemon reload, or service restart. The workflow check alone can
 # race with the session boundary. Fail closed if time/zone cannot be read.
+require_safe_us_restart_window() {
 "$OPEND_CLIENT_ROOT/venv/bin/python" - <<'PY_RESTART_WINDOW'
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
@@ -26,6 +27,8 @@ except Exception:
     raise SystemExit(2)
 print("US_LIVEFEED_RESTART_TIME=SAFE_OFF_WINDOW")
 PY_RESTART_WINDOW
+}
+require_safe_us_restart_window
 install -d -m 0755 "$INSTALL_ROOT"
 if [ ! -d "$INSTALL_ROOT/repo/.git" ]; then git clone --filter=blob:none "$REPO_URL" "$INSTALL_ROOT/repo"; fi
 git -C "$INSTALL_ROOT/repo" fetch --depth=1 origin "$REPO_REF"
@@ -733,5 +736,8 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
+# Recheck immediately before actual restart, including unexpectedly slow
+# downloads/builds that cross the conservative market-hours boundary.
+require_safe_us_restart_window
 systemctl restart "$SERVICE_NAME"
 systemctl is-active "$SERVICE_NAME"
