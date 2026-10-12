@@ -11,7 +11,7 @@ import re
 
 SECRET_ARN = re.compile(
     r"^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:"
-    r"stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$"
+    r"stock-razor/tickflow/premium-api-key-[A-Za-z0-9+=,.@_-]{6,}$"
 )
 
 

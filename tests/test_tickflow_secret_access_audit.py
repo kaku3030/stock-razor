@@ -32,6 +32,6 @@ def test_secret_access_audit_is_explicit_and_secret_safe():
 
 def test_reference_is_restricted_to_approved_name_or_arn():
     script = SCRIPT.read_text(encoding="utf-8")
-    assert "stock-razor/tickflow/premium" in script
-    assert "arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-" in script
+    assert "stock-razor/tickflow/premium-api-key" in script
+    assert "arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-api-key-" in script
     assert "ORGANIZATION_POLICY=NOT_VERIFIED" in script

@@ -25,7 +25,7 @@ Because `DescribeSecret` was denied, a KMS-only explanation is insufficient.
 
 1. Privately verify the existing Premium Secret under **AWS Secrets Manager,
    Tokyo `ap-northeast-1`**. The approved canonical name is
-   `stock-razor/tickflow/premium`. Verify that this existing Secret is the
+   `stock-razor/tickflow/premium-api-key`. Verify that this existing Secret is the
    intended source; inspect **metadata only** to obtain its real full ARN.
    Never create a second Secret to work around a denied read.
 2. In **AWS IAM → Roles**, open **`StockRazorEc2SsmInstanceRole`** and
@@ -77,7 +77,7 @@ not be misconstrued as failure after the two essential Secret calls pass.
 
 1. Re-run **one** existing read-only workflow from protected `main`:
    `audit-tickflow-secret-access.yml`, fixed secret_ref
-   `stock-razor/tickflow/premium`. Check the GitHub run's source SHA.
+   `stock-razor/tickflow/premium-api-key`. Check the GitHub run's source SHA.
 2. Expected sanitized evidence:
    `CALLER_ROLE=StockRazorEc2SsmInstanceRole`,
    `METADATA=FOUND`, `GET_SECRET=AUTHORIZED_NO_VALUE_EMITTED`,

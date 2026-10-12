@@ -92,7 +92,7 @@ def test_ingress_requires_exact_opt_in():
 
 
 def test_secret_arn_is_narrow_and_region_bound():
-    value = "arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-main-123456"
+    value = "arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-api-key-main-123456"
     assert validate_secret_arn(value) == value
     for bad in (None, "arn:aws:secretsmanager:us-east-1:888425712426:secret:x", value + "/other"):
         with pytest.raises(ValueError):
