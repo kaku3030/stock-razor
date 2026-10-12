@@ -11,7 +11,7 @@ BOOTSTRAP = ROOT / "ops/aws/run_tickflow_premium_probe.sh"
 
 def test_blank_reference_is_fixed_name_only_after_explicit_opt_in():
     yaml = WORKFLOW.read_text(encoding="utf-8")
-    assert "if: ${{ inputs.enable_premium_probe == true }}" in yaml
+    assert "if: ${{ github.ref == 'refs/heads/main' && inputs.enable_premium_probe == true }}" in yaml
     assert "default: false" in yaml
     assert "SECRET_ARN='stock-razor/tickflow/premium-api-key'" in yaml
     assert 'if [[ -z "$SECRET_ARN" ]]; then' in yaml
