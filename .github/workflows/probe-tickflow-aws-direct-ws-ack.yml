@@ -155,7 +155,7 @@ jobs:
             --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" \
             --query StandardOutputContent --output text)"
           # Untrusted EC2 stdout stays private; project only enumerated facts.
-          sanitized="$(printf '%s\n' "$private_output" | grep -E '^\\{' | tail -n 1 || true)"
+          sanitized="$(printf '%s\n' "$private_output" | grep -E '^[{]' | tail -n 1 || true)"
           test -n "$sanitized" || {
             echo 'TICKFLOW_WS_ACK_SANITIZED_SUMMARY_MISSING'
             exit 1
