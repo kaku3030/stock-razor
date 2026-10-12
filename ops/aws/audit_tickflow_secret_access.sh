@@ -15,7 +15,16 @@ if [[ "$secret_ref" != 'stock-razor/tickflow/premium' &&
 fi
 
 tmp_dir="$(mktemp -d -t sr-tickflow-secret-audit.XXXXXXXX)"
-trap 'rm -rf -- "$tmp_dir"' EXIT
+audit_stage=INIT
+cleanup() {
+  local rc=$?
+  if (( rc != 0 )); then
+    echo "TICKFLOW_SECRET_AUDIT_FAILED_STAGE=$audit_stage"
+  fi
+  rm -rf -- "$tmp_dir"
+  exit "$rc"
+}
+trap cleanup EXIT
 
 classify_error() {
   local error_file="$1"
@@ -39,12 +48,14 @@ classify_error() {
 }
 
 aws_cli="$(command -v aws 2>/dev/null || true)"
+audit_stage=VERIFY_AWS_CLI
 if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
   echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=UNAVAILABLE'
   exit 1
 fi
 echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=AVAILABLE'
 
+audit_stage=CALLER_IDENTITY
 caller_arn="$($aws_cli sts get-caller-identity --query Arn --output text 2>"$tmp_dir/caller.err" || true)"
 caller_role=UNKNOWN
 if [[ "$caller_arn" =~ :assumed-role/([^/]+)/ ]]; then
@@ -58,6 +69,7 @@ else
 fi
 unset caller_role
 
+audit_stage=DESCRIBE_SECRET
 metadata="$($aws_cli secretsmanager describe-secret --region ap-northeast-1 --secret-id "$secret_ref" --query '[Name,ARN,KmsKeyId]' --output text 2>"$tmp_dir/describe.err" || true)"
 if [[ -z "$metadata" || "$metadata" == None ]]; then
   echo "TICKFLOW_SECRET_AUDIT_METADATA=$(classify_error "$tmp_dir/describe.err")"
@@ -79,6 +91,7 @@ else
     echo 'TICKFLOW_SECRET_AUDIT_ARN_MATCH=NOT_APPLICABLE'
   fi
   if [[ -n "$kms_key_id" && "$kms_key_id" != None ]]; then
+    audit_stage=DESCRIBE_KMS_KEY
     echo 'TICKFLOW_SECRET_AUDIT_KMS_KEY=PRESENT'
     if $aws_cli kms describe-key --region ap-northeast-1 --key-id "$kms_key_id" --query KeyMetadata.KeyState --output text >"$tmp_dir/kms.out" 2>"$tmp_dir/kms.err"; then
       echo 'TICKFLOW_SECRET_AUDIT_KMS_METADATA=AVAILABLE'
@@ -92,12 +105,14 @@ else
 fi
 unset metadata canonical_name canonical_arn kms_key_id
 
+audit_stage=RESOURCE_POLICY
 if $aws_cli secretsmanager get-resource-policy --region ap-northeast-1 --secret-id "$secret_ref" --query ResourcePolicy --output text >"$tmp_dir/policy.out" 2>"$tmp_dir/policy.err"; then
   echo 'TICKFLOW_SECRET_AUDIT_RESOURCE_POLICY=AVAILABLE'
 else
   echo "TICKFLOW_SECRET_AUDIT_RESOURCE_POLICY=$(classify_error "$tmp_dir/policy.err")"
 fi
 
+audit_stage=GET_SECRET_VALUE
 if $aws_cli secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_ref" --query VersionId --output text >"$tmp_dir/value.out" 2>"$tmp_dir/value.err"; then
   echo 'TICKFLOW_SECRET_AUDIT_GET_SECRET=AUTHORIZED_NO_VALUE_EMITTED'
 else

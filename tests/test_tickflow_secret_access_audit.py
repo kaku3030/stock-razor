@@ -16,6 +16,7 @@ def test_secret_access_audit_is_explicit_and_secret_safe():
     assert "SecretBinary" not in workflow + script
     assert "TICKFLOW_SECRET_AUDIT_SECRETSTRING=NOT_EMITTED" in script
     assert "TICKFLOW_SECRET_AUDIT_MUTATIONS=NONE" in script
+    assert "TICKFLOW_SECRET_AUDIT_FAILED_STAGE" in script
     assert "get-secret-value" in script
     assert "--query VersionId" in script
     assert "get-resource-policy" in script
