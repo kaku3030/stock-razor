@@ -119,7 +119,7 @@ def test_premium_secret_error_diagnostics_are_bounded_and_allowlisted():
 
 
 def test_cloud_ws_smoke_is_independent_opt_in_and_bounded():
-    # Plain Premium REST/K tests remain the default; no automatic paid WS.
+    # Single Premium realtime quote is default; no automatic K/depth/WS.
     assert 'ws_seconds:' in PREMIUM_WORKFLOW
     assert 'default: "0"' in PREMIUM_WORKFLOW
     assert 'type: choice' in PREMIUM_WORKFLOW
@@ -128,7 +128,11 @@ def test_cloud_ws_smoke_is_independent_opt_in_and_bounded():
     assert 'WS_SECONDS: ${{ inputs.ws_seconds }}' in PREMIUM_WORKFLOW
     assert '[[ "$WS_SECONDS" =~ ^(0|10|15|30|60)$ ]]' in PREMIUM_WORKFLOW
     assert "'$WS_SECONDS'" in PREMIUM_WORKFLOW
-    assert 'if [[ "$#" -ne 6 ]]; then' in PREMIUM_BOOTSTRAP
+    assert 'if [[ "$#" -ne 7 ]]; then' in PREMIUM_BOOTSTRAP
+    assert 'quote_only="$7"' in PREMIUM_BOOTSTRAP
+    assert 'default: true' in PREMIUM_WORKFLOW
+    assert 'QUOTE_ONLY: ${{ inputs.quote_only }}' in PREMIUM_WORKFLOW
+    assert 'probe_args+=(--quote-only)' in PREMIUM_BOOTSTRAP
     assert 'ws_seconds="$6"' in PREMIUM_BOOTSTRAP
     assert '[[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]' in PREMIUM_BOOTSTRAP
     assert '--ws-seconds "$ws_seconds"' in PREMIUM_BOOTSTRAP
