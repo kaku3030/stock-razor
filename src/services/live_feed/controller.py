@@ -630,16 +630,23 @@ class LiveFeedController:
                 # Record it explicitly, but never treat accepted=True as
                 # entitlement, delivery, realtime, or trading success.
                 payload = event.payload
-                accepted = (
-                    payload.get("accepted")
-                    if isinstance(payload, Mapping) and "accepted" in payload
-                    else "UNKNOWN"
+                raw_accepted = (
+                    payload.get("accepted") if isinstance(payload, Mapping)
+                    else None
                 )
-                administrative_only = (
+                raw_administrative_only = (
                     event.diagnostic_fields.get("administrative_only")
                     if isinstance(event.diagnostic_fields, Mapping)
-                    and "administrative_only" in event.diagnostic_fields
-                    else "UNKNOWN"
+                    else None
+                )
+                # Findings are log-facing diagnostics. Never interpolate raw
+                # provider-supplied payloads, even on an administrative event.
+                accepted = (
+                    str(raw_accepted) if type(raw_accepted) is bool else "UNKNOWN"
+                )
+                administrative_only = (
+                    str(raw_administrative_only)
+                    if type(raw_administrative_only) is bool else "UNKNOWN"
                 )
                 self._findings.append(
                     "SUBSCRIPTION_RESULT_RECORDED:"
