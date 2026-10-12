@@ -6,6 +6,7 @@ from data_provider.market_data_adapter import Bar, SignalPermission
 
 
 CN = ZoneInfo("Asia/Shanghai")
+US = ZoneInfo("America/New_York")
 
 
 def minute_bar(minute: datetime, *, close: float = 10, received_offset: int = 0) -> Bar:
@@ -28,6 +29,30 @@ def minute_bar(minute: datetime, *, close: float = 10, received_offset: int = 0)
         session="regular",
         is_closed=True,
         is_complete=True,
+    )
+
+
+def us_minute_bar(minute: datetime, *, closed: bool = True) -> Bar:
+    return Bar(
+        symbol="US.AMD",
+        market="us",
+        asset_type="stock",
+        timeframe="1m",
+        bar_start=minute,
+        bar_end=minute + timedelta(minutes=1),
+        open=100,
+        high=101,
+        low=99,
+        close=100,
+        volume=10,
+        amount=1000,
+        provider="futu",
+        feed="opend",
+        source_timestamp=minute + timedelta(minutes=1),
+        received_at=minute + timedelta(minutes=1),
+        session="regular",
+        is_closed=closed,
+        is_complete=closed,
     )
 
 
@@ -104,3 +129,36 @@ def test_mixed_market_or_non_minute_input_is_rejected() -> None:
         assert "same market" in str(exc)
     else:
         raise AssertionError("non-minute input must be rejected")
+
+
+def test_us_15m_and_1h_require_closed_complete_source_grid() -> None:
+    start = datetime(2026, 10, 5, 9, 30, tzinfo=US)
+    forming_source = [
+        us_minute_bar(start + timedelta(minutes=i), closed=i != 59)
+        for i in range(60)
+    ]
+
+    forming = aggregate_bars(
+        forming_source,
+        "1h",
+        as_of=datetime(2026, 10, 5, 10, 30, tzinfo=US),
+        include_forming=False,
+    )
+    assert forming == []
+
+    closed_source = [us_minute_bar(start + timedelta(minutes=i)) for i in range(60)]
+    fifteen = aggregate_bars(
+        closed_source,
+        "15m",
+        as_of=datetime(2026, 10, 5, 10, 30, tzinfo=US),
+        include_forming=False,
+    )
+    hourly = aggregate_bars(
+        closed_source,
+        "1h",
+        as_of=datetime(2026, 10, 5, 10, 30, tzinfo=US),
+        include_forming=False,
+    )
+    assert len(fifteen) == 4
+    assert len(hourly) == 1
+    assert all(bar.is_closed and bar.is_complete for bar in [*fifteen, *hourly])
