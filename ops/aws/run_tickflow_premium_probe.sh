@@ -22,7 +22,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-if [[ "$#" -ne 6 ]]; then
+if [[ "$#" -ne 7 ]]; then
   echo 'TICKFLOW_PREMIUM_SETUP=INVALID_ARGUMENTS'
   exit 2
 fi
@@ -33,7 +33,12 @@ probe_hash="$3"
 requirements_hash="$4"
 bootstrap_hash="$5"
 ws_seconds="$6"
+quote_only="$7"
 [[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]
+[[ "$quote_only" == true || "$quote_only" == false ]]
+if [[ "$quote_only" == true ]]; then
+  [[ "$ws_seconds" == 0 ]]
+fi
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
 [[ "$probe_hash" =~ ^[0-9a-f]{64}$ ]]
 [[ "$requirements_hash" =~ ^[0-9a-f]{64}$ ]]
@@ -162,13 +167,30 @@ export TICKFLOW_API_KEY="$(printf '%s' "$secret_json" | "$venv/bin/python" -c 'i
 unset secret_json
 
 probe_stage=RUN_PREMIUM_PROBE
-result="$("$venv/bin/python" "$stage/probe.py" --mode premium --location AWS_TOKYO_SSM_ISOLATE --symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds" 2>/dev/null)"
+# One-quote mode: one REST request, no K-line, depth or WebSocket.
+# Keep the old broad smoke accessible only by explicit quote_only=false.
+probe_args=(--mode premium --location AWS_TOKYO_SSM_ISOLATE
+  --symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds")
+if [[ "$quote_only" == true ]]; then
+  probe_args+=(--quote-only)
+fi
+result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)"
 probe_stage=VALIDATE_RESULT
-printf '%s\n' "$result" | STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH="$root/last-sanitized-probe.json" STOCK_RAZOR_PROBE_REPO_SHA="$revision" python3 -c '
+printf '%s\n' "$result" | STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH="$root/last-sanitized-probe.json" STOCK_RAZOR_PROBE_REPO_SHA="$revision" TICKFLOW_ONE_QUOTE_SCOPE="$quote_only" python3 -c '
 import json, os, sys, tempfile
 from datetime import datetime, timezone
 d=json.load(sys.stdin)
 assert d["mode"] == "premium" and d["api_key_present"] is True
+expected_scope=os.environ.get("TICKFLOW_ONE_QUOTE_SCOPE","")
+assert d.get("request_scope") == (
+    "ONE_REALTIME_QUOTE_BATCH_ONLY" if expected_scope == "true"
+    else "STANDARD_ISOLATED_PROBE"
+)
+if expected_scope == "true":
+    ops=d.get("operations",[])
+    assert len(ops) <= 2
+    assert ops and ops[0] == {"name":"sdk_import","operation":"COMPLETED"}
+    assert ops[1].get("name") == "realtime_quote"
 assert d["canonical_write"] is False and d["order_execution"] is False
 assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "BLOCKED"
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
