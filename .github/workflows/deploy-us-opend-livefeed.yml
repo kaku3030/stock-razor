@@ -59,6 +59,9 @@ jobs:
           }
           test -s ops/aws/install_us_opend_livefeed.sh
           test -s ops/aws/verify_us_opend_livefeed.sh
+          # Before OIDC / SSM, abort if deployment would overlap the US
+          # weekday trading window. The EC2 installer rechecks independently.
+          python3 scripts/guard_us_livefeed_restart_window.py
           echo "sha=$revision" >> "$GITHUB_OUTPUT"
           echo "install_sha=$(sha256sum ops/aws/install_us_opend_livefeed.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "verify_sha=$(sha256sum ops/aws/verify_us_opend_livefeed.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
