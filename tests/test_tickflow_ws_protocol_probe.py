@@ -151,3 +151,56 @@ def test_schema_and_invariant_not_a_production_admission():
     assert e.summary(ws_handshake=True)["continuous_feed_qualified"] is False
     assert e.summary(ws_handshake=True)["canonical_write"] is False
     assert e.summary(ws_handshake=True)["order_execution"] is False
+
+
+def test_provider_error_after_valid_ack_vetoes_protocol_acceptance():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op": "subscribed", "channel": "quotes", "symbols": list(SYMS), "total": 2})
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": 1776754800000}]})
+    e.consume({"op": "error", "message": "no permission: DO_NOT_LEAK"})
+    result = e.summary(ws_handshake=True)
+    assert result["subscription_ack"] == "PASS"
+    assert result["protocol_error_frames"] == 1
+    assert result["protocol_acceptance"] == "FAIL"
+    assert result["continuous_feed_qualified"] is False
+    assert "DO_NOT_LEAK" not in json.dumps(result)
+
+
+def test_invalid_ack_followed_by_valid_ack_cannot_be_clean_pass():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op": "subscribed", "channel": "depth", "symbols": list(SYMS), "total": 2})
+    e.consume({"op": "subscribed", "channel": "quotes", "symbols": list(SYMS), "total": 2})
+    summary = e.summary(ws_handshake=True)
+    assert summary["subscription_ack"] == "PASS"
+    assert summary["protocol_acceptance"] == "FAIL"
+
+
+def test_valid_ack_is_not_enough_without_handshake():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op": "subscribed", "channel": "quotes", "symbols": list(SYMS), "total": 2})
+    result = e.summary(ws_handshake=False)
+    assert result["subscription_ack"] == "PASS"
+    assert result["protocol_acceptance"] == "NOT_VERIFIED"
+
+
+def test_cli_exit_code_checks_clean_protocol_acceptance_not_ack_alone(monkeypatch, capsys):
+    import scripts.tickflow_ws_protocol_probe as target
+    monkeypatch.setenv("TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN", "true")
+    monkeypatch.setenv("TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED", "true")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "DO_NOT_LEAK")
+    monkeypatch.setattr(sys, "argv", ["proto", "--execute", "--seconds", "10"])
+
+    async def synthetic_server_error(*_args, **_kwargs):
+        return {
+            "subscription_ack": "PASS",
+            "protocol_error_frames": 1,
+            "protocol_acceptance": "FAIL",
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+
+    monkeypatch.setattr(target, "run_protocol_probe", synthetic_server_error)
+    assert main() == 2
+    output = capsys.readouterr().out
+    assert '"protocol_acceptance": "FAIL"' in output
+    assert "DO_NOT_LEAK" not in output
