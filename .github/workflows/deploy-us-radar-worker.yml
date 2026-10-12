@@ -110,9 +110,37 @@ jobs:
         env:
           REPO_REF: "${{ steps.source.outputs.sha }}"
           SOURCE_REPO_SHA: "${{ steps.canonical.outputs.sha }}"
+          INSTALL_SHA: "${{ steps.source.outputs.install_sha }}"
+          VERIFY_SHA: "${{ steps.source.outputs.verify_sha }}"
         run: |
           set -euo pipefail
-          remote="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_radar_worker.sh -o /tmp/install_us_radar_worker.sh && chmod 0755 /tmp/install_us_radar_worker.sh && REPO_REF=$REPO_REF SOURCE_REPO_SHA=$SOURCE_REPO_SHA /tmp/install_us_radar_worker.sh && curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_us_radar_worker.sh -o /tmp/verify_us_radar_worker.sh && chmod 0755 /tmp/verify_us_radar_worker.sh && /tmp/verify_us_radar_worker.sh $REPO_REF $SOURCE_REPO_SHA"
+          [[ "$REPO_REF" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$INSTALL_SHA" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_us_radar_worker.sh' -o "\$stage/install.sh"
+          printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_us_radar_worker.sh' -o "\$stage/verify.sh"
+          printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null
+          if ! REPO_REF='$REPO_REF' SOURCE_REPO_SHA='$SOURCE_REPO_SHA' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
+            echo 'US_RADAR_INSTALL=FAILED' >&2
+            exit 1
+          fi
+          if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_REPO_SHA' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
+            echo 'US_RADAR_ACCEPTANCE=FAILED' >&2
+            exit 1
+          fi
+          grep -Fx US_RADAR_WORKER_VERIFY=PASS "\$stage/verify.log" >/dev/null
+          grep -Fx RADAR_ADMISSION=BLOCKED "\$stage/verify.log" >/dev/null
+          grep -Fx LIVE_TRADE=NO "\$stage/verify.log" >/dev/null
+          printf 'US_RADAR_WORKER_VERIFY=PASS\nRADAR_ADMISSION=BLOCKED\nLIVE_TRADE=NO\n'
+          REMOTE
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
@@ -136,16 +164,9 @@ jobs:
           # Keep raw SSM response strictly inside the job process (not Actions logs).
           test "$status" = Success
           out="$(jq -r '.StandardOutputContent // ""' <<<"$inv")"
-          grep -q '^enabled$' <<<"$out"
-          grep -q '^active$' <<<"$out"
-          grep -q '"type":"us_radar_research_heartbeat"' <<<"$out"
-          grep -q "\"worker_repo_sha\":\"$WORKER_SHA\"" <<<"$out"
-          grep -q "\"expected_source_repo_sha\":\"$SOURCE_SHA\"" <<<"$out"
-          grep -q '"research_only":true' <<<"$out"
-          grep -q '"can_confirm_signal":false' <<<"$out"
-          grep -q '"radar_admission":"BLOCKED"' <<<"$out"
-          grep -q '"live_trade":false' <<<"$out"
-          grep -q '^US_RADAR_WORKER_VERIFY=PASS$' <<<"$out"
-          grep -q '^RADAR_ADMISSION=BLOCKED$' <<<"$out"
-          grep -q '^LIVE_TRADE=NO$' <<<"$out"
-          echo "US_RADAR_WORKER_AWS_DEPLOYMENT=PASS"
+          # Remote verifier has already checked the heartbeat and systemd
+          # sandbox privately; the runner accepts fixed sanitized markers.
+          grep -Fx US_RADAR_WORKER_VERIFY=PASS <<< "$out" >/dev/null
+          grep -Fx RADAR_ADMISSION=BLOCKED <<< "$out" >/dev/null
+          grep -Fx LIVE_TRADE=NO <<< "$out" >/dev/null
+                    echo "US_RADAR_WORKER_AWS_DEPLOYMENT=PASS"
