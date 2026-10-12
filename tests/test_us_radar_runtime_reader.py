@@ -185,3 +185,54 @@ def test_us_radar_reader_rejects_inconsistent_telemetry(tmp_path):
     assert result["status"] == "INVALID"
     assert result["error"] == "RADAR_TELEMETRY_INCONSISTENT"
     assert result["radar_admission"] == "BLOCKED"
+
+
+def test_source_mismatch_not_masked_by_fresh_heartbeat(tmp_path):
+    payload = _payload()
+    payload["evaluation"]["source_repo_sha"] = "c" * 40
+    payload["evaluation"]["admission_diagnostics"]["reasons"].append(
+        "SOURCE_REPO_SHA_MISMATCH"
+    )
+    result = read_us_radar_analysis(path=_write(tmp_path / "radar.json", payload), now_utc=NOW)
+
+    assert result["status"] == "PASS"  # file freshness, NOT data qualification
+    assert result["source_lineage_status"] == "MISMATCH"
+    assert result["reported_source_repo_sha"] == "c" * 40
+    assert result["expected_source_repo_sha"] == "b" * 40
+    assert result["source_lineage_evidence_scope"] == (
+        "WORKER_REPORTED_NOT_INDEPENDENT_LIVEFEED_CHECK"
+    )
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["can_confirm_signal"] is False
+
+
+def test_matching_worker_report_never_implies_external_livefeed_match(tmp_path):
+    result = read_us_radar_analysis(
+        path=_write(tmp_path / "radar.json", _payload()), now_utc=NOW,
+    )
+    assert result["source_lineage_status"] == (
+        "WORKER_DECLARED_MATCH_NOT_EXTERNAL_VERIFICATION"
+    )
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_invalid_or_missing_source_sha_is_unknown_not_match(tmp_path):
+    payload = _payload()
+    payload["evaluation"]["source_repo_sha"] = None
+    result = read_us_radar_analysis(
+        path=_write(tmp_path / "radar.json", payload), now_utc=NOW,
+    )
+    assert result["source_lineage_status"] == "UNKNOWN"
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_self_reported_mismatch_diagnostic_vetoes_equal_revisions(tmp_path):
+    payload = _payload()
+    payload["evaluation"]["admission_diagnostics"]["reasons"].append(
+        "SOURCE_REPO_SHA_MISMATCH"
+    )
+    result = read_us_radar_analysis(
+        path=_write(tmp_path / "radar.json", payload), now_utc=NOW,
+    )
+    assert result["source_lineage_status"] == "MISMATCH"
+    assert result["radar_admission"] == "BLOCKED"
