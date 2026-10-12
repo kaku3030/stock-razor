@@ -673,7 +673,15 @@ try:
           "research_only":True,"can_confirm_signal":False,
           "radar_admission":"BLOCKED","live_trade":False}
         publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
-        if data_event_count == 0 and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds:
+        # An RTH K_1M feed can legitimately have no callback off-session.
+        # Only a POSITIVELY OBSERVED regular session may trigger startup
+        # callback-starvation restart; unknown state never proves readiness.
+        if (
+            data_event_count == 0
+            and state_ret == ft.RET_OK
+            and cache_session == "regular"
+            and (time.monotonic()-startup_monotonic) >= startup_callback_deadline_seconds
+        ):
             raise RuntimeError("US_OPEND_STARTUP_CALLBACK_STARVATION")
 finally:
     try: bridge.stop()
