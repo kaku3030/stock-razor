@@ -231,6 +231,10 @@ for raw in d["operations"]:
             value=raw.get(field)
             if value in ("PASS","FAIL","NOT_VERIFIED"):
                 item[field]=value
+        state=raw.get("background_thread_state")
+        if state in ("ALIVE","STOPPED","UNOBSERVABLE"):
+            item["background_thread_state"]=state
+        item["background_thread_not_provider_connection_proof"]=True
         item["subscription_ack_evidence"]="NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
         item["sample_latency_qualification"]="NOT_VERIFIED"
         item["post_initial_candidates_not_confirmed_live"]=True
