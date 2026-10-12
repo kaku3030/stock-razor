@@ -68,12 +68,11 @@ if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
   python3 -m zipfile -e "$tmp_dir/awscliv2.zip" "$tmp_dir/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$tmp_dir/awscli-installer/aws/install"
   echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=EXTRACT_PASS'
-  audit_stage=INSTALL_EPHEMERAL_AWS_CLI
-  "$tmp_dir/awscli-installer/aws/install" \
-    -i "$tmp_dir/aws-cli" -b "$tmp_dir/bin" >/dev/null 2>&1
-  aws_cli="$tmp_dir/bin/aws"
+  audit_stage=VERIFY_EPHEMERAL_AWS_CLI
+  aws_cli="$tmp_dir/awscli-installer/aws/dist/aws"
   [[ -x "$aws_cli" ]]
-  echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=INSTALL_PASS'
+  "$aws_cli" --version >/dev/null 2>&1
+  echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=VERIFY_PASS'
   echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=EPHEMERAL'
 else
   echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=AVAILABLE'
