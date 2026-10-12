@@ -47,6 +47,36 @@ classify_error() {
   fi
 }
 
+# Emit only a fixed denial category. Never print AWS error details, resource
+# identifiers, policy ARNs, secret payloads, or the raw AWS CLI response.
+# Some AWS services omit enhanced AccessDenied context: UNKNOWN is deliberate.
+classify_denial_cause() {
+  local error_file="$1"
+  if ! grep -Eiq 'AccessDenied(Exception)?|not authorized to perform' "$error_file"; then
+    echo NOT_APPLICABLE
+  elif grep -Fqi 'no identity-based policy allows' "$error_file"; then
+    echo IDENTITY_NO_ALLOW
+  elif grep -Fqi 'explicit deny in an identity-based policy' "$error_file"; then
+    echo IDENTITY_EXPLICIT_DENY
+  elif grep -Fqi 'no resource-based policy allows' "$error_file"; then
+    echo RESOURCE_NO_ALLOW
+  elif grep -Fqi 'explicit deny in a resource-based policy' "$error_file"; then
+    echo RESOURCE_EXPLICIT_DENY
+  elif grep -Fqi 'no service control policy allows' "$error_file"; then
+    echo SCP_NO_ALLOW
+  elif grep -Fqi 'explicit deny in a service control policy' "$error_file"; then
+    echo SCP_EXPLICIT_DENY
+  elif grep -Fqi 'explicit deny in a resource control policy' "$error_file"; then
+    echo RCP_EXPLICIT_DENY
+  elif grep -Fqi 'permissions boundary' "$error_file"; then
+    echo PERMISSIONS_BOUNDARY
+  elif grep -Fqi 'session policy' "$error_file"; then
+    echo SESSION_POLICY
+  else
+    echo UNKNOWN
+  fi
+}
+
 aws_cli="$(command -v aws 2>/dev/null || true)"
 audit_stage=VERIFY_AWS_CLI
 if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
@@ -97,8 +127,10 @@ audit_stage=DESCRIBE_SECRET
 metadata="$($aws_cli secretsmanager describe-secret --region ap-northeast-1 --secret-id "$secret_ref" --query '[Name,ARN,KmsKeyId]' --output text 2>"$tmp_dir/describe.err" || true)"
 if [[ -z "$metadata" || "$metadata" == None ]]; then
   echo "TICKFLOW_SECRET_AUDIT_METADATA=$(classify_error "$tmp_dir/describe.err")"
+  echo "TICKFLOW_SECRET_AUDIT_DESCRIBE_DENY_CAUSE=$(classify_denial_cause "$tmp_dir/describe.err")"
   echo 'TICKFLOW_SECRET_AUDIT_KMS_METADATA=NOT_VERIFIED'
 else
+  echo 'TICKFLOW_SECRET_AUDIT_DESCRIBE_DENY_CAUSE=NOT_APPLICABLE'
   read -r canonical_name canonical_arn kms_key_id <<<"$metadata"
   if [[ "$canonical_name" == 'stock-razor/tickflow/premium' ]]; then
     echo 'TICKFLOW_SECRET_AUDIT_METADATA=FOUND'
@@ -139,8 +171,10 @@ fi
 audit_stage=GET_SECRET_VALUE
 if $aws_cli secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_ref" --query VersionId --output text >"$tmp_dir/value.out" 2>"$tmp_dir/value.err"; then
   echo 'TICKFLOW_SECRET_AUDIT_GET_SECRET=AUTHORIZED_NO_VALUE_EMITTED'
+  echo 'TICKFLOW_SECRET_AUDIT_GET_SECRET_DENY_CAUSE=NOT_APPLICABLE'
 else
   echo "TICKFLOW_SECRET_AUDIT_GET_SECRET=$(classify_error "$tmp_dir/value.err")"
+  echo "TICKFLOW_SECRET_AUDIT_GET_SECRET_DENY_CAUSE=$(classify_denial_cause "$tmp_dir/value.err")"
 fi
 
 echo 'TICKFLOW_SECRET_AUDIT_ORGANIZATION_POLICY=NOT_VERIFIED'
