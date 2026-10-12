@@ -135,7 +135,6 @@ def test_manual_aws_workflow_has_exact_main_pins_secret_privacy_and_no_order_cal
     assert "sha256sum scripts/sanitize_tickflow_ws_protocol_probe.py" in source
     assert "AWS-RunShellScript" in source
     assert "RAW_SSM_OUTPUT_WITHHELD=YES" in source
-    assert "TICKFLOW_WS_DATA_QUALIFICATION" not in source
     assert "TICKFLOW_WS_DATA_QUALIFICATION=PASS" not in source
     assert "TICKFLOW_WS_DATA_QUALIFICATION=NOT_VERIFIED" in source
     assert 'printf \'%s\' "$sanitized" | EXPECTED_REVISION="$GITHUB_SHA" python3 -c' in source
