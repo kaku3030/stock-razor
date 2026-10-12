@@ -44,6 +44,7 @@ def compare_local_cloud_sim(
     aws: object,
     *,
     now_utc: datetime,
+    expected_account_id: str | None = None,
     max_age_seconds: int = 120,
     max_skew_seconds: int = 120,
 ) -> SimContinuityReview:
@@ -93,6 +94,15 @@ def compare_local_cloud_sim(
         return stop("CROSS_HOST_OBSERVATION_SKEW")
     if windows.account_id != aws.account_id:
         return stop("CROSS_HOST_SIM_ACCOUNT_ID_MISMATCH")
+    # Matching across two hosts is not sufficient: it must also be the
+    # SIM account privately authorized by the operator. Never emit its ID.
+    if (not isinstance(expected_account_id, str)
+            or not expected_account_id.isascii()
+            or not expected_account_id.isdigit()
+            or not 1 <= len(expected_account_id) <= 20):
+        return stop("APPROVED_SIM_ACCOUNT_ID_REQUIRED")
+    if windows.account_id != expected_account_id:
+        return stop("APPROVED_SIM_ACCOUNT_ID_MISMATCH")
     prior, later = _positions(windows.positions), _positions(aws.positions)
     if prior is None or later is None:
         return stop("MALFORMED_READBACK_POSITIONS")
