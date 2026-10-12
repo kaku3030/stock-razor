@@ -266,6 +266,7 @@ def test_admission_module_does_not_expose_broker_or_network_capability():
         float("-inf"),
         -1.0,
         0.0,
+        10**999,
         True,
         False,
     ],
