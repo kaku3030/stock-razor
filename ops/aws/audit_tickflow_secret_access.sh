@@ -48,7 +48,7 @@ classify_error() {
 }
 
 # Emit only a fixed denial category. Never print AWS error details, resource
-# identifiers, policy ARNs, SecretString, or the raw AWS CLI response.
+# identifiers, policy ARNs, secret payloads, or the raw AWS CLI response.
 # Some AWS services omit enhanced AccessDenied context: UNKNOWN is deliberate.
 classify_denial_cause() {
   local error_file="$1"
