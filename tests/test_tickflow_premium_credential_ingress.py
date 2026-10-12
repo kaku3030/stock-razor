@@ -16,7 +16,7 @@ PREMIUM_BOOTSTRAP = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(enco
 
 def test_premium_path_is_dormant_and_pins_all_remote_artifacts():
     assert 'default: false' in PREMIUM_WORKFLOW
-    assert 'if: ${{ inputs.enable_premium_probe == true' in PREMIUM_WORKFLOW
+    assert 'if: ${{ github.ref == 'refs/heads/main' && inputs.enable_premium_probe == true }}' in PREMIUM_WORKFLOW
     assert 'ref: ${{ github.sha }}' in PREMIUM_WORKFLOW
     assert 'bootstrap_hash=' in PREMIUM_WORKFLOW
     assert 'sha256sum -c -' in PREMIUM_BOOTSTRAP
