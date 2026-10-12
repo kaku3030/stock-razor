@@ -27,6 +27,8 @@ FIELDS = frozenset({
     "observed_at_utc", "account_mode", "market", "authenticated", "positions",
 })
 POSITION_FIELDS = frozenset({"symbol", "side", "quantity"})
+APPROVAL_SCHEMA = "stock_razor_approved_us_sim_account_v0_1"
+APPROVAL_FIELDS = frozenset({"schema", "account_id"})
 
 
 class InvalidReadback(ValueError):
@@ -100,10 +102,47 @@ def _read_snapshot(path: str) -> SimAccountHostObservation:
     )
 
 
+
+def _read_approved_account(path: str | None) -> str:
+    """Out-of-band operator approval in a *third private file*, never argv.
+
+    Caller must independently establish approval provenance and protect the
+    file. Possession of this JSON is not independent broker consent proof.
+    """
+    if not isinstance(path, str) or not path:
+        raise InvalidReadback("APPROVED_SIM_ACCOUNT_FILE_REQUIRED")
+    try:
+        file = Path(path)
+        if file.is_symlink() or not file.is_file() or file.stat().st_size > 1024:
+            raise InvalidReadback("APPROVED_SIM_ACCOUNT_FILE_INVALID")
+        with file.open("rb") as handle:
+            raw = handle.read(1025)
+        if len(raw) > 1024:
+            raise InvalidReadback("APPROVED_SIM_ACCOUNT_FILE_INVALID")
+        approval = json.loads(raw, object_pairs_hook=_unique_object)
+    except InvalidReadback:
+        raise
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        raise InvalidReadback("APPROVED_SIM_ACCOUNT_FILE_INVALID") from None
+    if not isinstance(approval, dict) or approval.keys() != APPROVAL_FIELDS:
+        raise InvalidReadback("APPROVED_SIM_ACCOUNT_SCHEMA_INVALID")
+    if approval["schema"] != APPROVAL_SCHEMA:
+        raise InvalidReadback("APPROVED_SIM_ACCOUNT_SCHEMA_INVALID")
+    value = approval["account_id"]
+    if not (
+        isinstance(value, str) and value.isascii() and value.isdigit()
+        and 1 <= len(value) <= 20
+    ):
+        raise InvalidReadback("APPROVED_SIM_ACCOUNT_ID_INVALID")
+    return value
+
+
+
 def verify_private_readbacks(
     windows_path: str,
     aws_path: str,
     *,
+    approved_account_file: str | None = None,
     now_utc: datetime | None = None,
 ) -> dict:
     """Sanitized report; never includes IDs, symbols, quantities or prices."""
@@ -120,10 +159,13 @@ def verify_private_readbacks(
         "private_file_writes": 0,
     }
     try:
+        approved_id = _read_approved_account(approved_account_file)
         local = _read_snapshot(windows_path)
         cloud = _read_snapshot(aws_path)
         result = compare_local_cloud_sim(
-            local, cloud, now_utc=now_utc or datetime.now(timezone.utc)
+            local, cloud,
+            expected_account_id=approved_id,
+            now_utc=now_utc or datetime.now(timezone.utc),
         )
     except InvalidReadback as exc:
         return {
@@ -151,8 +193,13 @@ def main() -> int:
     )
     parser.add_argument("--windows-file", required=True)
     parser.add_argument("--aws-file", required=True)
+    # Never provide an account ID directly in argv or env: both can leak.
+    parser.add_argument("--approved-account-file", required=True)
     args = parser.parse_args()
-    result = verify_private_readbacks(args.windows_file, args.aws_file)
+    result = verify_private_readbacks(
+        args.windows_file, args.aws_file,
+        approved_account_file=args.approved_account_file,
+    )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] == "MATCHED_FOR_REVIEW" else 2
 
