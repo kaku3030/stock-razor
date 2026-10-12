@@ -4,6 +4,19 @@ name: Paper Offline Acceptance (No Orders)
 # TickFlow, external SIM, credentials, broker calls or notification send.
 on:
   workflow_dispatch:
+  # Independent execution evidence on GitHub-hosted Ubuntu after protected
+  # main changes to Paper internals; no broker/provider/AWS permissions.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/paper-offline-no-orders.yml"
+      - "src/services/paper_*.py"
+      - "src/services/offline_paper_simulation.py"
+      - "src/services/sim_account_continuity.py"
+      - "tests/test_paper_*.py"
+      - "tests/test_offline_paper_simulation.py"
+      - "tests/test_sim_account_continuity.py"
+      - "tests/test_verify_sim_cross_host_private.py"
 
 permissions:
   contents: read
