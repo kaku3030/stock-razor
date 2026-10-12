@@ -96,7 +96,11 @@ def audit_shared_us_k1m_interior_gaps(
             if (
                 bar.bar_start.tzinfo is None
                 or bar.bar_end.tzinfo is None
+                or not isinstance(bar.source_timestamp, datetime)
                 or bar.source_timestamp.tzinfo is None
+                or bar.bar_start.utcoffset() is None
+                or bar.bar_end.utcoffset() is None
+                or bar.source_timestamp.utcoffset() is None
             ):
                 return unknown("CANONICAL_BAR_TIMEZONE_INVALID", n=len(symbols))
             start = bar.bar_start.astimezone(EASTERN)
@@ -117,7 +121,11 @@ def audit_shared_us_k1m_interior_gaps(
                 or end - start != ONE_MINUTE
                 or end > eligible_end
                 or bar.source_timestamp.astimezone(EASTERN) != end
-                or any(flag in {"MISSING_BAR", "PARTIAL_BAR", "TIMESTAMP_MISMATCH"} for flag in bar.quality_flags)
+                or not isinstance(bar.quality_flags, (tuple, list))
+                or any(
+                    flag in {"MISSING_BAR", "PARTIAL_BAR", "TIMESTAMP_MISMATCH"}
+                    for flag in bar.quality_flags
+                )
             ):
                 return unknown("CANONICAL_PROVENANCE_OR_CLOSURE_INVALID", n=len(symbols))
             if start in stamps:
