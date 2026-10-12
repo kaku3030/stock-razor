@@ -184,12 +184,12 @@ def _turnover_vwap_input_status(rows: list[dict], timeframe: str, *, currentness
         amount = row.get("amount_raw")
         if (row.get("amount_unit") != "CNY"
                 or type(amount) not in (int, float)
-                or not isfinite(amount) or amount < 0):
+                or amount < 0 or amount > 10**20 or not isfinite(amount)):
             return "BLOCKED", "TURNOVER_AMOUNT_UNIT_UNVERIFIED"
         volume = row.get("volume_raw")
         if (row.get("volume_unit") != "SHARES"
                 or type(volume) not in (int, float)
-                or not isfinite(volume) or volume < 0):
+                or volume < 0 or volume > 10**20 or not isfinite(volume)):
             return "BLOCKED", "VOLUME_SHARE_UNIT_UNVERIFIED"
     # No normalized-provider parity contract is present in this source.
     # Never upgrade this diagnostic to PASS merely from plausible numbers.
