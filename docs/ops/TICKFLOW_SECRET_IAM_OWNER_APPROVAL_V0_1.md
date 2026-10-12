@@ -1,7 +1,16 @@
 # TickFlow Premium Secret: IAM-owner least-privilege authorization
 
-Status: **ACTION REQUIRED BY IAM OWNER; NOT APPLIED.** This runbook is an
-operator checklist, not an automation or approval to modify AWS production.
+Status: **CORRECT SECRET READ VERIFIED; NO IAM CHANGE REQUESTED.**
+This is a historical access investigation and a conditional contingency
+runbook, not authorization or a reason to change AWS production permissions.
+The 2026-10-12 AWS SSM read-only boto3 probe verified
+`GetSecretValue` **PASS** for
+`stock-razor/tickflow/premium-api-key` under EC2 role
+`StockRazorEc2SsmInstanceRole`. A VersionId was returned; no SecretString
+was printed, stored or disclosed, and no IAM policy was changed. This does
+**not** establish separate `DescribeSecret` or actual TickFlow WS access.
+**Do not apply the historical IAM policy unless a NEW denial is observed
+against this exact correct Secret and independently approved.**
 
 ## Exact evidence and boundaries
 
@@ -16,16 +25,19 @@ only sanitized fixed-enum classification:
 - `TICKFLOW_SECRET_AUDIT_GET_SECRET_DENY_CAUSE=IDENTITY_NO_ALLOW`;
 - `KMS=NOT_VERIFIED`; `TickFlow WebSocket=NOT_REACHED`.
 
-This means there is **no matching effective identity-based Allow**, *not*
-necessarily that the Secret does not exist. There may be no matching action,
-a policy resource ARN mismatch, or a failed identity-policy condition.
-Because `DescribeSecret` was denied, a KMS-only explanation is insufficient.
+**Historical scope only:** The audit above checked
+`stock-razor/tickflow/premium`, **NOT** the correct Secret
+`stock-razor/tickflow/premium-api-key`. It proves a denied operation for
+the *old name*, not a missing Allow for the confirmed real Secret.
+The later exact-name EC2 `GetSecretValue` read is **PASS**. Do not use
+the old `IDENTITY_NO_ALLOW` to infer that the current EC2 role needs
+an added policy or KMS permission.
 
-## Private operator preflight (no writes yet)
+## Conditional private operator preflight (ONLY after a new confirmed denial)
 
 1. Privately verify the existing Premium Secret under **AWS Secrets Manager,
    Tokyo `ap-northeast-1`**. The approved canonical name is
-   `stock-razor/tickflow/premium`. Verify that this existing Secret is the
+   `stock-razor/tickflow/premium-api-key`. Verify that this existing Secret is the
    intended source; inspect **metadata only** to obtain its real full ARN.
    Never create a second Secret to work around a denied read.
 2. In **AWS IAM → Roles**, open **`StockRazorEc2SsmInstanceRole`** and
@@ -39,7 +51,7 @@ Because `DescribeSecret` was denied, a KMS-only explanation is insufficient.
    EC2 role policy; this document and the user's permission to run read-only
    engineering are **not** approval for IAM modifications.
 
-## Proposed policy scope (template only — not executable until reviewed)
+## Contingency policy scope (historical template — do NOT apply now)
 
 Replace `<CONFIRMED_EXACT_SECRET_ARN>` **privately** with the verified full
 Secret ARN, *not* the plain Secret name:
@@ -61,7 +73,10 @@ Secret ARN, *not* the plain Secret name:
 }
 ```
 
-Attach the narrowly scoped statement **only to the EC2 role** named above.
+**Do not attach this policy based on the current evidence: exact Secret
+`GetSecretValue` has already passed.** If a separate approved incident
+later requires an IAM change, attach a reviewed narrowly scoped statement
+**only to the EC2 role** named above.
 Do not use `"Resource": "*"`, `"secretsmanager:*"`, an unrelated
 `iam:*` grant, or an unrestricted ARN suffix. If the Secret uses a
 customer-managed KMS key, confirm its full key ARN and actual failure
@@ -73,11 +88,12 @@ For normal application reads, `GetResourcePolicy`, `ListSecrets`,
 key are **not required**. Lack of diagnostic `GetResourcePolicy` should
 not be misconstrued as failure after the two essential Secret calls pass.
 
-## Post-change acceptance and rollback
+## Conditional regression acceptance and rollback (no present change)
 
-1. Re-run **one** existing read-only workflow from protected `main`:
+1. If investigating a **new** exact-Secret denial, re-run **one**
+   approved read-only workflow from protected `main`:
    `audit-tickflow-secret-access.yml`, fixed secret_ref
-   `stock-razor/tickflow/premium`. Check the GitHub run's source SHA.
+   `stock-razor/tickflow/premium-api-key`. Check the GitHub run's source SHA.
 2. Expected sanitized evidence:
    `CALLER_ROLE=StockRazorEc2SsmInstanceRole`,
    `METADATA=FOUND`, `GET_SECRET=AUTHORIZED_NO_VALUE_EMITTED`,

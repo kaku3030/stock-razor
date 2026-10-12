@@ -8,8 +8,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 secret_ref="$1"
-if [[ "$secret_ref" != 'stock-razor/tickflow/premium' &&
-      ! "$secret_ref" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-[A-Za-z0-9+=,.@_-]{6,}$ ]]; then
+if [[ "$secret_ref" != 'stock-razor/tickflow/premium-api-key' &&
+      ! "$secret_ref" =~ ^arn:aws:secretsmanager:ap-northeast-1:888425712426:secret:stock-razor/tickflow/premium-api-key-[A-Za-z0-9+=,.@_-]{6,}$ ]]; then
   echo 'TICKFLOW_SECRET_AUDIT_SETUP=INVALID_REFERENCE'
   exit 2
 fi
@@ -132,7 +132,7 @@ if [[ -z "$metadata" || "$metadata" == None ]]; then
 else
   echo 'TICKFLOW_SECRET_AUDIT_DESCRIBE_DENY_CAUSE=NOT_APPLICABLE'
   read -r canonical_name canonical_arn kms_key_id <<<"$metadata"
-  if [[ "$canonical_name" == 'stock-razor/tickflow/premium' ]]; then
+  if [[ "$canonical_name" == 'stock-razor/tickflow/premium-api-key' ]]; then
     echo 'TICKFLOW_SECRET_AUDIT_METADATA=FOUND'
     echo 'TICKFLOW_SECRET_AUDIT_NAME_MATCH=YES'
   else
