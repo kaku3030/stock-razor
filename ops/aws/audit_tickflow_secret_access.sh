@@ -50,10 +50,26 @@ classify_error() {
 aws_cli="$(command -v aws 2>/dev/null || true)"
 audit_stage=VERIFY_AWS_CLI
 if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
-  echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=UNAVAILABLE'
-  exit 1
+  audit_stage=BOOTSTRAP_EPHEMERAL_AWS_CLI
+  aws_arch="$(uname -m 2>/dev/null || true)"
+  case "$aws_arch" in
+    x86_64|amd64) aws_package_arch=x86_64 ;;
+    aarch64|arm64) aws_package_arch=aarch64 ;;
+    *) echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=UNAVAILABLE'; exit 1 ;;
+  esac
+  curl --fail --silent --show-error --location --max-time 60 \
+    "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
+    -o "$tmp_dir/awscliv2.zip" 2>/dev/null
+  python3 -m zipfile -e "$tmp_dir/awscliv2.zip" "$tmp_dir/awscli-installer" >/dev/null 2>&1
+  chmod 0755 "$tmp_dir/awscli-installer/aws/install"
+  "$tmp_dir/awscli-installer/aws/install" \
+    -i "$tmp_dir/aws-cli" -b "$tmp_dir/bin" >/dev/null 2>&1
+  aws_cli="$tmp_dir/bin/aws"
+  [[ -x "$aws_cli" ]]
+  echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=EPHEMERAL'
+else
+  echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=AVAILABLE'
 fi
-echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=AVAILABLE'
 
 audit_stage=CALLER_IDENTITY
 caller_arn="$($aws_cli sts get-caller-identity --query Arn --output text 2>"$tmp_dir/caller.err" || true)"
