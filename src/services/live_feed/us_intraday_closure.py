@@ -50,8 +50,17 @@ def qualify_us_current_session_intraday_closure(
             and bar.session == "regular"
         ]
         bars.sort(key=lambda bar: bar.bar_start)
-        closed = [bar for bar in bars if bar.is_closed and bar.is_complete]
         eligible_end = min(observed, session_end)
+        # Only buckets that have ENDED by as_of can prove closure. The
+        # current live 15m/1h bucket is legitimately forming during RTH;
+        # including it in invalid would make the whole session UNKNOWN on
+        # every healthy intra-bucket observation. Never ignore a prematurely
+        # closed bar or an already-ended but incomplete bucket.
+        closed = [
+            bar for bar in bars
+            if bar.is_closed and bar.is_complete
+            and bar.bar_end.astimezone(US_EASTERN) <= eligible_end
+        ]
         expected = []
         cursor = session_start
         while cursor < eligible_end:
@@ -61,15 +70,38 @@ def qualify_us_current_session_intraday_closure(
             cursor = end
         actual = {(bar.bar_start.astimezone(US_EASTERN), bar.bar_end.astimezone(US_EASTERN)) for bar in closed}
         missing = [start.isoformat() for start, end in expected if (start, end) not in actual]
-        invalid = [
-            bar.bar_start.isoformat()
-            for bar in bars
-            if not bar.is_closed
-            or not bar.is_complete
-            or bar.provider != "futu"
-            or bar.feed != "opend"
-            or bar.source_timestamp.astimezone(US_EASTERN) != bar.bar_end.astimezone(US_EASTERN)
-        ]
+        invalid: list[str] = []
+        current_forming_excluded = 0
+        for bar in bars:
+            local_start = bar.bar_start.astimezone(US_EASTERN)
+            local_end = bar.bar_end.astimezone(US_EASTERN)
+            current_forming = (
+                bar.is_closed is False
+                and bar.is_complete is False
+                and bar.provider == "futu"
+                and bar.feed == "opend"
+                and bar.timeframe == timeframe
+                and session_start <= local_start <= eligible_end < local_end <= session_end
+                and local_end == min(local_start + timedelta(minutes=minutes), session_end)
+                and (local_start - session_start).total_seconds() % (minutes * 60) == 0
+            )
+            if current_forming:
+                current_forming_excluded += 1
+                # Duplicate current buckets are not an authoritative
+                # provider bar grid and must never turn the gate green.
+                if current_forming_excluded > 1:
+                    invalid.append(local_start.isoformat())
+                continue
+            if (
+                not bar.is_closed
+                or not bar.is_complete
+                or bar.provider != "futu"
+                or bar.feed != "opend"
+                or bar.timeframe != timeframe
+                or local_end > eligible_end
+                or bar.source_timestamp.astimezone(US_EASTERN) != local_end
+            ):
+                invalid.append(local_start.isoformat())
         timeframe_status = "PASS" if expected and not missing and not invalid else "UNKNOWN"
         reason = "CURRENT_SESSION_CLOSED_GRID_COMPLETE" if timeframe_status == "PASS" else (
             "INVALID_OR_FORMING_BARS" if invalid else "MISSING_CURRENT_SESSION_BARS"
@@ -79,6 +111,7 @@ def qualify_us_current_session_intraday_closure(
             "reason": reason,
             "expected_closed_count": len(expected),
             "observed_closed_count": len(closed),
+            "current_forming_excluded_count": current_forming_excluded,
             "missing_bar_starts": missing,
             "invalid_bar_starts": invalid,
             "latest_closed_bar_end_utc": (
