@@ -80,6 +80,7 @@ def assess_cloud_paper_evidence(
         or offline_shadow.status is not ShadowReadiness.READY_READ_ONLY_SHADOW
         or offline_shadow.paper_auto_ready is not False
         or offline_shadow.radar_admission != "BLOCKED"
+        or offline_shadow.source_arbiter_admission != "BLOCKED"
         or offline_shadow.live_trade != "NO"
     ):
         reasons.append("OFFLINE_SHADOW_READINESS_NOT_VERIFIED")
@@ -91,6 +92,8 @@ def assess_cloud_paper_evidence(
         or sim_continuity.same_positions is not True
         or sim_continuity.paper_auto_ready is not False
         or sim_continuity.broker_mutation_allowed is not False
+        or sim_continuity.live_trade is not False
+        or sim_continuity.radar_admission != "BLOCKED"
     ):
         reasons.append("APPROVED_SIM_ACCOUNT_CONTINUITY_NOT_VERIFIED")
 
