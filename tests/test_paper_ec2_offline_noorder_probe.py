@@ -87,3 +87,63 @@ def test_probe_synthetic_adapter_only_and_no_external_apis():
     for name in ("import futu", "open_trade_context", "OpenSecTradeContext",
                  "requests.", "boto3", "secretsmanager", "place_order"):
         assert name not in text
+
+
+def test_paper_ec2_allowed_host_path_still_rejects_wrong_installed_sha(
+    tmp_path, monkeypatch,
+):
+    """A real directory alone must never satisfy the old-runtime proof."""
+    monkeypatch.setattr(probe, "ALLOWED_RUNTIME_ROOT", tmp_path)
+    monkeypatch.setattr(
+        probe.subprocess, "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout="b" * 40 + "\n",
+        ),
+    )
+    result = probe.run_offline_cloud_soak(
+        runtime_root=tmp_path, expected_sha="a" * 40,
+    )
+    assert result["runtime_sha"] == "NOT_VERIFIED"
+    assert result["isolated_paper_restart"] == "NOT_VERIFIED"
+    assert result["duplicate_paper_intent_veto"] == "NOT_VERIFIED"
+    assert result["external_provider_calls"] == "NONE"
+    assert result["external_broker_orders"] == "NONE"
+    assert result["trade_execution"] == "NO"
+
+
+def test_paper_ec2_factory_socket_escape_is_blocked_before_adapter_import(
+    tmp_path, monkeypatch,
+):
+    """Never dial a network: a synthetic factory tries a trapped connect."""
+    from src.services import execution_engine
+
+    monkeypatch.setattr(probe, "ALLOWED_RUNTIME_ROOT", tmp_path)
+    monkeypatch.setattr(
+        probe.subprocess, "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0, stdout="a" * 40 + "\n",
+        ),
+    )
+
+    def trap_real_socket(*_args, **_kwargs):
+        raise AssertionError("UNEXPECTED_NETWORK_SOCKET_ESCAPE")
+
+    # Fail without touching the network even if production forgot to guard.
+    monkeypatch.setattr(socket.socket, "connect", trap_real_socket)
+    monkeypatch.setattr(socket.socket, "connect_ex", trap_real_socket)
+    monkeypatch.setattr(socket, "create_connection", trap_real_socket)
+
+    def attempting_paper_factory(*_args, **_kwargs):
+        connection = socket.socket()
+        try:
+            connection.connect(("192.0.2.1", 443))
+        finally:
+            connection.close()
+
+    monkeypatch.setattr(
+        execution_engine, "create_paper_adapter", attempting_paper_factory,
+    )
+    with pytest.raises(RuntimeError, match="OFFLINE_NETWORK_FORBIDDEN"):
+        probe.run_offline_cloud_soak(
+            runtime_root=tmp_path, expected_sha="a" * 40,
+        )
