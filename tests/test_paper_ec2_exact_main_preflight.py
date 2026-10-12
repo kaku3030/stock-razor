@@ -78,7 +78,7 @@ def test_paper_ec2_exact_current_main_and_fail_closed_before_oidc():
     assert 'test "$revision" = "$GITHUB_SHA"' in script
     assert "git ls-remote origin refs/heads/main" in script
     assert "PAPER_EC2_MAIN_MOVED_ABORT" in script
-    assert "test ${TRADE_EXECUTION}" in script
+    assert 'test "${TRADE_EXECUTION}" = NO' in script
     assert "systemctl" not in s
 
 
@@ -105,7 +105,8 @@ def test_paper_ec2_valid_current_main_preflight_is_only_local_source_verificatio
 def test_paper_ec2_incorrect_branch_sha_or_safety_vetoes_without_aws(tmp_path, change):
     p = _check(tmp_path, **change)
     assert p.returncode != 0
-    assert "payload_sha256=" not in (tmp_path / "output").read_text() if (tmp_path / "output").exists() else True
+    if (tmp_path / "output").exists():
+        assert "payload_sha256=" not in (tmp_path / "output").read_text()
     assert "secret" not in p.stdout.lower()
 
 
