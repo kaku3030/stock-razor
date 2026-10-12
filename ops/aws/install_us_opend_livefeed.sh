@@ -8,6 +8,24 @@ OPEND_CLIENT_ROOT="${OPEND_CLIENT_ROOT:-/opt/stock-razor-opend-client}"
 
 test "$(id -u)" -eq 0
 test -x "$OPEND_CLIENT_ROOT/venv/bin/python"
+# Independent EC2-side market-hours gate BEFORE git fetch, in-place repo
+# checkout, daemon reload, or service restart. The workflow check alone can
+# race with the session boundary. Fail closed if time/zone cannot be read.
+"$OPEND_CLIENT_ROOT/venv/bin/python" - <<'PY_RESTART_WINDOW'
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
+try:
+    local = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    if local.weekday() < 5 and time(9, 0) <= local.time() < time(16, 30):
+        print("US_LIVEFEED_RESTART_TIME=US_SESSION_SAFETY_WINDOW_BLOCKED")
+        raise SystemExit(2)
+except SystemExit:
+    raise
+except Exception:
+    print("US_LIVEFEED_RESTART_TIME=CLOCK_UNKNOWN_BLOCKED")
+    raise SystemExit(2)
+print("US_LIVEFEED_RESTART_TIME=SAFE_OFF_WINDOW")
+PY_RESTART_WINDOW
 install -d -m 0755 "$INSTALL_ROOT"
 if [ ! -d "$INSTALL_ROOT/repo/.git" ]; then git clone --filter=blob:none "$REPO_URL" "$INSTALL_ROOT/repo"; fi
 git -C "$INSTALL_ROOT/repo" fetch --depth=1 origin "$REPO_REF"
