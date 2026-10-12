@@ -342,3 +342,69 @@ def test_cn_reader_rejects_invalid_provider_request_latency(tmp_path, value):
     assert result["error"] == "PROVIDER_REQUEST_LATENCY_INVALID"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_tencent_hand_volume_unavailable_turnover_blocks_vwap_even_with_fresh_bar_end(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    observed_at = datetime.fromisoformat(payload["emitted_at_utc"])
+    payload["intraday_currentness_proven"] = True
+    item = payload["symbols"]["159611"]
+    item["intraday_currentness_proven"] = True
+    for timeframe in ("60m", "15m"):
+        frame = item["timeframes"][timeframe]
+        frame["rows"] = [_row("2026-10-07 15:00", 1.62)]
+        frame["row_count"] = 1
+        evidence = qualify_same_session_currentness(
+            "2026-10-07 15:00",
+            interval_minutes=int(timeframe[:-1]),
+            timestamp_semantic=TimestampSemantic.BAR_END,
+            observed_at=observed_at,
+        )
+        frame["currentness_qualification"] = evidence.to_dict()
+        frame["currentness"] = "PROVEN"
+    result = read_cn_market_data(
+        "159611", "15m", path=_write(tmp_path / "cn.json", payload), now_utc=NOW,
+    )
+    assert result["status"] == "PASS"
+    assert result["currentness"] == "PROVEN"
+    assert result["turnover_vwap_input_status"] == "BLOCKED"
+    assert result["turnover_vwap_input_reason"] == "TURNOVER_AMOUNT_UNIT_UNVERIFIED"
+    assert result["turnover_vwap_input_does_not_admit_trading"] is True
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_unproven_currentness_blocks_turnover_vwap_even_with_amount(tmp_path):
+    payload = _payload(timestamp_semantics_proven=True)
+    for timeframe in ("60m", "15m"):
+        row = payload["symbols"]["159611"]["timeframes"][timeframe]["rows"][-1]
+        row.update({"amount_raw": 2500, "amount_unit": "CNY", "volume_unit": "SHARES"})
+    result = read_cn_market_data(
+        "159611", "15m", path=_write(tmp_path / "cn.json", payload), now_utc=NOW,
+    )
+    assert result["turnover_vwap_input_status"] == "BLOCKED"
+    assert result["turnover_vwap_input_reason"] == "INTRADAY_CURRENTNESS_UNPROVEN"
+
+
+def test_no_inferred_vwap_pass_from_plausible_units_without_provider_parity():
+    from data_provider.cn_cloud_runtime_reader import _turnover_vwap_input_status
+    rows = [{
+        "quality_flags": [], "volume_unit": "SHARES", "volume_raw": 1000,
+        "amount_unit": "CNY", "amount_raw": 1112.5,
+    }]
+    status, reason = _turnover_vwap_input_status(
+        rows, "15m", currentness_proven=True,
+    )
+    assert status == "NOT_VERIFIED"
+    assert reason == "INDEPENDENT_TURNOVER_PARITY_MISSING"
+    assert _turnover_vwap_input_status(
+        rows, "1d", currentness_proven=True,
+    ) == ("NOT_APPLICABLE", "INTRADAY_TIMEFRAME_REQUIRED")
+    rows[0]["volume_unit"] = "HAND"
+    assert _turnover_vwap_input_status(
+        rows, "15m", currentness_proven=True,
+    ) == ("BLOCKED", "VOLUME_SHARE_UNIT_UNVERIFIED")
+    rows[0]["volume_unit"] = "SHARES"
+    rows[0]["amount_raw"] = float("nan")
+    assert _turnover_vwap_input_status(
+        rows, "15m", currentness_proven=True,
+    ) == ("BLOCKED", "TURNOVER_AMOUNT_UNIT_UNVERIFIED")
