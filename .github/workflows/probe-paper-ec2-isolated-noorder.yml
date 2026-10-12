@@ -52,7 +52,15 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EXPECTED_RUNTIME_SHA" =~ ^[a-f0-9]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "$GITHUB_REF" = refs/heads/main
+          revision="$(git rev-parse HEAD)"
+          [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
+          test "$revision" = "$GITHUB_SHA"
+          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "$remote_main" != "$revision" ]]; then
+            echo 'PAPER_EC2_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
           test "${RADAR_ADMISSION}" = BLOCKED
           test "${SOURCE_ARBITER_ADMISSION}" = BLOCKED
           test "${PAPER_AUTO_READY}" = NO
