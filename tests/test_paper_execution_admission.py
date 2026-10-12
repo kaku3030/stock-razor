@@ -256,3 +256,65 @@ def test_admission_module_does_not_expose_broker_or_network_capability():
     assert "create_paper_adapter" not in public
     assert "ExecutionEngine" not in public
     assert not any(name in public for name in ("socket", "requests", "httpx", "futu", "alpaca"))
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        -1.0,
+        0.0,
+        10**999,
+        True,
+        False,
+    ],
+)
+@pytest.mark.parametrize("timestamp_field", [
+    "decision_available_at",
+    "confirmed_at",
+    "earliest_executable_at",
+])
+def test_paper_causal_guard_rejects_nonfinite_or_non_timestamp_values(
+    timestamp_field, bad_value,
+):
+    # These are all valid Python float/bool values and NaN was previously
+    # able to satisfy both '<' gates by returning False for every comparison.
+    # No broker adapter or runtime is needed: admission must fail first.
+    initial = permission()
+    from types import SimpleNamespace
+    envelope = vars(initial).copy()
+    envelope[timestamp_field] = bad_value
+    forged = SimpleNamespace(**envelope)
+    with pytest.raises(ExecutionBlocked, match="causal timestamps"):
+        build_paper_order_intent(forged, order_spec(), now=NOW)
+
+
+@pytest.mark.parametrize("bad_value", [
+    "1720000000", "NaN", "", object(), [], {},
+])
+def test_paper_causal_guard_requires_native_numeric_timestamps(bad_value):
+    from types import SimpleNamespace
+    envelope = vars(permission()).copy()
+    envelope["decision_available_at"] = bad_value
+    with pytest.raises(ExecutionBlocked, match="causal timestamps"):
+        build_paper_order_intent(
+            SimpleNamespace(**envelope), order_spec(), now=NOW,
+        )
+
+
+def test_paper_causal_guard_allows_valid_finite_epoch_and_blocks_future():
+    evidence = permission()
+    intent = build_paper_order_intent(evidence, order_spec(), now=NOW)
+    assert intent.account_target == "paper"
+    assert intent.broker_target == "paper"
+    with pytest.raises(ExecutionBlocked, match="not yet"):
+        build_paper_order_intent(
+            permission(
+                decision_available_at=NOW.timestamp(),
+                confirmed_at=NOW.timestamp(),
+                earliest_executable_at=NOW.timestamp() + 1,
+            ),
+            order_spec(), now=NOW,
+        )
