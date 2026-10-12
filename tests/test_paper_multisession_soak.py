@@ -148,3 +148,60 @@ def test_stale_data_and_unknown_permission_leave_session_ready(tmp_path):
 
     assert owner.state is PaperRuntimeState.READY
     assert adapter.calls == []
+
+
+
+def test_one_durable_paper_store_eight_restated_restarts_are_idempotent(tmp_path):
+    """P4 evidence: repeated owner handoff on ONE SQLite journal and SHADOW store.
+
+    Each generation accepts only its one NEW intent; replaying an older
+    intent after reopening must never invoke the new adapter. Broker order
+    identity must continue monotonically from durable journal state. This is
+    offline-only: no OpenD, AWS, external SIM, notifications, or live trading.
+    """
+    path = tmp_path / "single-durable-runtime.sqlite"
+    all_broker_order_ids = []
+    total_adapter_placements = 0
+
+    for index in range(1, 9):
+        owner, engine, adapter = _runtime(path)
+        snapshot = owner.start()
+        assert snapshot.state is PaperRuntimeState.READY
+        assert snapshot.order_records == index - 1
+
+        if index > 1:
+            with pytest.raises(ExecutionBlocked, match="duplicate"):
+                owner.process(
+                    _permission(index - 1),
+                    _spec(index - 1),
+                    RiskContext(NOW, NOW, "RTH"),
+                )
+            assert adapter.calls == []
+
+        result = owner.process(
+            _permission(index), _spec(index), RiskContext(NOW, NOW, "RTH"),
+        )
+        assert result.order_state.value == "ACCEPTED"
+        assert adapter.calls == [("place", result.intent_id)]
+        assert result.broker_order_id == f"paper-order-{index}"
+        assert result.broker_order_id not in all_broker_order_ids
+        all_broker_order_ids.append(result.broker_order_id)
+        total_adapter_placements += len(adapter.calls)
+        stopped = owner.stop()
+        assert stopped.state is PaperRuntimeState.STOPPED
+        assert len(engine.records) == index
+
+    final, recovered_engine, recovered_adapter = _runtime(path)
+    recovered = final.start()
+    assert recovered.order_records == 8
+    assert total_adapter_placements == 8
+    assert len(set(all_broker_order_ids)) == 8
+    assert recovered_adapter.calls == []
+    assert len(recovered_engine.records) == 8
+    for index in range(1, 9):
+        with pytest.raises(ExecutionBlocked, match="duplicate"):
+            final.process(
+                _permission(index), _spec(index), RiskContext(NOW, NOW, "RTH")
+            )
+    assert recovered_adapter.calls == []
+    assert final.state is PaperRuntimeState.READY
