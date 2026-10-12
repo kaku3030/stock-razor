@@ -97,6 +97,8 @@ def test_bounded_session_sends_only_quotes_and_closes_without_network():
         "op": "subscribe", "channel": "quotes", "symbols": sorted(SYMS),
     }
     assert e.summary(ws_handshake=True)["subscription_ack"] == "PASS"
+    assert e.summary(ws_handshake=True)["bounded_window_status"] == "TERMINATED_EARLY"
+    assert e.summary(ws_handshake=True)["protocol_acceptance"] == "FAIL"
 
 
 @pytest.mark.parametrize("values", [(), ("INVALID",), ("159611.SZ",) * 6, ("159611.SZ",) * 2])
@@ -242,3 +244,93 @@ def test_ack_exact_set_can_arrive_in_different_order():
     assert result["subscription_ack"] == "PASS"
     assert result["protocol_acceptance"] == "PASS"
     assert result["continuous_feed_qualified"] is False
+
+
+def test_ack_plus_cached_snapshot_is_not_progress_even_after_full_window():
+    observer = ProtocolEvidence(SYMS)
+    observer.consume({
+        "op": "subscribed", "channel": "quotes",
+        "symbols": list(SYMS), "total": len(SYMS),
+    })
+    observer.consume({"op": "quotes", "data": [
+        {"symbol": SYMS[0], "timestamp": 1776754800000},
+    ]})
+    observer.window_status = "COMPLETED"  # isolated no-network observer fixture
+    result = observer.summary(ws_handshake=True)
+    assert result["protocol_acceptance"] == "PASS"
+    assert result["bounded_window_status"] == "COMPLETED"
+    assert result["post_initial_progress_status"] == "INSUFFICIENT"
+    assert result["continuous_feed_qualified"] is False
+
+
+def test_two_timestamp_advances_are_progress_not_live_continuity():
+    observer = ProtocolEvidence(SYMS)
+    observer.consume({
+        "op": "subscribed", "channel": "quotes",
+        "symbols": list(SYMS), "total": 2,
+    })
+    for timestamp in (1776754800000, 1776754801000, 1776754802000):
+        observer.consume({"op": "quotes", "data": [
+            {"symbol": SYMS[0], "timestamp": timestamp},
+        ]})
+    observer.window_status = "COMPLETED"
+    result = observer.summary(ws_handshake=True)
+    assert result["post_initial_progress_status"] == "OBSERVED_NOT_QUALIFIED"
+    assert result["post_initial_update_candidates"] == 2
+    assert result["continuous_feed_qualified"] is False
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_early_connection_drop_vetoes_ack_even_after_timestamp_advances():
+    observer = ProtocolEvidence(SYMS)
+    observer.consume({
+        "op": "subscribed", "channel": "quotes",
+        "symbols": list(SYMS), "total": 2,
+    })
+    for timestamp in (1776754800000, 1776754801000, 1776754802000):
+        observer.consume({"op": "quotes", "data": [
+            {"symbol": SYMS[0], "timestamp": timestamp},
+        ]})
+    observer.window_status = "TERMINATED_EARLY"
+    result = observer.summary(ws_handshake=True)
+    assert result["subscription_ack"] == "PASS"
+    assert result["post_initial_progress_status"] == "OBSERVED_NOT_QUALIFIED"
+    assert result["protocol_acceptance"] == "FAIL"
+    assert result["continuous_feed_qualified"] is False
+
+
+@pytest.mark.parametrize(
+    ("protocol", "window", "progress", "expected_code"),
+    [
+        ("PASS", "COMPLETED", "OBSERVED_NOT_QUALIFIED", 0),
+        ("PASS", "COMPLETED", "INSUFFICIENT", 2),
+        ("PASS", "TERMINATED_EARLY", "OBSERVED_NOT_QUALIFIED", 2),
+        ("FAIL", "COMPLETED", "OBSERVED_NOT_QUALIFIED", 2),
+        ("NOT_VERIFIED", "COMPLETED", "OBSERVED_NOT_QUALIFIED", 2),
+        ("PASS", "UNOBSERVED", "OBSERVED_NOT_QUALIFIED", 2),
+    ],
+)
+def test_cli_requires_clean_ack_full_window_and_update_progress(
+    monkeypatch, capsys, protocol, window, progress, expected_code,
+):
+    import scripts.tickflow_ws_protocol_probe as target
+    monkeypatch.setenv("TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN", "true")
+    monkeypatch.setenv("TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED", "true")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "DO_NOT_LEAK")
+    monkeypatch.setattr(sys, "argv", ["proto", "--execute", "--seconds", "10"])
+
+    async def offline_result(*_args, **_kwargs):
+        return {
+            "protocol_acceptance": protocol,
+            "bounded_window_status": window,
+            "post_initial_progress_status": progress,
+            "continuous_feed_qualified": False,
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+
+    monkeypatch.setattr(target, "run_protocol_probe", offline_result)
+    assert main() == expected_code
+    output = capsys.readouterr().out
+    assert "DO_NOT_LEAK" not in output
+    assert '"radar_admission": "BLOCKED"' in output
