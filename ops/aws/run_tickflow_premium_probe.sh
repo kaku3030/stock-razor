@@ -68,9 +68,8 @@ venv="$root/venv"
 [[ -x "$venv/bin/python" ]] || python3 -m venv "$venv" >/dev/null 2>&1
 probe_stage=INSTALL_DEPENDENCIES
 "$venv/bin/python" -m pip install --disable-pip-version-check --no-input --quiet -r "$stage/requirements.txt" >/dev/null 2>&1
-# Optional SDK streaming support must be present *before* reading an API
-# secret or making any REST calls. A background thread can otherwise die
-# silently while stream.connect(block=False) misleadingly returns.
+# Fail before reading a key or issuing REST when the official realtime
+# transport extra is unavailable in the isolated AWS venv.
 probe_stage=VERIFY_REALTIME_EXTRA
 if [[ "$ws_seconds" != "0" ]]; then
   if ! "$venv/bin/python" -c 'import importlib.metadata as m; import websockets; assert m.version("websockets") == "15.0.1"' >/dev/null 2>&1; then
@@ -241,6 +240,10 @@ for raw in d["operations"]:
             value=raw.get(field)
             if value in ("PASS","FAIL","NOT_VERIFIED"):
                 item[field]=value
+        state=raw.get("background_thread_state")
+        if state in ("ALIVE","STOPPED","UNOBSERVABLE"):
+            item["background_thread_state"]=state
+        item["background_thread_not_provider_connection_proof"]=True
         item["subscription_ack_evidence"]="NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
         item["sample_latency_qualification"]="NOT_VERIFIED"
         item["post_initial_candidates_not_confirmed_live"]=True

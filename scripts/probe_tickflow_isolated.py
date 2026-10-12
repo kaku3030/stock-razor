@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import threading
 import time
 from typing import Any, Callable
 
@@ -466,6 +467,7 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
     reason = None
     connection_call = "NOT_VERIFIED"
     subscription_call = "NOT_VERIFIED"
+    background_thread_state = "UNOBSERVABLE"
     try:
         with _hide_provider_output():
             stream.subscribe("quotes", list(symbols))
@@ -473,6 +475,14 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
             stream.connect(block=False)
             connection_call = "PASS"
             time.sleep(seconds)
+            # The sync SDK may return after spawning a daemon even if its
+            # underlying network handshake fails silently. Inspect only the
+            # known local Python Thread state; this is NOT a connected ACK.
+            thread = getattr(stream, "_thread", None)
+            if isinstance(thread, threading.Thread):
+                background_thread_state = (
+                    "ALIVE" if thread.is_alive() else "STOPPED"
+                )
         state = "OBSERVED" if counts["quote_events"] else "NO_EVENTS_OBSERVED"
     except Exception as exc:
         reason = type(exc).__name__
@@ -509,6 +519,8 @@ def _stream_probe(client: Any, symbols: tuple[str, ...], seconds: float) -> dict
         "failure_class": reason,
         "connection_call": connection_call,
         "connection_state": connection_state,
+        "background_thread_state": background_thread_state,
+        "background_thread_not_provider_connection_proof": True,
         "connection_method": "stream.connect(block=False)",
         "subscription_call": subscription_call,
         "subscription_state": subscription_state,
@@ -626,10 +638,9 @@ def build_probe(
     if mode == "metadata":
         return result
     if mode == "premium" and ws_seconds > 0 and is_official_sdk:
-        # TickFlow[realtime], not plain tickflow, provides this optional
-        # dependency. Fail BEFORE consuming any real provider quota instead
-        # of silently treating an ImportError in the background WS thread
-        # as a legitimate market-session no-event observation.
+        # Required optional dependency for the official TickFlow WS transport.
+        # A silent ImportError in its worker must never be interpreted as a
+        # market session with zero quote callbacks.
         try:
             with _hide_provider_output():
                 import websockets  # noqa: F401

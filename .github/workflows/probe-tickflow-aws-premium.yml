@@ -173,6 +173,11 @@ jobs:
                       val=item.get(field)
                       if val in ("PASS","FAIL","NOT_VERIFIED"):
                           record[field]=val
+                  thread_state=item.get("background_thread_state")
+                  if thread_state in ("ALIVE","STOPPED","UNOBSERVABLE"):
+                      record["background_thread_state"]=thread_state
+                  assert item.get("background_thread_not_provider_connection_proof") is True
+                  record["background_thread_not_provider_connection_proof"]=True
                   assert item.get("subscription_ack_evidence") == (
                       "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
                   )
