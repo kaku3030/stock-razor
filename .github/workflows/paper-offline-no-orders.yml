@@ -1,0 +1,84 @@
+name: Paper Offline Acceptance (No Orders)
+
+# Manual, cloud-hosted deterministic regression only. No AWS, OpenD,
+# TickFlow, external SIM, credentials, broker calls or notification send.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paper-offline-no-orders-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  paper-offline-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RADAR_ADMISSION: BLOCKED
+      SOURCE_ARBITER_ADMISSION: BLOCKED
+      PAPER_AUTO_READY: "NO"
+      LIVE_TRADE: "NO"
+      TRADE_EXECUTION: "NO"
+    steps:
+      - name: Checkout pinned source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Prepare Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            .github/requirements-ci.txt
+
+      - name: Install same isolated CI dependencies
+        run: python -m pip install -r .github/requirements-ci.txt
+
+      - name: Verify all trading admission flags remain closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${RADAR_ADMISSION}" = BLOCKED
+          test "${SOURCE_ARBITER_ADMISSION}" = BLOCKED
+          test "${PAPER_AUTO_READY}" = NO
+          test "${LIVE_TRADE}" = NO
+          test "${TRADE_EXECUTION}" = NO
+
+      - name: Deterministic synthetic Paper/restart/continuity regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_offline_paper_simulation.py \
+            tests/test_paper_runtime_orchestrator.py \
+            tests/test_paper_process_soak.py \
+            tests/test_paper_multisession_soak.py \
+            tests/test_paper_shadow_readiness.py \
+            tests/test_paper_cloud_evidence_review.py \
+            tests/test_sim_account_continuity.py \
+            tests/test_verify_sim_cross_host_private.py
+
+      - name: Emit fixed evidence scope (not admission)
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '## Offline Paper acceptance — synthetic only'
+            echo ''
+            echo '- Offline Paper restart/crash/idempotence: TESTED_IN_GITHUB_RUN'
+            echo '- Cloud broker/SIM account or independent fills: NOT_TESTED'
+            echo '- Cloud live market data/15m/60m closure: NOT_TESTED'
+            echo '- Paper external orders: NONE'
+            echo '- AWS/secret access: NONE'
+            echo '- Notifications sent or phone receipt: NONE'
+            echo '- PAPER_AUTO_READY: NO'
+            echo '- RADAR_ADMISSION: BLOCKED'
+            echo '- LIVE_TRADE: NO'
+          } >> "${GITHUB_STEP_SUMMARY}"
