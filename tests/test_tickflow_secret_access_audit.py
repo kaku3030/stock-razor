@@ -21,6 +21,7 @@ def test_secret_access_audit_is_explicit_and_secret_safe():
     assert "awscli.amazonaws.com/awscli-exe" in script
     assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=DOWNLOAD_PASS" in script
     assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=EXTRACT_PASS" in script
+    assert 'find "$tmp_dir/awscli-installer" -type f -name aws -exec chmod u+x {} +' in script
     assert "awscli-installer/aws/dist/aws" in script
     assert "TICKFLOW_SECRET_AUDIT_BOOTSTRAP=VERIFY_PASS" in script
     assert "get-secret-value" in script
