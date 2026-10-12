@@ -157,7 +157,29 @@ jobs:
               assert isinstance(item,dict)
               name,state=item.get("name"),item.get("operation")
               assert name in names and state in states
-              operations.append({"name":name,"operation":state})
+              record={"name":name,"operation":state}
+              if name == "websocket_quote_smoke":
+                  for field in (
+                      "quote_callbacks","quote_events","unique_quote_samples",
+                      "initial_snapshot_candidates","post_initial_update_candidates",
+                      "duplicate_timestamp_events","out_of_order_timestamp_events",
+                      "unrequested_symbol_events","invalid_timestamp_events",
+                      "error_callbacks",
+                  ):
+                      val=item.get(field)
+                      if type(val) is int and 0 <= val <= 1000000:
+                          record[field]=val
+                  for field in ("connection_call","subscription_call"):
+                      val=item.get(field)
+                      if val in ("PASS","FAIL","NOT_VERIFIED"):
+                          record[field]=val
+                  assert item.get("subscription_ack_evidence") == (
+                      "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+                  )
+                  assert item.get("sample_latency_qualification") == "NOT_VERIFIED"
+                  assert item.get("post_initial_candidates_not_confirmed_live") is True
+                  record["provider_live_qualified"]=False
+              operations.append(record)
           print("TICKFLOW_PREMIUM_SANITIZED="+json.dumps({
               "schema":"stock_razor_tickflow_sanitized_probe_v0_1",
               "source_revision":os.environ["EXPECTED_REVISION"],
