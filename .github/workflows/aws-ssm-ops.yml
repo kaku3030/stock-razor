@@ -60,7 +60,7 @@ jobs:
     steps:
       # The legacy action chooser is historically labelled read-only but
       # contains two actions which STOP/RESTART the authoritative US LiveFeed.
-      # A restart during RTH caused a correlated nine-symbol K1M data gap.
+      # An RTH deployment/restart overlapped a correlated nine-symbol K1M gap.
       # Retire these ungoverned mutation paths rather than pretending the
       # separate guarded deployment workflow also covers this SSM router.
       - name: Veto ungoverned LiveFeed stop/restart actions before AWS OIDC
