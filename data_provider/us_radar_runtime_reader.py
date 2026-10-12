@@ -85,6 +85,29 @@ def _normalize_symbols(values: Iterable[object] | None) -> tuple[tuple[str, ...]
     return tuple(normalized), tuple(invalid)
 
 
+def _source_lineage_status(expected: object, observed: object, diagnostics: dict) -> str:
+    """A fresh heartbeat is not evidence of matching upstream code.
+
+    These SHAs are reported by the Radar worker, not independently checked
+    against the separate LiveFeed service. A same-string comparison is only
+    self-declared consistency and must never permit an admission upgrade.
+    """
+    reasons = diagnostics.get("reasons")
+    if isinstance(reasons, list) and "SOURCE_REPO_SHA_MISMATCH" in reasons:
+        return "MISMATCH"
+    if not (
+        isinstance(expected, str)
+        and isinstance(observed, str)
+        and len(expected) == len(observed) == 40
+        and all(c in "0123456789abcdef" for c in expected.lower())
+        and all(c in "0123456789abcdef" for c in observed.lower())
+    ):
+        return "UNKNOWN"
+    if expected.lower() != observed.lower():
+        return "MISMATCH"
+    return "WORKER_DECLARED_MATCH_NOT_EXTERNAL_VERIFICATION"
+
+
 def read_us_radar_analysis(
     symbols: Iterable[object] | None = None,
     *,
@@ -244,6 +267,10 @@ def read_us_radar_analysis(
     diagnostics = evaluation.get("admission_diagnostics")
     diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
     source_status = "PASS" if age_seconds <= max_age_seconds else "STALE"
+    source_repo_sha = evaluation.get("source_repo_sha")
+    source_lineage_status = _source_lineage_status(
+        payload.get("expected_source_repo_sha"), source_repo_sha, diagnostics,
+    )
     return _finish(started_at, {
         "ok": True,
         "status": source_status,
@@ -251,6 +278,9 @@ def read_us_radar_analysis(
         "source_age_seconds": age_seconds,
         "worker_repo_sha": payload.get("worker_repo_sha"),
         "expected_source_repo_sha": payload.get("expected_source_repo_sha"),
+        "reported_source_repo_sha": source_repo_sha,
+        "source_lineage_status": source_lineage_status,
+        "source_lineage_evidence_scope": "WORKER_REPORTED_NOT_INDEPENDENT_LIVEFEED_CHECK",
         "runtime_instance_id": payload.get("runtime_instance_id"),
         "sequence": payload.get("sequence"),
         "emitted_at_utc": payload.get("emitted_at_utc"),
