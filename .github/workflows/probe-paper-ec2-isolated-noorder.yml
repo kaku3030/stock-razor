@@ -1,0 +1,152 @@
+name: Probe EC2 Paper Offline Restart (No Orders)
+
+# Manually dispatched, bounded synthetic Paper SQLite smoke on fixed existing
+# AWS EC2 instance. No service restart, provider, OpenD, account or order calls.
+on:
+  workflow_dispatch:
+    inputs:
+      approve_ephemeral_noorder_probe:
+        description: "Explicitly approve fixed EC2 temporary-file, synthetic Paper-only run"
+        type: boolean
+        required: true
+        default: false
+      expected_runtime_sha:
+        description: "Exact deployed read-only US Radar repository SHA, not the workflow GitHub SHA"
+        type: string
+        required: true
+        default: "c777739bc277022f258faf2599222215e9640231"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: paper-ec2-isolated-noorder
+  cancel-in-progress: false
+
+jobs:
+  isolated-paper-soak:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.approve_ephemeral_noorder_probe == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+      RADAR_ADMISSION: BLOCKED
+      SOURCE_ARBITER_ADMISSION: BLOCKED
+      PAPER_AUTO_READY: "NO"
+      LIVE_TRADE: "NO"
+      TRADE_EXECUTION: "NO"
+    steps:
+      - name: Checkout reviewed immutable main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify scope, git identity and payload before assuming AWS role
+        id: source
+        shell: bash
+        env:
+          EXPECTED_RUNTIME_SHA: ${{ inputs.expected_runtime_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_RUNTIME_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test "${RADAR_ADMISSION}" = BLOCKED
+          test "${SOURCE_ARBITER_ADMISSION}" = BLOCKED
+          test "${PAPER_AUTO_READY}" = NO
+          test "${LIVE_TRADE}" = NO
+          test "${TRADE_EXECUTION}" = NO
+          test -s scripts/probe_paper_ec2_offline_noorder.py
+          hash="$(sha256sum scripts/probe_paper_ec2_offline_noorder.py | cut -d' ' -f1)"
+          printf 'payload_sha256=%s\n' "$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Assume existing GitHub Ops read-only SSM role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: paper-ec2-noorder-${{ github.run_id }}
+          aws-region: ap-northeast-1
+
+      - name: Execute isolated exact-byte Python script via fixed-target SSM
+        id: send
+        shell: bash
+        env:
+          EXPECTED_RUNTIME_SHA: ${{ inputs.expected_runtime_sha }}
+          PAYLOAD_SHA256: ${{ steps.source.outputs.payload_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_RUNTIME_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$PAYLOAD_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          packed="$(gzip -n -9 -c scripts/probe_paper_ec2_offline_noorder.py | base64 -w0)"
+          [[ -n "$packed" ]]
+          # AWS-RunShellScript uses /bin/sh, not a bash login shell.
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          printf '%s' '$packed' | base64 -d | gzip -d > "\$stage/probe.py"
+          printf '%s  %s\n' '$PAYLOAD_SHA256' "\$stage/probe.py" | sha256sum -c - >/dev/null
+          export PYTHONPATH=/opt/stock-razor-us-radar/repo
+          export AWS_EC2_METADATA_DISABLED=true
+          export RADAR_ADMISSION=BLOCKED SOURCE_ARBITER_ADMISSION=BLOCKED
+          export PAPER_AUTO_READY=NO LIVE_TRADE=NO TRADE_EXECUTION=NO
+          timeout 95 /opt/stock-razor-us-radar/venv/bin/python "\$stage/probe.py" --expected-runtime-sha '$EXPECTED_RUNTIME_SHA'
+          REMOTE
+          test "$(printf '%s' "$remote" | wc -c)" -le 18000
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command \
+            --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" \
+            --parameters "$params" --timeout-seconds 120 \
+            --query 'Command.CommandId' --output text)"
+          [[ "$command_id" =~ ^[a-f0-9-]{36}$ ]]
+          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify fixed JSON evidence with all broker/trade gates closed
+        shell: bash
+        env:
+          COMMAND_ID: ${{ steps.send.outputs.command_id }}
+        run: |
+          set -euo pipefail
+          [[ "$COMMAND_ID" =~ ^[a-f0-9-]{36}$ ]]
+          for _ in $(seq 1 65); do
+            status="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" \
+              --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) break ;;
+              Failed|Cancelled|Cancelling|TimedOut)
+                echo 'PAPER_EC2_NOORDER_SSM=NOT_VERIFIED'
+                echo 'RAW_SSM_OUTPUT_WITHHELD=YES'
+                exit 1
+                ;;
+            esac
+            sleep 2
+          done
+          test "${status:-UNKNOWN}" = Success || {
+            echo 'PAPER_EC2_NOORDER_SSM=TIMEOUT'; exit 1;
+          }
+          output="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" \
+            --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
+          # No raw SSM stdout/stderr is published, only fixed allowlist statuses.
+          printf '%s' "$output" | python3 -c '
+          import json,sys
+          x=json.load(sys.stdin)
+          assert x.get("schema") == "stock_razor_ec2_paper_noorder_smoke_v0_1"
+          for k in ("runtime_sha","isolated_paper_restart","duplicate_paper_intent_veto"):
+              assert x.get(k) == "PASS"
+          for k in ("radar_admission","source_arbiter_admission"):
+              assert x.get(k) == "BLOCKED"
+          for k in ("paper_auto_ready","live_trade","trade_execution"):
+              assert x.get(k) == "NO"
+          for k in ("external_provider_calls","external_broker_orders"):
+              assert x.get(k) == "NONE"
+          assert x.get("secretstring") == "NOT_READ"
+          print("EC2_PAPER_OFFLINE_RESTART=PASS")
+          print("EC2_PAPER_DUPLICATE_INTENT_VETO=PASS")
+          print("EXTERNAL_SIM_OR_LIVE_ORDERS=NONE")
+          print("PAPER_AUTO_READY=NO")
+          print("RADAR_ADMISSION=BLOCKED")
+          print("LIVE_TRADE=NO")
+          '
