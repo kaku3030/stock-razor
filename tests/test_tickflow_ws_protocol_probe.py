@@ -204,3 +204,41 @@ def test_cli_exit_code_checks_clean_protocol_acceptance_not_ack_alone(monkeypatc
     output = capsys.readouterr().out
     assert '"protocol_acceptance": "FAIL"' in output
     assert "DO_NOT_LEAK" not in output
+
+
+@pytest.mark.parametrize(
+    ("symbols","total"),
+    [
+        (["159611.SZ", "518880.SH", "512730.SH"], 3),
+        (["159611.SZ", "518880.SH", "518880.SH"], 3),
+        (["159611.SZ", "518880.SH"], 3),
+        (["159611.SZ", "518880.SH"], 1),
+    ],
+)
+def test_ack_with_extras_duplicates_or_bad_total_is_rejected(symbols, total):
+    observer = ProtocolEvidence(SYMS)
+    observer.consume({
+        "op": "subscribed",
+        "channel": "quotes",
+        "symbols": symbols,
+        "total": total,
+    })
+    result = observer.summary(ws_handshake=True)
+    assert result["subscription_ack"] == "NOT_VERIFIED"
+    assert result["protocol_acceptance"] == "FAIL"
+    assert result["invalid_ack_messages"] == 1
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_ack_exact_set_can_arrive_in_different_order():
+    observer = ProtocolEvidence(SYMS)
+    observer.consume({
+        "op": "subscribed",
+        "channel": "quotes",
+        "symbols": list(reversed(SYMS)),
+        "total": 2,
+    })
+    result = observer.summary(ws_handshake=True)
+    assert result["subscription_ack"] == "PASS"
+    assert result["protocol_acceptance"] == "PASS"
+    assert result["continuous_feed_qualified"] is False
