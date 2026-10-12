@@ -403,3 +403,38 @@ def test_real_512730_tencent_opening_rows_are_soft_only_at_session_open():
     state = result["symbols"]["512730"]
     assert state["status"] == "RESEARCH_STATE"
     assert "cn_opening_auction_range_gap" in state["technical"]["risk_flags"]
+
+
+def test_intraday_future_end_labels_are_excluded_before_indicator_analysis():
+    # 14:44 Shanghai is still before the 14:45 and 15:00 end labels.
+    payload = _payload()
+    payload["emitted_at_utc"] = "2026-10-12T06:44:00+00:00"
+    frames = payload["symbols"]["159611"]["timeframes"]
+    frames["15m"]["rows"][-1]["label"] = "2026-10-12 14:45"
+    frames["60m"]["rows"][-1]["label"] = "2026-10-12 15:00"
+    result = evaluate_cn_observation_payload(payload)
+    assert result["status"] == "PASS"
+    state = result["symbols"]["159611"]
+    for interval in ("15m", "60m"):
+        provenance = state["frame_provenance"][interval]
+        assert provenance["future_labeled_rows_excluded"] == 1
+        assert provenance["analysis_row_count"] == 99
+        assert "FUTURE_PROVIDER_LABEL_EXCLUDED" in provenance["analysis_warnings"]
+    assert "cn_future_labeled_intraday_bar_quarantined" in state["technical"]["risk_flags"]
+    assert state["intraday_currentness_proven"] is False
+    assert state["signal_permission"] == "record_only"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_intraday_boundary_equal_to_observation_clock_is_not_quarantined():
+    payload = _payload()
+    payload["emitted_at_utc"] = "2026-10-12T06:45:00+00:00"
+    frames = payload["symbols"]["159611"]["timeframes"]
+    frames["15m"]["rows"][-1]["label"] = "2026-10-12 14:45"
+    result = evaluate_cn_observation_payload(payload)
+    state = result["symbols"]["159611"]
+    assert state["status"] == "RESEARCH_STATE"
+    assert "future_labeled_rows_excluded" not in state["frame_provenance"]["15m"]
+    assert state["intraday_currentness_proven"] is False
+    assert result["radar_admission"] == "BLOCKED"

@@ -6,13 +6,14 @@ from dataclasses import replace
 from datetime import datetime
 import math
 from typing import Mapping
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from src.services.a_share_intraday_currentness import (
     qualify_same_session_currentness,
 )
-from src.services.a_share_intraday_semantics import TimestampSemantic
+from src.services.a_share_intraday_semantics import CN_MARKET_TIMEZONE, TimestampSemantic
 from src.technical.models import TimeframeState
 from src.technical.technical_analyzer import TechnicalAnalyzer
 
@@ -168,6 +169,41 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
         "analysis_warnings": list(dict.fromkeys(soft_warnings)),
     }
     return pd.DataFrame(records), provenance
+
+
+def _quarantine_future_intraday_labels(
+    frame: pd.DataFrame,
+    provenance: dict,
+    *,
+    timeframe: str,
+    observed_at: datetime,
+) -> tuple[pd.DataFrame, dict]:
+    """Exclude provider-labeled bars later than the observation clock.
+
+    Such a bar might be a BAR_END-labeled forming candle. Without qualified
+    timestamp semantics, it must not influence research indicators or become
+    an implicit closed-bar fact. Historical valid rows are retained.
+    """
+    clock = observed_at.astimezone(ZoneInfo(CN_MARKET_TIMEZONE)).replace(tzinfo=None)
+    stamps = frame["date"]
+    # Preserve the existing naive Shanghai-local label contract; offset-aware
+    # provider labels are converted to the market clock before comparison.
+    if getattr(stamps.dt, "tz", None) is not None:
+        stamps = stamps.dt.tz_convert(CN_MARKET_TIMEZONE).dt.tz_localize(None)
+    kept = frame.loc[stamps <= pd.Timestamp(clock)].copy()
+    excluded = len(frame) - len(kept)
+    if not excluded:
+        return frame, provenance
+    if kept.empty:
+        raise CnObservationAnalysisError(f"{timeframe} has no nonfuture bars")
+    revised = dict(provenance)
+    revised["analysis_row_count"] = len(kept)
+    revised["future_labeled_rows_excluded"] = excluded
+    revised["analysis_warnings"] = list(dict.fromkeys([
+        *provenance.get("analysis_warnings", []),
+        "FUTURE_PROVIDER_LABEL_EXCLUDED",
+    ]))
+    return kept, revised
 
 
 def _qualified_intraday_bar_end(item: Mapping[str, object]) -> bool:
@@ -392,6 +428,12 @@ def evaluate_cn_observation_payload(
             daily, daily_prov = _frame(item, "1d")
             hourly, hourly_prov = _frame(item, "60m")
             intraday, intraday_prov = _frame(item, "15m")
+            hourly, hourly_prov = _quarantine_future_intraday_labels(
+                hourly, hourly_prov, timeframe="60m", observed_at=emitted_at,
+            )
+            intraday, intraday_prov = _quarantine_future_intraday_labels(
+                intraday, intraday_prov, timeframe="15m", observed_at=emitted_at,
+            )
             timestamp_semantics_proven = _qualified_intraday_bar_end(item)
             if root_timestamp_semantics_proven and not timestamp_semantics_proven:
                 raise CnObservationAnalysisError(
@@ -446,6 +488,11 @@ def evaluate_cn_observation_payload(
                         *(
                             ["cn_opening_auction_range_gap"]
                             if OPENING_AUCTION_RANGE_GAP in provenance_warnings
+                            else []
+                        ),
+                        *(
+                            ["cn_future_labeled_intraday_bar_quarantined"]
+                            if "FUTURE_PROVIDER_LABEL_EXCLUDED" in provenance_warnings
                             else []
                         ),
                     ]
