@@ -108,3 +108,85 @@ def test_unauthorized_extra_provider_operation_rejected_in_one_quote_mode(tmp_pa
     assert result.returncode != 0
     assert not cache.exists()
     assert "DO_NOT_LEAK_REAL_KEY" not in result.stdout
+
+
+def test_websocket_counters_survive_private_sanitizer_without_quote_or_secret(tmp_path):
+    ws={
+        "name":"websocket_quote_smoke",
+        "operation":"OBSERVED",
+        "quote_callbacks":5,"quote_events":9,"unique_quote_samples":4,
+        "initial_snapshot_candidates":2,
+        "post_initial_update_candidates":2,
+        "duplicate_timestamp_events":3,
+        "out_of_order_timestamp_events":0,
+        "unrequested_symbol_events":0,
+        "invalid_timestamp_events":0,
+        "error_callbacks":0,
+        "connection_call":"PASS",
+        "subscription_call":"PASS",
+        "arrival_minus_provider_timestamp_ms":{"p95":112.4},
+        "secret":"UNSAFE_ACCOUNT_PRIVATE_STRING",
+        "quote_prices":[1.11,2.22],
+    }
+    completed, cache=_run_synthetic(
+        tmp_path,scope="STANDARD_ISOLATED_PROBE",
+        ops=[
+            {"name":"sdk_import","operation":"COMPLETED"},
+            {"name":"realtime_quote","operation":"COMPLETED","row_count":2},
+            ws,
+        ],
+    )
+    assert completed.returncode == 0, completed.stderr[:150]
+    data=json.loads(completed.stdout)
+    sanitized=data["operations"][2]
+    assert sanitized["name"]=="websocket_quote_smoke"
+    assert sanitized["quote_events"]==9
+    assert sanitized["quote_callbacks"]==5
+    assert sanitized["post_initial_update_candidates"]==2
+    assert sanitized["initial_snapshot_candidates"]==2
+    assert sanitized["connection_call"]=="PASS"
+    assert sanitized["subscription_call"]=="PASS"
+    assert sanitized["subscription_ack_evidence"]=="NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+    assert sanitized["sample_latency_qualification"]=="NOT_VERIFIED"
+    assert sanitized["post_initial_candidates_not_confirmed_live"] is True
+    assert "arrival_minus_provider_timestamp_ms" not in sanitized
+    result_json=json.dumps(data)
+    assert "UNSAFE_ACCOUNT_PRIVATE_STRING" not in result_json
+    assert "1.11" not in result_json
+    assert json.loads(cache.read_text())==data
+    assert data["radar_admission"]=="BLOCKED"
+    assert data["source_arbiter_admission"]=="BLOCKED"
+
+
+def test_websocket_bad_counters_cannot_escape_summary(tmp_path):
+    ws={
+        "name":"websocket_quote_smoke", "operation":"NO_EVENTS_OBSERVED",
+        "quote_events":True, "quote_callbacks":-4,
+        "post_initial_update_candidates":999999999,
+        "error_callbacks":0,
+        "connection_call":"PASS",
+        "subscription_call":"MALICIOUS_STRING",
+    }
+    result, _=_run_synthetic(
+        tmp_path,scope="STANDARD_ISOLATED_PROBE",
+        ops=[{"name":"sdk_import","operation":"COMPLETED"},ws],
+    )
+    assert result.returncode==0
+    safe=json.loads(result.stdout)["operations"][1]
+    assert "quote_events" not in safe
+    assert "quote_callbacks" not in safe
+    assert "post_initial_update_candidates" not in safe
+    assert safe["error_callbacks"]==0
+    assert "subscription_call" not in safe
+    assert safe["sample_latency_qualification"]=="NOT_VERIFIED"
+
+
+def test_actions_redacts_raw_stream_details_but_retains_safe_counts():
+    wf=WORKFLOW.read_text(encoding="utf-8")
+    producer=BOOTSTRAP.read_text(encoding="utf-8")
+    assert 'item["post_initial_candidates_not_confirmed_live"]=True' in producer
+    assert 'record["provider_live_qualified"]=False' in wf
+    assert 'assert item.get("sample_latency_qualification") == "NOT_VERIFIED"' in wf
+    assert 'record[field]=val' in wf
+    assert "echo \"$output\"" not in wf
+    assert "arrival_minus_provider_timestamp_ms" not in producer
