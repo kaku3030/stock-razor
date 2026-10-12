@@ -36,7 +36,9 @@ known local Python `threading.Thread` state (if exposed via `_thread`)
 
 Only this 3-value enum is permitted through EC2's private sanitized
 projection, GitHub Actions, and independently checked existing-cache
-readback. Every report requires the explicit
+readback. Legacy caches without this field remain `REVIEW_ONLY` with
+`UNOBSERVABLE` thread state; an explicitly false provenance flag is
+rejected. New reports require the explicit
 `background_thread_not_provider_connection_proof=true` flag,
 and hardcodes `ws_provider_live_qualified=false` regardless of state.
 No API key, symbol, raw quote, error text, provider timestamp or latency
