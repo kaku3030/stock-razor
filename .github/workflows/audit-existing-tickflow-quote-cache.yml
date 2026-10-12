@@ -142,8 +142,11 @@ jobs:
                       thread_state=item.get("background_thread_state")
                       if thread_state in ("ALIVE","STOPPED","UNOBSERVABLE"):
                           output["ws_background_thread_state"]=thread_state
+                      # Legacy pre-thread-audit caches have no field;
+                      # keep them REVIEW_ONLY and label thread UNOBSERVABLE.
+                      # A new explicit false value is invalid and blocked.
                       if state != "SKIPPED" and item.get(
-                          "background_thread_not_provider_connection_proof"
+                          "background_thread_not_provider_connection_proof", True
                       ) is not True:
                           raise ValueError("WS_THREAD_PROVENANCE_UNKNOWN")
                       # Only callback candidates; never infer server ACK/live.
