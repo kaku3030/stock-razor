@@ -34,10 +34,19 @@ def pair(tmp_path, now):
     return w, a
 
 
+def _approved_file(tmp_path, *, approved_id="999000123"):
+    path = tmp_path / "approved-sim-private.json"
+    path.write_text(json.dumps({
+        "schema": "stock_razor_approved_us_sim_account_v0_1",
+        "account_id": approved_id,
+    }))
+    return path
+
+
 def test_two_fresh_identical_private_accounts_only_match_for_review(tmp_path):
     now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
     w, a = pair(tmp_path, now)
-    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
     assert result["status"] == "MATCHED_FOR_REVIEW"
     assert result["same_account_id"] and result["same_positions"]
     assert result["position_count"] == 2
@@ -56,7 +65,7 @@ def test_mismatched_accounts_do_not_expose_account_ids(tmp_path):
     w, a = pair(tmp_path, now)
     other = payload("AWS_OPEND_SSM", now, identity="111222333")
     a.write_text(json.dumps(other))
-    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "CROSS_HOST_SIM_ACCOUNT_ID_MISMATCH"
     assert "111222333" not in json.dumps(result)
@@ -68,13 +77,13 @@ def test_stale_or_different_positions_not_matched(tmp_path):
     stale = payload("AWS_OPEND_SSM", now - timedelta(hours=2))
     a.write_text(json.dumps(stale))
     assert verify_private_readbacks(
-        str(w), str(a), now_utc=now
+        str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
     )["reason"] == "BROKER_READBACK_STALE_OR_FUTURE"
 
     diff = payload("AWS_OPEND_SSM", now)
     diff["positions"][0]["quantity"] = "6"
     a.write_text(json.dumps(diff))
-    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
     assert result["reason"] == "CROSS_HOST_POSITION_MISMATCH"
     assert not result["same_positions"]
 
@@ -83,7 +92,7 @@ def test_malformed_and_duplicate_json_keys_block_without_echo(tmp_path):
     now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
     w, a = pair(tmp_path, now)
     w.write_text('{"account_id":"PRIVATE_SECRET","account_id":"ANOTHER_SECRET"}')
-    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "DUPLICATE_JSON_KEY"
     assert "PRIVATE_SECRET" not in json.dumps(result)
@@ -96,17 +105,17 @@ def test_unknown_keys_oversized_files_and_invalid_amounts_fail_closed(tmp_path):
     unknown["secret_token"] = "PRIVATE_TOKEN"
     w.write_text(json.dumps(unknown))
     assert verify_private_readbacks(
-        str(w), str(a), now_utc=now
+        str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
     )["reason"] == "PRIVATE_SCHEMA_INVALID"
     w.write_text("X" * 33000)
     assert verify_private_readbacks(
-        str(w), str(a), now_utc=now
+        str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
     )["reason"] == "PRIVATE_INPUT_TOO_LARGE"
     broken = payload("WINDOWS_LOCAL_OPEND", now)
     broken["positions"][0]["quantity"] = "NOT_A_DECIMAL"
     w.write_text(json.dumps(broken))
     assert verify_private_readbacks(
-        str(w), str(a), now_utc=now
+        str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
     )["reason"] == "POSITION_QUANTITY_INVALID"
 
 
@@ -116,6 +125,7 @@ def test_main_prints_only_bounded_sanitized_summary(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(sys, "argv", [
         "verify_sim_cross_host_private.py",
         "--windows-file", str(w), "--aws-file", str(a),
+        "--approved-account-file", str(_approved_file(tmp_path)),
     ])
     assert main() == 0
     result = capsys.readouterr().out
@@ -130,7 +140,7 @@ def test_missing_private_file_is_not_published(tmp_path):
     now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
     w, a = pair(tmp_path, now)
     result = verify_private_readbacks(
-        str(tmp_path / "private-id-999.json"), str(a), now_utc=now
+        str(tmp_path / "private-id-999.json"), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
     )
     assert result["reason"] == "PRIVATE_INPUT_UNAVAILABLE"
     assert "private-id-999.json" not in json.dumps(result)
@@ -140,8 +150,69 @@ def test_recursive_private_json_is_sanitized_instead_of_traceback(tmp_path):
     now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
     w, a = pair(tmp_path, now)
     w.write_text("[" * 1200 + "0" + "]" * 1200)
-    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "PRIVATE_INPUT_INVALID"
     assert "999000123" not in json.dumps(result)
     assert "US.TEST" not in json.dumps(result)
+
+
+def test_missing_approved_account_file_blocks_even_identical_hosts(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    result = verify_private_readbacks(str(w), str(a), now_utc=now)
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "APPROVED_SIM_ACCOUNT_FILE_REQUIRED"
+    assert result["orders_sent"] == 0
+
+
+def test_wrong_approved_id_blocks_and_does_not_disclose_any_ids(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    approval = _approved_file(tmp_path, approved_id="111222333")
+    result = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(approval), now_utc=now
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "APPROVED_SIM_ACCOUNT_ID_MISMATCH"
+    assert result["broker_mutation_allowed"] is False
+    assert "111222333" not in json.dumps(result)
+    assert "999000123" not in json.dumps(result)
+
+
+def test_approved_private_file_rejects_extra_or_duplicate_keys(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    approval = _approved_file(tmp_path)
+    approval.write_text('{"schema":"stock_razor_approved_us_sim_account_v0_1",'
+                        '"account_id":"999000123","token":"secret-do-not-leak"}')
+    extra = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(approval), now_utc=now
+    )
+    assert extra["reason"] == "APPROVED_SIM_ACCOUNT_SCHEMA_INVALID"
+    approval.write_text('{"schema":"stock_razor_approved_us_sim_account_v0_1",'
+                        '"account_id":"999000123","account_id":"111222333"}')
+    dup = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(approval), now_utc=now
+    )
+    assert dup["reason"] == "DUPLICATE_JSON_KEY"
+    assert "secret-do-not-leak" not in json.dumps(extra)
+    assert "111222333" not in json.dumps(dup)
+
+
+def test_private_account_file_fails_closed_on_invalid_schema_and_oversize(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    approval = _approved_file(tmp_path)
+    approval.write_text(json.dumps({
+        "schema": "wrong", "account_id": "999000123",
+    }))
+    result = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(approval), now_utc=now
+    )
+    assert result["reason"] == "APPROVED_SIM_ACCOUNT_SCHEMA_INVALID"
+    approval.write_text("X" * 1025)
+    result = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(approval), now_utc=now
+    )
+    assert result["reason"] == "APPROVED_SIM_ACCOUNT_FILE_INVALID"
