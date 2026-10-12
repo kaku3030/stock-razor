@@ -148,3 +148,36 @@ def test_old_quote_only_cache_with_skipped_ws_remains_review_only(tmp_path):
     assert result["ws_operation"]=="SKIPPED"
     assert result["ws_quote_events"]==0
     assert result["ws_provider_live_qualified"] is False
+
+
+def test_legacy_ws_thread_unknown_stays_review_only_and_not_live(tmp_path):
+    result,_=_run_cached_audit(tmp_path,ws=ws())
+    assert result["status"]=="REVIEW_ONLY"
+    assert result["ws_background_thread_state"]=="UNOBSERVABLE"
+    assert result["ws_provider_live_qualified"] is False
+
+
+def test_modern_ws_background_thread_state_preserves_only_three_values(tmp_path):
+    result,output=_run_cached_audit(
+        tmp_path,ws=ws(
+            background_thread_state="STOPPED",
+            background_thread_not_provider_connection_proof=True,
+            exception_message="RAW_WS_SECRET_NEVER_EXPOSE",
+        )
+    )
+    assert result["status"]=="REVIEW_ONLY"
+    assert result["ws_background_thread_state"]=="STOPPED"
+    assert result["ws_provider_live_qualified"] is False
+    assert "RAW_WS_SECRET_NEVER_EXPOSE" not in output
+
+
+def test_explicit_false_background_thread_provenance_blocks_cache_claim(tmp_path):
+    result,_=_run_cached_audit(
+        tmp_path,ws=ws(
+            background_thread_state="ALIVE",
+            background_thread_not_provider_connection_proof=False,
+        )
+    )
+    assert result["status"]=="NOT_VERIFIED"
+    assert result["ws_provider_live_qualified"] is False
+    assert result["radar_admission"]=="BLOCKED"
