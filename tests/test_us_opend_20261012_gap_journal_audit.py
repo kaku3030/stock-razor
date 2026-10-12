@@ -61,6 +61,16 @@ def test_non_pid1_non_systemd_and_foreign_unit_never_prove_restart():
     assert result["manager_restart_pair"] == "NOT_VERIFIED"
 
 
+def test_request_phase_stopping_starting_does_not_prove_completed_restart():
+    only_requested = audit.classify_journal_lines([
+        _manager("Stopping", "2026-10-12T14:58:40Z"),
+        _manager("Starting", "2026-10-12T14:58:41Z"),
+    ])
+    assert only_requested["status"] == "NOT_VERIFIED"
+    assert only_requested["manager_restart_pair"] == "NOT_VERIFIED"
+    assert only_requested["reason"] == "MANAGER_EVENTS_INCOMPLETE"
+
+
 def test_truncated_session_or_missing_pair_never_promotes_gap_repair():
     pair = [
         _manager("Stopped", "2026-10-12T14:58:41Z"),
