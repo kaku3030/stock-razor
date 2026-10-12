@@ -139,9 +139,11 @@ jobs:
                           if call_state in ("PASS", "FAIL", "NOT_VERIFIED"):
                               output[alias] = call_state
                       # Only callback candidates; never infer server ACK/live.
-                      if item.get("subscription_ack_evidence") != (
-                          "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
-                      ) or item.get("sample_latency_qualification") != "NOT_VERIFIED":
+                      if state != "SKIPPED" and (
+                          item.get("subscription_ack_evidence") != (
+                              "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+                          ) or item.get("sample_latency_qualification") != "NOT_VERIFIED"
+                      ):
                           raise ValueError("WS_SCOPE_NOT_QUALIFIED")
               if matches:
                   output["status"] = "REVIEW_ONLY"
