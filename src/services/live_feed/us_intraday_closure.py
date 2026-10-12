@@ -80,18 +80,24 @@ def qualify_us_current_session_intraday_closure(
                 and bar.is_complete is False
                 and bar.provider == "futu"
                 and bar.feed == "opend"
+                and bar.timeframe == timeframe
                 and session_start <= local_start <= eligible_end < local_end <= session_end
                 and local_end == min(local_start + timedelta(minutes=minutes), session_end)
                 and (local_start - session_start).total_seconds() % (minutes * 60) == 0
             )
             if current_forming:
                 current_forming_excluded += 1
+                # Duplicate current buckets are not an authoritative
+                # provider bar grid and must never turn the gate green.
+                if current_forming_excluded > 1:
+                    invalid.append(local_start.isoformat())
                 continue
             if (
                 not bar.is_closed
                 or not bar.is_complete
                 or bar.provider != "futu"
                 or bar.feed != "opend"
+                or bar.timeframe != timeframe
                 or local_end > eligible_end
                 or bar.source_timestamp.astimezone(US_EASTERN) != local_end
             ):
