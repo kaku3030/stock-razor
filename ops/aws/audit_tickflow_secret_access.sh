@@ -57,15 +57,23 @@ if [[ -z "$aws_cli" || ! -x "$aws_cli" ]]; then
     aarch64|arm64) aws_package_arch=aarch64 ;;
     *) echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=UNAVAILABLE'; exit 1 ;;
   esac
+  command -v curl >/dev/null 2>&1 || { echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=NO_CURL'; exit 1; }
+  command -v python3 >/dev/null 2>&1 || { echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=NO_PYTHON3'; exit 1; }
+  audit_stage=DOWNLOAD_EPHEMERAL_AWS_CLI
   curl --fail --silent --show-error --location --max-time 60 \
     "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
     -o "$tmp_dir/awscliv2.zip" 2>/dev/null
+  echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=DOWNLOAD_PASS'
+  audit_stage=EXTRACT_EPHEMERAL_AWS_CLI
   python3 -m zipfile -e "$tmp_dir/awscliv2.zip" "$tmp_dir/awscli-installer" >/dev/null 2>&1
   chmod 0755 "$tmp_dir/awscli-installer/aws/install"
+  echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=EXTRACT_PASS'
+  audit_stage=INSTALL_EPHEMERAL_AWS_CLI
   "$tmp_dir/awscli-installer/aws/install" \
     -i "$tmp_dir/aws-cli" -b "$tmp_dir/bin" >/dev/null 2>&1
   aws_cli="$tmp_dir/bin/aws"
   [[ -x "$aws_cli" ]]
+  echo 'TICKFLOW_SECRET_AUDIT_BOOTSTRAP=INSTALL_PASS'
   echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=EPHEMERAL'
 else
   echo 'TICKFLOW_SECRET_AUDIT_AWS_CLI=AVAILABLE'
