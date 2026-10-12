@@ -43,6 +43,7 @@ class ProtocolEvidence:
         self.unknown_symbol_count = 0
         self.protocol_error_frames = 0
         self.invalid_frames = 0
+        self.window_status = "UNOBSERVED"
         self._latest: dict[str, int] = {}
 
     def consume(self, frame: Any) -> None:
@@ -115,7 +116,10 @@ class ProtocolEvidence:
         # A preceding ACK cannot overrule a subsequent server-level error.
         # PASS here means only the protocol exchange, NOT continuous quotes.
         protocol_acceptance = (
-            "FAIL" if self.protocol_error_frames or self.invalid_ack_messages
+            "FAIL" if (
+                self.protocol_error_frames or self.invalid_ack_messages
+                or self.window_status == "TERMINATED_EARLY"
+            )
             else "PASS" if ws_handshake and self.ack_verified
             else "NOT_VERIFIED"
         )
@@ -123,6 +127,12 @@ class ProtocolEvidence:
             "schema": "stock_razor_tickflow_ws_ack_evidence_v0_1",
             "protocol_acceptance": protocol_acceptance,
             "protocol_acceptance_scope": "ACK_ONLY_NOT_LIVE_QUALIFICATION",
+            "bounded_window_status": self.window_status,
+            "post_initial_progress_status": (
+                "OBSERVED_NOT_QUALIFIED"
+                if self.post_initial_update_candidates >= 2
+                else "INSUFFICIENT"
+            ),
             "ws_handshake": "PASS" if ws_handshake else "NOT_VERIFIED",
             "subscription_ack": "PASS" if self.ack_verified else "NOT_VERIFIED",
             "ack_messages": self.ack_messages,
@@ -160,9 +170,18 @@ async def observe_socket(ws: Any, evidence: ProtocolEvidence, seconds: int) -> N
             raw = await asyncio.wait_for(
                 ws.recv(), timeout=max(0.001, deadline - time.monotonic())
             )
-        except (asyncio.TimeoutError, EOFError, ConnectionError):
+        except asyncio.TimeoutError:
+            # Only the deadline-reached timeout constitutes a full window.
+            evidence.window_status = (
+                "COMPLETED" if time.monotonic() >= deadline - 0.02
+                else "TERMINATED_EARLY"
+            )
+            return
+        except (EOFError, ConnectionError):
+            evidence.window_status = "TERMINATED_EARLY"
             return
         evidence.consume(raw)
+    evidence.window_status = "COMPLETED"
 
 
 async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str) -> dict[str, Any]:
@@ -179,7 +198,7 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
     try:
         # Exactly one attempt: 401/403 must not retry.
         async with websockets.connect(
-            endpoint, ping_interval=20, ping_timeout=10,
+            endpoint, ping_interval=20, ping_timeout=10, open_timeout=5,
             max_size=16 * 1024 * 1024, compression="deflate",
         ) as ws:
             await observe_socket(ws, evidence, seconds)
@@ -223,7 +242,13 @@ def main() -> int:
             "radar_admission": "BLOCKED", "live_trade": False,
         }
     print(json.dumps(result, sort_keys=True))
-    return 0 if result.get("protocol_acceptance") == "PASS" else 2
+    # CLI success is ONLY a bounded protocol-progress smoke, never source
+    # qualification: independent freshness, continuity and parity still gate.
+    return 0 if (
+        result.get("protocol_acceptance") == "PASS"
+        and result.get("bounded_window_status") == "COMPLETED"
+        and result.get("post_initial_progress_status") == "OBSERVED_NOT_QUALIFIED"
+    ) else 2
 
 
 if __name__ == "__main__":
