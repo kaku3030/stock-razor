@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
 import hashlib
+import math
 from typing import Protocol
 
 from .external_simulator_readonly_preflight import (
@@ -174,6 +175,17 @@ def _validate_permission(
     )
     if any(value is None for value in times):
         raise ExecutionBlocked("decision, confirmation, and executable timestamps are required")
+    # IEEE-754 NaN short-circuits '<' comparisons, silently defeating a
+    # causal gate. Reject NaN/inf, booleans, strings and negative epochs
+    # BEFORE comparing availability or deriving an executable Paper intent.
+    if any(
+        type(value) not in (int, float)
+        or value <= 0
+        or value > 10**12  # impossible application epoch; protects huge-int conversion
+        or not math.isfinite(value)
+        for value in times
+    ):
+        raise ExecutionBlocked("causal timestamps must be positive finite numbers")
     decision_at, confirmed_at, earliest_at = (float(value) for value in times)
     if earliest_at < max(decision_at, confirmed_at):
         raise ExecutionBlocked("execution cannot precede decision or confirmation")
