@@ -120,3 +120,22 @@ def test_without_first_closed_1h_bucket_stays_unknown_during_session():
     assert result["timeframes"]["15m"]["status"] == "PASS"
     assert result["timeframes"]["1h"]["status"] == "UNKNOWN"
     assert result["bar_closure_promotion_authorized"] is False
+
+
+def test_duplicate_forming_bucket_or_wrong_timeframe_cannot_promote():
+    now = datetime(2026, 10, 12, 13, 41, tzinfo=ET)
+    duplicate = _live_grids(now)
+    duplicate["15m"].append(duplicate["15m"][-1])
+    report = qualify_us_current_session_intraday_closure(duplicate, as_of=now)
+    assert report["status"] == "UNKNOWN"
+    assert report["timeframes"]["15m"]["current_forming_excluded_count"] == 2
+    assert report["timeframes"]["15m"]["invalid_bar_starts"]
+
+    wrong_timeframe = _live_grids(now)
+    wrong_timeframe["15m"][-1] = replace(
+        wrong_timeframe["15m"][-1], timeframe="1h",
+    )
+    report = qualify_us_current_session_intraday_closure(wrong_timeframe, as_of=now)
+    assert report["status"] == "UNKNOWN"
+    assert report["timeframes"]["15m"]["current_forming_excluded_count"] == 0
+    assert report["timeframes"]["15m"]["invalid_bar_starts"]
