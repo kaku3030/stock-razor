@@ -18,16 +18,17 @@ on:
     - cron: '20 2 * * 1-5'
     - cron: '20 6 * * 1-5'
 
-concurrency:
-  group: cn-tickflow-readonly-audit-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
   id-token: write
   contents: read
 
 jobs:
   audit:
+    # Only admitted jobs serialize. Untrusted public PR comments must not
+    # cancel queued owner audits before the job-level if gate evaluates.
+    concurrency:
+      group: cn-tickflow-readonly-audit-${{ github.ref }}
+      cancel-in-progress: false
     if: >-
       github.ref == 'refs/heads/main' && (
         github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (
