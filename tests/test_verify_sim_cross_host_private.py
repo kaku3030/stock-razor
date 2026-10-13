@@ -146,11 +146,24 @@ def test_missing_private_file_is_not_published(tmp_path):
     assert "private-id-999.json" not in json.dumps(result)
 
 
-def test_recursive_private_json_is_sanitized_instead_of_traceback(tmp_path):
+def test_deeply_nested_private_json_is_sanitized_as_schema_error(tmp_path):
     now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
     w, a = pair(tmp_path, now)
     w.write_text("[" * 1200 + "0" + "]" * 1200)
     result = verify_private_readbacks(str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now)
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "PRIVATE_SCHEMA_INVALID"
+    assert "999000123" not in json.dumps(result)
+    assert "US.TEST" not in json.dumps(result)
+
+
+def test_malformed_private_json_is_sanitized_as_input_error(tmp_path):
+    now = datetime(2026, 10, 12, 3, tzinfo=timezone.utc)
+    w, a = pair(tmp_path, now)
+    w.write_text("{")
+    result = verify_private_readbacks(
+        str(w), str(a), approved_account_file=str(_approved_file(tmp_path)), now_utc=now
+    )
     assert result["status"] == "BLOCKED"
     assert result["reason"] == "PRIVATE_INPUT_INVALID"
     assert "999000123" not in json.dumps(result)
