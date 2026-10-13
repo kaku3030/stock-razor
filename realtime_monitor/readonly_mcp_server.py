@@ -82,10 +82,13 @@ def get_cn_market_analysis(symbols: list[str] | None = None) -> dict:
 
     Use symbols=["__QUICK_SCAN__"] for the bounded read-only quick scan
     while an existing ChatGPT app action snapshot lacks get_cn_quick_scan.
+    The exact __CONTEXT_MANAGER_STATE__ singleton restores read-only context.
     All other requests keep the original response and safety contract.
     """
     if symbols == _CN_QUICK_SCAN_COMPAT_REQUEST:
         return read_cn_quick_scan()
+    if symbols == ["__CONTEXT_MANAGER_STATE__"]:
+        return get_context_manager_state()
     return read_cn_radar_analysis(symbols)
 
 
@@ -123,10 +126,14 @@ def get_market_analysis(symbols: list[str] | None = None) -> dict:
 
     Existing ChatGPT connector action catalogs may lag the deployed MCP tools.
     Only the full literal singleton sentinel redirects to the already reviewed
-    local-only Cloud Ops reader. Every ordinary Radar request is unchanged.
+    local-only Cloud Ops reader. The exact __CONTEXT_MANAGER_STATE__
+    singleton routes to the fail-closed read-only Context Manager state.
+    Every ordinary Radar request is unchanged.
     """
     if symbols == ["__CLOUD_OPS_STATUS__"]:
         return read_cloud_ops_status()
+    if symbols == ["__CONTEXT_MANAGER_STATE__"]:
+        return get_context_manager_state()
     return read_us_radar_analysis(symbols)
 
 
