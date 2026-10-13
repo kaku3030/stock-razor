@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] Paper AWS 只读 SIM 账户验收增加经 GitHub 仓库 Owner 严格授权的固定 PR 指令入口；仅在 latest main + OIDC + 固定 EC2 上查询模拟账户，不读取 REAL 账户或调用下单，不解锁 Paper 和 Radar。
+
 - [修复] AWS OpenD/MCP 只读 SSM 失败时仅脱敏回传固定阶段状态码，保留失败退出码，隐藏原始 stdout、stderr、账户和密钥；探针诊断不构成行情或交易准入。
 
 - [运维] 在受保护 main 的 AWS SSM 只读路由更新后，由 GitHub 云端自主派发唯一固定 `us_livefeed_status` 脱敏数据探针；仅标记已派发、不把工作流成功当作行情闭合或交易准入，不依赖用户电脑持续开机。
