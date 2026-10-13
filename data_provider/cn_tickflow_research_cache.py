@@ -63,8 +63,15 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
         # The official SDK's as_dataframe=False compact schema is columnar.
         # tickflow[realtime] does NOT install optional pandas; do not require
         # it in an AWS service or silently assume a DataFrame/DatetimeIndex.
-        keys = ("timestamp", "open", "high", "low", "close", "volume", "amount")
-        if any(not isinstance(frame.get(key), (list, tuple)) for key in keys):
+        # The installed SDK explicitly permits missing "amount" and the
+        # DataFrame helper silently fills it with zero. Never invent turnover:
+        # preserve None + availability UNKNOWN on the research-only route.
+        required = ("timestamp", "open", "high", "low", "close", "volume")
+        if any(not isinstance(frame.get(key), (list, tuple)) for key in required):
+            raise ValueError("missing compact SDK column")
+        amount_present = "amount" in frame
+        keys = (*required, "amount") if amount_present else required
+        if amount_present and not isinstance(frame["amount"], (list,tuple)):
             raise ValueError("missing compact SDK column")
         sizes = {len(frame[key]) for key in keys}
         if len(sizes) != 1:
@@ -72,7 +79,9 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
         count = sizes.pop()
         if not 4 <= count <= _ALLOWED_PERIODS[timeframe]:
             raise ValueError("insufficient or unbounded history")
-        records = [{key: frame[key][i] for key in keys} for i in range(count)]
+        records = [{**{key:frame[key][i] for key in keys},
+                    **({} if amount_present else {"amount":None,"_sdk_amount_omitted":True})}
+                   for i in range(count)]
     elif hasattr(frame, "to_dict"):
         records = frame.to_dict(orient="records")
     else:
@@ -111,13 +120,17 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
         lo=_number(raw,"low","low_price")
         cl=_number(raw,"close","close_price")
         vol=_number(raw,"volume","vol")
-        amt=_number(raw,"amount","turnover")
-        if op <= 0 or cl <= 0 or lo <= 0 or hi <= 0 or hi < max(op,cl,lo) or lo > min(op,cl,hi) or vol<0 or amt<0:
+        amount_unknown = raw.get("_sdk_amount_omitted") is True
+        amt = None if amount_unknown else _number(raw,"amount","turnover")
+        if (op <= 0 or cl <= 0 or lo <= 0 or hi <= 0
+                or hi < max(op,cl,lo) or lo > min(op,cl,hi)
+                or vol<0 or (amt is not None and amt<0)):
             raise ValueError("invalid OHLCVA")
         bars.append({
             "label": sh.strftime("%Y-%m-%d %H:%M"),
             "open":op,"high":hi,"low":lo,"close":cl,
             "volume":vol,"amount":amt,
+            "amount_availability":"SDK_OMITTED" if amount_unknown else "PRESENT_UNVERIFIED",
             "is_partial_bar": True,
             "bar_finality": "NOT_VERIFIED",
         })
@@ -272,14 +285,26 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 raise ValueError
             previous=bar_stamp
             numerical={}
-            for key in ("open","high","low","close","volume","amount"):
+            for key in ("open","high","low","close","volume"):
                 val=item.get(key)
                 if type(val) not in (int,float) or not isfinite(val):
                     raise ValueError
                 numerical[key]=val
-            if numerical["low"]<=0 or numerical["high"]<max(numerical["open"],numerical["close"],numerical["low"]) or numerical["low"]>min(numerical["open"],numerical["close"],numerical["high"]) or numerical["volume"]<0 or numerical["amount"]<0:
+            availability=item.get("amount_availability")
+            amount=item.get("amount")
+            if availability=="SDK_OMITTED" and amount is None:
+                numerical["amount"]=None
+            elif availability=="PRESENT_UNVERIFIED" and type(amount) in (int,float) and isfinite(amount) and amount>=0:
+                numerical["amount"]=amount
+            else:
                 raise ValueError
-            safe.append({"label":label,**numerical,"is_partial_bar":True,"bar_finality":"NOT_VERIFIED"})
+            if (numerical["low"]<=0
+                    or numerical["high"]<max(numerical["open"],numerical["close"],numerical["low"])
+                    or numerical["low"]>min(numerical["open"],numerical["close"],numerical["high"])
+                    or numerical["volume"]<0):
+                raise ValueError
+            safe.append({"label":label,**numerical,"amount_availability":availability,
+                "is_partial_bar":True,"bar_finality":"NOT_VERIFIED"})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
     expected=_expected_closed_grid_label(now,timeframe)

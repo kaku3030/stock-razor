@@ -74,7 +74,7 @@ jobs:
           assert d.get("cross_provider_parity")=="NOT_VERIFIED"
           assert type(d.get("sequence_advanced")) is bool
           assert type(d.get("limited_research_usable")) is bool
-          keys=("status","failure_stage","unit_active","mcp_unit_active","cache_private",
+          keys=("status","failure_stage","failure_reason","unit_active","mcp_unit_active","cache_private",
                 "repo_sha_match","sequence","cache_age_seconds",
                 "mcp_cache_consumer","all_four_readonly_requests_ok")
           public={"schema":d["schema"],

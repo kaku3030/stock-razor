@@ -58,6 +58,7 @@ def sample():
         "mcp_unit_active":active(MCP_UNIT),
         "status":"NOT_VERIFIED",
         "failure_stage":"UNKNOWN",
+        "failure_reason":"UNKNOWN",
         "cache_private":False,
         "repo_sha_match":False,
         "cache_age_seconds":None,
@@ -91,6 +92,18 @@ def sample():
                 for i in range(2) for period in ("15M","60M")
                 for action in ("FETCH","NORMALIZE")}
             result["failure_stage"]=stage if isinstance(stage,str) and stage in allowed else "UNKNOWN"
+            reason=data.get("failure_reason")
+            allowed_reasons={
+                "UNSUPPORTED_PERIOD","CLOCK_MISSING_TZ",
+                "COLUMN_MISSING_OR_NOT_LIST","COLUMN_LENGTH_MISMATCH",
+                "ROW_COUNT_OUT_OF_BOUNDS","SDK_SHAPE_INVALID","ROW_TYPE_INVALID",
+                "TIMESTAMP_TYPE_INVALID","TIMESTAMP_EPOCH_INVALID","TIMESTAMP_MISSING",
+                "TIMESTAMP_ORDER_INVALID","HISTORICAL_SESSION_GRID_MISMATCH",
+                "FUTURE_TRADING_DATE","OHLCVA_NUMBER_TYPE_INVALID",
+                "OHLCVA_COLUMN_MISSING","OHLCVA_RELATION_INVALID",
+                "VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
+            }
+            result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
         elif data.get("status")=="PASS_RESEARCH_ONLY":
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:

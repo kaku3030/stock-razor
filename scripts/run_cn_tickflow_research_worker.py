@@ -16,6 +16,36 @@ from data_provider.cn_tickflow_research_cache import (
 SECRET_NAME="stock-razor/tickflow/premium-api-key"
 running=True
 
+# One stable failure enum per locally-defined validation error. Exact string
+# matches only; never publish the raw provider error, payload or credential.
+_NORMALIZE_REJECTION_REASON = {
+    "unsupported period": "UNSUPPORTED_PERIOD",
+    "naive clock": "CLOCK_MISSING_TZ",
+    "missing compact SDK column": "COLUMN_MISSING_OR_NOT_LIST",
+    "compact SDK column lengths differ": "COLUMN_LENGTH_MISMATCH",
+    "insufficient or unbounded history": "ROW_COUNT_OUT_OF_BOUNDS",
+    "unexpected SDK data type": "SDK_SHAPE_INVALID",
+    "non-dict record": "ROW_TYPE_INVALID",
+    "invalid provider timestamp": "TIMESTAMP_TYPE_INVALID",
+    "provider epoch outside bounded range": "TIMESTAMP_EPOCH_INVALID",
+    "no provider timestamp": "TIMESTAMP_MISSING",
+    "reordered/duplicate timestamp": "TIMESTAMP_ORDER_INVALID",
+    "unexpected Shanghai regular-session grid": "HISTORICAL_SESSION_GRID_MISMATCH",
+    "future trading date": "FUTURE_TRADING_DATE",
+    "invalid provider number": "OHLCVA_NUMBER_TYPE_INVALID",
+    "missing provider column": "OHLCVA_COLUMN_MISSING",
+    "invalid OHLCVA": "OHLCVA_RELATION_INVALID",
+    "no sufficient historical closed-time candidates": "VALID_BAR_COUNT_LOW",
+}
+
+def _normalize_rejection_reason(error: Exception) -> str:
+    stage=getattr(error, "_tickflow_stage", "")
+    if (type(error) is ValueError and isinstance(stage,str)
+            and stage.endswith("_NORMALIZE")):
+        return _NORMALIZE_REJECTION_REASON.get(str(error), "OTHER")
+    return "NOT_APPLICABLE"
+
+
 def _stop(*_args):
     global running
     running=False
@@ -87,6 +117,7 @@ def main() -> int:
                     "observed_at_utc":datetime.now(timezone.utc).isoformat(),
                     "sequence":sequence,"status":"BLOCKED",
                     "failure_class":type(exc).__name__,
+                    "failure_reason":_normalize_rejection_reason(exc),
                     "failure_stage":(
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
