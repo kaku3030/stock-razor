@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 云端 MCP 既有 `get_market_analysis` 接口支持精确只读 Cloud Ops 兼容参数，不需新增 ChatGPT 客户端工具；其他美股分析与所有交易门禁保持不变，必须经 AWS 实际部署后验收。
+
 - [chore] Run the existing cloud-only TickFlow research acceptance audit on weekday Shanghai market sessions; keep all source, Radar and trading gates closed.
 
 - [修复] 修正 CN Quick Scan AWS SSM 审计使用 dash 不支持的 `set -o pipefail` 导致返回码 2；改为 POSIX `set -eu`，并增加回归契约检查。
