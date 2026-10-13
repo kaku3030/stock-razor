@@ -45,3 +45,21 @@ The repository `AGENTS.md` and `.claude/skills/context-manager-recovery/SKILL.md
 are the default recovery entry. A new window should query the legacy MCP
 sentinel `__CONTEXT_MANAGER_STATE__`, then preserve each domain's provenance,
 TTL, `UNVERIFIED`, `EXPIRED`, and `BLOCKED` values.
+
+## Existing ChatGPT action catalogs (no app refresh required)
+
+If the newly registered `get_context_manager_state` action is absent from the
+current ChatGPT plugin catalog, invoke either **existing** connected action:
+
+- CN window: `get_cn_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`
+- US/main window: `get_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`
+
+The full exact singleton sentinel is required; all normal symbol requests and
+existing `__QUICK_SCAN__` / `__CLOUD_OPS_STATUS__` compatibility paths are
+preserved. Both aliases return the identical bounded read-only Context Manager
+schema. A result status of `BLOCKED` or `EXPIRED` is **not** an acceptable
+cross-chat handoff; there is no trading or deployment authority.
+
+These aliases permit existing ChatGPT actions to read state after AWS deployment.
+They do not automatically make a new chat invoke the tool; a persistent project
+instruction or skill should direct the agent to call it at the start of a task.

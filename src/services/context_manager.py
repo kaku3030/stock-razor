@@ -190,7 +190,6 @@ class ContextManagerStore:
             }
         current["domains"] = domains
         return current
-
     def read(self) -> dict[str, Any]:
         try:
             events = self._read_events()
@@ -301,8 +300,6 @@ def _event_domain(event: Mapping[str, Any]) -> str:
     if "priorit" in event_type:
         return "priorities"
     return "blockers" if _is_failure(event_type) else "priorities"
-
-
 def _fingerprint(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

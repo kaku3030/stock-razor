@@ -62,3 +62,10 @@ def test_canonical_mcp_exposes_single_call_evidence_aligned_us_research_brief():
     assert "return read_us_fast_research_brief(symbols)" in source
     assert "get_us_research_brief" in installer
     assert "get_us_research_brief([\"AMD\"])" in installer
+
+
+def test_context_manager_deploy_event_uses_absolute_checked_out_script_path():
+    installer = Path("ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
+    assert '"$INSTALL_ROOT/venv/bin/python" "$INSTALL_ROOT/repo/scripts/record_context_event.py"' in installer
+    assert '"$INSTALL_ROOT/venv/bin/python" scripts/record_context_event.py' not in installer
+    assert 'test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"' in installer

@@ -59,7 +59,11 @@ def _read_snapshot(path: str) -> SimAccountHostObservation:
         obj = json.loads(raw, object_pairs_hook=_unique_object)
     except InvalidReadback:
         raise
-    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+    except RecursionError:
+        # A syntactically valid but excessively nested JSON document is not
+        # an admissible private readback schema. Do not echo parser details.
+        raise InvalidReadback("PRIVATE_SCHEMA_INVALID") from None
+    except (OSError, UnicodeError, ValueError, TypeError):
         raise InvalidReadback("PRIVATE_INPUT_INVALID") from None
     if not isinstance(obj, dict) or obj.keys() != FIELDS:
         raise InvalidReadback("PRIVATE_SCHEMA_INVALID")

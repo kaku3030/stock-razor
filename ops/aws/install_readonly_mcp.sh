@@ -41,6 +41,8 @@ from realtime_monitor.readonly_mcp_server import (
 )
 assert mcp is not None
 assert get_context_manager_state()["safety"]["live_trade"] is False
+assert get_cn_market_analysis(["__CONTEXT_MANAGER_STATE__"])["safety"]["live_trade"] is False
+assert get_market_analysis(["__CONTEXT_MANAGER_STATE__"])["safety"]["radar_admission"] == "BLOCKED"
 result = get_futures_runtime_health()
 assert result["live_trade"] is False
 assert result["radar_admission"] == "BLOCKED"
@@ -105,7 +107,7 @@ systemctl is-active "$SERVICE_NAME"
 PYTHONPATH="$INSTALL_ROOT/repo" \
   STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json \
   STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl \
-  "$INSTALL_ROOT/venv/bin/python" scripts/record_context_event.py \
+  "$INSTALL_ROOT/venv/bin/python" "$INSTALL_ROOT/repo/scripts/record_context_event.py" \
     --event-id "deployment:$REPO_REF" \
     --event-type deployment_passed \
     --source deployment \

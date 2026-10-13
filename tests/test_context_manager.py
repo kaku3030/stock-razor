@@ -57,8 +57,6 @@ def test_corrupt_log_blocks_read(tmp_path):
     with pytest.raises(json.JSONDecodeError):
         store._read_events()
     assert store.read()["status"] == "BLOCKED"
-
-
 def test_recovery_snapshot_keeps_each_domain_with_provenance_and_ttl(tmp_path):
     store = ContextManagerStore(tmp_path / "current.json", clock=_clock)
     store.record(
