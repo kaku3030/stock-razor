@@ -72,7 +72,7 @@ def test_same_day_latest_session_without_anchor_remains_blocked():
 
     plan = build_futu_k1m_warm_start_plan(
         latest,
-        received_at=datetime(2026, 10, 6, 22, 0, tzinfo=timezone.utc),
+        received_at=datetime(2026, 10, 6, 20, 10, tzinfo=timezone.utc),
         expected_symbol="US.AMD",
     )
 
