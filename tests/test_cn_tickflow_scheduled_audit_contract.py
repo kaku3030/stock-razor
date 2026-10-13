@@ -13,7 +13,9 @@ def test_market_session_cron_is_readonly_and_weekday_scoped():
     for hour, local in ((2, 10), (6, 14)):
         sh = datetime(2026, 10, 14, hour, 20, tzinfo=timezone.utc).astimezone(ZoneInfo('Asia/Shanghai'))
         assert (sh.hour, sh.minute) == (local, 20)
-    assert "if: github.ref == 'refs/heads/main'" in text
+    assert "github.ref == 'refs/heads/main' && (" in text
+    assert "github.event_name == 'schedule'" in text
+    assert "github.event_name == 'workflow_dispatch'" in text
 
 
 def test_scheduled_audit_preserves_research_only_boundaries():
