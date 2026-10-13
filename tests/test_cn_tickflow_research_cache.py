@@ -370,3 +370,38 @@ def test_historical_invalid_ohlc_cannot_be_waived_by_diagnostic():
     with pytest.raises(ValueError):
         normalize_bars(raw,"15m",now_utc=now,quarantine_evidence=evidence)
     assert evidence=={}
+
+def test_today_ohlc_tick_lattice_shadow_can_identify_rounding_only():
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    before=frame("15m","2026-10-09").iloc[:6].copy()
+    today=frame("15m","2026-10-13").iloc[8:10].copy()
+    today.loc[today.index[0],["open","high","low","close"]]=[
+        1.5,1.59999999,1.3,1.6]
+    today.loc[today.index[1],["open","high","low","close"]]=[
+        1.5,1.4,1.3,1.6]
+    df=pd.concat([before,today],ignore_index=True)
+    raw={k:df[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    reasons={}
+    evidence={}
+    out=normalize_bars(raw,"15m",now_utc=now,
+         quarantine_counts=reasons,quarantine_evidence=evidence)
+    assert len(out)==6 # never actually amend nor admit the two bad rows
+    assert evidence["ETF_TICK_LATTICE_NEAR"]==2
+    assert evidence["ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY"]==1
+    assert evidence.get("ETF_TICK_LATTICE_FAR",0)==0
+
+def test_today_ohlc_off_tick_grid_never_counted_as_repairable():
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    before=frame("15m","2026-10-09").iloc[:6].copy()
+    today=frame("15m","2026-10-13").iloc[8:9].copy()
+    today.loc[today.index[0],["open","high","low","close"]]=[
+         1.5,1.5994,1.3,1.6]
+    df=pd.concat([before,today],ignore_index=True)
+    raw={k:df[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    evidence={}
+    out=normalize_bars(raw,"15m",now_utc=now,quarantine_evidence=evidence)
+    assert len(out)==6
+    assert evidence["ETF_TICK_LATTICE_FAR"]==1
+    assert evidence.get("ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY",0)==0
