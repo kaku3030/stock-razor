@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 复用原 AWS 只读审计工作流，新增 GitHub owner 在固定 PR 发送精确评论后触发的受限 SSM 诊断；双重身份/主分支校验，禁用任意命令、重启、交易和密钥输出。
+
 - [修复] AWS 只读云端运行审计在申请 OIDC 权限前及发送 SSM 命令前两次校验 main 当前 SHA，拒绝过期任务，不读取密钥、不改服务或交易门禁。
 
 - [新功能] 现有只读 MCP 新增固定四项 AWS EC2 本机 systemd/心跳健康查看入口，使用严格安全字段白名单；不执行 AWS API、SSM 命令、服务重启或交易，ChatGPT 远程管理权限仍待独立授权。
