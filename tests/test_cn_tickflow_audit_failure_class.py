@@ -240,3 +240,33 @@ def test_qualified_tencent_price_parity_splits_closed_past_from_latest_day():
     assert d["earlier_session_overlap_bucket"]=="TWO_TO_FOUR"
     assert d["same_session_overlap_bucket"]=="TWO_TO_FOUR"
     assert "2026" not in str(d) and "1.265" not in str(d)
+
+def test_qualified_tencent_session_disagreement_driver_and_clock_are_private_enums():
+    from scripts.audit_cn_tickflow_research_runtime import compare_tencent_qualified_price_rows
+    labels=["2026-10-13 09:45","2026-10-13 10:00",
+            "2026-10-13 13:15","2026-10-13 14:45","2026-10-13 15:00"]
+    def candle(t):
+        return dict(label=t,open=1.20,high=1.23,low=1.19,close=1.21)
+    tick=[candle(x) for x in labels]
+    reference=[{**candle(x),"quality_flags":[]} for x in labels]
+    reference[3]["high"]=1.24
+    reference[4]["high"]=1.24
+    reference.extend([{**candle("2026-10-09 09:45"),"quality_flags":[]}
+                     for _ in range(48)])
+    result=compare_tencent_qualified_price_rows(tick,reference,
+        qualification_pass=True,session_date="2026-10-13")
+    assert result["same_session_disagreement_driver"]=="HIGH"
+    assert result["same_session_disagreement_phase"]=="CLOSING"
+    assert result["same_session_disagreement_bucket"]=="TWO_TO_FOUR"
+    assert result["same_session_agreement"]=="GE50_PCT"
+    assert "1.24" not in str(result) and "14:45" not in str(result)
+    ref2=[{**candle(x),"quality_flags":[]} for x in labels]
+    ref2.extend(reference[5:])
+    okay=compare_tencent_qualified_price_rows(tick,ref2,
+        qualification_pass=True,session_date="2026-10-13")
+    assert okay["same_session_disagreement_driver"]=="NONE"
+    assert okay["same_session_disagreement_phase"]=="NONE"
+    assert okay["same_session_disagreement_bucket"]=="ZERO"
+    invalid=compare_tencent_qualified_price_rows(tick,ref2,
+        qualification_pass=False,session_date="2026-10-13")
+    assert invalid["same_session_disagreement_driver"]=="UNKNOWN"

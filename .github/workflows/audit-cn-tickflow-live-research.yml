@@ -86,12 +86,23 @@ jobs:
           split_agreement=("UNKNOWN","NO_OVERLAP","INSUFFICIENT_PAIRS",
                            "ALL_WITHIN_ONE_TICK","NONE_WITHIN_ONE_TICK",
                            "GE90_PCT","GE50_PCT","GE25_PCT","LT25_PCT")
+          disagreement_driver=("UNKNOWN","NONE","OPEN","HIGH","LOW","CLOSE",
+                               "MULTIPLE_FIELDS","MULTIPLE_DRIVERS")
+          disagreement_phase=("UNKNOWN","NONE","OPENING","LATE_MORNING",
+                              "AFTERNOON","CLOSING","OTHER_SESSION_CLOCK",
+                              "MULTIPLE_PHASES")
           for obj in reference.values():
               assert isinstance(obj,dict)
               assert set(obj)==set(("status","overlap_bucket",
                     "max_ohlc_price_difference_ticks","reference",
                     "earlier_session_agreement","same_session_agreement",
-                    "earlier_session_overlap_bucket","same_session_overlap_bucket"))
+                    "earlier_session_overlap_bucket","same_session_overlap_bucket",
+                    "same_session_disagreement_driver",
+                    "same_session_disagreement_phase",
+                    "same_session_disagreement_bucket"))
+              assert obj["same_session_disagreement_driver"] in disagreement_driver
+              assert obj["same_session_disagreement_phase"] in disagreement_phase
+              assert obj["same_session_disagreement_bucket"] in count_buckets
               assert obj["status"] in statuses
               assert obj["overlap_bucket"] in count_buckets
               assert obj["max_ohlc_price_difference_ticks"] in tick_diffs
