@@ -49,6 +49,7 @@ for result in (
     get_market_snapshots(["AMD"]),
     get_market_bars("AMD", timeframe="1m", limit=1),
     get_market_analysis(["AMD"]),
+    get_market_analysis(["__CLOUD_OPS_STATUS__"]),
     get_us_research_brief(["AMD"]),
     get_us_quick_scan(["AMD"]),
     get_market_source_status(),
