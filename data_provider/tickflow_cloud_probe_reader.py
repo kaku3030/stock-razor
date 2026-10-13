@@ -102,6 +102,54 @@ def read_tickflow_probe_health(path: str | None = None, *,
     if age < 0 or age > max_age_seconds:
         return {**fail("STALE"), "age_seconds": round(age, 2)}
 
+    # Only pre-sanitized, bounded historical grid diagnostics are exposed.
+    # They are never a live Kline, current-session closure, or production feed.
+    minute_grid_observations = []
+    if schema == "stock_razor_tickflow_sanitized_probe_v0_1":
+        for op in payload["operations"]:
+            if not isinstance(op, dict) or op.get("name") not in ("kline_15m", "kline_60m"):
+                continue
+            if not (op.get("operation") == "COMPLETED"
+                    and op.get("historical_grid_is_not_closure_proof") is True
+                    and op.get("provider_live_qualified") is False):
+                continue
+            grid_fields = (
+                "prior_sessions_observed","complete_end_sessions",
+                "complete_start_sessions","current_day_rows_excluded",
+            )
+            values = {key:op.get("historical_grid_"+key) for key in grid_fields}
+            if any(type(v) is not int or not 0 <= v <= 120 for v in values.values()):
+                continue
+            count = op.get("historical_sample_count")
+            if type(count) is not int or not 0 <= count <= 96:
+                continue
+            convention = op.get("historical_grid_convention")
+            if convention not in (
+                "BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT",
+                "INSUFFICIENT","INVALID_TIMESTAMP_ORDER",
+            ):
+                convention = "INSUFFICIENT"
+            if convention == "BAR_END_GRID_MATCH" and not (
+                values["complete_end_sessions"] >= 3
+                and values["complete_start_sessions"] == 0
+            ):
+                convention = "INSUFFICIENT"
+            if convention == "BAR_START_GRID_MATCH" and not (
+                values["complete_start_sessions"] >= 3
+                and values["complete_end_sessions"] == 0
+            ):
+                convention = "INSUFFICIENT"
+            minute_grid_observations.append({
+                "period": op["name"].replace("kline_", ""),
+                "operation": "COMPLETED",
+                "historical_grid_convention": convention,
+                "historical_sample_count": count,
+                **{"historical_grid_"+k: v for k,v in values.items()},
+                "live_bar_closure_proven": False,
+            })
+            if len(minute_grid_observations) >= 4:
+                break
+
     ops = []
     for op in payload["operations"]:
         if (not isinstance(op, dict) or not isinstance(op.get("name"), str)
@@ -190,5 +238,6 @@ def read_tickflow_probe_health(path: str | None = None, *,
         "repo_sha": sha,
         "data_qualification": "NOT_VERIFIED",
         "historical_kline_observation": historical,
+        "minute_grid_observations": minute_grid_observations,
         "operations": ops,
     }
