@@ -395,6 +395,97 @@ def compare_tencent_qualified_price_rows(
     return result
 
 
+
+def eastmoney_tencent_historical_grid_shadow(
+    cached: object, tencent_rows: object, *, symbol: str, timeframe: str,
+    qualified: bool, now_utc: datetime,
+) -> str:
+    """Three-session, independent, historical-only label AND OHLC witness.
+
+    NOT proof of currentness or source admission; production Eastmoney
+    observer retains UNKNOWN semantics and no price values are exported.
+    """
+    if not qualified:
+        return "TENCENT_UNQUALIFIED"
+    if symbol not in ("159611","518880") or timeframe not in ("15m","60m"):
+        return "UNKNOWN"
+    try:
+        from decimal import Decimal
+        from math import isfinite
+        from zoneinfo import ZoneInfo
+        from src.services.a_share_intraday_grid_qualification import _EXPECTED_END_LABELS
+        if not isinstance(cached,dict):
+            return "NO_FRESH_REFERENCE"
+        if (cached.get("schema")!="stock_razor_cn_eastmoney_observation_v1"
+                or cached.get("research_only") is not True
+                or cached.get("radar_admission")!="BLOCKED"
+                or cached.get("live_trade") is not False):
+            return "INVALID_REFERENCE"
+        stamp=datetime.fromisoformat(cached["emitted_at_utc"])
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            return "INVALID_REFERENCE"
+        if not -5 <= (now_utc-stamp.astimezone(timezone.utc)).total_seconds() <= 240:
+            return "NO_FRESH_REFERENCE"
+        frame=cached["symbols"][symbol]["timeframes"][timeframe]
+        if (frame.get("status")!="PASS" or frame.get("adjustment")!="NONE"
+                or frame.get("provider_used")!="eastmoney"
+                or frame.get("timestamp_semantic")!="UNKNOWN"
+                or frame.get("timestamp_qualification") is not None):
+            return "UNQUALIFIED_REFERENCE_LINEAGE"
+        cutoff=now_utc.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        grid=tuple(_EXPECTED_END_LABELS[int(timeframe[:-1])])
+        def group(rows,source):
+            if not isinstance(rows,(list,tuple)):
+                raise ValueError("invalid input")
+            previous=""
+            result={}
+            for bar in rows:
+                if (not isinstance(bar,dict) or bar.get("provider")!=source
+                        or bar.get("quality_flags") not in ([],())):
+                    raise ValueError("invalid source provenance")
+                label=bar.get("label")
+                if (not isinstance(label,str) or len(label)!=16
+                        or label<=previous or
+                        datetime.strptime(label,"%Y-%m-%d %H:%M").strftime("%Y-%m-%d %H:%M")!=label):
+                    raise ValueError("invalid label")
+                previous=label
+                if source=="eastmoney" and bar.get("provider_label_raw")!=label:
+                    raise ValueError("not original label")
+                if label[:10]>=cutoff:
+                    continue
+                clock=label[11:]
+                if clock not in grid:
+                    raise ValueError("off-grid history")
+                numbers=[]
+                for field in ("open","high","low","close"):
+                    value=bar.get(field)
+                    if type(value) not in (int,float) or not isfinite(value) or value<=0:
+                        raise ValueError("invalid OHLC")
+                    numbers.append(Decimal(str(value)))
+                result.setdefault(label[:10],[]).append((clock,numbers))
+            return result
+        east=group(frame["rows"],"eastmoney")
+        teng=group(tencent_rows,"tencent")
+        sessions=[]
+        for date in sorted(set(east)&set(teng)):
+            a,b=east[date],teng[date]
+            if tuple(v[0] for v in a)==grid and tuple(v[0] for v in b)==grid:
+                sessions.append((a,b))
+        if len(sessions)<3:
+            return "INSUFFICIENT_SHARED_COMPLETE_SESSIONS"
+        n=0
+        within=0
+        for a,b in sessions[-3:]:
+            for (_,left),(_,right) in zip(a,b):
+                n+=1
+                if max(abs(x-y) for x,y in zip(left,right))<=Decimal("0.001"):
+                    within+=1
+        if within*100>=90*n:
+            return "HISTORICAL_GRID_PRICE_ALIGNED_RESEARCH_ONLY"
+        return "HISTORICAL_GRID_ALIGNED_PRICE_DIVERGENCE"
+    except (KeyError,ValueError,TypeError,IndexError,OverflowError,ArithmeticError):
+        return "INVALID_REFERENCE"
+
 def sample_tencent_qualified_parity() -> dict:
     """At most FOUR public Tencent REST GETs, exactly 2 ETF × 15m/60m.
 
@@ -413,6 +504,7 @@ def sample_tencent_qualified_parity() -> dict:
             "same_session_disagreement_driver":"UNKNOWN",
             "same_session_disagreement_phase":"UNKNOWN",
             "same_session_disagreement_bucket":"UNKNOWN",
+            "eastmoney_historical_grid_shadow":"UNKNOWN",
         }
         for key in ("159611.SZ","518880.SH")
         for period in ("15m","60m")
@@ -444,6 +536,11 @@ def sample_tencent_qualified_parity() -> dict:
         for item in base.values():
             item["status"]="IMPORT_BLOCKED"
         return base
+    try:
+        m=EASTMONEY_FILE.stat()
+        ecache=json.loads(EASTMONEY_FILE.read_text(encoding="utf-8")) if 0<m.st_size<=4000000 else None
+    except (OSError,ValueError,TypeError):
+        ecache=None
     for key,code in (("159611.SZ","159611"),("518880.SH","518880")):
         for period in ("15m","60m"):
             out=base[key.replace(".","_")+"_"+period]
@@ -474,6 +571,13 @@ def sample_tencent_qualified_parity() -> dict:
                     qualification_pass=qualification.status=="PASS",
                     session_date=cn_day,
                 ))
+                out["eastmoney_historical_grid_shadow"]=(
+                    eastmoney_tencent_historical_grid_shadow(
+                        ecache,reference,symbol=code,timeframe=period,
+                        qualified=qualification.status=="PASS",
+                        now_utc=datetime.now(timezone.utc),
+                    )
+                )
             except Exception:
                 # Keep errors and HTTP payloads private; classify only.
                 out["status"]="PROVIDER_OR_PARSER_BLOCKED"
