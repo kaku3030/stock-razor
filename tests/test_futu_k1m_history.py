@@ -136,7 +136,7 @@ def test_same_new_york_date_does_not_use_terminal_session_shortcut():
 
     result = normalize_futu_k1m_history_rows(
         rows,
-        received_at=datetime(2026, 10, 6, 22, 0, tzinfo=timezone.utc),
+        received_at=datetime(2026, 10, 6, 20, 10, tzinfo=timezone.utc),
         expected_symbol="US.AMD",
         allow_completed_prior_session_tail=True,
     )
