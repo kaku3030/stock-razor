@@ -70,9 +70,9 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
 def _safe_scalar(key: str, value: object) -> object | None:
     """Allow only bounded typed evidence, never arbitrary remote text."""
     if type(value) is bool:
-        return value
+        return value if key in ("paper_auto_ready", "live_trade", "trade_execution", "opend_reachable", "checkout_dirty") else None
     if type(value) is int:
-        return value if 0 <= value <= 1_000_000 else None
+        return value if key == "sequence" and 0 <= value <= 1_000_000 else None
     if not isinstance(value, str):
         return None
     if any(term in value.lower() for term in ("secret", "token", "password", "account", "bearer", "api_key", "credential")):
