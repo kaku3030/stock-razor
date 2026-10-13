@@ -87,6 +87,15 @@ def main() -> int:
                     "observed_at_utc":datetime.now(timezone.utc).isoformat(),
                     "sequence":sequence,"status":"BLOCKED",
                     "failure_class":type(exc).__name__,
+                    "failure_stage":(
+                        getattr(exc,"_tickflow_stage","UNKNOWN")
+                        if getattr(exc,"_tickflow_stage","UNKNOWN") in {
+                            "S0_15M_FETCH","S0_15M_NORMALIZE",
+                            "S0_60M_FETCH","S0_60M_NORMALIZE",
+                            "S1_15M_FETCH","S1_15M_NORMALIZE",
+                            "S1_60M_FETCH","S1_60M_NORMALIZE",
+                        } else "UNKNOWN"
+                    ),
                     "symbols":{},"research_only":True,
                     "provider_first_target":True,
                     "source_arbiter_admission":"BLOCKED",
