@@ -1166,7 +1166,8 @@ jobs:
               ;;
             cn_quick_scan_audit)
               read -r -d '' cn_quick_scan_audit_script <<'REMOTE' || true
-          set -euo pipefail
+          # AWS-RunShellScript executes through /bin/sh (dash on Ubuntu).
+          set -eu
           repo=/opt/stock-razor-mcp/repo
           python=/opt/stock-razor-mcp/venv/bin/python
           test "$(systemctl is-active stock-razor-mcp.service)" = active

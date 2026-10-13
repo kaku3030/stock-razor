@@ -21,6 +21,8 @@ def test_audit_is_explicitly_available_and_one_fixed_case():
 
 def test_audit_is_read_only_bounded_and_uses_live_installed_mcp():
     case = _audit_case()
+    assert "set -eu" in case
+    assert "set -euo pipefail" not in case
     assert "systemctl is-active stock-razor-mcp.service" in case
     assert "timeout 12s env PYTHONPATH=" in case
     assert "from realtime_monitor.readonly_mcp_server import get_cn_quick_scan, mcp" in case
