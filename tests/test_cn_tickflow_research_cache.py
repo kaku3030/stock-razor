@@ -229,3 +229,144 @@ def test_amount_present_but_null_does_not_falsely_pass_without_contract():
     bad={**raw,"amount":[None]*len(raw["amount"])}
     with pytest.raises(ValueError,match="invalid provider number"):
         normalize_bars(bad,"15m",now_utc=NOW)
+
+def test_current_intraday_invalid_ohlc_is_quarantined_without_faking_finality():
+    now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)  # Shanghai 13:18
+    old=frame("15m","2026-10-09").iloc[:7].copy()
+    today=frame("15m","2026-10-13").iloc[8:9].copy() # 13:15 label
+    today.loc[today.index[0],"high"]=0.0
+    payload=pd.concat([old,today],ignore_index=True)
+    raw={key:payload[key].tolist() for key in
+         ("timestamp","open","high","low","close","volume","amount")}
+    result=normalize_bars(raw,"15m",now_utc=now)
+    assert len(result)==len(old)
+    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in result)
+    # The same malformed bar in completed historical session is blocked.
+    earlier=frame("15m","2026-10-09")
+    earlier.loc[earlier.index[0],"high"]=0.0
+    invalid={key:earlier[key].tolist() for key in
+         ("timestamp","open","high","low","close","volume","amount")}
+    with pytest.raises(ValueError,match="invalid OHLCVA nonpositive"):
+        normalize_bars(invalid,"15m",now_utc=now)
+
+def test_nonconforming_current_volume_is_quarantined_not_synthetically_repaired():
+    now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
+    earlier=frame("60m","2026-10-09").iloc[:4].copy()
+    current=frame("60m","2026-10-13").iloc[2:3].copy()
+    current.loc[current.index[0],"volume"]=-1
+    df=pd.concat([earlier,current],ignore_index=True)
+    raw={k:df[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    assert len(normalize_bars(raw,"60m",now_utc=now))==4
+
+def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_path):
+    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc) # Shanghai 15:16
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="b"*40,sequence=4)
+    cache=tmp_path/"cache.json"
+    atomic_publish(str(cache),snap)
+    strict=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current)
+    assert strict["status"]=="BAR_LABEL_BEHIND_SESSION"
+    assert strict["ok"] is False
+    hist=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current,
+        research_mode="historical_only")
+    assert hist["ok"] is True
+    assert hist["status"]=="PASS_HISTORICAL_ONLY"
+    assert hist["expected_grid_progress"]=="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+    assert hist["currentness"]=="UNPROVEN"
+    assert hist["session_currentness"]=="NOT_VERIFIED"
+    assert hist["bar_finality"]=="NOT_VERIFIED"
+    assert hist["radar_admission"]=="BLOCKED"
+    assert hist["canonical_write_authorized"] is False
+    assert hist["provider_requests"]==0
+    assert len(hist["rows"])>0
+
+def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
+    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="c"*40,sequence=1)
+    p=tmp_path/"cache.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=320)
+    strict=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=later)
+    hist=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=later,research_mode="historical_only")
+    assert strict["status"]=="STALE"
+    assert hist["status"]=="PASS_HISTORICAL_ONLY"
+    assert hist["max_age_seconds"]==360
+    too_late=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=current+timedelta(seconds=370),
+        research_mode="historical_only")
+    assert too_late["status"]=="STALE"
+
+def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
+    q=read_cn_tickflow_research_data("159611.SZ",
+            path=str(tmp_path/"fake"),research_mode="production")
+    assert q["status"]=="INVALID_REQUEST"
+    assert q["radar_admission"]=="BLOCKED"
+    assert q["live_trade"] is False
+
+def test_current_day_vendor_bar_quarantine_cause_is_bounded_counter():
+    current=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    baseline=frame("15m","2026-10-09").iloc[:6].copy()
+    current_frame=frame("15m","2026-10-13").iloc[8:10].copy()
+    current_frame.loc[current_frame.index[0],"high"]=0
+    current_frame.loc[current_frame.index[1],"volume"]=-1
+    merged=pd.concat([baseline,current_frame],ignore_index=True)
+    raw={k:merged[k].tolist() for k in ("timestamp","open","high",
+                                      "low","close","volume","amount")}
+    counts={}
+    bars=normalize_bars(raw,"15m",now_utc=current,quarantine_counts=counts)
+    assert len(bars)==6
+    assert counts=={"TODAY_NONPOSITIVE_OHLC":1,"TODAY_NEGATIVE_VOLUME":1}
+    assert not any("secret" in str(k) for k in counts)
+
+def test_previous_day_invalid_ohlc_still_aborts_with_metrics_enabled():
+    current=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
+    earlier=frame("15m","2026-10-09")
+    earlier.loc[earlier.index[0],"high"]=0
+    raw={k:earlier[k].tolist() for k in ("timestamp","open","high",
+                                          "low","close","volume","amount")}
+    counts={}
+    with pytest.raises(ValueError):
+        normalize_bars(raw,"15m",now_utc=current,quarantine_counts=counts)
+    assert not counts
+
+def test_ohlc_gap_evidence_is_bounded_magnitude_not_raw_prices():
+    from datetime import datetime, timezone
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    old=frame("15m","2026-10-09").iloc[:6].copy()
+    t=frame("15m","2026-10-13").iloc[8:10].copy()
+    # One near-boundary high discrepancy; another inverted high/low
+    # where swapping would enclose the body; neither is auto-corrected.
+    t.loc[t.index[0],["high","low"]]=[1.59999,1.3]
+    t.loc[t.index[1],["high","low"]]=[1.40,1.70]
+    merged=pd.concat([old,t],ignore_index=True)
+    raw={k:merged[k].tolist() for k in ("timestamp","open","high",
+             "low","close","volume","amount")}
+    quarantined={}
+    evidence={}
+    bars=normalize_bars(raw,"15m",now_utc=now,
+         quarantine_counts=quarantined,quarantine_evidence=evidence)
+    assert len(bars)==len(old)
+    assert sum(quarantined.values())==2
+    assert evidence["GAP_LT_1BP"]==1
+    assert evidence["GAP_GE_100BP"]==1
+    assert evidence["HILO_SWAP_WOULD_ENCLOSE_BODY"]==1
+    assert all("price" not in k.lower() for k in evidence)
+    assert all(type(v) is int and v>=1 for v in evidence.values())
+
+
+def test_historical_invalid_ohlc_cannot_be_waived_by_diagnostic():
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    old=frame("15m","2026-10-09")
+    old.loc[old.index[0],"high"]=0.1
+    raw={k:old[k].tolist() for k in ("timestamp","open","high",
+             "low","close","volume","amount")}
+    evidence={}
+    with pytest.raises(ValueError):
+        normalize_bars(raw,"15m",now_utc=now,quarantine_evidence=evidence)
+    assert evidence=={}

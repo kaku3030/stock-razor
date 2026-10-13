@@ -2,6 +2,9 @@ name: Audit Read-Only Cloud Runtime
 
 on:
   workflow_dispatch:
+  # Owner-only ChatGPT/GitHub status command. No cron or additional AWS IAM.
+  issue_comment:
+    types: [created]
 
 permissions:
   id-token: write
@@ -13,6 +16,19 @@ concurrency:
 
 jobs:
   audit:
+    # Public repo comments cannot reach AWS OIDC unless the verified GitHub
+    # identity, fixed PR and literal action all match.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.number == 665 &&
+        github.event.issue.pull_request != null &&
+        github.actor == github.repository_owner &&
+        github.event.comment.user.login == github.repository_owner &&
+        github.event.comment.author_association == 'OWNER' &&
+        github.event.comment.body == '/stock-razor aws-audit read-only'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -24,6 +40,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Validate owner-only comment before AWS OIDC
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/authorize_cloud_ops_audit_comment.py
+
       - name: Verify protected main and checkout before AWS OIDC
         shell: bash
         env:

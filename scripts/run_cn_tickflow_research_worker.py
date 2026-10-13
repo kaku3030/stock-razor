@@ -35,6 +35,11 @@ _NORMALIZE_REJECTION_REASON = {
     "invalid provider number": "OHLCVA_NUMBER_TYPE_INVALID",
     "missing provider column": "OHLCVA_COLUMN_MISSING",
     "invalid OHLCVA": "OHLCVA_RELATION_INVALID",
+    "invalid OHLCVA nonpositive": "OHLCVA_NONPOSITIVE",
+    "invalid OHLCVA high below body": "OHLCVA_HIGH_LT_BODY",
+    "invalid OHLCVA low above body": "OHLCVA_LOW_GT_BODY",
+    "invalid OHLCVA negative volume": "OHLCVA_VOLUME_NEGATIVE",
+    "invalid OHLCVA negative amount": "OHLCVA_AMOUNT_NEGATIVE",
     "no sufficient historical closed-time candidates": "VALID_BAR_COUNT_LOW",
 }
 

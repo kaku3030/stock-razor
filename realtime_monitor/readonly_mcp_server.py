@@ -52,13 +52,16 @@ def get_cn_tickflow_research_data(
     symbol: str = "159611.SZ",
     timeframe: str = "15m",
     limit: int = 30,
+    research_mode: str = "session_progress",
 ) -> dict:
     """Read direct AWS Premium TickFlow 15m/60m cache, strictly research-only.
 
     Uses no provider network requests, never marks current candle finalized,
     never asserts Radar/Source Arbiter admission or trading permission.
     """
-    return read_cn_tickflow_research_data(symbol, timeframe=timeframe, limit=limit)
+    return read_cn_tickflow_research_data(
+        symbol, timeframe=timeframe, limit=limit, research_mode=research_mode,
+    )
 
 
 @mcp.tool()

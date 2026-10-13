@@ -53,8 +53,35 @@ def _select_timestamp(row: dict) -> datetime:
             return _timestamp(row[key])
     raise ValueError("no provider timestamp")
 
-def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dict]:
-    """Price-bearing bars stay on AWS; no current-bar finality is asserted."""
+def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
+                   quarantine_counts: dict[str,int]|None=None,
+                   quarantine_evidence: dict[str,int]|None=None) -> list[dict]:
+    """Price-bearing bars stay on AWS; no current-bar finality is asserted.
+
+    Optional fixed-enum quarantine counters preserve *why* current-day rows
+    were withheld without logging price, raw provider payload or timestamps.
+    """
+    def quarantine(reason: str) -> None:
+        if quarantine_counts is not None:
+            quarantine_counts[reason]=quarantine_counts.get(reason,0)+1
+    def summarize_invalid_ohlc(op: float, hi: float, lo: float, cl: float,
+                               reason: str) -> None:
+        # This is PRIVATE AWS accounting, strictly restricted to rejected
+        # TODAY rows. Prices/timestamps must never leave the collector.
+        if quarantine_evidence is None or reason not in (
+                "invalid OHLCVA high below body",
+                "invalid OHLCVA low above body"):
+            return
+        gap=max(0.0, max(op,cl,lo)-hi,lo-min(op,cl,hi))
+        bps=(gap/max(op,cl))*10000
+        category=("GAP_LT_1BP" if bps<1 else
+                  "GAP_1_TO_10BP" if bps<10 else
+                  "GAP_10_TO_100BP" if bps<100 else
+                  "GAP_GE_100BP")
+        quarantine_evidence[category]=quarantine_evidence.get(category,0)+1
+        if lo >= max(op,cl) and hi <= min(op,cl) and hi<lo:
+            key="HILO_SWAP_WOULD_ENCLOSE_BODY"
+            quarantine_evidence[key]=quarantine_evidence.get(key,0)+1
     if timeframe not in _ALLOWED_PERIODS:
         raise ValueError("unsupported period")
     if now_utc.tzinfo is None:
@@ -105,6 +132,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
                 # labeled by its opening time (e.g. 13:00). Never turn it
                 # into a historical BAR_END observation. Quarantine only this
                 # session; historical off-grid labels remain a hard failure.
+                quarantine("TODAY_LABEL_OFF_GRID")
                 continue
             raise ValueError("unexpected Shanghai regular-session grid")
         # Reject future bars, but do not pretend already elapsed means exchange-final.
@@ -114,18 +142,50 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
             # A future trading *date* cannot be explained by a forming bar.
             if sh.date() != now_utc.astimezone(CN).date():
                 raise ValueError("future trading date")
+            quarantine("TODAY_FUTURE_LABEL")
             continue
-        op=_number(raw,"open","open_price")
-        hi=_number(raw,"high","high_price")
-        lo=_number(raw,"low","low_price")
-        cl=_number(raw,"close","close_price")
-        vol=_number(raw,"volume","vol")
-        amount_unknown = raw.get("_sdk_amount_omitted") is True
-        amt = None if amount_unknown else _number(raw,"amount","turnover")
-        if (op <= 0 or cl <= 0 or lo <= 0 or hi <= 0
-                or hi < max(op,cl,lo) or lo > min(op,cl,hi)
-                or vol<0 or (amt is not None and amt<0)):
-            raise ValueError("invalid OHLCVA")
+        try:
+            op=_number(raw,"open","open_price")
+            hi=_number(raw,"high","high_price")
+            lo=_number(raw,"low","low_price")
+            cl=_number(raw,"close","close_price")
+            vol=_number(raw,"volume","vol")
+            amount_unknown = raw.get("_sdk_amount_omitted") is True
+            amt = None if amount_unknown else _number(raw,"amount","turnover")
+        except ValueError:
+            if current_shanghai_day:
+                # An unfinished today's bar can have missing quotes/turnover;
+                # never backfill invented OHLC or claim it is a closed bar.
+                # Historical invalid rows remain a fail-closed hard error.
+                quarantine("TODAY_NONNUMERIC_OR_MISSING_VALUE")
+                continue
+            raise
+        invalid_reason=None
+        if op <= 0 or cl <= 0 or lo <= 0 or hi <= 0:
+            invalid_reason="invalid OHLCVA nonpositive"
+        elif hi < max(op,cl,lo):
+            invalid_reason="invalid OHLCVA high below body"
+        elif lo > min(op,cl,hi):
+            invalid_reason="invalid OHLCVA low above body"
+        elif vol < 0:
+            invalid_reason="invalid OHLCVA negative volume"
+        elif amt is not None and amt < 0:
+            invalid_reason="invalid OHLCVA negative amount"
+        if invalid_reason is not None:
+            if current_shanghai_day:
+                # Current-day partial/unqualified bar only; the reader still
+                # requires the last due 15m/60m grid label before any data
+                # can be surfaced even for research.
+                summarize_invalid_ohlc(op,hi,lo,cl,invalid_reason)
+                quarantine({
+                    "invalid OHLCVA nonpositive":"TODAY_NONPOSITIVE_OHLC",
+                    "invalid OHLCVA high below body":"TODAY_HIGH_BELOW_BODY",
+                    "invalid OHLCVA low above body":"TODAY_LOW_ABOVE_BODY",
+                    "invalid OHLCVA negative volume":"TODAY_NEGATIVE_VOLUME",
+                    "invalid OHLCVA negative amount":"TODAY_NEGATIVE_AMOUNT",
+                }[invalid_reason])
+                continue
+            raise ValueError(invalid_reason)
         bars.append({
             "label": sh.strftime("%Y-%m-%d %H:%M"),
             "open":op,"high":hi,"low":lo,"close":cl,
@@ -185,11 +245,22 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 raise
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
-                bars=normalize_bars(frame,interval,now_utc=now_utc)
+                reasons={}
+                evidence={}
+                bars=normalize_bars(frame,interval,now_utc=now_utc,
+                                    quarantine_counts=reasons,
+                                    quarantine_evidence=evidence)
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise
             frames[interval]={"rows":bars,
+                 "quarantine_reason_counts":reasons,
+                 "quarantine_ohlc_gap_evidence":evidence,
+                 "quarantined_unverified_rows_count":(
+                     len(frame["timestamp"])-len(bars)
+                     if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)
+                     else 0
+                 ),
                  "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",
                  "volume_units":"NOT_VERIFIED",
@@ -225,17 +296,27 @@ def atomic_publish(path: str, payload: dict) -> None:
             os.unlink(temporary)
 
 def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=30,
-             *, path: str=DEFAULT_PATH, now_utc:datetime|None=None) -> dict:
-    """Bounded local-cache research read. Never provider I/O or trade admission."""
+             *, path: str=DEFAULT_PATH, now_utc:datetime|None=None,
+             research_mode: str="session_progress") -> dict:
+    """Bounded research-only read, with explicitly separate historical mode.
+
+    session_progress requires the last due intraday BAR_END label; historical
+    permits verified-shape prior bars even if the current session is missing.
+    Neither mode asserts exchange finality or source/Radar eligibility.
+    """
     base={
         "ok":False,"provider":_SOURCE,"provider_first_target":True,
         "research_only":True, "bar_finality":"NOT_VERIFIED",
         "currentness":"UNPROVEN", "source_arbiter_admission":"BLOCKED",
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
         "canonical_write_authorized":False, "provider_requests":0,
+        "research_mode":research_mode if research_mode in
+            ("session_progress","historical_only") else "INVALID",
+        "exchange_bar_finality":"NOT_VERIFIED",
     }
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
+            or research_mode not in ("session_progress","historical_only")
             or type(limit)!=int or not 1<=limit<=96):
         return {**base,"status":"INVALID_REQUEST"}
     try:
@@ -261,8 +342,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         age=(now-observed).total_seconds()
     except (ValueError,TypeError,KeyError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
-    if age < -5 or age > MAX_AGE_SECONDS:
-        return {**base,"status":"STALE","age_seconds":round(age,2)}
+    # Strict live-session provenance never inherits the slower off-hours
+    # refresh schedule. Historical-only read gets a 6m bounded tolerance
+    # after close (collector polls every 300s), or 18m on weekends (900s).
+    # A 6m old snapshot is NOT represented as fresh/current live data.
+    sh_now=now.astimezone(CN)
+    historical_max_age=1080 if sh_now.weekday()>=5 else 360
+    max_age=(historical_max_age if research_mode=="historical_only"
+             else MAX_AGE_SECONDS)
+    if age < -5 or age > max_age:
+        return {**base,"status":"STALE","age_seconds":round(age,2),
+                "max_age_seconds":max_age}
     try:
         raw=obj["symbols"][symbol][timeframe]
         rows=raw["rows"]
@@ -312,17 +402,34 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
         if latest < expected:
-            # The cached polling heartbeat must not make an outdated
-            # provider Kline appear available/current for today's session.
-            return {
-                **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                "source_age_seconds":round(age,2),
-                "expected_grid_progress":"NOT_OBSERVED",
-                "bar_finality":"NOT_VERIFIED",
-                "rows":[],
-            }
-        progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+            if research_mode=="session_progress":
+                # Do not allow a stale/partial session to pass currentness
+                # merely because the poller rewrites the cache.
+                return {
+                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                    "source_age_seconds":round(age,2),
+                    "expected_grid_progress":"NOT_OBSERVED",
+                    "bar_finality":"NOT_VERIFIED",
+                    "rows":[],
+                }
+            progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        else:
+            progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
+    if research_mode=="historical_only":
+        # Stated as limited historical use, never an eligible live provider.
+        return {
+            **base,"ok":True,"status":"PASS_HISTORICAL_ONLY","repo_sha":sha,
+            "expected_grid_progress":progress,
+            "last_bar_end_label_age_seconds":round(max(0,label_age),2),
+            "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
+            "max_age_seconds":max_age,
+            "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
+            "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
+            "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
+            "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
+        }
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
         "expected_grid_progress":progress,
