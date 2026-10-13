@@ -264,11 +264,15 @@ def shadow_compare_eastmoney(tickflow: object, reference: object, *,
 
 def compare_tencent_qualified_price_rows(
     tickflow_rows: object, reference_rows: object, *,
-    qualification_pass: bool,
+    qualification_pass: bool, session_date: str|None=None,
 ) -> dict:
     """No raw price, timestamp or provider rows leave private AWS process."""
     result={"status":"UNQUALIFIED_GRID","overlap_bucket":"UNKNOWN",
             "max_ohlc_price_difference_ticks":"UNKNOWN",
+            "earlier_session_agreement":"UNKNOWN",
+            "same_session_agreement":"UNKNOWN",
+            "earlier_session_overlap_bucket":"UNKNOWN",
+            "same_session_overlap_bucket":"UNKNOWN",
             "reference":"TENCENT_QUALIFIED_ONLY"}
     if qualification_pass is not True:
         return result
@@ -290,6 +294,7 @@ def compare_tencent_qualified_price_rows(
             continue
         mapped[label]=bar
     diffs=[]
+    dated_diffs=[]
     for bar in tickflow_rows:
         if not isinstance(bar,dict):
             return result
@@ -303,7 +308,12 @@ def compare_tencent_qualified_price_rows(
                         or not isfinite(x) or not isfinite(y) or x<=0 or y<=0):
                     return result
                 values.append(abs(Decimal(str(x))-Decimal(str(y))))
-            diffs.append(max(values))
+            diff=max(values)
+            diffs.append(diff)
+            label=bar.get("label")
+            if not isinstance(label,str) or len(label)!=16:
+                return result
+            dated_diffs.append((label[:10],diff))
         except (KeyError,ValueError,TypeError,ArithmeticError):
             return result
     count=len(diffs)
@@ -322,6 +332,27 @@ def compare_tencent_qualified_price_rows(
         "UP_TO_ONE_TICK" if mx<=tick else
         "UP_TO_TWO_TICKS" if mx<=tick*2 else "OVER_TWO_TICKS"
     )
+    def agree(deltas):
+        count=len(deltas)
+        overlap=("ZERO" if count==0 else "ONE" if count==1 else
+                 "TWO_TO_FOUR" if count<=4 else "FIVE_PLUS")
+        if count<4:
+            return ("NO_OVERLAP" if count==0 else "INSUFFICIENT_PAIRS"),overlap
+        within=sum(x<=tick for x in deltas)
+        if within==count:
+            return "ALL_WITHIN_ONE_TICK",overlap
+        if within==0:
+            return "NONE_WITHIN_ONE_TICK",overlap
+        ratio=within*100//count
+        return ("GE90_PCT" if ratio>=90 else
+                "GE50_PCT" if ratio>=50 else
+                "GE25_PCT" if ratio>=25 else "LT25_PCT"),overlap
+    if (session_date is not None and isinstance(session_date,str)
+            and len(session_date)==10):
+        past=[delta for date,delta in dated_diffs if date<session_date]
+        today=[delta for date,delta in dated_diffs if date==session_date]
+        result["earlier_session_agreement"],result["earlier_session_overlap_bucket"]=agree(past)
+        result["same_session_agreement"],result["same_session_overlap_bucket"]=agree(today)
     result["status"]=(
         "OBSERVED_NOT_ADMITTED" if count>=4 else "INSUFFICIENT_OVERLAP"
     )
@@ -391,9 +422,14 @@ def sample_tencent_qualified_parity() -> dict:
                     endpoint_id="tencent.kline_intraday",
                     interval_minutes=int(period[:-1]),
                 )
+                from zoneinfo import ZoneInfo
+                cn_day=datetime.now(timezone.utc).astimezone(
+                    ZoneInfo("Asia/Shanghai")
+                ).date().isoformat()
                 out.update(compare_tencent_qualified_price_rows(
                     tickrows,reference,
                     qualification_pass=qualification.status=="PASS",
+                    session_date=cn_day,
                 ))
             except Exception:
                 # Keep errors and HTTP payloads private; classify only.
