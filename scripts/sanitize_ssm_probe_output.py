@@ -28,6 +28,8 @@ SAFE_LINE_KEYS = {
     "STALE_TAIL_REGRESSION", "MCP_INITIALIZE", "MCP_PUBLIC_EXPOSURE", "AWS_PRIVATE_MCP_RUNTIME",
     "MCP_PROTOCOL_ENDPOINT", "RUNTIME_GIT_WORKTREE", "CHECKOUT_DIRTY", "CONTENT_PROVENANCE_MATCH",
     "EXPECTED_SOURCE_MANIFEST", "EXPECTED_SOURCE_MANIFEST_SHA256", "RUNTIME_SOURCE_MANIFEST_SHA256",
+    "MCP_TOOL_SURFACE_MISMATCH", "PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8",
+    "MCP_PROTOCOL_TOOL_CALL_FAILED", "MCP_LIST_TOOLS", "MCP_CALL_SEQUENCE",
 }
 
 
@@ -113,11 +115,12 @@ def project(raw: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--action", required=True)
+    parser.add_argument("--failed-status", action="store_true")
     args = parser.parse_args()
-    del args
     result = project(sys.stdin.read())
     if result:
-        print("SANITIZED_EVIDENCE=AVAILABLE_NOT_QUALIFIED")
+        print("SANITIZED_EVIDENCE=FAILED_COMMAND_ENUMS_ONLY" if args.failed_status
+              else "SANITIZED_EVIDENCE=AVAILABLE_NOT_QUALIFIED")
         print("\n".join(result))
     else:
         print("SANITIZED_EVIDENCE=NOT_VERIFIED")
