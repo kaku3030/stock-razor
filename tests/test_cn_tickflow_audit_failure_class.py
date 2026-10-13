@@ -180,3 +180,35 @@ def test_independent_price_reference_naive_clock_must_fail_closed():
     assert all(item["status"]=="INVALID_REFERENCE" for item in result.values())
     assert all(item["max_price_difference_ticks"]=="UNKNOWN"
                for item in result.values())
+
+def test_qualified_tencent_crosscheck_is_research_only_enum_counts():
+    from scripts.audit_cn_tickflow_research_runtime import compare_tencent_qualified_price_rows
+    labels=["2026-10-09 09:45","2026-10-09 10:00",
+            "2026-10-09 10:15","2026-10-09 10:30"]
+    def row(l,d=0):
+        return dict(label=l,open=1.2+d,high=1.3+d,
+                    low=1.1+d,close=1.25+d)
+    tick=[row(t) for t in labels]
+    reference=[{**row(t,0.0004),"quality_flags":[]} for t in labels]
+    for i in range(44):
+        reference.append({**row(f"2026-10-{10+(i%4):02d} {9+(i%8):02d}:45"),
+                          "quality_flags":[]})
+    result=compare_tencent_qualified_price_rows(
+        tick,reference,qualification_pass=True)
+    assert result["status"]=="OBSERVED_NOT_ADMITTED"
+    assert result["overlap_bucket"]=="TWO_TO_FOUR"
+    assert result["max_ohlc_price_difference_ticks"]=="UNDER_HALF_TICK"
+    assert "2026" not in str(result) and "1.25" not in str(result)
+    refused=compare_tencent_qualified_price_rows(
+        tick,reference,qualification_pass=False)
+    assert refused["status"]=="UNQUALIFIED_GRID"
+    assert refused["max_ohlc_price_difference_ticks"]=="UNKNOWN"
+
+
+def test_tencent_shadow_never_calls_provider_without_private_tickflow_cache(monkeypatch):
+    from scripts.audit_cn_tickflow_research_runtime import sample_tencent_qualified_parity
+    monkeypatch.setattr("scripts.audit_cn_tickflow_research_runtime.WORKER_FILE",
+                        __import__("pathlib").Path("/missing/no-cache"))
+    states=sample_tencent_qualified_parity()
+    assert len(states)==4
+    assert all(x["status"]=="NO_PRIVATE_TICKFLOW_SNAPSHOT" for x in states.values())

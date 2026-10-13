@@ -262,6 +262,145 @@ def shadow_compare_eastmoney(tickflow: object, reference: object, *,
     return categories
 
 
+def compare_tencent_qualified_price_rows(
+    tickflow_rows: object, reference_rows: object, *,
+    qualification_pass: bool,
+) -> dict:
+    """No raw price, timestamp or provider rows leave private AWS process."""
+    result={"status":"UNQUALIFIED_GRID","overlap_bucket":"UNKNOWN",
+            "max_ohlc_price_difference_ticks":"UNKNOWN",
+            "reference":"TENCENT_QUALIFIED_ONLY"}
+    if qualification_pass is not True:
+        return result
+    result["status"]="INVALID_ROWS"
+    if (not isinstance(tickflow_rows,list) or not 4<=len(tickflow_rows)<=96
+            or not isinstance(reference_rows,(list,tuple))
+            or not 48<=len(reference_rows)<=120):
+        return result
+    from decimal import Decimal
+    from math import isfinite
+    mapped={}
+    for bar in reference_rows:
+        if not isinstance(bar,dict):
+            return result
+        label=bar.get("label")
+        if not isinstance(label,str) or len(label)!=16:
+            return result
+        if bar.get("quality_flags") not in ([],()):
+            continue
+        mapped[label]=bar
+    diffs=[]
+    for bar in tickflow_rows:
+        if not isinstance(bar,dict):
+            return result
+        against=mapped.get(bar.get("label"))
+        if against is None: continue
+        try:
+            values=[]
+            for field in ("open","high","low","close"):
+                x=bar[field]; y=against[field]
+                if (type(x) not in (int,float) or type(y) not in (int,float)
+                        or not isfinite(x) or not isfinite(y) or x<=0 or y<=0):
+                    return result
+                values.append(abs(Decimal(str(x))-Decimal(str(y))))
+            diffs.append(max(values))
+        except (KeyError,ValueError,TypeError,ArithmeticError):
+            return result
+    count=len(diffs)
+    result["overlap_bucket"]=(
+        "ZERO" if count==0 else "ONE" if count==1 else
+        "TWO_TO_FOUR" if count<=4 else "FIVE_PLUS"
+    )
+    if not count:
+        result["status"]="NO_OVERLAP"
+        return result
+    mx=max(diffs)
+    tick=Decimal("0.001")
+    result["max_ohlc_price_difference_ticks"]=(
+        "EXACT" if mx==0 else
+        "UNDER_HALF_TICK" if mx<tick/2 else
+        "UP_TO_ONE_TICK" if mx<=tick else
+        "UP_TO_TWO_TICKS" if mx<=tick*2 else "OVER_TWO_TICKS"
+    )
+    result["status"]=(
+        "OBSERVED_NOT_ADMITTED" if count>=4 else "INSUFFICIENT_OVERLAP"
+    )
+    return result
+
+
+def sample_tencent_qualified_parity() -> dict:
+    """At most FOUR public Tencent REST GETs, exactly 2 ETF × 15m/60m.
+
+    Research shadow only. Grid qualification + price rows remain private.
+    """
+    base={
+        key.replace(".","_")+"_"+period: {
+            "status":"NO_PRIVATE_TICKFLOW_SNAPSHOT",
+            "overlap_bucket":"UNKNOWN",
+            "max_ohlc_price_difference_ticks":"UNKNOWN",
+            "reference":"TENCENT_QUALIFIED_ONLY",
+        }
+        for key in ("159611.SZ","518880.SH")
+        for period in ("15m","60m")
+    }
+    try:
+        meta=WORKER_FILE.stat()
+        if not 0<meta.st_size<=MAX_FILE_BYTES or stat.S_IMODE(meta.st_mode)!=0o600:
+            return base
+        payload=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        if (not isinstance(payload,dict)
+            or payload.get("schema")!="stock_razor_cn_tickflow_research_observation_v0_1"
+            or payload.get("status")!="PASS_RESEARCH_ONLY"
+            or payload.get("source_arbiter_admission")!="BLOCKED"
+            or payload.get("radar_admission")!="BLOCKED"
+            or payload.get("live_trade") is not False):
+            return base
+    except (OSError,ValueError,TypeError):
+        return base
+    # Existing provider parser + repeated historical grid qualification.
+    # Neither the Binance SDK nor TickFlow paid HTTP are called.
+    if str(WORKER_REPO) not in sys.path:
+        sys.path.insert(0,str(WORKER_REPO))
+    try:
+        from data_provider.cn_eastmoney_cloud_observer import (
+            _http_json,build_tencent_kline_url,parse_tencent_kline_rows)
+        from src.services.a_share_intraday_grid_qualification import (
+            qualify_intraday_end_label_grid)
+    except ImportError:
+        for item in base.values():
+            item["status"]="IMPORT_BLOCKED"
+        return base
+    for key,code in (("159611.SZ","159611"),("518880.SH","518880")):
+        for period in ("15m","60m"):
+            out=base[key.replace(".","_")+"_"+period]
+            try:
+                frame=payload["symbols"][key][period]
+                tickrows=frame["rows"]
+                url=build_tencent_kline_url(code,period,limit=120)
+                if not url.startswith("https://ifzq.gtimg.cn/appstock/app/kline/mkline?"):
+                    out["status"]="URL_NOT_ALLOWLISTED"
+                    continue
+                # Hard budget: one request per fixed pair, timeout 4sec,
+                # max_attempts 1 (no implicit retries).
+                raw=_http_json(url,timeout_seconds=4.0,max_attempts=1)
+                reference=list(parse_tencent_kline_rows(
+                    raw,symbol=code,timeframe=period))
+                qualification=qualify_intraday_end_label_grid(
+                    [row["label"] for row in reference],
+                    source_token="tencent",
+                    endpoint_id="tencent.kline_intraday",
+                    interval_minutes=int(period[:-1]),
+                )
+                out.update(compare_tencent_qualified_price_rows(
+                    tickrows,reference,
+                    qualification_pass=qualification.status=="PASS",
+                ))
+            except Exception:
+                # Keep errors and HTTP payloads private; classify only.
+                out["status"]="PROVIDER_OR_PARSER_BLOCKED"
+    return base
+
+
 def active(service):
     try:
         p=subprocess.run(["systemctl","is-active",service],text=True,capture_output=True,timeout=5,check=False)
@@ -482,6 +621,7 @@ def main():
         "schema":"stock_razor_tickflow_aws_research_acceptance_v0_1",
         "measurement":"EC2_SERVICE_CACHE_AND_MCP_READONLY_TWO_SAMPLES",
         "before":before,"after":after,
+        "tencent_independent_shadow":sample_tencent_qualified_parity(),
         "sequence_advanced":progressing,
         "limited_research_usable":bool(progressing and after["all_four_readonly_requests_ok"]
                and after["mcp_cache_consumer"]=="PASS" and after["cache_private"]
