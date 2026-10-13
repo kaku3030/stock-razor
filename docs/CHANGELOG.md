@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [测试] AWS SSM Ops 增加有界只读 CN Quick Scan 云端验收入口：核对实际部署 SHA、MCP 工具注册、研究输出与服务端缓存读取耗时，输出白名单遥测，保持行情与交易安全门禁不变。
+
 - [修复] AWS 只读心跳审计及 Cloud Ops 健康检查按单个缓存读取完成时间判断，避免高频 US Radar 心跳虚假时钟回拨；实际时间回拨仍阻断。
 
 - [改进] GitHub 仓库 Owner 可通过固定 PR 的精确评论命令触发原有 AWS 只读 SSM 审计；执行前双重身份检查与 main SHA 校验，禁止任意命令、实盘及变更权限，不新增定时任务或 IAM 权限。
