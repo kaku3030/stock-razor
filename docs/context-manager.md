@@ -31,3 +31,17 @@ environment variables; it prints only the event result, never the payload.
 This MVP intentionally does not create reminders or automations, and it does
 not claim that deployment or a successful MCP read proves provider access,
 Radar qualification, paper readiness, or trading readiness.
+
+## GitHub event bridge and recovery entry
+
+`.github/workflows/context-manager-events.yml` records merged pull requests and
+completed main-branch workflows through the owner-only OIDC role and the fixed
+SSM target. It sends only an allowlisted payload, uses event IDs for idempotency,
+and fails closed if the exact current main SHA or target guard does not match.
+The bridge records engineering evidence; it does not authorize deployment,
+Radar admission, paper execution, or trading.
+
+The repository `AGENTS.md` and `.claude/skills/context-manager-recovery/SKILL.md`
+are the default recovery entry. A new window should query the legacy MCP
+sentinel `__CONTEXT_MANAGER_STATE__`, then preserve each domain's provenance,
+TTL, `UNVERIFIED`, `EXPIRED`, and `BLOCKED` values.

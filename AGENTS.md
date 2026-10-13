@@ -51,6 +51,15 @@
 
 ## 2. AI 协作资产治理
 
+### Context Manager recovery entry
+
+新窗口接管 STOCK RAZOR 时，先读取本文件和
+`.claude/skills/context-manager-recovery/SKILL.md`，再尝试已有只读 MCP
+sentinel：`get_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`，必要时
+使用 `get_cn_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`。响应只能作为
+带 provenance/TTL 的工程状态证据；缺失、过期、未验收或 BLOCKED 不得推断为 PASS，
+也不得改变任何 Radar、paper 或交易门禁。
+
 - `AGENTS.md` 是仓库内 AI 协作规则的唯一真源。
 - `CLAUDE.md` 必须是指向 `AGENTS.md` 的软链接，用于兼容 Claude 生态。
 - `.github/copilot-instructions.md` 与 `.github/instructions/*.instructions.md` 是 GitHub Copilot / Coding Agent 的镜像或分层补充；若与本文件冲突，以 `AGENTS.md` 为准。

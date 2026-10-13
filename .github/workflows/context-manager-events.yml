@@ -1,0 +1,118 @@
+name: Sync Context Manager GitHub Events
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_run:
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: context-manager-event-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: >-
+      ${{
+        github.repository_owner == 'kaku3030' &&
+        ((github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main') ||
+        (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main'))
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+      INSTALL_ROOT: /opt/stock-razor-mcp
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify owner and exact current main
+        id: guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'kaku3030/stock-razor'
+          test "$GITHUB_ACTOR" = 'kaku3030'
+          main_head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$main_head" = "$(git rev-parse HEAD)"
+          test "$main_head" = "$GITHUB_SHA"
+          echo "sha=$main_head" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: context-manager-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify fixed SSM target
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].InstanceId' --output text)"
+          test "$actual" = "$TARGET_INSTANCE_ID"
+      - name: Record allowlisted event over SSM
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT: ${{ toJSON(github.event) }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            number="$(jq -r '.pull_request.number' <<<"$EVENT")"
+            merge_sha="$(jq -r '.pull_request.merge_commit_sha' <<<"$EVENT")"
+            head_sha="$(jq -r '.pull_request.head.sha' <<<"$EVENT")"
+            base_ref="$(jq -r '.pull_request.base.ref' <<<"$EVENT")"
+            [[ "$number" =~ ^[0-9]+$ && "$merge_sha" =~ ^[0-9a-f]{40}$ && "$head_sha" =~ ^[0-9a-f]{40}$ && "$base_ref" == main ]]
+            event_id="github:pr:${number}:${merge_sha}"
+            event_type=pr_merged
+            source=engineering
+            source_ref="github/pr/${number}"
+            payload="$(jq -cn --arg number "$number" --arg sha "$merge_sha" --arg base "$base_ref" --arg head "$head_sha" '{number:($number|tonumber),merge_sha:$sha,base_ref:$base,head_sha:$head}')"
+          else
+            run_id="$(jq -r '.workflow_run.id' <<<"$EVENT")"
+            attempt="$(jq -r '.workflow_run.run_attempt' <<<"$EVENT")"
+            workflow="$(jq -r '.workflow_run.name' <<<"$EVENT")"
+            conclusion="$(jq -r '.workflow_run.conclusion' <<<"$EVENT")"
+            head_sha="$(jq -r '.workflow_run.head_sha' <<<"$EVENT")"
+            branch="$(jq -r '.workflow_run.head_branch' <<<"$EVENT")"
+            [[ "$run_id" =~ ^[0-9]+$ && "$attempt" =~ ^[0-9]+$ && "$head_sha" =~ ^[0-9a-f]{40}$ && "$branch" == main ]]
+            [[ "$conclusion" =~ ^(success|failure|cancelled|timed_out|action_required|skipped|neutral)$ ]]
+            event_id="github:ci:${run_id}:${attempt}"
+            event_type="ci_${conclusion}"
+            source=ci
+            source_ref="github/workflow/${run_id}"
+            payload="$(jq -cn --arg id "$run_id" --arg attempt "$attempt" --arg workflow "$workflow" --arg conclusion "$conclusion" --arg sha "$head_sha" --arg branch "$branch" '{run_id:($id|tonumber),attempt:($attempt|tonumber),workflow:$workflow,conclusion:$conclusion,head_sha:$sha,branch:$branch}')"
+          fi
+          printf '%s' "$payload" | base64 -w0 > event.b64
+          encoded="$(cat event.b64)"
+          remote="$(cat <<REMOTE
+          set -euo pipefail
+          export PYTHONPATH='$INSTALL_ROOT/repo'
+          export STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json
+          export STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl
+          payload=\$(printf '%s' '$encoded' | base64 -d)
+          '$INSTALL_ROOT/venv/bin/python' '$INSTALL_ROOT/repo/scripts/record_context_event.py' \\
+            --event-id '$event_id' --event-type '$event_type' --source '$source' \\
+            --source-ref '$source_ref' --payload-json "\$payload" --ttl-seconds 604800
+          REM
+          )"
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
+          for _ in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 2
+          done
+          test "$status" = Success
+          result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text | tr -d '\r')"
+          grep -Eq '^(\{"status":"(RECORDED|DUPLICATE)"|\{"status":"BLOCKED")' <<< "$result"
+          echo "CONTEXT_MANAGER_EVENT_SYNC=$([[ "$result" == *'"status":"BLOCKED"'* ]] && echo BLOCKED || echo PASS)"
