@@ -146,3 +146,43 @@ def test_crosscheck_unknown_never_claimed_pass():
     d=decide(a)
     assert d["crosscheck_status"] == "UNKNOWN"
     assert d["canonical_write_authorized"] is False
+
+def test_cn_qualified_tickflow_first_regardless_of_fallback_latency():
+    kw={"market":"CN","symbol":"159611","timeframe":"15m"}
+    slow_cloud=source("CLOUD_TICKFLOW",latency=60,**kw)
+    fast_backup=source("EASTMONEY",latency=1,**kw)
+    choice=decide(slow_cloud,fast_backup,incumbent="EASTMONEY",**kw)
+    assert choice["decision"]=="SHADOW_PROPOSAL"
+    assert choice["proposed_source"]=="CLOUD_TICKFLOW"
+    assert choice["switch_reason"]=="PREFERRED_TICKFLOW_QUALIFIED"
+    assert choice["canonical_write_authorized"] is False
+    assert choice["radar_admission"]=="BLOCKED"
+
+
+def test_cn_unqualified_tickflow_falls_back_without_admission():
+    kw={"market":"CN","symbol":"159611","timeframe":"60m"}
+    no_entitlement=source("DESKTOP_TICKFLOW",latency=1,entitlement_qualified="UNKNOWN",**kw)
+    backup=source("TENCENT",latency=10,**kw)
+    choice=decide(no_entitlement,backup,**kw)
+    assert choice["proposed_source"]=="TENCENT"
+    assert choice["source_preference_order"][:2]==["CLOUD_TICKFLOW","DESKTOP_TICKFLOW"]
+    assert choice["canonical_write_authorized"] is False
+    assert choice["live_trade"] is False
+
+
+def test_cn_two_qualified_tickflow_host_sources_pick_lowest_latency():
+    kw={"market":"CN","symbol":"159611","timeframe":"15m"}
+    cloud=source("CLOUD_TICKFLOW",latency=7,**kw)
+    desktop=source("DESKTOP_TICKFLOW",latency=12,**kw)
+    choice=decide(cloud,desktop,**kw)
+    assert choice["proposed_source"]=="CLOUD_TICKFLOW"
+    assert choice["source_preference_order"][:2]==["CLOUD_TICKFLOW","DESKTOP_TICKFLOW"]
+
+
+def test_cn_tickflow_stale_never_selected_even_with_preference():
+    kw={"market":"CN","symbol":"159611","timeframe":"15m"}
+    old=source("CLOUD_TICKFLOW",latency=1,observed_at_utc=NOW-timedelta(hours=1),**kw)
+    fallback=source("EASTMONEY",latency=10,**kw)
+    choice=decide(old,fallback,**kw)
+    assert choice["proposed_source"]=="EASTMONEY"
+    assert "STALE_QUALIFICATION_EVIDENCE" in choice["rejected_source_reasons"]["CLOUD_TICKFLOW"]

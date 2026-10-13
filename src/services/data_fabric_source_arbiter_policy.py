@@ -30,6 +30,15 @@ _REQUIRED_GATES = (
     "source_progress_qualified",
 )
 _GATE_VALUES = frozenset({"PASS", "FAIL", "UNKNOWN"})
+# CN provider PRECEDENCE (not data-source admission). Both clouds and desktops
+# prefer paid TickFlow once independently qualified. No fallback may bypass
+# entitlement/currentness/correctness guards to win priority.
+_CN_PRIMARY_FAMILY = frozenset(("CLOUD_TICKFLOW", "DESKTOP_TICKFLOW"))
+_CN_SOURCE_PREFERENCE_ORDER = (
+    "CLOUD_TICKFLOW", "DESKTOP_TICKFLOW",
+    "EASTMONEY", "TENCENT", "RQDATA", "DESKTOP_GM",
+    "DESKTOP_QMT", "TDX",
+)
 
 
 @dataclass(frozen=True)
@@ -150,7 +159,12 @@ def propose_authoritative_source(
             rejection[source.source] = absent
         else:
             eligible.append(source)
-    eligible.sort(key=lambda c: (float(c.latency_ms), c.source))
+    # For CN, any independently qualified TickFlow is preferred to a
+    # faster legacy feed. Priority never turns UNKNOWN/FAIL into eligible.
+    eligible.sort(key=lambda c: (
+        0 if market == "CN" and c.source in _CN_PRIMARY_FAMILY else 1,
+        float(c.latency_ms), c.source
+    ))
     selected = eligible[0] if eligible else None
     reason = "NO_QUALIFIED_SOURCE"
     if selected is not None:
@@ -161,11 +175,21 @@ def propose_authoritative_source(
             previous = next((item for item in eligible if item.source == incumbent), None)
             if previous is None:
                 reason = "INCUMBENT_NOT_QUALIFIED"
+            elif market == "CN" and (
+                (previous.source in _CN_PRIMARY_FAMILY)
+                != (selected.source in _CN_PRIMARY_FAMILY)
+            ):
+                # Never let a faster backup hold off a newly qualified
+                # TickFlow, nor let a fallback displace a qualified TickFlow.
+                reason = "PREFERRED_TICKFLOW_QUALIFIED"
             elif float(previous.latency_ms) - float(selected.latency_ms) < min_switch_advantage_ms:
                 selected = previous
                 reason = "INCUMBENT_HELD_ANTI_FLAP"
             else:
                 reason = "FASTER_QUALIFIED_SOURCE"
+    if market == "CN" and selected is not None and selected.source in _CN_PRIMARY_FAMILY:
+        if incumbent != selected.source:
+            reason = "PREFERRED_TICKFLOW_QUALIFIED"
 
     return {
         "schema": "stock_razor_research_only_source_arbiter_policy_v0_1",
@@ -181,6 +205,10 @@ def propose_authoritative_source(
         "crosscheck_status": selected.crosscheck_status if selected else "UNKNOWN",
         "rejected_source_reasons": rejection,
         "qualified_candidate_count": len(eligible),
+        "source_preference_order": (
+            list(_CN_SOURCE_PREFERENCE_ORDER) if market == "CN" else []
+        ),
+        "target_primary_family": "TICKFLOW" if market == "CN" else "UNSPECIFIED",
         "canonical_write_authorized": False,
         "single_writer_lease_acquired": False,
         "data_qualification": "NOT_VERIFIED",

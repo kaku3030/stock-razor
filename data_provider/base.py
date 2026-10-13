@@ -671,7 +671,7 @@ class DataFetcherManager:
         
         if fetchers:
             # 按优先级排序
-            self._fetchers = sorted(fetchers, key=lambda f: f.priority)
+            self._fetchers = sorted(fetchers, key=lambda f: (f.priority, 0 if f.name == 'TickFlowFetcher' else 1))
             self._refresh_fetcher_indexes_locked()
         else:
             # 默认数据源将在首次使用时延迟加载
@@ -956,6 +956,13 @@ class DataFetcherManager:
         fetchers_by_name = {
             fetcher.name: fetcher for fetcher in self._get_fetchers_snapshot()
         }
+        # Keep old no-key fallback chain unchanged; when a real TickFlow
+        # credential-backed fetcher exists, attempt it before public sources.
+        tickflow_fetcher = fetchers_by_name.get("TickFlowFetcher")
+        if isinstance(getattr(tickflow_fetcher, "api_key", None), str) and tickflow_fetcher.api_key.strip():
+            source_order = ("TickFlowFetcher", *(
+                name for name in source_order if name != "TickFlowFetcher"
+            ))
         errors: List[str] = []
         request_start = time.time()
 
@@ -1169,6 +1176,11 @@ class DataFetcherManager:
         errors: List[str] = []
         request_start = time.time()
         source_order = self._CN_INDEX_REALTIME_SOURCE_ORDER
+        tickflow_fetcher = fetchers_by_name.get("TickFlowFetcher")
+        if isinstance(getattr(tickflow_fetcher, "api_key", None), str) and tickflow_fetcher.api_key.strip():
+            source_order = (("TickFlowFetcher", "tickflow"), *(
+                item for item in source_order if item[0] != "TickFlowFetcher"
+            ))
 
         for index, (source_name, source_kind) in enumerate(source_order):
             fallback_to = (
@@ -1497,7 +1509,7 @@ class DataFetcherManager:
                     kline_adjust=getattr(config, "tickflow_kline_adjust", "none"),
                     batch_daily_enabled=getattr(config, "tickflow_batch_daily_enabled", True),
                     batch_size=getattr(config, "tickflow_batch_size", 100),
-                    priority=getattr(config, "tickflow_priority", 2),
+                    priority=getattr(config, "tickflow_priority", 0),
                 )
                 self._tickflow_fetcher = fetcher
                 self._tickflow_api_key = api_key
@@ -1817,7 +1829,7 @@ class DataFetcherManager:
                     kline_adjust=getattr(config, "tickflow_kline_adjust", "none"),
                     batch_daily_enabled=getattr(config, "tickflow_batch_daily_enabled", True),
                     batch_size=getattr(config, "tickflow_batch_size", 100),
-                    priority=getattr(config, "tickflow_priority", 2),
+                    priority=getattr(config, "tickflow_priority", 0),
                 )
             )
         else:
@@ -1861,7 +1873,7 @@ class DataFetcherManager:
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
-            self._fetchers.sort(key=lambda f: f.priority)
+            self._fetchers.sort(key=lambda f: (f.priority, 0 if f.name == 'TickFlowFetcher' else 1))
             self._refresh_fetcher_indexes_locked()
 
         # 构建优先级说明
@@ -1873,7 +1885,7 @@ class DataFetcherManager:
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
             self._fetchers.append(fetcher)
-            self._fetchers.sort(key=lambda f: f.priority)
+            self._fetchers.sort(key=lambda f: (f.priority, 0 if f.name == 'TickFlowFetcher' else 1))
             self._refresh_fetcher_indexes_locked()
     
     def get_daily_data(
