@@ -84,3 +84,58 @@ def test_projector_does_not_claim_market_acceptance(monkeypatch, capsys) -> None
     monkeypatch.setattr(sys, "stdin", StringIO("SUBSCRIPTION=PASS\n"))
     assert main() == 0
     assert "SANITIZED_EVIDENCE=AVAILABLE_NOT_QUALIFIED" in capsys.readouterr().out
+
+
+def test_failed_ssm_keeps_only_fixed_mcp_stage_enums_and_no_remote_errors() -> None:
+    text = (
+        "MCP_INITIALIZE=FAIL\n"
+        "MCP_TOOL_SURFACE_MISMATCH=FAIL\n"
+        "PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8=FAIL\n"
+        "MCP_PROTOCOL_TOOL_CALL_FAILED=YES\n"
+        "MCP_LIST_TOOLS=PASS\n"
+        "MCP_PROCESS_PID=9783\n"
+        "MCP_INITIALIZE_DETAIL=https://internal.invalid/secrets\n"
+        "MCP_PROBE_REASON=Bearer PRIVATE_API_KEY\n"
+        "ACCOUNT_ID=12345678\n"
+    )
+    output = "\n".join(project(text))
+    for fact in (
+        "MCP_INITIALIZE=FAIL", "MCP_TOOL_SURFACE_MISMATCH=FAIL",
+        "PRIVATE_MCP_TOOL_DISCOVERY_8_OF_8=FAIL",
+        "MCP_PROTOCOL_TOOL_CALL_FAILED=YES", "MCP_LIST_TOOLS=PASS",
+    ):
+        assert fact in output
+    for item in ("internal.invalid", "PRIVATE_API_KEY", "9783", "12345678", "MCP_INITIALIZE_DETAIL"):
+        assert item not in output
+
+
+def test_failed_ssm_cli_marks_diagnostics_not_admission(monkeypatch, capsys) -> None:
+    from io import StringIO
+    from scripts.sanitize_ssm_probe_output import main
+    import sys
+    monkeypatch.setattr(sys, "argv", [
+        "sanitize_ssm_probe_output.py", "--action", "mcp_protocol_probe", "--failed-status"
+    ])
+    monkeypatch.setattr(sys, "stdin", StringIO(
+        "MCP_INITIALIZE=FAIL\n"
+        "MCP_INITIALIZE_DETAIL=Bearer secret\n"
+    ))
+    assert main() == 0
+    output = capsys.readouterr().out
+    assert "SANITIZED_EVIDENCE=FAILED_COMMAND_ENUMS_ONLY" in output
+    assert "MCP_INITIALIZE=FAIL" in output
+    assert "Bearer" not in output
+
+
+def test_ssm_failed_branch_preserves_nonzero_ci_and_filters_private_stdout() -> None:
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/aws-ssm-ops.yml").read_text(encoding="utf-8")
+    start = workflow.index("              Failed|Cancelled|TimedOut|Cancelling)")
+    end = workflow.index("            esac", start)
+    failed = workflow[start:end]
+    assert "StandardOutputContent --output text" in failed
+    assert "scripts/sanitize_ssm_probe_output.py" in failed
+    assert "--failed-status" in failed
+    assert "exit 1" in failed
+    assert "StandardErrorContent" not in failed

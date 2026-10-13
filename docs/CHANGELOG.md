@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS OpenD/MCP 只读 SSM 失败时仅脱敏回传固定阶段状态码，保留失败退出码，隐藏原始 stdout、stderr、账户和密钥；探针诊断不构成行情或交易准入。
+
 - [运维] 在受保护 main 的 AWS SSM 只读路由更新后，由 GitHub 云端自主派发唯一固定 `us_livefeed_status` 脱敏数据探针；仅标记已派发、不把工作流成功当作行情闭合或交易准入，不依赖用户电脑持续开机。
 
 - [修复] AWS US LiveFeed SSM 只读状态探针改为单条有界脱敏元数据（心跳、QOT_RIGHT、时间周期 K 线数量及结束时间），不再被大型原始服务日志或 SSM stdout 截断遮蔽；仍为研究状态、不解锁数据源或交易。
