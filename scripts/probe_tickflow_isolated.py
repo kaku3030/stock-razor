@@ -244,7 +244,10 @@ def _cn_history_grid(labels: list[float | None], *, period: str) -> dict[str, An
                 # cannot be used as evidence of a completed trading session.
                 current_rows += 1
                 continue
-            sessions.setdefault(stamp.date(), []).append(stamp.strftime("%H:%M"))
+            sessions.setdefault(stamp.date(), []).append(
+                stamp.strftime("%H:%M") if stamp.second == 0 and stamp.microsecond == 0
+                else "NON_EXACT_BAR_BOUNDARY"
+            )
     except (OverflowError, OSError, ValueError):
         return {**missing, "label_convention": "INVALID_TIMESTAMP_ORDER"}
     matched_end = sum(labels == list(end_grids[period]) for labels in sessions.values())

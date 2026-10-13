@@ -600,3 +600,22 @@ def test_current_partial_and_unordered_intraday_rows_never_prove_grid():
     assert grid["current_day_rows_excluded"]==1
     rows.reverse()
     assert probe._kline_summary(rows,period="15m")["historical_grid"]["label_convention"]=="INVALID_TIMESTAMP_ORDER"
+
+def test_nonzero_seconds_on_past_bars_cannot_confirm_end_grid():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    sh=ZoneInfo("Asia/Shanghai")
+    labels=("09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30",
+            "13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00")
+    rows=[]
+    for day in ("2026-09-23","2026-09-24","2026-09-25"):
+        for clock in labels:
+            stamp=datetime.fromisoformat(day+"T"+clock).replace(tzinfo=sh)
+            if day=="2026-09-23" and clock=="09:45":
+                stamp=stamp.replace(second=3)
+            rows.append({"timestamp":int(stamp.timestamp()*1000),"open":10,"high":11,
+                         "low":9,"close":10.5,"volume":100})
+    grid=probe._kline_summary(rows,period="15m")["historical_grid"]
+    assert grid["complete_end_sessions"]==2
+    assert grid["label_convention"]=="INSUFFICIENT"
+    assert grid["closure_proven"] is False
