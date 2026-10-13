@@ -51,6 +51,18 @@ def _normalize_rejection_reason(error: Exception) -> str:
     return "NOT_APPLICABLE"
 
 
+
+def _ohlc_float_gap_bucket(error: Exception) -> str:
+    """Only a fixed enum for historical OHLC rejection, never provider data."""
+    stage=getattr(error,"_tickflow_stage","")
+    value=getattr(error,"_tickflow_ohlc_float_gap_bucket","UNKNOWN")
+    if (type(error) is ValueError and isinstance(stage,str)
+            and stage.endswith("_NORMALIZE")
+            and value in ("WITHIN_1E_MINUS_5","OVER_1E_MINUS_5")):
+        return value
+    return "UNKNOWN"
+
+
 def _stop(*_args):
     global running
     running=False
@@ -123,6 +135,7 @@ def main() -> int:
                     "sequence":sequence,"status":"BLOCKED",
                     "failure_class":type(exc).__name__,
                     "failure_reason":_normalize_rejection_reason(exc),
+                    "failure_ohlc_float_gap_bucket":_ohlc_float_gap_bucket(exc),
                     "failure_stage":(
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
