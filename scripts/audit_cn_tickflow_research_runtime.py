@@ -26,6 +26,9 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     base={
         "last_due_grid":"UNKNOWN",
         "dominant_quarantine_reason":"UNKNOWN",
+        "largest_ohlc_gap_bucket":"UNKNOWN",
+        "gap_violation_rows_bucket":"UNKNOWN",
+        "hilo_swap_candidate_bucket":"UNKNOWN",
         "quarantined_rows_bucket":"UNKNOWN",
         "sdk_amount_omitted_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
@@ -58,6 +61,22 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             max(sorted(reasons),key=lambda k: reasons[k])
             if reasons else "NONE"
         )
+    gap_evidence=frame.get("quarantine_ohlc_gap_evidence")
+    ordered=("GAP_LT_1BP","GAP_1_TO_10BP","GAP_10_TO_100BP","GAP_GE_100BP")
+    swap_key="HILO_SWAP_WOULD_ENCLOSE_BODY"
+    if (isinstance(gap_evidence,dict) and len(gap_evidence)<=5
+            and all(k in (*ordered,swap_key)
+                    and type(v) is int and 0<v<=96
+                    for k,v in gap_evidence.items())):
+        gap_total=sum(gap_evidence.get(k,0) for k in ordered)
+        swap=gap_evidence.get(swap_key,0)
+        if gap_total<=quarantined and swap<=gap_total:
+            out["gap_violation_rows_bucket"]=bucket(gap_total)
+            out["hilo_swap_candidate_bucket"]=bucket(swap)
+            out["largest_ohlc_gap_bucket"]=(
+                next((key for key in reversed(ordered)
+                      if gap_evidence.get(key,0)>0),"NONE")
+            )
     try:
         omitted=sum(1 for row in rows if isinstance(row,dict)
                     and row.get("amount_availability")=="SDK_OMITTED")
