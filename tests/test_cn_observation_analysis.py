@@ -438,3 +438,32 @@ def test_intraday_boundary_equal_to_observation_clock_is_not_quarantined():
     assert "future_labeled_rows_excluded" not in state["frame_provenance"]["15m"]
     assert state["intraday_currentness_proven"] is False
     assert result["radar_admission"] == "BLOCKED"
+
+@pytest.mark.parametrize(
+    "observation_utc,forming",
+    [
+        ("2026-10-13T02:43:00+00:00", True),  # Shanghai 10:43, trading
+        ("2026-10-13T07:05:00+00:00", False), # Shanghai 15:05, no finality evidence
+    ],
+)
+def test_daily_same_day_requires_finality_not_calendar_label(observation_utc, forming):
+    payload = _payload()
+    payload["emitted_at_utc"] = observation_utc
+    daily = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
+    daily[-2]["label"] = "2026-10-12"
+    daily[-1]["label"] = "2026-10-13"
+    result = evaluate_cn_observation_payload(payload)
+    state = result["symbols"]["159611"]
+    assert state["status"] == "RESEARCH_STATE"
+    quality = state["technical"]["daily"]["quality"]
+    assert quality["is_partial_bar"] is True
+    assert quality["status"] == "partial"
+    assert "1d_finality_unproven" in quality["warnings"]
+    assert "cn_daily_finality_unproven" in state["technical"]["risk_flags"]
+    if forming:
+        assert quality["as_of"].startswith("2026-10-12")
+        assert state["frame_provenance"]["1d"]["forming_rows_excluded"] == 1
+    else:
+        assert quality["as_of"].startswith("2026-10-13")
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
