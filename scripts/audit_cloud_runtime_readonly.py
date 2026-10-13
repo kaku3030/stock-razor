@@ -8,6 +8,7 @@ The script reports only bounded operational evidence from existing services.
 from __future__ import annotations
 
 import argparse
+import ast
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -204,6 +205,50 @@ def component_snapshot(
     return result
 
 
+
+def mcp_install_evidence(
+    *,
+    active: Callable[[str], bool] = _service_active,
+    source: Callable[[], str] = lambda: Path(
+        "/opt/stock-razor-mcp/repo/realtime_monitor/readonly_mcp_server.py"
+    ).read_text(encoding="utf-8"),
+    revision: Callable[[], str] = lambda: subprocess.run(
+        ["git", "-C", "/opt/stock-razor-mcp/repo", "rev-parse", "HEAD"],
+        capture_output=True, text=True, timeout=3, check=False,
+    ).stdout.strip(),
+) -> dict:
+    """Read fixed installed MCP source; not authenticated protocol discovery."""
+    running = active("stock-razor-mcp.service")
+    tool = False
+    sha = None
+    try:
+        tree = ast.parse(source())
+        tool = any(
+            isinstance(node, ast.FunctionDef)
+            and node.name == "get_cloud_ops_status"
+            and any(ast.unparse(d) == "mcp.tool()" for d in node.decorator_list)
+            for node in tree.body
+        )
+    except (OSError, UnicodeError, ValueError, SyntaxError, TypeError):
+        pass
+    try:
+        value = revision()
+        if isinstance(value, str) and len(value) == 40 and all(
+            c in "0123456789abcdef" for c in value
+        ):
+            sha = value
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        pass
+    return {
+        "mcp_unit_active": running is True,
+        "cloud_ops_tool_in_deployed_source": tool,
+        "deployed_repo_sha": sha,
+        "authenticated_protocol_verified": False,
+        "status": ("SOURCE_PRESENT_PROTOCOL_NOT_VERIFIED"
+                   if running and tool and sha else "BLOCKED"),
+    }
+
+
 def audit_twice(
     *,
     interval_seconds: float = 15.0,
@@ -211,6 +256,7 @@ def audit_twice(
     read_json: Callable[[str], dict | None] = _load_snapshot,
     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleeper: Callable[[float], None] = time.sleep,
+    read_mcp: Callable[[], dict] = mcp_install_evidence,
 ) -> dict:
     if not 0 <= interval_seconds <= 60:
         raise ValueError("interval_seconds must be between 0 and 60")
@@ -250,6 +296,7 @@ def audit_twice(
         ) else "COMPLETE",
         "measurement_scope": "AWS_SSM_RUNTIME_SNAPSHOT_ONLY",
         "aws_components": second,
+        "mcp_deployment_evidence": read_mcp(),
         "heartbeat_progress_observed": progress,
         "all_components_current": all(
             x["operational_state"] == "HEARTBEAT_CURRENT"
