@@ -163,3 +163,10 @@ def test_expected_closed_labels_do_not_assert_exchange_bar_finality():
     assert _expected_closed_grid_label(active,"60m").strftime("%H:%M")=="11:30"
     first=datetime(2026,10,13,1,37,tzinfo=timezone.utc)  # Shanghai 09:37
     assert _expected_closed_grid_label(first,"15m") is None
+
+def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
+    for syms in (("000001.SZ",),("159611.SZ","000001.SZ"),
+                 ("159611.SZ","159611.SZ")):
+        with pytest.raises(ValueError,match="unapproved symbols"):
+            build_observation(FakeClient(),now_utc=NOW,repo_sha="a"*40,
+                              sequence=1,symbols=syms)

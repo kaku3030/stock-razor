@@ -145,7 +145,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         raise ValueError("invalid wall clock or source revision")
     if type(sequence) is not int or sequence < 1:
         raise ValueError("invalid monotonic sequence")
-    if not symbols or len(symbols)>4 or any(not _SYMBOL_RE.fullmatch(x) for x in symbols):
+    if (not symbols or len(symbols)>len(SYMBOLS)
+            or len(set(symbols))!=len(symbols)
+            or any(not isinstance(x,str) or x not in SYMBOLS for x in symbols)):
+        # Hard billing/entitlement boundary: no arbitrary A-share scan until
+        # separate reviewed quota and license approvals.
         raise ValueError("unapproved symbols")
     output={}
     for symbol in symbols:
@@ -200,7 +204,9 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
         "canonical_write_authorized":False, "provider_requests":0,
     }
-    if not isinstance(symbol,str) or not _SYMBOL_RE.fullmatch(symbol) or timeframe not in _ALLOWED_PERIODS or type(limit)!=int or not 1<=limit<=96:
+    if (not isinstance(symbol,str) or symbol not in SYMBOLS
+            or timeframe not in _ALLOWED_PERIODS
+            or type(limit)!=int or not 1<=limit<=96):
         return {**base,"status":"INVALID_REQUEST"}
     try:
         with open(path,"rb") as f:
