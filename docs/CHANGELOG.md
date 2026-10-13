@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] TickFlow 官方绝对 1e-5 OHLC 浮点精度容差仅在研究缓存与只读消费者中双重校验，保留原始价格及异常标记；超限仍拒绝，K 线终态、数据源/雷达/Paper/实盘门禁不变。
+
 - [改进] 受限只读 MCP/Context Manager 代码变更合入受保护 main 时，沿用仓库 Owner、OIDC、固定 AWS 目标与精确 SHA 校验自动触发云端只读服务部署；无关 PR 不触发服务重启，失败继续阻断。
 
 - [改进] 美股 AWS exact-main 云端只读验收探针增加 GitHub Owner 专属 PR 指令入口，可在个人电脑关机时独立观察行情序列/时间新鲜度及闭合；旧云端 SHA、无 D1、MCP 未认证仍严格阻断验收与交易。
