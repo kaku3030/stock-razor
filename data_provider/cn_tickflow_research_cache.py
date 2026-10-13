@@ -59,9 +59,24 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
         raise ValueError("unsupported period")
     if now_utc.tzinfo is None:
         raise ValueError("naive clock")
-    if not hasattr(frame, "to_dict"):
+    if isinstance(frame, dict):
+        # The official SDK's as_dataframe=False compact schema is columnar.
+        # tickflow[realtime] does NOT install optional pandas; do not require
+        # it in an AWS service or silently assume a DataFrame/DatetimeIndex.
+        keys = ("timestamp", "open", "high", "low", "close", "volume", "amount")
+        if any(not isinstance(frame.get(key), (list, tuple)) for key in keys):
+            raise ValueError("missing compact SDK column")
+        sizes = {len(frame[key]) for key in keys}
+        if len(sizes) != 1:
+            raise ValueError("compact SDK column lengths differ")
+        count = sizes.pop()
+        if not 4 <= count <= _ALLOWED_PERIODS[timeframe]:
+            raise ValueError("insufficient or unbounded history")
+        records = [{key: frame[key][i] for key in keys} for i in range(count)]
+    elif hasattr(frame, "to_dict"):
+        records = frame.to_dict(orient="records")
+    else:
         raise ValueError("unexpected SDK data type")
-    records = frame.to_dict(orient="records")
     if not isinstance(records, list) or not 4 <= len(records) <= _ALLOWED_PERIODS[timeframe]:
         raise ValueError("insufficient or unbounded history")
     bars=[]
@@ -116,7 +131,8 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         frames={}
         for interval, n in _ALLOWED_PERIODS.items():
             # SDK's isolated Premium Kline contract was separately verified on AWS.
-            frame=client.klines.get(symbol, period=interval,count=n,as_dataframe=True)
+            frame=client.klines.get(symbol, period=interval,count=n,
+                                    adjust="none",as_dataframe=False)
             bars=normalize_bars(frame,interval,now_utc=now_utc)
             frames[interval]={"rows":bars,
                  "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",

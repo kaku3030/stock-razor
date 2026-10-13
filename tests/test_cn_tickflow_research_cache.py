@@ -30,9 +30,11 @@ def frame(period,day="2026-10-09"):
 class FakeKlines:
     def __init__(self):
         self.calls=[]
-    def get(self,symbol,*,period,count,as_dataframe):
-        self.calls.append((symbol,period,count,as_dataframe))
-        return frame(period)
+    def get(self,symbol,*,period,count,as_dataframe,adjust):
+        self.calls.append((symbol,period,count,as_dataframe,adjust))
+        df = frame(period)
+        return {key: df[key].tolist() for key in
+                ("timestamp","open","high","low","close","volume","amount")}
 
 class FakeClient:
     def __init__(self):
@@ -48,6 +50,7 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert snap["live_trade"] is False
     assert len(fake.klines.calls)==4
     assert [x[2] for x in fake.klines.calls]==[96,24,96,24]
+    assert all(x[3] is False and x[4]=="none" for x in fake.klines.calls)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(snap)
     for sym in ("159611.SZ","518880.SH"):
         for period in ("15m","60m"):
@@ -122,3 +125,12 @@ def test_provider_forming_future_bar_is_excluded_not_promoted():
     assert len(out)==6
     assert all(x["bar_finality"]=="NOT_VERIFIED" for x in out)
     assert not any(x["label"].startswith("2026-10-13") for x in out)
+
+def test_compact_sdk_missing_or_length_mismatched_columns_fail_closed():
+    raw=FakeKlines().get("159611.SZ",period="15m",count=96,as_dataframe=False,adjust="none")
+    bad={**raw,"amount":raw["amount"][:-1]}
+    with pytest.raises(ValueError,match="lengths differ"):
+        normalize_bars(bad,"15m",now_utc=NOW)
+    missing={k:v for k,v in raw.items() if k!="timestamp"}
+    with pytest.raises(ValueError,match="missing compact"):
+        normalize_bars(missing,"15m",now_utc=NOW)
