@@ -195,3 +195,37 @@ def test_historical_offgrid_start_label_is_always_rejected():
         normalize_bars({col:old[col].tolist() for col in
             ("timestamp","open","high","low","close","volume","amount")},
             "15m",now_utc=NOW)
+
+def test_sdk_compact_missing_optional_amount_is_null_not_invented():
+    now=datetime(2026,10,11,5,0,tzinfo=timezone.utc)
+    raw=FakeKlines().get("159611.SZ",period="15m",count=96,
+                          as_dataframe=False,adjust="none")
+    without_amount={k:v for k,v in raw.items() if k!="amount"}
+    bars=normalize_bars(without_amount,"15m",now_utc=now)
+    assert len(bars)>4
+    assert all(x["amount"] is None
+               and x["amount_availability"]=="SDK_OMITTED" for x in bars)
+    class MissingAmountKlines:
+        def get(self, *args, **kwargs):
+            df=frame(kwargs["period"])
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume")}
+    class Client:
+        klines=MissingAmountKlines()
+    snap=build_observation(Client(),now_utc=now,repo_sha="a"*40,sequence=1)
+    from tempfile import TemporaryDirectory
+    from pathlib import Path
+    with TemporaryDirectory() as d:
+        q=Path(d)/"o.json"
+        atomic_publish(str(q),snap)
+        got=read_cn_tickflow_research_data("159611.SZ",path=str(q),now_utc=now)
+        assert got["ok"] is True
+        assert all(x["amount"] is None and x["amount_availability"]=="SDK_OMITTED"
+                for x in got["rows"])
+
+def test_amount_present_but_null_does_not_falsely_pass_without_contract():
+    raw=FakeKlines().get("159611.SZ",period="15m",count=96,
+                         as_dataframe=False,adjust="none")
+    bad={**raw,"amount":[None]*len(raw["amount"])}
+    with pytest.raises(ValueError,match="invalid provider number"):
+        normalize_bars(bad,"15m",now_utc=NOW)

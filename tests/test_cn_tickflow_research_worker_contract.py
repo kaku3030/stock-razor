@@ -26,3 +26,15 @@ def test_paid_research_worker_is_explicitly_separate_from_trade_writer():
     assert "LIVE_TRADE=NO" in workflow
     assert "REPO_REF" in install and "repo_sha" not in workflow
 
+
+def test_normalizer_diagnostic_is_fixed_enum_and_never_raw_payload():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+    known=ValueError("unexpected Shanghai regular-session grid")
+    known._tickflow_stage="S0_15M_NORMALIZE"
+    assert _normalize_rejection_reason(known)=="HISTORICAL_SESSION_GRID_MISMATCH"
+    private=ValueError("actual-secret=private and provider payload")
+    private._tickflow_stage="S0_15M_NORMALIZE"
+    assert _normalize_rejection_reason(private)=="OTHER"
+    private._tickflow_stage="S0_15M_FETCH"
+    assert _normalize_rejection_reason(private)=="NOT_APPLICABLE"
+    assert _normalize_rejection_reason(TypeError("secret"))=="NOT_APPLICABLE"
