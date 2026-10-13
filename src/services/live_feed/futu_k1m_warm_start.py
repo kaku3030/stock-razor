@@ -239,8 +239,10 @@ def build_futu_k1m_warm_start_selection(
             if not (
                 len(normalization.bars) == qualification.expected_row_count
                 and normalization.unresolved_tail is None
-                and normalization.closure_method
-                == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+                and normalization.closure_method in (
+                    "QUALIFIED_PRIOR_SESSION_FULL_GRID",
+                    "QUALIFIED_POST_SESSION_FULL_GRID",
+                )
             ):
                 deferred_reasons.append(
                     f"{session_date.isoformat()}:MISSING_LATER_PROVIDER_LABEL"
