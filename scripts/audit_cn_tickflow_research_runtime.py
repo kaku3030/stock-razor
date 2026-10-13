@@ -102,6 +102,8 @@ def sample():
                 "FUTURE_TRADING_DATE","OHLCVA_NUMBER_TYPE_INVALID",
                 "OHLCVA_COLUMN_MISSING","OHLCVA_RELATION_INVALID",
                 "VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
+                "OHLCVA_NONPOSITIVE","OHLCVA_HIGH_LT_BODY","OHLCVA_LOW_GT_BODY",
+                "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE",
             }
             result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
         elif data.get("status")=="PASS_RESEARCH_ONLY":

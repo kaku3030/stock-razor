@@ -229,3 +229,32 @@ def test_amount_present_but_null_does_not_falsely_pass_without_contract():
     bad={**raw,"amount":[None]*len(raw["amount"])}
     with pytest.raises(ValueError,match="invalid provider number"):
         normalize_bars(bad,"15m",now_utc=NOW)
+
+def test_current_intraday_invalid_ohlc_is_quarantined_without_faking_finality():
+    now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)  # Shanghai 13:18
+    old=frame("15m","2026-10-09").iloc[:7].copy()
+    today=frame("15m","2026-10-13").iloc[8:9].copy() # 13:15 label
+    today.loc[today.index[0],"high"]=0.0
+    payload=pd.concat([old,today],ignore_index=True)
+    raw={key:payload[key].tolist() for key in
+         ("timestamp","open","high","low","close","volume","amount")}
+    result=normalize_bars(raw,"15m",now_utc=now)
+    assert len(result)==len(old)
+    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in result)
+    # The same malformed bar in completed historical session is blocked.
+    earlier=frame("15m","2026-10-09")
+    earlier.loc[earlier.index[0],"high"]=0.0
+    invalid={key:earlier[key].tolist() for key in
+         ("timestamp","open","high","low","close","volume","amount")}
+    with pytest.raises(ValueError,match="invalid OHLCVA nonpositive"):
+        normalize_bars(invalid,"15m",now_utc=now)
+
+def test_nonconforming_current_volume_is_quarantined_not_synthetically_repaired():
+    now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
+    earlier=frame("60m","2026-10-09").iloc[:4].copy()
+    current=frame("60m","2026-10-13").iloc[2:3].copy()
+    current.loc[current.index[0],"volume"]=-1
+    df=pd.concat([earlier,current],ignore_index=True)
+    raw={k:df[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    assert len(normalize_bars(raw,"60m",now_utc=now))==4

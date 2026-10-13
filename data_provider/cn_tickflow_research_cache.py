@@ -115,17 +115,39 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
             if sh.date() != now_utc.astimezone(CN).date():
                 raise ValueError("future trading date")
             continue
-        op=_number(raw,"open","open_price")
-        hi=_number(raw,"high","high_price")
-        lo=_number(raw,"low","low_price")
-        cl=_number(raw,"close","close_price")
-        vol=_number(raw,"volume","vol")
-        amount_unknown = raw.get("_sdk_amount_omitted") is True
-        amt = None if amount_unknown else _number(raw,"amount","turnover")
-        if (op <= 0 or cl <= 0 or lo <= 0 or hi <= 0
-                or hi < max(op,cl,lo) or lo > min(op,cl,hi)
-                or vol<0 or (amt is not None and amt<0)):
-            raise ValueError("invalid OHLCVA")
+        try:
+            op=_number(raw,"open","open_price")
+            hi=_number(raw,"high","high_price")
+            lo=_number(raw,"low","low_price")
+            cl=_number(raw,"close","close_price")
+            vol=_number(raw,"volume","vol")
+            amount_unknown = raw.get("_sdk_amount_omitted") is True
+            amt = None if amount_unknown else _number(raw,"amount","turnover")
+        except ValueError:
+            if current_shanghai_day:
+                # An unfinished today's bar can have missing quotes/turnover;
+                # never backfill invented OHLC or claim it is a closed bar.
+                # Historical invalid rows remain a fail-closed hard error.
+                continue
+            raise
+        invalid_reason=None
+        if op <= 0 or cl <= 0 or lo <= 0 or hi <= 0:
+            invalid_reason="invalid OHLCVA nonpositive"
+        elif hi < max(op,cl,lo):
+            invalid_reason="invalid OHLCVA high below body"
+        elif lo > min(op,cl,hi):
+            invalid_reason="invalid OHLCVA low above body"
+        elif vol < 0:
+            invalid_reason="invalid OHLCVA negative volume"
+        elif amt is not None and amt < 0:
+            invalid_reason="invalid OHLCVA negative amount"
+        if invalid_reason is not None:
+            if current_shanghai_day:
+                # Current-day partial/unqualified bar only; the reader still
+                # requires the last due 15m/60m grid label before any data
+                # can be surfaced even for research.
+                continue
+            raise ValueError(invalid_reason)
         bars.append({
             "label": sh.strftime("%Y-%m-%d %H:%M"),
             "open":op,"high":hi,"low":lo,"close":cl,
@@ -190,6 +212,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 exc._tickflow_stage=stage
                 raise
             frames[interval]={"rows":bars,
+                 "quarantined_unverified_rows_count":(
+                     len(frame["timestamp"])-len(bars)
+                     if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)
+                     else 0
+                 ),
                  "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",
                  "volume_units":"NOT_VERIFIED",
