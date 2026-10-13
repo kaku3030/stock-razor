@@ -48,6 +48,24 @@ def _number(row: dict, *names: str) -> float:
             return float(value)
     raise ValueError("missing provider column")
 
+
+def _vendor_ohlc_float_gap_bucket(op: float, hi: float, lo: float, cl: float) -> str:
+    """Classify rejected OHLC without exporting prices or changing any bars.
+
+    TickFlow support's <=1e-5 suggestion is research diagnostics only.
+    Absolute CNY error is NOT the same as ETF tick size or bps.
+    """
+    try:
+        o,h,l,c=(Decimal(str(x)) for x in (op,hi,lo,cl))
+        if not all(x.is_finite() and x>0 for x in (o,h,l,c)):
+            return "UNKNOWN"
+        excess=max(Decimal("0"),max(o,c,l)-h,l-min(o,c,h))
+        return ("WITHIN_1E_MINUS_5" if excess<=Decimal("0.00001")
+                else "OVER_1E_MINUS_5")
+    except (InvalidOperation,TypeError,ValueError,OverflowError):
+        return "UNKNOWN"
+
+
 def _select_timestamp(row: dict) -> datetime:
     for key in ("timestamp", "time", "datetime", "date"):
         if key in row:
@@ -207,7 +225,15 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                     "invalid OHLCVA negative amount":"TODAY_NEGATIVE_AMOUNT",
                 }[invalid_reason])
                 continue
-            raise ValueError(invalid_reason)
+            rejection=ValueError(invalid_reason)
+            if invalid_reason in ("invalid OHLCVA high below body",
+                                  "invalid OHLCVA low above body"):
+                # Do not accept, repair, round or emit historical bar prices.
+                # The private failure carries one finite diagnostic enum.
+                rejection._tickflow_ohlc_float_gap_bucket=(
+                    _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
+                )
+            raise rejection
         bars.append({
             "label": sh.strftime("%Y-%m-%d %H:%M"),
             "open":op,"high":hi,"low":lo,"close":cl,
