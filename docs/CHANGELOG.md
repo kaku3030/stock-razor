@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS 只读 MCP 手动部署新增仓库 Owner 与最新 main SHA 双阶段守卫、固定安装脚本校验和、禁止原始远端安装日志外泄；不自动部署或解锁交易门禁。
+
 - [修复] AWS 只读心跳审计及 Cloud Ops 健康检查按单个缓存读取完成时间判断，避免高频 US Radar 心跳虚假时钟回拨；实际时间回拨仍阻断。
 
 - [改进] GitHub 仓库 Owner 可通过固定 PR 的精确评论命令触发原有 AWS 只读 SSM 审计；执行前双重身份检查与 main SHA 校验，禁止任意命令、实盘及变更权限，不新增定时任务或 IAM 权限。
