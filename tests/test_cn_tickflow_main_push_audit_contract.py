@@ -18,7 +18,8 @@ def test_audit_push_event_is_exact_main_and_path_scoped():
     ) in s
     assert "  workflow_dispatch:" in s
     assert "  schedule:" in s
-    assert "if: github.ref == 'refs/heads/main'" in s
+    assert "github.ref == 'refs/heads/main' && (" in s
+    assert "github.event_name == 'push'" in s
 
 
 def test_audit_does_not_change_paid_worker_or_trading_gates():
