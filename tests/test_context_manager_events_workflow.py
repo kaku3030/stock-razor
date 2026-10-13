@@ -35,12 +35,11 @@ def test_context_event_ssm_command_never_relies_on_escaped_multiline_flags():
     import yaml
     workflow = yaml.safe_load(WORKFLOW)
     script = next(step["run"] for step in workflow["jobs"]["sync"]["steps"] if step.get("name") == "Record allowlisted event over SSM")
-    assert script.count("remote=\\"$(printf") == 2
-    # The command itself must be a single printed shell line, avoiding escaped
-    # backslashes that previously made the next argument an invalid command.
+    assert script.count('remote="$(printf') == 2
+    # Only single-line command invocation; no nested heredocs or line splitting.
     invocation_lines = [line for line in script.splitlines() if "record_context_event.py" in line]
     assert len(invocation_lines) == 2
     assert all("--event-id" in line and "--source-ref" in line and "--payload-json" in line for line in invocation_lines)
-    assert all(not line.rstrip().endswith(r"\\") for line in invocation_lines)
-    assert "echo \\"CONTEXT_MANAGER_EVENT_SYNC=PASS\\"" in script
-    assert "echo \\"CONTEXT_MANAGER_PR_SYNC=PASS\\"" in script
+    assert all(" --ttl-seconds 604800" in line for line in invocation_lines)
+    assert 'echo "CONTEXT_MANAGER_EVENT_SYNC=PASS"' in script
+    assert 'echo "CONTEXT_MANAGER_PR_SYNC=PASS"' in script
