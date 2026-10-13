@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS 只读心跳审计及 Cloud Ops 健康检查按单个缓存读取完成时间判断，避免高频 US Radar 心跳虚假时钟回拨；实际时间回拨仍阻断。
+
 - [改进] GitHub 仓库 Owner 可通过固定 PR 的精确评论命令触发原有 AWS 只读 SSM 审计；执行前双重身份检查与 main SHA 校验，禁止任意命令、实盘及变更权限，不新增定时任务或 IAM 权限。
 
 - [修复] AWS 只读云端运行审计在申请 OIDC 权限前及发送 SSM 命令前两次校验 main 当前 SHA，拒绝过期任务，不读取密钥、不改服务或交易门禁。
