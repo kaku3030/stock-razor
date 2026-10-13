@@ -308,3 +308,29 @@ def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
     assert q["status"]=="INVALID_REQUEST"
     assert q["radar_admission"]=="BLOCKED"
     assert q["live_trade"] is False
+
+def test_current_day_vendor_bar_quarantine_cause_is_bounded_counter():
+    current=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    baseline=frame("15m","2026-10-09").iloc[:6].copy()
+    current_frame=frame("15m","2026-10-13").iloc[8:10].copy()
+    current_frame.loc[current_frame.index[0],"high"]=0
+    current_frame.loc[current_frame.index[1],"volume"]=-1
+    merged=pd.concat([baseline,current_frame],ignore_index=True)
+    raw={k:merged[k].tolist() for k in ("timestamp","open","high",
+                                      "low","close","volume","amount")}
+    counts={}
+    bars=normalize_bars(raw,"15m",now_utc=current,quarantine_counts=counts)
+    assert len(bars)==6
+    assert counts=={"TODAY_NONPOSITIVE_OHLC":1,"TODAY_NEGATIVE_VOLUME":1}
+    assert not any("secret" in str(k) for k in counts)
+
+def test_previous_day_invalid_ohlc_still_aborts_with_metrics_enabled():
+    current=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
+    earlier=frame("15m","2026-10-09")
+    earlier.loc[earlier.index[0],"high"]=0
+    raw={k:earlier[k].tolist() for k in ("timestamp","open","high",
+                                          "low","close","volume","amount")}
+    counts={}
+    with pytest.raises(ValueError):
+        normalize_bars(raw,"15m",now_utc=current,quarantine_counts=counts)
+    assert not counts
