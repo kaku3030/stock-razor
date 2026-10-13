@@ -293,8 +293,26 @@ for raw in d["operations"]:
         )
         n=kline.get("sample_count")
         item["historical_sample_count"]=(
-            n if type(n) is int and 0 <= n <= 3 else None
+            n if type(n) is int and 0 <= n <= 96 else None
         )
+        grid=kline.get("historical_grid")
+        grid=grid if isinstance(grid,dict) else {}
+        convention=grid.get("label_convention")
+        item["historical_grid_convention"]=(
+            convention if convention in (
+                "BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT",
+                "INSUFFICIENT","INVALID_TIMESTAMP_ORDER"
+            ) else "INSUFFICIENT"
+        )
+        for field in (
+            "prior_sessions_observed","complete_end_sessions",
+            "complete_start_sessions","current_day_rows_excluded",
+        ):
+            value=grid.get(field)
+            item["historical_grid_"+field]=(
+                value if type(value) is int and 0 <= value <= 120 else None
+            )
+        item["historical_grid_is_not_closure_proof"]=True
         item["freshness"]="NOT_VERIFIED"
         item["closure"]="NOT_VERIFIED"
         item["provider_live_qualified"]=False

@@ -204,7 +204,18 @@ jobs:
                       val=item.get(field)
                       record[field]=val if val in ("PASS","NOT_VERIFIED") else "NOT_VERIFIED"
                   n=item.get("historical_sample_count")
-                  record["historical_sample_count"]=n if type(n) is int and 0 <= n <= 3 else None
+                  record["historical_sample_count"]=n if type(n) is int and 0 <= n <= 96 else None
+                  convention=item.get("historical_grid_convention")
+                  record["historical_grid_convention"]=convention if convention in (
+                    "BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT",
+                    "INSUFFICIENT","INVALID_TIMESTAMP_ORDER") else "INSUFFICIENT"
+                  for field in ("prior_sessions_observed","complete_end_sessions",
+                                "complete_start_sessions","current_day_rows_excluded"):
+                    value=item.get("historical_grid_"+field)
+                    record["historical_grid_"+field]=(
+                      value if type(value) is int and 0<=value<=120 else None)
+                  assert item.get("historical_grid_is_not_closure_proof") is True
+                  record["historical_grid_is_not_closure_proof"]=True
                   assert item.get("freshness")=="NOT_VERIFIED"
                   assert item.get("closure")=="NOT_VERIFIED"
                   assert item.get("provider_live_qualified") is False

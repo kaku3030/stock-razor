@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
@@ -191,6 +192,88 @@ def _ohlcv_anomaly_diagnostics(
     }
 
 
+def _cn_history_grid(labels: list[float | None], *, period: str) -> dict[str, Any]:
+    """Bounded historical Shanghai-session label evidence (no prices/dates leave).
+
+    This distinguishes a provider label-grid *candidate* from provider
+    attestation: an exact past grid is neither proof of completed latest Kline
+    nor current realtime delivery / canonical-source admission.
+    """
+    end_grids = {
+        "15m": (
+            "09:45", "10:00", "10:15", "10:30", "10:45", "11:00",
+            "11:15", "11:30", "13:15", "13:30", "13:45", "14:00",
+            "14:15", "14:30", "14:45", "15:00",
+        ),
+        "60m": ("10:30", "11:30", "14:00", "15:00"),
+    }
+    start_grids = {
+        "15m": (
+            "09:30", "09:45", "10:00", "10:15", "10:30", "10:45",
+            "11:00", "11:15", "13:00", "13:15", "13:30", "13:45",
+            "14:00", "14:15", "14:30", "14:45",
+        ),
+        "60m": ("09:30", "10:30", "13:00", "14:00"),
+    }
+    missing = {
+        "label_convention": "INSUFFICIENT",
+        "prior_sessions_observed": 0,
+        "complete_end_sessions": 0,
+        "complete_start_sessions": 0,
+        "current_day_rows_excluded": 0,
+        "currentness_proven": False,
+        "closure_proven": False,
+        "canonical_write": False,
+        "radar_admission": "BLOCKED",
+    }
+    if period not in end_grids:
+        return missing
+    if not labels or any(type(x) not in (int, float) or not math.isfinite(x) for x in labels):
+        return {**missing, "label_convention": "INVALID_TIMESTAMP_ORDER"}
+    if any(a >= b for a, b in zip(labels, labels[1:])):
+        return {**missing, "label_convention": "INVALID_TIMESTAMP_ORDER"}
+    shanghai = ZoneInfo("Asia/Shanghai")
+    today = datetime.now(shanghai).date()
+    sessions: dict[Any, list[str]] = {}
+    current_rows = 0
+    try:
+        for ts in labels:
+            stamp = datetime.fromtimestamp(ts, tz=shanghai)
+            if stamp.date() >= today:
+                # Exclude developing session, and any future row. Its label
+                # cannot be used as evidence of a completed trading session.
+                current_rows += 1
+                continue
+            sessions.setdefault(stamp.date(), []).append(
+                stamp.strftime("%H:%M") if stamp.second == 0 and stamp.microsecond == 0
+                else "NON_EXACT_BAR_BOUNDARY"
+            )
+    except (OverflowError, OSError, ValueError):
+        return {**missing, "label_convention": "INVALID_TIMESTAMP_ORDER"}
+    matched_end = sum(labels == list(end_grids[period]) for labels in sessions.values())
+    matched_start = sum(labels == list(start_grids[period]) for labels in sessions.values())
+    if matched_end >= 3 and matched_start == 0:
+        outcome = "BAR_END_GRID_MATCH"
+    elif matched_start >= 3 and matched_end == 0:
+        outcome = "BAR_START_GRID_MATCH"
+    elif matched_end >= 3 and matched_start >= 3:
+        outcome = "GRID_CONFLICT"
+    elif len(sessions) >= 3 and sum(
+        len(values) >= len(end_grids[period]) for values in sessions.values()
+    ) >= 3 and not (matched_end or matched_start):
+        outcome = "GRID_CONFLICT"
+    else:
+        outcome = "INSUFFICIENT"
+    return {
+        **missing,
+        "label_convention": outcome,
+        "prior_sessions_observed": min(len(sessions), 120),
+        "complete_end_sessions": min(matched_end, 120),
+        "complete_start_sessions": min(matched_start, 120),
+        "current_day_rows_excluded": min(current_rows, 120),
+    }
+
+
 def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
     """Return only field-level evidence; never return bar values or payloads."""
     rows = _rows(value)
@@ -227,6 +310,8 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
             "freshness": "NOT_VERIFIED",
             "entitlement_evidence": "UNKNOWN",
             "period": period,
+            **({"historical_grid": _cn_history_grid([], period=period)}
+               if period in {"15m", "60m"} else {}),
         }
 
     timestamps = [_timestamp(_field(row, fields["timestamp"])) for row in rows]
@@ -285,6 +370,8 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
         "freshness": "NOT_VERIFIED",
         "entitlement_evidence": "UNKNOWN",
         "period": period,
+        **({"historical_grid": _cn_history_grid(timestamps, period=period)}
+           if period in {"15m", "60m"} else {}),
     }
 
 
@@ -709,7 +796,8 @@ def build_probe(
                 _operation(
                     "kline_" + period,
                     lambda period=period, symbol=symbol: client.klines.get(
-                        symbol, period=period, count=3
+                        symbol, period=period,
+                        count=(96 if period == "15m" else 24 if period == "60m" else 3)
                     ),
                     summarize=(
                         lambda value, period=period: _kline_summary(value, period=period)
