@@ -15,3 +15,25 @@ All inputs must be timezone-aware, provider-lineaged, PIT-verified, survivorship
 The backtest enters at the next bar open, applies explicit commission and slippage on entry/exit, checks the stop before the horizon close, and reports expected value, win rate, mean winning/losing R, R distribution, maximum drawdown, trade count, and scenario stability. A result with no complete trades is `INSUFFICIENT`, not a zero-return success.
 
 The code does not fetch market data. A-share qualification requires explicit `provider=tickflow`; US qualification requires explicit `provider=alpaca`, but Alpaca feed scope and consolidated-volume semantics remain a separate evidence item. No current TickFlow or qualified US capture is asserted by fixture tests. Walk-forward/OOS/Shadow/Paper admission remains pending a governed dataset capsule, split manifest, and real provenance evidence.
+
+
+## P0/P1 audit patch: execution and timing safeguards
+
+- Per-candidate daily and 60m trend evaluations use only completed bar-END
+  timestamps at or before the historical 15m trigger. A later trend bar cannot
+  retroactively create a past trade signal. Bar ordering/uniqueness is guarded.
+- Explicit settlement and market time zone are **required** for simulation.
+  A-share equity ETFs generally require T+1 sell eligibility; do not assume
+  every ETF is T+1 (or T+0). An unsellable same-day stop remains open, and a
+  next-session gap through stop executes at the executable opening price
+  with adverse slippage, not the hypothetical stop.
+- Single-position simulation skips overlapping candidate trades. Reported
+  drawdown includes sequential bar-close marks while held (not unobservable
+  intrabar equity extrema). An invalid stop distance fails closed.
+- A1/A2/A3+ are ordinal qualifying pullbacks within the current continuous
+  detected trend segment. The first is A1, second A2; later signals are not
+  mislabeled A2. These are research labels only.
+- The PASS result from a synthetic test indicates mathematical **contract
+  execution** only. It does not attest vendor provenance, data quality,
+  profitability, realistic broker execution, or out-of-sample performance.
+  Real OOS/Shadow/Paper are still BLOCKED/NOT_RUN.
