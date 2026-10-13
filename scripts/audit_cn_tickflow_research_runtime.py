@@ -20,6 +20,30 @@ MCP_UNIT="stock-razor-mcp.service"
 MAX_FILE_BYTES=150000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
+# Only these fixed exception classes can be projected from the private
+# fail-closed cache. Never return provider message, stack trace or key.
+_SAFE_FAILURE_CLASS={
+    "ValueError":"VALUE_ERROR",
+    "TypeError":"TYPE_ERROR",
+    "KeyError":"KEY_ERROR",
+    "RuntimeError":"RUNTIME_ERROR",
+    "TimeoutError":"TIMEOUT_ERROR",
+    "PermissionError":"PERMISSION_ERROR",
+    "HTTPStatusError":"HTTP_STATUS_ERROR",
+    "APIError":"API_ERROR",
+    "TickFlowError":"TICKFLOW_ERROR",
+    "AuthenticationError":"AUTH_ERROR",
+    "RateLimitError":"RATE_LIMIT_ERROR",
+    "ConnectionError":"CONNECTION_ERROR",
+    "IndexError":"INDEX_ERROR",
+    "AttributeError":"ATTRIBUTE_ERROR",
+}
+
+def blocked_status(failure_class: object) -> str:
+    return "BLOCKED_"+_SAFE_FAILURE_CLASS.get(
+        failure_class if isinstance(failure_class,str) else "", "OTHER"
+    )
+
 
 def active(service):
     try:
@@ -60,7 +84,7 @@ def sample():
         age=(datetime.now(timezone.utc)-instant.astimezone(timezone.utc)).total_seconds()
         result["cache_age_seconds"]=round(age,2) if -5<=age<=100000 else None
         if data.get("status")=="BLOCKED":
-            result["status"]="BLOCKED"
+            result["status"]=blocked_status(data.get("failure_class"))
         elif data.get("status")=="PASS_RESEARCH_ONLY":
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:
