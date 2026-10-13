@@ -7,6 +7,10 @@ def test_canonical_readonly_mcp_declares_futures_health_tool():
     assert "@mcp.tool()" in source
     assert "def get_futures_runtime_health()" in source
     assert "return read_futures_runtime_health()" in source
+    assert "def get_context_manager_state()" in source
+    assert "return default_store().read()" in source
+    assert "get_context_manager_state" in Path("ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
+    assert "deployment_passed" in Path("ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
 
 
 def test_canonical_readonly_mcp_declares_us_fast_read_tools():

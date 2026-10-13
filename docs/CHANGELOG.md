@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增可持续 Context Manager MVP：工程、部署、CI 与 Radar 事件可通过统一 append-only JSONL 记录，当前状态原子落盘并带版本、时间戳、来源、TTL、幂等与凭据过滤；现有只读 MCP 新增 `get_context_manager_state` 恢复入口，失效、损坏和失败状态保持阻断，不改变交易权限。
+
 - [chore] Trigger protected AWS TickFlow read-only research re-audit after scoped main-branch audit changes without paid ingestion or trading changes.
 
 - [修复] AWS 只读 MCP 手动部署新增仓库 Owner 与最新 main SHA 双阶段守卫、固定安装脚本校验和、禁止原始远端安装日志外泄；不自动部署或解锁交易门禁。
