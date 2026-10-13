@@ -75,3 +75,14 @@ def test_tickflow_workflow_has_preauth_main_and_ssm_guards():
     assert "Verify two isolated AWS snapshots 65 seconds apart" in workflow
     assert "assert d.get(\"radar_admission\")==\"BLOCKED\"" in workflow
     assert "assert d.get(\"live_trade\")==\"NO\"" in workflow
+
+
+def test_untrusted_comments_cannot_consume_workflow_concurrency():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
+    assert "\nconcurrency:\n" not in workflow
+    assert "jobs:\n  audit:\n" in workflow
+    assert "    concurrency:\n      group: cn-tickflow-readonly-audit-" in workflow
+    assert workflow.index("jobs:\n  audit:\n") < workflow.index("    concurrency:\n") < workflow.index("    if: >-")
+    assert workflow.count("cancel-in-progress: false") == 1
+    assert "github.event.issue.number == 658" in workflow
