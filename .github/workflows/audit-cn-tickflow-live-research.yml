@@ -85,6 +85,14 @@ jobs:
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
+          parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
+                         "STALE_REFERENCE","INVALID_TICKFLOW_ROWS",
+                         "UNQUALIFIED_REFERENCE_GRID","NO_OVERLAP",
+                         "OBSERVED_NOT_ADMITTED","INSUFFICIENT_OVERLAP",
+                         "INVALID_SNAPSHOT")
+          parity_difference=("UNKNOWN","EXACT","UNDER_HALF_TICK",
+                             "UP_TO_ONE_TICK","UP_TO_TWO_TICKS","OVER_TWO_TICKS")
+          parity_lineage=("UNKNOWN","EASTMONEY","TENCENT")
           allowed_gap=("UNKNOWN","NONE","GAP_LT_1BP","GAP_1_TO_10BP",
                        "GAP_10_TO_100BP","GAP_GE_100BP")
           allowed_cause=("UNKNOWN","NONE","TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
@@ -98,6 +106,14 @@ jobs:
                    "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
           for when in ("before","after"):
               assert d[when].get("mcp_read_failure_reason") in reasons
+              parity=d[when].get("independent_price_shadow")
+              assert isinstance(parity,dict) and set(parity).issubset(periods)
+              for _v in parity.values():
+                  assert isinstance(_v,dict)
+                  assert _v.get("status") in parity_status
+                  assert _v.get("overlap_bucket") in allowed_bucket
+                  assert _v.get("max_price_difference_ticks") in parity_difference
+                  assert _v.get("lineage") in parity_lineage
               frame_map=d[when].get("source_frame_progress")
               assert isinstance(frame_map,dict)
               assert set(frame_map).issubset(periods)
@@ -133,10 +149,12 @@ jobs:
               assert type(d[when].get("all_four_historical_requests_ok")) is bool
           public={"schema":d["schema"],
                   "before":{**{k:d["before"].get(k) for k in keys},
+                            "independent_price_shadow":{p:d["before"]["independent_price_shadow"].get(p,{}) for p in periods},
                             "source_frame_progress":{p:d["before"]["source_frame_progress"].get(p,{}) for p in periods},
                             "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                             "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "after":{**{k:d["after"].get(k) for k in keys},
+                           "independent_price_shadow":{p:d["after"]["independent_price_shadow"].get(p,{}) for p in periods},
                            "source_frame_progress":{p:d["after"]["source_frame_progress"].get(p,{}) for p in periods},
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                            "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},

@@ -131,3 +131,52 @@ def test_etf_lattice_quantization_compatibility_audit_has_no_price_data():
     }}
     bad=audit.summarize_private_frame_progress(corrupt,timeframe="15m",now_utc=now)
     assert bad["etf_tick_research_shadow_compatible_bucket"]=="UNKNOWN"
+
+def test_ec2_independent_cn_source_parity_emits_only_fixed_buckets():
+    from datetime import datetime,timezone
+    from scripts.audit_cn_tickflow_research_runtime import shadow_compare_eastmoney
+    now=datetime(2026,10,13,7,15,tzinfo=timezone.utc)
+    labels=["2026-10-09 09:45","2026-10-09 10:00",
+            "2026-10-09 10:15","2026-10-09 10:30"]
+    def row(label,delta=0.0):
+        return dict(label=label,open=1.25+delta,high=1.26+delta,
+                    low=1.24+delta,close=1.255+delta)
+    tf={"symbols":{"159611.SZ":{"15m":{"rows":[row(x) for x in labels]}}}}
+    ref={"schema":"stock_razor_cn_eastmoney_observation_v1",
+        "research_only":True,"radar_admission":"BLOCKED","live_trade":False,
+        "emitted_at_utc":now.isoformat(),
+        "symbols":{"159611":{"timeframes":{"15m":{
+            "status":"PASS","provider_used":"eastmoney","adjustment":"NONE",
+            "timestamp_semantic":"BAR_END",
+            "timestamp_qualification":{"status":"PASS","timestamp_semantic":"BAR_END"},
+            "rows":[{**row(x,0.0003),"quality_flags":[]} for x in labels],
+        }}}}}
+    result=shadow_compare_eastmoney(tf,ref,now_utc=now)
+    one=result["159611_SZ_15m"]
+    assert one["status"]=="OBSERVED_NOT_ADMITTED"
+    assert one["lineage"]=="EASTMONEY"
+    assert one["overlap_bucket"]=="TWO_TO_FOUR"
+    assert one["max_price_difference_ticks"]=="UNDER_HALF_TICK"
+    assert "2026" not in str(result) and "1.255" not in str(result)
+    bad={**ref,"research_only":False}
+    reject=shadow_compare_eastmoney(tf,bad,now_utc=now)
+    assert reject["159611_SZ_15m"]["status"]=="INVALID_REFERENCE"
+    corrupt={**ref,"symbols":{"159611":{"timeframes":{"15m":{
+        **ref["symbols"]["159611"]["timeframes"]["15m"],
+        "timestamp_semantic":"UNKNOWN",
+    }}}}}
+    assert shadow_compare_eastmoney(tf,corrupt,now_utc=now)[
+        "159611_SZ_15m"]["status"]=="UNQUALIFIED_REFERENCE_GRID"
+
+def test_independent_price_reference_naive_clock_must_fail_closed():
+    from datetime import datetime,timezone
+    from scripts.audit_cn_tickflow_research_runtime import shadow_compare_eastmoney
+    now=datetime(2026,10,13,7,15,tzinfo=timezone.utc)
+    src={"schema":"stock_razor_cn_eastmoney_observation_v1",
+         "research_only":True,"radar_admission":"BLOCKED",
+         "live_trade":False,"emitted_at_utc":"2026-10-13T07:15:00",
+         "symbols":{}}
+    result=shadow_compare_eastmoney({"symbols":{}},src,now_utc=now)
+    assert all(item["status"]=="INVALID_REFERENCE" for item in result.values())
+    assert all(item["max_price_difference_ticks"]=="UNKNOWN"
+               for item in result.values())
