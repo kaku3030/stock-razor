@@ -211,29 +211,38 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             invalid_reason="invalid OHLCVA negative volume"
         elif amt is not None and amt < 0:
             invalid_reason="invalid OHLCVA negative amount"
+        ohlc_validation="STRICT"
         if invalid_reason is not None:
-            if current_shanghai_day:
-                # Current-day partial/unqualified bar only; the reader still
-                # requires the last due 15m/60m grid label before any data
-                # can be surfaced even for research.
-                summarize_invalid_ohlc(op,hi,lo,cl,invalid_reason)
-                quarantine({
-                    "invalid OHLCVA nonpositive":"TODAY_NONPOSITIVE_OHLC",
-                    "invalid OHLCVA high below body":"TODAY_HIGH_BELOW_BODY",
-                    "invalid OHLCVA low above body":"TODAY_LOW_ABOVE_BODY",
-                    "invalid OHLCVA negative volume":"TODAY_NEGATIVE_VOLUME",
-                    "invalid OHLCVA negative amount":"TODAY_NEGATIVE_AMOUNT",
-                }[invalid_reason])
-                continue
-            rejection=ValueError(invalid_reason)
-            if invalid_reason in ("invalid OHLCVA high below body",
-                                  "invalid OHLCVA low above body"):
-                # Do not accept, repair, round or emit historical bar prices.
-                # The private failure carries one finite diagnostic enum.
-                rejection._tickflow_ohlc_float_gap_bucket=(
-                    _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
-                )
-            raise rejection
+            # Official TickFlow October 13 contract: tolerate only a
+            # non-mutating <= 1e-5 absolute float serialization gap.
+            # This is OHLC shape only, NOT exchange finality, currentness
+            # or canonical/source admission.
+            float_only=(invalid_reason in (
+                "invalid OHLCVA high below body",
+                "invalid OHLCVA low above body")
+                and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
+                    == "WITHIN_1E_MINUS_5")
+            if float_only:
+                ohlc_validation="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+            else:
+                if current_shanghai_day:
+                    # Still quarantine all genuinely malformed current bars.
+                    summarize_invalid_ohlc(op,hi,lo,cl,invalid_reason)
+                    quarantine({
+                        "invalid OHLCVA nonpositive":"TODAY_NONPOSITIVE_OHLC",
+                        "invalid OHLCVA high below body":"TODAY_HIGH_BELOW_BODY",
+                        "invalid OHLCVA low above body":"TODAY_LOW_ABOVE_BODY",
+                        "invalid OHLCVA negative volume":"TODAY_NEGATIVE_VOLUME",
+                        "invalid OHLCVA negative amount":"TODAY_NEGATIVE_AMOUNT",
+                    }[invalid_reason])
+                    continue
+                rejection=ValueError(invalid_reason)
+                if invalid_reason in ("invalid OHLCVA high below body",
+                                      "invalid OHLCVA low above body"):
+                    rejection._tickflow_ohlc_float_gap_bucket=(
+                        _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
+                    )
+                raise rejection
         bars.append({
             "label": sh.strftime("%Y-%m-%d %H:%M"),
             "open":op,"high":hi,"low":lo,"close":cl,
@@ -241,6 +250,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             "amount_availability":"SDK_OMITTED" if amount_unknown else "PRESENT_UNVERIFIED",
             "is_partial_bar": True,
             "bar_finality": "NOT_VERIFIED",
+            "ohlc_validation":ohlc_validation,
         })
     if len(bars)<4:
         raise ValueError("no sufficient historical closed-time candidates")
@@ -436,13 +446,21 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 numerical["amount"]=amount
             else:
                 raise ValueError
-            if (numerical["low"]<=0
-                    or numerical["high"]<max(numerical["open"],numerical["close"],numerical["low"])
-                    or numerical["low"]>min(numerical["open"],numerical["close"],numerical["high"])
-                    or numerical["volume"]<0):
+            op,hi,lo,cl=(numerical[k] for k in ("open","high","low","close"))
+            shape_gap=(hi<max(op,cl,lo) or lo>min(op,cl,hi))
+            tolerance=item.get("ohlc_validation","STRICT")
+            if (min(op,hi,lo,cl)<=0 or numerical["volume"]<0
+                    or tolerance not in (
+                        "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
+                    or (shape_gap and (
+                        tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+                        or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
+                            !="WITHIN_1E_MINUS_5"))
+                    or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
             safe.append({"label":label,**numerical,"amount_availability":availability,
-                "is_partial_bar":True,"bar_finality":"NOT_VERIFIED"})
+                "is_partial_bar":True,"bar_finality":"NOT_VERIFIED",
+                "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
     expected=_expected_closed_grid_label(now,timeframe)
