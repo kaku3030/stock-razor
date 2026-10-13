@@ -1,6 +1,6 @@
 name: Sync Context Manager GitHub Events
 
-on:
+"on":
   pull_request:
     types: [closed]
   workflow_run:
