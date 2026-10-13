@@ -41,6 +41,8 @@ from realtime_monitor.readonly_mcp_server import (
 )
 assert mcp is not None
 assert get_context_manager_state()["safety"]["live_trade"] is False
+assert get_cn_market_analysis(["__CONTEXT_MANAGER_STATE__"])["safety"]["live_trade"] is False
+assert get_market_analysis(["__CONTEXT_MANAGER_STATE__"])["safety"]["radar_admission"] == "BLOCKED"
 result = get_futures_runtime_health()
 assert result["live_trade"] is False
 assert result["radar_admission"] == "BLOCKED"
