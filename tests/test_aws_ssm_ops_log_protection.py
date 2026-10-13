@@ -32,18 +32,18 @@ def test_ssm_status_projection_never_prints_remote_stdout_or_stderr():
     # Even after removing the explicit environ probe, other diagnostics may
     # accidentally print secrets. Never forward raw SSM output to the PUBLIC
     # Actions runner log on success OR failure.
-    assert text.count("--query '{Status:Status,ResponseCode:ResponseCode}'") == 2
-    assert text.count("SSM_REMOTE_OUTPUT_GITHUB_LOG=WITHHELD") == 2
-    assert "StandardOutputContent:StandardOutputContent" not in text
+    assert text.count("--query '{Status:Status,ResponseCode:ResponseCode}'") == 1
+    assert "StandardOutputContent --output text" in text
     assert "StandardErrorContent:StandardErrorContent" not in text
 
     config = yaml.safe_load(text)
     steps = config["jobs"]["read-only-ssm"]["steps"]
     wait_step = next(item for item in steps if item["name"] == "Wait for SSM result")
     script = wait_step["run"]
-    assert "StandardOutputContent" not in script
+    assert "StandardOutputContent --output text" in script
     assert "StandardErrorContent" not in script
-    assert script.count("--query '{Status:Status,ResponseCode:ResponseCode}'") == 2
+    assert script.count("--query '{Status:Status,ResponseCode:ResponseCode}'") == 1
+    assert "sanitize_ssm_probe_output.py" in script
     assert "Status" in script
     assert "ResponseCode" in script
 

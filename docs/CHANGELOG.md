@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - [改进] Context Manager 新增按 CI、PR、部署、Radar、阻塞和优先事项分域的可恢复快照，并通过 owner/OIDC/固定 SSM/exact-main 守卫自动接收合并 PR 与 main CI 完成事件；恢复入口明确保留 provenance、TTL、未验收和关闭状态，不改变交易门禁。
+- [修复] AWS OpenD SSM 只读探针日志采用有限状态枚举、严格时间戳与行情周期白名单；隐藏私有路径、端点、任意数值及成交数据，脱敏成功不等于实时行情准入。
+
 - [新功能] 新增可持续 Context Manager MVP：工程、部署、CI 与 Radar 事件可通过统一 append-only JSONL 记录，当前状态原子落盘并带版本、时间戳、来源、TTL、幂等与凭据过滤；现有只读 MCP 新增 `get_context_manager_state` 恢复入口，失效、损坏和失败状态保持阻断，不改变交易权限。
 - [修复] TickFlow云端只读审计并发锁从工作流级移到授权后的job级，防止无权限GitHub评论替换已排队的Owner验收请求。
 - [修复] Paper SIM 私有回读将超过 JSON 解析嵌套深度的结构归类为 PRIVATE_SCHEMA_INVALID；语法错误继续归类为 PRIVATE_INPUT_INVALID，严格脱敏与禁交易不变。
