@@ -2,6 +2,8 @@ name: Audit Read-Only Cloud Runtime
 
 on:
   workflow_dispatch:
+  issue_comment:
+    types: [created]
 
 permissions:
   id-token: write
@@ -13,6 +15,16 @@ concurrency:
 
 jobs:
   audit:
+    # Reject untrusted public issue comments BEFORE provisioning a runner or
+    # requesting AWS OIDC. Only the repository owner, on the fixed control PR,
+    # with the exact immutable audit command is eligible.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == github.repository_owner &&
+       github.event.issue.number == 71 &&
+       github.event.comment.author_association == 'OWNER' &&
+       github.event.comment.body == '/stock-razor cloud-audit')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -24,6 +36,12 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Reauthorize GitHub event before AWS OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/authorize_cloud_ops_comment.py
+
       - name: Verify protected main and checkout before AWS OIDC
         shell: bash
         env:
