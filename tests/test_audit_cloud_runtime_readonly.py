@@ -275,10 +275,10 @@ def test_ssm_audit_protected_main_guard_executes_offline(tmp_path):
         encoding="utf-8"
     )
     guard = workflow.split(
-        "      - name: Verify protected main and checkout before AWS OIDC\\n", 1
+        "      - name: Verify protected main and checkout before AWS OIDC\n", 1
     )[1].split("      - name: Configure temporary GitHub OIDC credentials", 1)[0]
-    script = guard.split("        run: |\\n", 1)[1]
-    script = "\\n".join(
+    script = guard.split("        run: |\n", 1)[1]
+    script = "\n".join(
         line[10:] if line.startswith("          ") else line
         for line in script.splitlines()
     )
@@ -287,16 +287,16 @@ def test_ssm_audit_protected_main_guard_executes_offline(tmp_path):
     fake_git = fake_bin / "git"
     fake_gh = fake_bin / "gh"
     fake_git.write_text(
-        '#!/bin/sh\\n'
-        '[ "$1" = rev-parse ] && [ "$2" = HEAD ] || exit 4\\n'
-        'printf "%s\\\\n" "$TEST_CHECKOUT_SHA"\\n',
+        '#!/bin/sh\n'
+        '[ "$1" = rev-parse ] && [ "$2" = HEAD ] || exit 4\n'
+        'printf "%s\\n" "$TEST_CHECKOUT_SHA"\n',
         encoding="utf-8",
     )
     fake_gh.write_text(
-        '#!/bin/sh\\n'
-        '[ "$1" = api ] || exit 4\\n'
-        '[ "$TEST_GH_FAIL" != YES ] || exit 5\\n'
-        'printf "%s\\\\n" "$TEST_MAIN_SHA"\\n',
+        '#!/bin/sh\n'
+        '[ "$1" = api ] || exit 4\n'
+        '[ "$TEST_GH_FAIL" != YES ] || exit 5\n'
+        'printf "%s\\n" "$TEST_MAIN_SHA"\n',
         encoding="utf-8",
     )
     fake_git.chmod(0o755)
