@@ -59,7 +59,7 @@ def test_private_sim_only_readback_retains_no_trade_mutation():
     assert "history_order_list_query(" in TEXT
     assert "sim_native_fills: \"UNSUPPORTED_BY_OPEND\"" in TEXT
     assert 'paper_preflight: "BLOCKED"' in TEXT
-    assert "RAW SSM STDOUT" not in TEXT.upper()
+    assert 'echo "$raw"' not in TEXT
     assert "OpenSecTradeContext" in TEXT
     for bad in ("place_order(", "modify_order(", "unlock_trade(", "cancel_order(",
                 "TrdEnv.REAL", "sim_acc_id=", "echo $AWS_SECRET"):
