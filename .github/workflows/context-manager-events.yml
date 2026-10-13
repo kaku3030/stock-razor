@@ -94,9 +94,7 @@ jobs:
               "export STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json" \
               "export STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl" \
               "payload=\$(printf '%s' '$encoded' | base64 -d)" \
-              "'$INSTALL_ROOT/venv/bin/python' '$INSTALL_ROOT/repo/scripts/record_context_event.py' \\\\" \
-              "  --event-id '$event_id' --event-type '$event_type' --source '$source' \\\\" \
-              "  --source-ref '$source_ref' --payload-json \"\$payload\" --ttl-seconds 604800")"
+              "'$INSTALL_ROOT/venv/bin/python' '$INSTALL_ROOT/repo/scripts/record_context_event.py' --event-id '$event_id' --event-type '$event_type' --source '$source' --source-ref '$source_ref' --payload-json \"\$payload\" --ttl-seconds 604800")"
           params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 60); do
@@ -106,8 +104,8 @@ jobs:
           done
           test "$status" = Success
           result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text | tr -d '\r')"
-          grep -Eq '^(\{"status":"(RECORDED|DUPLICATE)"|\{"status":"BLOCKED")' <<< "$result"
-          echo "CONTEXT_MANAGER_EVENT_SYNC=$([[ "$result" == *'"status":"BLOCKED"'* ]] && echo BLOCKED || echo PASS)"
+          printf '%s' "$result" | jq -e '.status == "RECORDED" or .status == "DUPLICATE"' >/dev/null
+          echo "CONTEXT_MANAGER_EVENT_SYNC=PASS"
           fi
 
           if [[ "$EVENT_NAME" == push ]]; then
@@ -124,9 +122,7 @@ jobs:
               "export STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json" \
               "export STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl" \
               "payload=\$(printf '%s' '$encoded' | base64 -d)" \
-              "'$INSTALL_ROOT/venv/bin/python' '$INSTALL_ROOT/repo/scripts/record_context_event.py' \\\\" \
-              "  --event-id '$pr_event_id' --event-type pr_merged --source engineering \\\\" \
-              "  --source-ref 'github/pr/$number' --payload-json \"\$payload\" --ttl-seconds 604800")"
+              "'$INSTALL_ROOT/venv/bin/python' '$INSTALL_ROOT/repo/scripts/record_context_event.py' --event-id '$pr_event_id' --event-type pr_merged --source engineering --source-ref 'github/pr/$number' --payload-json \"\$payload\" --ttl-seconds 604800")"
             params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
             command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
             for _ in $(seq 1 60); do
@@ -136,7 +132,7 @@ jobs:
             done
             test "$status" = Success
             result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text | tr -d '\r')"
-            grep -Eq '^(\{"status":"(RECORDED|DUPLICATE)"|\{"status":"BLOCKED")' <<< "$result"
-            echo "CONTEXT_MANAGER_PR_SYNC=$([[ "$result" == *'"status":"BLOCKED"'* ]] && echo BLOCKED || echo PASS)"
+            printf '%s' "$result" | jq -e '.status == "RECORDED" or .status == "DUPLICATE"' >/dev/null
+            echo "CONTEXT_MANAGER_PR_SYNC=PASS"
             done < <(jq -r '.[] | [.number, .head_sha] | @tsv' <<< "$merged_prs")
           fi
