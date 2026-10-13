@@ -95,3 +95,50 @@ def test_mcp_projection_rejects_unsanitized_unexpected_values():
     assert result["sequence"] is None
     assert result["repo_sha"] is None
     assert "DO_NOT_RETURN_SECRET" not in json.dumps(result)
+
+def test_cloud_ops_live_clock_sampled_after_each_service_read(monkeypatch):
+    """Production's fast-updating Radar JSON cannot outrun a frozen start time."""
+    import data_provider.cloud_ops_readonly_status as ops
+    callbacks = []
+
+    def snapshot(name, *, now, **kwargs):
+        callback = kwargs.get("clock_after_read")
+        callbacks.append((name, callback))
+        assert callable(callback)
+        postread = callback()
+        assert postread.tzinfo is not None
+        return {
+            "operational_state": "HEARTBEAT_CURRENT",
+            "unit_active": True, "heartbeat_age_seconds": 0.005,
+            "sequence": 3, "repo_sha": "a" * 40,
+            "sample_status": "PASS", "safety_evidence": "COMPLETE",
+        }
+
+    monkeypatch.setattr(ops, "component_snapshot", snapshot)
+    result = ops.read_cloud_ops_status(
+        check_unit=lambda _: True, read_json=lambda _: None
+    )
+    assert [name for name, _ in callbacks] == list(ops._COMPONENTS)
+    assert result["status"] == "OPERATIONAL_OBSERVATION_ONLY"
+    assert result["source_arbiter_admission"] == "BLOCKED"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_cloud_ops_injected_clock_remains_deterministic(monkeypatch):
+    import data_provider.cloud_ops_readonly_status as ops
+    seen = []
+
+    def snapshot(name, *, now, **kwargs):
+        seen.append((now, "clock_after_read" in kwargs))
+        return {
+            "operational_state": "HEARTBEAT_CURRENT",
+            "unit_active": True, "heartbeat_age_seconds": 1.0,
+            "sequence": 1, "repo_sha": "a" * 40,
+            "sample_status": "PASS", "safety_evidence": "COMPLETE",
+        }
+
+    monkeypatch.setattr(ops, "component_snapshot", snapshot)
+    result = ops.read_cloud_ops_status(now_utc=NOW)
+    assert all(t == NOW and not callback for t, callback in seen)
+    assert result["observed_at_utc"] == NOW.isoformat()
