@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] Paper AWS 只读 SIM 账户验收增加经 GitHub 仓库 Owner 严格授权的固定 PR 指令入口；仅在 latest main + OIDC + 固定 EC2 上查询模拟账户，不读取 REAL 账户或调用下单，不解锁 Paper 和 Radar。
+
 - [修复] Context Manager 对所有非成功 CI 结论 fail-closed；区分 PR-head CI 与 main 验收，标记最近已记录的 PR 合并与部署 SHA 不一致。
 
 - [修复] AWS OpenD/MCP 只读 SSM 失败时仅脱敏回传固定阶段状态码，保留失败退出码，隐藏原始 stdout、stderr、账户和密钥；探针诊断不构成行情或交易准入。

@@ -2,6 +2,10 @@ name: AWS SSM SIM Account Discovery
 
 on:
   workflow_dispatch:
+  # Fixed GitHub-owner command on the merged Paper contract PR.
+  # Never trigger AWS OIDC for arbitrary public issue/PR comments.
+  issue_comment:
+    types: [created]
 
 concurrency:
   group: aws-ssm-sim-account-discovery-${{ github.ref }}
@@ -17,9 +21,55 @@ env:
 
 jobs:
   read-only-sim-account-discovery:
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.number == 698 &&
+          github.event.issue.pull_request != null &&
+          github.actor == github.repository_owner &&
+          github.event.comment.user.login == github.repository_owner &&
+          github.event.comment.author_association == 'OWNER' &&
+          github.event.comment.body == '/stock-razor paper-sim-audit read-only'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout immutable main before AWS identity
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify owner event, main source and zero trade mutation before AWS OIDC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
+            jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" '
+              .issue.number == 698 and
+              (.issue.pull_request != null) and
+              .sender.login == $owner and
+              .comment.user.login == $owner and
+              .comment.author_association == "OWNER" and
+              .comment.body == "/stock-razor paper-sim-audit read-only"
+            ' "$GITHUB_EVENT_PATH" >/dev/null
+          else
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          fi
+          echo 'PAPER_SIM_READONLY_OWNER_SCOPE=VERIFIED'
+          echo 'PAPER_AUTO_READY=NO'
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
+          echo 'TRADE_EXECUTION=NO'
+
       - name: Configure short-lived AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
