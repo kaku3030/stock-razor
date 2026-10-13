@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -82,6 +83,27 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if lo >= max(op,cl) and hi <= min(op,cl) and hi<lo:
             key="HILO_SWAP_WOULD_ENCLOSE_BODY"
             quarantine_evidence[key]=quarantine_evidence.get(key,0)+1
+        # ONLY research shadow evidence. SSE/SZSE ETF minimum quote tick is
+        # 0.001 CNY; require each already-invalid current ETF OHLC field
+        # within 0.00001 CNY of the 0.001 lattice. Never mutate any bar.
+        try:
+            prices=tuple(Decimal(str(x)) for x in (op,hi,lo,cl))
+            tick=Decimal("0.001")
+            lattice=tuple(x.quantize(tick,rounding=ROUND_HALF_UP) for x in prices)
+            within_grid=all(abs(raw-rounded)<=Decimal("0.00001")
+                            for raw,rounded in zip(prices,lattice))
+        except (InvalidOperation, ValueError, OverflowError):
+            lattice=()
+            within_grid=False
+        if not within_grid:
+            category="ETF_TICK_LATTICE_FAR"
+        else:
+            category="ETF_TICK_LATTICE_NEAR"
+            oq,hq,lq,cq=lattice
+            if hq>=max(oq,cq,lq) and lq<=min(oq,cq,hq):
+                repair="ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY"
+                quarantine_evidence[repair]=quarantine_evidence.get(repair,0)+1
+        quarantine_evidence[category]=quarantine_evidence.get(category,0)+1
     if timeframe not in _ALLOWED_PERIODS:
         raise ValueError("unsupported period")
     if now_utc.tzinfo is None:
