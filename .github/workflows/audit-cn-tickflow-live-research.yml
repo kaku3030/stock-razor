@@ -74,12 +74,15 @@ jobs:
           assert d.get("cross_provider_parity")=="NOT_VERIFIED"
           assert type(d.get("sequence_advanced")) is bool
           assert type(d.get("limited_research_usable")) is bool
+          assert type(d.get("historical_research_usable")) is bool
           keys=("status","failure_stage","failure_reason","unit_active","mcp_unit_active","cache_private",
                 "repo_sha_match","sequence","cache_age_seconds","mcp_read_failure_reason",
-                "mcp_cache_consumer","all_four_readonly_requests_ok")
+                "mcp_cache_consumer","mcp_historical_consumer",
+                "all_four_readonly_requests_ok","all_four_historical_requests_ok")
           periods=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
           states=("PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE",
                   "NO_DATA","INVALID_CACHE","INVALID_REQUEST")
+          historical_states=("PASS_HISTORICAL_ONLY","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST")
           reasons=("NOT_VERIFIED","NOT_APPLICABLE","METHOD_RETURN_BLOCKED",
                    "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
           for when in ("before","after"):
@@ -91,12 +94,26 @@ jobs:
                          and type(v.get("radar_blocked")) is bool
                          and type(v.get("finality_unproven")) is bool
                          for v in period_map.values())
+              hist_map=d[when].get("historical_period_observation")
+              assert isinstance(hist_map,dict)
+              assert set(hist_map).issubset(periods)
+              assert all(isinstance(v,dict) and v.get("state") in historical_states
+                         and type(v.get("radar_blocked")) is bool
+                         and type(v.get("finality_unproven")) is bool
+                         and type(v.get("research_only")) is bool
+                         and type(v.get("currentness_unproven")) is bool
+                         for v in hist_map.values())
+              assert d[when].get("mcp_historical_consumer") in ("PASS","BLOCKED","NOT_VERIFIED")
+              assert type(d[when].get("all_four_historical_requests_ok")) is bool
           public={"schema":d["schema"],
                   "before":{**{k:d["before"].get(k) for k in keys},
-                            "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
+                            "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
+                            "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "after":{**{k:d["after"].get(k) for k in keys},
-                           "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
+                           "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
+                           "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "sequence_advanced":d["sequence_advanced"],
+                  "historical_research_usable":d["historical_research_usable"],
                   "limited_research_usable":d["limited_research_usable"],
                   "radar_admission":"BLOCKED","live_trade":"NO"}
           print("CN_TICKFLOW_AWS_RESEARCH_SANITIZED="+json.dumps(public,sort_keys=True))
