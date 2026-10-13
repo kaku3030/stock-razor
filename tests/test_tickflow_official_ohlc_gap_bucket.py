@@ -31,29 +31,49 @@ def bars():
     (0.000020,"OVER_1E_MINUS_5"),
     (0.000100,"OVER_1E_MINUS_5"),
 ])
-def test_historical_high_below_body_stays_rejected_with_only_fixed_bucket(diff,expected):
+def test_historical_high_below_body_vendor_tolerance_vs_hard_reject(diff,expected):
     raw=bars()
     raw["high"][0]=1.6-diff
     before=deepcopy(raw)
-    with pytest.raises(ValueError,match="invalid OHLCVA high below body") as capture:
-        normalize_bars(raw,"15m",now_utc=NOW)
-    error=capture.value
-    assert getattr(error,"_tickflow_ohlc_float_gap_bucket") == expected
-    error._tickflow_stage="S0_15M_NORMALIZE"
-    assert _normalize_rejection_reason(error)=="OHLCVA_HIGH_LT_BODY"
-    assert _ohlc_float_gap_bucket(error)==expected
-    assert raw==before  # never round/repair/write prices
+    if expected=="WITHIN_1E_MINUS_5":
+        # The new vendor contract permits only an *unchanged* historical
+        # RESEARCH row, not bar finality, canonical source, or a signal.
+        result=normalize_bars(raw,"15m",now_utc=NOW)
+        assert result[0]["high"]==raw["high"][0]
+        assert result[0]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+        assert result[0]["bar_finality"]=="NOT_VERIFIED"
+        assert result[0]["is_partial_bar"] is True
+    else:
+        # Absolute error above 1e-5 still fails the original strict gate.
+        with pytest.raises(ValueError,match="invalid OHLCVA high below body") as capture:
+            normalize_bars(raw,"15m",now_utc=NOW)
+        error=capture.value
+        assert getattr(error,"_tickflow_ohlc_float_gap_bucket") == expected
+        error._tickflow_stage="S0_15M_NORMALIZE"
+        assert _normalize_rejection_reason(error)=="OHLCVA_HIGH_LT_BODY"
+        assert _ohlc_float_gap_bucket(error)==expected
+    assert raw==before  # never round/repair/write original prices
 
 
-def test_low_above_body_is_equivalently_strict():
+def test_low_above_body_vendor_research_only_but_above_bound_still_rejects():
     raw=bars()
     raw["low"][0]=1.500005
+    before=deepcopy(raw)
+    result=normalize_bars(raw,"15m",now_utc=NOW)
+    assert result[0]["low"]==raw["low"][0]
+    assert result[0]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert result[0]["bar_finality"]=="NOT_VERIFIED"
+    assert result[0]["is_partial_bar"] is True
+    assert raw==before
+
+    raw["low"][0]=1.50002
     with pytest.raises(ValueError,match="invalid OHLCVA low above body") as capture:
         normalize_bars(raw,"15m",now_utc=NOW)
     err=capture.value
-    assert err._tickflow_ohlc_float_gap_bucket=="WITHIN_1E_MINUS_5"
+    assert err._tickflow_ohlc_float_gap_bucket=="OVER_1E_MINUS_5"
     err._tickflow_stage="S0_15M_NORMALIZE"
     assert _normalize_rejection_reason(err)=="OHLCVA_LOW_GT_BODY"
+    assert _ohlc_float_gap_bucket(err)=="OVER_1E_MINUS_5"
 
 
 def test_unqualified_precision_evidence_never_claims_tolerance():
