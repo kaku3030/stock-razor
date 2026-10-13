@@ -217,7 +217,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             # non-mutating <= 1e-5 absolute float serialization gap.
             # This is OHLC shape only, NOT exchange finality, currentness
             # or canonical/source admission.
-            float_only=(invalid_reason in (
+            float_only=(not current_shanghai_day and invalid_reason in (
                 "invalid OHLCVA high below body",
                 "invalid OHLCVA low above body")
                 and vol >= 0 and (amt is None or amt >= 0)
@@ -454,7 +454,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                     or tolerance not in (
                         "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
                     or (shape_gap and (
-                        tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+                        bar_stamp.date()==now.astimezone(CN).date()
+                        or tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                             !="WITHIN_1E_MINUS_5"))
                     or (not shape_gap and tolerance!="STRICT")):
