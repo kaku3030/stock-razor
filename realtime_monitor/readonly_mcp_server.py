@@ -112,7 +112,14 @@ def get_market_snapshots(symbols: list[str] | None = None) -> dict:
 
 @mcp.tool()
 def get_market_analysis(symbols: list[str] | None = None) -> dict:
-    """Return the latest precomputed US Radar research state without recomputation."""
+    """US Radar research, or exact compatibility alias for Cloud Ops read-only health.
+
+    Existing ChatGPT connector action catalogs may lag the deployed MCP tools.
+    Only the full literal singleton sentinel redirects to the already reviewed
+    local-only Cloud Ops reader. Every ordinary Radar request is unchanged.
+    """
+    if symbols == ["__CLOUD_OPS_STATUS__"]:
+        return read_cloud_ops_status()
     return read_us_radar_analysis(symbols)
 
 
