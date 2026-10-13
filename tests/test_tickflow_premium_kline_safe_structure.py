@@ -134,8 +134,8 @@ def test_public_workflow_reprojects_kline_schema_only_as_bounded_enums():
     assert 'if name in ("kline_15m","kline_60m"):' in wf
     assert 'record["bar_range_structure"]' in wf
     assert 'record["timestamp_order"]' in wf
-    assert 'record["numeric_ohlcv"]' in wf
-    assert 'record["numeric_amount"]' in wf
+    assert '("numeric_ohlcv","numeric_amount")' in wf
+    assert "record[field]=val" in wf
     assert 'record["historical_sample_count"]' in wf
     assert 'record["provider_live_qualified"]=False' in wf
     assert '"data_qualification":"NOT_VERIFIED"' in wf
