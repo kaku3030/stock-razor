@@ -266,9 +266,9 @@ def get_cloud_ops_status() -> dict:
 
 @pytest.mark.parametrize("text,expected", [
     ("def get_cloud_ops_status(): pass", False),
-    ("# @mcp.tool()\\ndef get_cloud_ops_status(): pass", False),
-    ("@other.tool()\\ndef get_cloud_ops_status(): pass", False),
-    ("@mcp.tool()\\ndef get_cloud_ops_status(): pass", True),
+    ("# @mcp.tool()\ndef get_cloud_ops_status(): pass", False),
+    ("@other.tool()\ndef get_cloud_ops_status(): pass", False),
+    ("@mcp.tool()\ndef get_cloud_ops_status(): pass", True),
     ("not python code!?!", False),
 ])
 def test_mcp_installation_never_inferrs_tool_from_name_alone(text, expected):
@@ -294,7 +294,7 @@ def test_mcp_installation_fail_closed_if_file_or_sha_missing():
     assert result["cloud_ops_tool_in_deployed_source"] is False
     assert "PRIVATE_HOST_DETAIL" not in json.dumps(result)
     assert mcp_install_evidence(
-        active=lambda _: False, source=lambda: "@mcp.tool()\\ndef get_cloud_ops_status(): pass",
+        active=lambda _: False, source=lambda: "@mcp.tool()\ndef get_cloud_ops_status(): pass",
         revision=lambda: "a" * 40,
     )["status"] == "BLOCKED"
 
@@ -448,14 +448,14 @@ def test_ssm_audit_protected_main_guard_executes_offline(tmp_path):
     fake_git.write_text(
         '#!/bin/sh\n'
         '[ "$1" = rev-parse ] && [ "$2" = HEAD ] || exit 4\n'
-        'printf "%s\\n" "$TEST_CHECKOUT_SHA"\n',
+        'printf "%s\n" "$TEST_CHECKOUT_SHA"\n',
         encoding="utf-8",
     )
     fake_gh.write_text(
         '#!/bin/sh\n'
         '[ "$1" = api ] || exit 4\n'
         '[ "$TEST_GH_FAIL" != YES ] || exit 5\n'
-        'printf "%s\\n" "$TEST_MAIN_SHA"\n',
+        'printf "%s\n" "$TEST_MAIN_SHA"\n',
         encoding="utf-8",
     )
     fake_git.chmod(0o755)
