@@ -105,7 +105,7 @@ systemctl is-active "$SERVICE_NAME"
 PYTHONPATH="$INSTALL_ROOT/repo" \
   STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json \
   STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl \
-  "$INSTALL_ROOT/venv/bin/python" scripts/record_context_event.py \
+  "$INSTALL_ROOT/venv/bin/python" "$INSTALL_ROOT/repo/scripts/record_context_event.py" \
     --event-id "deployment:$REPO_REF" \
     --event-type deployment_passed \
     --source deployment \
