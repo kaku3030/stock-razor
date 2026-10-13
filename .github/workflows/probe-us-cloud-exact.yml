@@ -1,6 +1,10 @@
 name: Probe US Cloud Exact Main (Read-Only)
 
 on:
+  # Exact GitHub Owner-only read-only EC2 probe without local PC.
+  # No untrusted comment may reach AWS OIDC.
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       duration_seconds:
@@ -26,7 +30,18 @@ concurrency:
 
 jobs:
   probe:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.number == 708 &&
+          github.event.issue.pull_request != null &&
+          github.actor == github.repository_owner &&
+          github.event.comment.user.login == github.repository_owner &&
+          github.event.comment.author_association == 'OWNER' &&
+          github.event.comment.body == '/stock-razor us-exact-cloud read-only'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -37,6 +52,29 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Authorize owner comment, immutable main, fixed US scope before AWS OIDC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
+            jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" '
+              .issue.number == 708 and
+              (.issue.pull_request != null) and
+              .sender.login == $owner and
+              .comment.user.login == $owner and
+              .comment.author_association == "OWNER" and
+              .comment.body == "/stock-razor us-exact-cloud read-only"
+            ' "$GITHUB_EVENT_PATH" >/dev/null
+          else
+            test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          fi
+          echo 'US_EXACT_PROBE_MAIN_OWNER=VERIFIED'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
@@ -45,12 +83,15 @@ jobs:
       - name: Run bounded US-only read-only probe
         shell: bash
         env:
-          DURATION_SECONDS: ${{ inputs.duration_seconds }}
-          SYMBOLS: ${{ inputs.symbols }}
+          DURATION_SECONDS: ${{ github.event_name == 'issue_comment' && '30' || inputs.duration_seconds }}
+          SYMBOLS: ${{ github.event_name == 'issue_comment' && 'US.AMD,US.NVDA,US.TSLA,US.AAPL,US.QQQ,US.GLDM,US.LITE,US.AAOI,US.CIEN' || inputs.symbols }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           revision="$(git rev-parse HEAD)"
           test "$revision" = "${{ github.sha }}"
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
           test -f scripts/probe_us_cloud_exact.py
           [[ "$DURATION_SECONDS" == "30" || "$DURATION_SECONDS" == "60" ]] || {
             echo "US_EXACT_CLOUD_PROBE_INVALID_DURATION" >&2; exit 2;
@@ -79,6 +120,8 @@ jobs:
           }
           command="$remote"
           params="$(jq -cn --arg c "$command" '{commands:[$c]}')"
+          # Immutable reviewed source still matches protected main at SSM spend gate.
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
           command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 180 --query 'Command.CommandId' --output text)"
           for _ in $(seq 1 80); do
             status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
