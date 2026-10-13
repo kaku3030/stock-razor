@@ -47,7 +47,6 @@ def test_exact_main_owner_gate_must_precede_oidc_and_ssm():
     assert s.count('gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main"')==2
     assert "aws ssm send-command" in s
     assert s.index('test "$(gh api') < s.index("aws ssm send-command")
-    assert 'grep -Fx "$TARGET_INSTANCE_ID"' not in s or True
 
 
 def test_fixed_inputs_private_output_and_no_admission():
