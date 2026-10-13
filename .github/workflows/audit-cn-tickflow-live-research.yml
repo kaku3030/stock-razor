@@ -9,6 +9,9 @@ on:
     paths:
       - 'scripts/audit_cn_tickflow_research_runtime.py'
       - '.github/workflows/audit-cn-tickflow-live-research.yml'
+  # Owner-only, immutable code, research-only AWS SSM inspection.
+  issue_comment:
+    types: [created]
   # Read-only cloud audit, UTC cron. Best effort; scheduling is NOT bar finality.
   # 02:20 UTC = 10:20 Asia/Shanghai; 06:20 UTC = 14:20 Asia/Shanghai.
   schedule:
@@ -25,7 +28,18 @@ permissions:
 
 jobs:
   audit:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.number == 658 &&
+          github.event.issue.pull_request != null &&
+          github.actor == github.repository_owner &&
+          github.event.comment.user.login == github.repository_owner &&
+          github.event.comment.author_association == 'OWNER' &&
+          github.event.comment.body == '/stock-razor tickflow-audit read-only'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 9
     env:
@@ -34,14 +48,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Verify fixed source
+      - name: Authorize owner-only comment before AWS OIDC
+        if: github.event_name == 'issue_comment'
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/authorize_cloud_ops_audit_comment.py
+      - name: Verify fixed source and latest protected main before AWS OIDC
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 -m py_compile scripts/audit_cn_tickflow_research_runtime.py
+          python3 -m py_compile scripts/audit_cn_tickflow_research_runtime.py scripts/authorize_cloud_ops_audit_comment.py
+          head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$head" = "$GITHUB_SHA"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
@@ -49,8 +74,13 @@ jobs:
           aws-region: ap-northeast-1
       - name: Verify two isolated AWS snapshots 65 seconds apart
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Fail-closed again if main moved between OIDC and SSM.
+          head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$head" = "$GITHUB_SHA"
           hash="$(sha256sum scripts/audit_cn_tickflow_research_runtime.py | cut -d' ' -f1)"
           bundle="$(gzip -n -9 -c scripts/audit_cn_tickflow_research_runtime.py | base64 -w0)"
           read -r -d '' remote <<REMOTE || true
