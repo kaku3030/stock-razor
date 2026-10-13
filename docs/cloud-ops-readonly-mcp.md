@@ -51,6 +51,34 @@ requires a real comment-triggered run from the expected owner and examination
 of its sanitized evidence. If the remote main SHA moved, the audit must refuse
 to run; never bypass this with an older revision.
 
+## AWS heartbeat timestamp race (diagnostic correction)
+
+The 2026-10-13 real GitHub→AWS SSM two-sample audit [run
+#38359901810](https://github.com/kaku3030/stock-razor/actions/runs/38359901810)
+reported US Radar `CLOCK_REVERSAL`; independent real
+[run #38361094660](https://github.com/kaku3030/stock-razor/actions/runs/38361094660)
+repeated that classification. This **did not prove AWS clock skew**.
+
+The original audit captured one wall clock **before reading four
+independently updated JSON caches**. US Radar publishes roughly four
+heartbeats per second, so the heartbeat file could be atomically replaced
+after the audit sampled time but before it loaded JSON, spuriously making
+the heartbeat "from the future."
+
+The read-only AWS audit now captures **before and after clock readings for
+each individual cached file**; the later clock measures the loaded heartbeat
+age. Cloud Ops local MCP health does the same for live execution. Synthetic
+regressions cover concurrent publication, genuine future timestamps, real
+backward clock movement, invalid clocks and the unchanged trading blocks.
+If the post-read timestamp is still in the future or the clock runs
+backwards, the audit remains fail-closed.
+
+**Verification:** code/CI tests alone do not prove the original cloud
+incident resolved. Repeat the authenticated owner-only read-only SSM
+audit using the *merged main revision* and inspect actual US Radar
+status/sequence progression. Never promote operational heartbeat health
+to qualified market data, Radar admission, or Paper/Live trading.
+
 ## Integration / acceptance gate
 
 1. Verify the exact-commit PR tests and installer smoke in CI.

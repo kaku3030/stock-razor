@@ -164,6 +164,86 @@ def test_interval_out_of_bounds_rejected():
         audit_twice(interval_seconds=61)
 
 
+
+def test_midread_heartbeat_publish_is_not_a_fake_clock_reversal():
+    """A 4-Hz Radar JSON replacement can occur AFTER the audit's pre-read time."""
+    before = NOW
+    emitted = NOW + timedelta(milliseconds=90)
+    postread = NOW + timedelta(milliseconds=145)
+    snapshot = payload_for("us_radar", emitted=emitted)
+    old_order = component_snapshot(
+        "us_radar", now=before, check_unit=lambda _: True,
+        read_json=lambda _: snapshot,
+    )
+    assert old_order["operational_state"] == "CLOCK_REVERSAL"
+    observed = component_snapshot(
+        "us_radar", now=before, check_unit=lambda _: True,
+        read_json=lambda _: snapshot, clock_after_read=lambda: postread,
+    )
+    assert observed["operational_state"] == "HEARTBEAT_CURRENT"
+    assert observed["heartbeat_age_seconds"] == pytest.approx(0.055)
+    assert observed["sequence"] == 5
+    assert "SECRET_NEVER_PRINT" not in json.dumps(observed)
+
+
+def test_postread_clock_does_not_hide_real_clock_or_future_timestamp():
+    later_than_read = payload_for("us_radar", emitted=NOW + timedelta(seconds=4))
+    future = component_snapshot(
+        "us_radar", now=NOW, check_unit=lambda _: True,
+        read_json=lambda _: later_than_read,
+        clock_after_read=lambda: NOW + timedelta(milliseconds=100),
+    )
+    assert future["operational_state"] == "CLOCK_REVERSAL"
+    assert future["heartbeat_age_seconds"] is None
+
+    normal = payload_for("us_radar", emitted=NOW - timedelta(seconds=1))
+    backwards = component_snapshot(
+        "us_radar", now=NOW, check_unit=lambda _: True,
+        read_json=lambda _: normal,
+        clock_after_read=lambda: NOW - timedelta(milliseconds=10),
+    )
+    assert backwards["operational_state"] == "CLOCK_REVERSAL"
+    invalid = component_snapshot(
+        "us_radar", now=NOW, check_unit=lambda _: True,
+        read_json=lambda _: normal, clock_after_read=lambda: NOW.replace(tzinfo=None),
+    )
+    assert invalid["operational_state"] == "TIMESTAMP_INVALID"
+
+
+def test_two_sample_audit_uses_postread_clock_per_component():
+    """Exercise the real clock/load ordering without AWS or a 4-Hz subprocess."""
+    current = [NOW]
+    seen = {name: 0 for name in _COMPONENTS}
+    names_by_path = {entry[1]: name for name, entry in _COMPONENTS.items()}
+
+    def clock():
+        reading = current[0]
+        current[0] += timedelta(milliseconds=20)
+        return reading
+
+    def read_json(path):
+        name = names_by_path[path]
+        seen[name] += 1
+        # JSON is atomically updated while the audit reads it, after the
+        # earlier clock but before the post-file-read clock.
+        emitted = current[0] + timedelta(milliseconds=3)
+        current[0] += timedelta(milliseconds=8)
+        return payload_for(name, seq=seen[name], emitted=emitted)
+
+    result = audit_twice(
+        interval_seconds=0, clock=clock,
+        check_unit=lambda _: True, read_json=read_json,
+        sleeper=lambda _: pytest.fail("should not sleep"),
+    )
+    assert result["audit_status"] == "COMPLETE"
+    assert result["all_components_current"] is True
+    assert all(result["heartbeat_progress_observed"].values())
+    assert all(x["operational_state"] == "HEARTBEAT_CURRENT"
+               for x in result["aws_components"].values())
+    assert result["off_pc_independent_acquisition"] == "NOT_VERIFIED"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] == "NO"
+
 def test_ssm_workflow_is_read_only_and_uses_pinned_main():
     source = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
         encoding="utf-8"
