@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] TickFlow云端只读审计并发锁从工作流级移到授权后的job级，防止无权限GitHub评论替换已排队的Owner验收请求。
+
 - [改进] GitHub仓库Owner可用固定PR精确评论触发TickFlow AWS只读历史/分钟行情质量复验，无需个人电脑；双重Owner与最新main核验，交易门禁保持关闭。
 
 - [chore] Trigger protected AWS TickFlow read-only research re-audit after scoped main-branch audit changes without paid ingestion or trading changes.
