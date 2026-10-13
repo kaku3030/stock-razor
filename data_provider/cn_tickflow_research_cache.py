@@ -223,7 +223,10 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5")
-            if float_only:
+            if float_only and not current_shanghai_day:
+                # Vendor JSON-float exception is historical research ONLY.
+                # The current Shanghai session can still contain a forming,
+                # revision-prone candle, so quarantine it unconditionally.
                 ohlc_validation="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
             else:
                 if current_shanghai_day:
