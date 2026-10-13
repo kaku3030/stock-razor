@@ -188,8 +188,33 @@ class ContextManagerStore:
                     "expired": expired,
                 },
             }
+        # A PR-head CI success is evidence about that PR, never a green main
+        # build. Preserve its scope explicitly for cross-chat consumers.
+        ci = domains["ci"]
+        ci_payload = ci.get("last_known")
+        ci_branch = ci_payload.get("branch") if isinstance(ci_payload, dict) else None
+        ci["scope"] = (
+            "MAIN" if ci_branch == "main"
+            else "PR_HEAD" if isinstance(ci_branch, str) and ci_branch
+            else "UNKNOWN"
+        )
+        ci["main_ci_qualification"] = "UNVERIFIED"
+
+        # We cannot query GitHub main here. Only compare the latest *recorded*
+        # merged PR identity with the last deployed repo SHA.
+        pr_payload = domains["pr"].get("last_known")
+        deploy_payload = domains["deploy"].get("last_known")
+        latest_pr_sha = pr_payload.get("merge_sha") if isinstance(pr_payload, dict) else None
+        deployed_sha = deploy_payload.get("repo_sha") if isinstance(deploy_payload, dict) else None
+        domains["deploy"]["latest_recorded_pr_sha_match"] = (
+            ("MATCH" if latest_pr_sha == deployed_sha else "MISMATCH")
+            if isinstance(latest_pr_sha, str) and bool(latest_pr_sha)
+            and isinstance(deployed_sha, str) and bool(deployed_sha)
+            else "UNKNOWN"
+        )
         current["domains"] = domains
         return current
+
     def read(self) -> dict[str, Any]:
         try:
             events = self._read_events()
@@ -281,7 +306,12 @@ def record_if_configured(**kwargs: Any) -> dict[str, Any] | None:
 
 def _is_failure(event_type: str) -> bool:
     normalized = event_type.lower()
-    return normalized.startswith("failure") or normalized.endswith("_failed") or normalized in {"ci_failed", "deployment_failed"}
+    # workflow_run emits ci_success / ci_failure / ci_cancelled / etc.
+    # A non-success CI conclusion must never become ACTIVE simply because
+    # its name does not end in "_failed".
+    if normalized.startswith("ci_"):
+        return normalized not in {"ci_success", "ci_passed"}
+    return normalized.startswith("failure") or normalized.endswith("_failed") or normalized == "deployment_failed"
 
 
 def _event_domain(event: Mapping[str, Any]) -> str:

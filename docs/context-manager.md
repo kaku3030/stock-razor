@@ -63,3 +63,19 @@ cross-chat handoff; there is no trading or deployment authority.
 These aliases permit existing ChatGPT actions to read state after AWS deployment.
 They do not automatically make a new chat invoke the tool; a persistent project
 instruction or skill should direct the agent to call it at the start of a task.
+
+## CI scope and deployed identity
+
+GitHub `workflow_run` includes **pull-request-head** CI results. A successful
+PR-head CI job is not a successful test of the subsequently merged `main`.
+The recovery `ci.scope` field is `PR_HEAD`, `MAIN`, or `UNKNOWN`; the
+`ci.main_ci_qualification` field remains `UNVERIFIED` without independent
+exact-main verification. Non-success CI conclusions (failure, cancelled,
+timed_out, neutral, skipped, action_required) remain `BLOCKED`.
+
+The read-only `deploy.latest_recorded_pr_sha_match` field is `MATCH`,
+`MISMATCH`, or `UNKNOWN`. It only compares the last *observed merged PR*
+SHA with the last recorded deployment SHA; it does **not** query GitHub's
+current main head, prove runtime freshness, or grant any trading permission.
+For full production acceptance independently verify the exact main SHA and
+AWS MCP runtime via the protected deployment workflow and a ChatGPT readback.
