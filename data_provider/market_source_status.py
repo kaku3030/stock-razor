@@ -11,6 +11,7 @@ from time import perf_counter
 
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
+from data_provider.cn_tickflow_research_cache import read_cn_tickflow_research_data
 from data_provider.us_canonical_runtime_reader import read_us_livefeed_health
 
 
@@ -47,6 +48,10 @@ def read_market_source_status(
     us, us_reader_ms = read(read_us_livefeed_health, now_utc=now)
     cn, cn_reader_ms = read(read_cn_market_data, cn_symbol, timeframe="15m", limit=1, now_utc=now)
     tf, tf_reader_ms = read(read_tickflow_probe_health, now_utc=now)
+    tf_live, tf_live_reader_ms = read(
+        read_cn_tickflow_research_data, cn_symbol, timeframe="15m",
+        limit=1, now_utc=now,
+    )
 
     # Project only a narrow allowlist. Never return raw bars, provider payloads,
     # credentials, errors, filesystem paths, or unverifiable provider metrics.
@@ -236,6 +241,25 @@ def read_market_source_status(
                 "timeframe": "15m",
                 "observation_available": cn_ok,
                 "intraday_currentness_proven": False,
+            },
+            "cn_tickflow_research": {
+                "status": enum(tf_live.get("status"),
+                    {"PASS_RESEARCH_ONLY","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}),
+                "provider": "TICKFLOW_PREMIUM",
+                "is_primary_policy_target": True,
+                "research_cache_readable": (
+                    tf_live.get("ok") is True
+                    and tf_live.get("status") == "PASS_RESEARCH_ONLY"
+                    and tf_live.get("radar_admission") == "BLOCKED"
+                    and tf_live.get("source_arbiter_admission") == "BLOCKED"
+                    and tf_live.get("bar_finality") == "NOT_VERIFIED"
+                ),
+                "source_revision": source_revision(tf_live.get("repo_sha")),
+                "local_reader_latency_ms": tf_live_reader_ms,
+                "max_age_seconds": 180,
+                "bar_finality_proven": False,
+                "tickflow_to_radar_e2e": "NOT_VERIFIED",
+                "data_admission": "BLOCKED",
             },
             "cn_tickflow": {
                 "status": tf_status,
