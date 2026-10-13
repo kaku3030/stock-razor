@@ -24,6 +24,7 @@ on:
           - us_opend_qot_right_notify_probe
           - us_opend_userinfo_qot_right_probe
           - us_opend_subscription_audit
+          - cn_quick_scan_audit
           - tickflow_mcp_cache_audit
           - us_opend_k1m_continuity_probe
           - us_opend_k5m_probe
@@ -1162,6 +1163,55 @@ jobs:
           PY
           REMOTE
               jq -c -n --arg script "$us_opend_userinfo_qot_right_probe_script" '[ $script ]' > commands.json
+              ;;
+            cn_quick_scan_audit)
+              read -r -d '' cn_quick_scan_audit_script <<'REMOTE' || true
+          # AWS-RunShellScript executes through /bin/sh (dash on Ubuntu).
+          set -eu
+          repo=/opt/stock-razor-mcp/repo
+          python=/opt/stock-razor-mcp/venv/bin/python
+          test "$(systemctl is-active stock-razor-mcp.service)" = active
+          test -x "$python"
+          echo "MCP_DEPLOYED_SHA=$(git -C "$repo" rev-parse HEAD)"
+          timeout 12s env PYTHONPATH="$repo" "$python" - <<'PY'
+          import json
+          from realtime_monitor.readonly_mcp_server import get_cn_quick_scan, mcp
+
+          registered = "get_cn_quick_scan" in mcp._tool_manager._tools
+          result = get_cn_quick_scan(["159611", "512730"])
+          perf = result.get("performance") or {}
+          source = result.get("source") or {}
+          verdict = {
+              "probe": "cn_quick_scan_cloud_audit_v0_1",
+              "tool_registered": registered,
+              "status": result.get("status"),
+              "research_only": result.get("research_only"),
+              "can_confirm_signal": result.get("can_confirm_signal"),
+              "entry_gate": result.get("entry_gate"),
+              "radar_admission": result.get("radar_admission"),
+              "live_trade": result.get("live_trade"),
+              "provider_requests": result.get("provider_requests"),
+              "symbols_returned": sorted((result.get("symbols") or {}).keys()),
+              "reason_codes": (result.get("reasons") or [])[:3],
+              "reader_total_ms": perf.get("reader_total_ms"),
+              "radar_analysis_ms": perf.get("radar_analysis_ms"),
+              "market_age_seconds": source.get("market_age_seconds"),
+              "radar_age_seconds": source.get("radar_age_seconds"),
+              "source_sequence": source.get("sequence"),
+          }
+          print(json.dumps(verdict, sort_keys=True, separators=(",", ":")))
+          assert registered
+          assert result.get("research_only") is True
+          assert result.get("can_confirm_signal") is False
+          assert result.get("entry_gate") == "ENTRY_BLOCKED"
+          assert result.get("radar_admission") == "BLOCKED"
+          assert result.get("live_trade") is False
+          assert result.get("provider_requests") == 0
+          PY
+          echo 'CN_FAST_READONLY_AUDIT=PASS'
+          echo 'LIVE_TRADE=NO'
+          REMOTE
+              jq -c -n --arg script "$cn_quick_scan_audit_script" '[ $script ]' > commands.json
               ;;
             tickflow_mcp_cache_audit)
               read -r -d '' tickflow_mcp_cache_audit_script <<'REMOTE' || true

@@ -14,6 +14,7 @@ import re, stat, subprocess, sys, time
 WORKER_REPO=Path("/opt/stock-razor-cn-tickflow/repo")
 WORKER_FILE=Path("/run/stock-razor-cn-tickflow/latest-research-observation.json")
 MCP_REPO=Path("/opt/stock-razor-mcp/repo")
+EASTMONEY_FILE=Path("/run/stock-razor-cn-eastmoney/latest-observation.json")
 MCP_PY=Path("/opt/stock-razor-mcp/venv/bin/python")
 WORKER_UNIT="stock-razor-cn-tickflow-research.service"
 MCP_UNIT="stock-razor-mcp.service"
@@ -150,6 +151,335 @@ def blocked_status(failure_class: object) -> str:
     )
 
 
+def shadow_compare_eastmoney(tickflow: object, reference: object, *,
+                             now_utc: datetime) -> dict:
+    """Private cached-price parity: only categorical counts may leave EC2.
+
+    No network, no provider subscription, no synthetic Klines, no source
+    admission. Fail closed if reference time semantics are not qualified.
+    """
+    categories={}
+    symbols=(("159611.SZ","159611"),("518880.SH","518880"))
+    periods=("15m","60m")
+    allowed_ohlc=("open","high","low","close")
+    from math import isfinite
+    from decimal import Decimal
+    def bucket(n):
+        return "ZERO" if n==0 else "ONE" if n==1 else (
+            "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS")
+    for t_sym,e_sym in symbols:
+        for period in periods:
+            key=t_sym.replace(".","_")+"_"+period
+            item={"status":"NOT_VERIFIED","overlap_bucket":"UNKNOWN",
+                  "max_price_difference_ticks":"UNKNOWN","lineage":"UNKNOWN"}
+            categories[key]=item
+            try:
+                if not isinstance(tickflow,dict) or not isinstance(reference,dict):
+                    continue
+                if (reference.get("schema")!="stock_razor_cn_eastmoney_observation_v1"
+                    or reference.get("research_only") is not True
+                    or reference.get("radar_admission")!="BLOCKED"
+                    or reference.get("live_trade") is not False):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                timestamp=datetime.fromisoformat(reference["emitted_at_utc"])
+                if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                age=(now_utc-timestamp.astimezone(timezone.utc)).total_seconds()
+                if not -5<=age<=240:
+                    item["status"]="STALE_REFERENCE"
+                    continue
+                fr=reference["symbols"][e_sym]["timeframes"][period]
+                tick_rows=tickflow["symbols"][t_sym][period]["rows"]
+                if not isinstance(tick_rows,list) or not 4<=len(tick_rows)<=96:
+                    item["status"]="INVALID_TICKFLOW_ROWS"
+                    continue
+                if (not isinstance(fr,dict) or fr.get("status")!="PASS"
+                        or fr.get("adjustment")!="NONE"):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                lineage=fr.get("provider_used")
+                if lineage not in ("eastmoney","tencent"):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                item["lineage"]=lineage.upper()
+                qual=fr.get("timestamp_qualification")
+                if (fr.get("timestamp_semantic")!="BAR_END"
+                        or not isinstance(qual,dict)
+                        or qual.get("status")!="PASS"
+                        or qual.get("timestamp_semantic")!="BAR_END"):
+                    item["status"]="UNQUALIFIED_REFERENCE_GRID"
+                    continue
+                erows=fr.get("rows")
+                if not isinstance(erows,list) or not erows:
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                mapped={}
+                for bar in erows:
+                    if not isinstance(bar,dict):
+                        raise ValueError("reference row invalid")
+                    label=bar.get("label")
+                    if not isinstance(label,str) or len(label)!=16:
+                        raise ValueError("reference label invalid")
+                    if bar.get("quality_flags") not in ([],()):
+                        continue
+                    mapped[label]=bar
+                diffs=[]
+                for row in tick_rows:
+                    if not isinstance(row,dict): raise ValueError("tickflow row invalid")
+                    reference_row=mapped.get(row.get("label"))
+                    if reference_row is None: continue
+                    pairs=[]
+                    for field in allowed_ohlc:
+                        tv=row.get(field)
+                        ev=reference_row.get(field)
+                        if (type(tv) not in (float,int) or type(ev) not in (float,int)
+                                or not isfinite(tv) or not isfinite(ev)
+                                or tv<=0 or ev<=0):
+                            raise ValueError("OHLC shadow number invalid")
+                        pairs.append(abs(Decimal(str(tv))-Decimal(str(ev))))
+                    diffs.append(max(pairs))
+                item["overlap_bucket"]=bucket(len(diffs))
+                if not diffs:
+                    item["status"]="NO_OVERLAP"
+                    continue
+                maxdiff=max(diffs)
+                tick=Decimal("0.001")
+                item["max_price_difference_ticks"]=(
+                    "EXACT" if maxdiff==0 else
+                    "UNDER_HALF_TICK" if maxdiff<tick/2 else
+                    "UP_TO_ONE_TICK" if maxdiff<=tick else
+                    "UP_TO_TWO_TICKS" if maxdiff<=tick*2 else
+                    "OVER_TWO_TICKS"
+                )
+                item["status"]=("OBSERVED_NOT_ADMITTED" if len(diffs)>=4
+                                else "INSUFFICIENT_OVERLAP")
+            except (OSError,ValueError,TypeError,KeyError,OverflowError,ArithmeticError):
+                item["status"]="INVALID_SNAPSHOT"
+                item["overlap_bucket"]="UNKNOWN"
+                item["max_price_difference_ticks"]="UNKNOWN"
+    return categories
+
+
+def compare_tencent_qualified_price_rows(
+    tickflow_rows: object, reference_rows: object, *,
+    qualification_pass: bool, session_date: str|None=None,
+) -> dict:
+    """No raw price, timestamp or provider rows leave private AWS process."""
+    result={"status":"UNQUALIFIED_GRID","overlap_bucket":"UNKNOWN",
+            "max_ohlc_price_difference_ticks":"UNKNOWN",
+            "earlier_session_agreement":"UNKNOWN",
+            "same_session_agreement":"UNKNOWN",
+            "earlier_session_overlap_bucket":"UNKNOWN",
+            "same_session_overlap_bucket":"UNKNOWN",
+            "same_session_disagreement_driver":"UNKNOWN",
+            "same_session_disagreement_phase":"UNKNOWN",
+            "same_session_disagreement_bucket":"UNKNOWN",
+            "reference":"TENCENT_QUALIFIED_ONLY"}
+    if qualification_pass is not True:
+        return result
+    result["status"]="INVALID_ROWS"
+    if (not isinstance(tickflow_rows,list) or not 4<=len(tickflow_rows)<=96
+            or not isinstance(reference_rows,(list,tuple))
+            or not 48<=len(reference_rows)<=120):
+        return result
+    from decimal import Decimal
+    from math import isfinite
+    mapped={}
+    for bar in reference_rows:
+        if not isinstance(bar,dict):
+            return result
+        label=bar.get("label")
+        if not isinstance(label,str) or len(label)!=16:
+            return result
+        if bar.get("quality_flags") not in ([],()):
+            continue
+        mapped[label]=bar
+    diffs=[]
+    dated_diffs=[]
+    session_disagreements=[]
+    for bar in tickflow_rows:
+        if not isinstance(bar,dict):
+            return result
+        against=mapped.get(bar.get("label"))
+        if against is None: continue
+        try:
+            values=[]
+            for field in ("open","high","low","close"):
+                x=bar[field]; y=against[field]
+                if (type(x) not in (int,float) or type(y) not in (int,float)
+                        or not isfinite(x) or not isfinite(y) or x<=0 or y<=0):
+                    return result
+                values.append(abs(Decimal(str(x))-Decimal(str(y))))
+            diff=max(values)
+            diffs.append(diff)
+            label=bar.get("label")
+            if not isinstance(label,str) or len(label)!=16:
+                return result
+            dated_diffs.append((label[:10],diff))
+            if (isinstance(session_date,str) and len(session_date)==10
+                    and label[:10]==session_date
+                    and diff>Decimal("0.001")):
+                drivers=[field for field,delta in
+                         zip(("OPEN","HIGH","LOW","CLOSE"),values)
+                         if delta==diff]
+                driver=(drivers[0] if len(drivers)==1 else "MULTIPLE_FIELDS")
+                clock=label[11:16]
+                phase=(
+                    "OPENING" if "09:30"<=clock<"10:30" else
+                    "LATE_MORNING" if "10:30"<=clock<="11:30" else
+                    "AFTERNOON" if "13:00"<=clock<"14:30" else
+                    "CLOSING" if "14:30"<=clock<="15:00" else
+                    "OTHER_SESSION_CLOCK"
+                )
+                session_disagreements.append((driver,phase))
+        except (KeyError,ValueError,TypeError,ArithmeticError):
+            return result
+    count=len(diffs)
+    result["overlap_bucket"]=(
+        "ZERO" if count==0 else "ONE" if count==1 else
+        "TWO_TO_FOUR" if count<=4 else "FIVE_PLUS"
+    )
+    if not count:
+        result["status"]="NO_OVERLAP"
+        return result
+    mx=max(diffs)
+    tick=Decimal("0.001")
+    result["max_ohlc_price_difference_ticks"]=(
+        "EXACT" if mx==0 else
+        "UNDER_HALF_TICK" if mx<tick/2 else
+        "UP_TO_ONE_TICK" if mx<=tick else
+        "UP_TO_TWO_TICKS" if mx<=tick*2 else "OVER_TWO_TICKS"
+    )
+    def agree(deltas):
+        count=len(deltas)
+        overlap=("ZERO" if count==0 else "ONE" if count==1 else
+                 "TWO_TO_FOUR" if count<=4 else "FIVE_PLUS")
+        if count<4:
+            return ("NO_OVERLAP" if count==0 else "INSUFFICIENT_PAIRS"),overlap
+        within=sum(x<=tick for x in deltas)
+        if within==count:
+            return "ALL_WITHIN_ONE_TICK",overlap
+        if within==0:
+            return "NONE_WITHIN_ONE_TICK",overlap
+        ratio=within*100//count
+        return ("GE90_PCT" if ratio>=90 else
+                "GE50_PCT" if ratio>=50 else
+                "GE25_PCT" if ratio>=25 else "LT25_PCT"),overlap
+    if (session_date is not None and isinstance(session_date,str)
+            and len(session_date)==10):
+        past=[delta for date,delta in dated_diffs if date<session_date]
+        today=[delta for date,delta in dated_diffs if date==session_date]
+        result["earlier_session_agreement"],result["earlier_session_overlap_bucket"]=agree(past)
+        result["same_session_agreement"],result["same_session_overlap_bucket"]=agree(today)
+        if len(today)>=4:
+            n=len(session_disagreements)
+            result["same_session_disagreement_bucket"]=(
+                "ZERO" if n==0 else "ONE" if n==1 else
+                "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS"
+            )
+            drivers={v[0] for v in session_disagreements}
+            phases={v[1] for v in session_disagreements}
+            result["same_session_disagreement_driver"]=(
+                "NONE" if not drivers else
+                next(iter(drivers)) if len(drivers)==1 else "MULTIPLE_DRIVERS"
+            )
+            result["same_session_disagreement_phase"]=(
+                "NONE" if not phases else
+                next(iter(phases)) if len(phases)==1 else "MULTIPLE_PHASES"
+            )
+    result["status"]=(
+        "OBSERVED_NOT_ADMITTED" if count>=4 else "INSUFFICIENT_OVERLAP"
+    )
+    return result
+
+
+def sample_tencent_qualified_parity() -> dict:
+    """At most FOUR public Tencent REST GETs, exactly 2 ETF × 15m/60m.
+
+    Research shadow only. Grid qualification + price rows remain private.
+    """
+    base={
+        key.replace(".","_")+"_"+period: {
+            "status":"NO_PRIVATE_TICKFLOW_SNAPSHOT",
+            "overlap_bucket":"UNKNOWN",
+            "max_ohlc_price_difference_ticks":"UNKNOWN",
+            "reference":"TENCENT_QUALIFIED_ONLY",
+            "earlier_session_agreement":"UNKNOWN",
+            "same_session_agreement":"UNKNOWN",
+            "earlier_session_overlap_bucket":"UNKNOWN",
+            "same_session_overlap_bucket":"UNKNOWN",
+            "same_session_disagreement_driver":"UNKNOWN",
+            "same_session_disagreement_phase":"UNKNOWN",
+            "same_session_disagreement_bucket":"UNKNOWN",
+        }
+        for key in ("159611.SZ","518880.SH")
+        for period in ("15m","60m")
+    }
+    try:
+        meta=WORKER_FILE.stat()
+        if not 0<meta.st_size<=MAX_FILE_BYTES or stat.S_IMODE(meta.st_mode)!=0o600:
+            return base
+        payload=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        if (not isinstance(payload,dict)
+            or payload.get("schema")!="stock_razor_cn_tickflow_research_observation_v0_1"
+            or payload.get("status")!="PASS_RESEARCH_ONLY"
+            or payload.get("source_arbiter_admission")!="BLOCKED"
+            or payload.get("radar_admission")!="BLOCKED"
+            or payload.get("live_trade") is not False):
+            return base
+    except (OSError,ValueError,TypeError):
+        return base
+    # Existing provider parser + repeated historical grid qualification.
+    # Neither the Binance SDK nor TickFlow paid HTTP are called.
+    if str(WORKER_REPO) not in sys.path:
+        sys.path.insert(0,str(WORKER_REPO))
+    try:
+        from data_provider.cn_eastmoney_cloud_observer import (
+            _http_json,build_tencent_kline_url,parse_tencent_kline_rows)
+        from src.services.a_share_intraday_grid_qualification import (
+            qualify_intraday_end_label_grid)
+    except ImportError:
+        for item in base.values():
+            item["status"]="IMPORT_BLOCKED"
+        return base
+    for key,code in (("159611.SZ","159611"),("518880.SH","518880")):
+        for period in ("15m","60m"):
+            out=base[key.replace(".","_")+"_"+period]
+            try:
+                frame=payload["symbols"][key][period]
+                tickrows=frame["rows"]
+                url=build_tencent_kline_url(code,period,limit=120)
+                if not url.startswith("https://ifzq.gtimg.cn/appstock/app/kline/mkline?"):
+                    out["status"]="URL_NOT_ALLOWLISTED"
+                    continue
+                # Hard budget: one request per fixed pair, timeout 4sec,
+                # max_attempts 1 (no implicit retries).
+                raw=_http_json(url,timeout_seconds=4.0,max_attempts=1)
+                reference=list(parse_tencent_kline_rows(
+                    raw,symbol=code,timeframe=period))
+                qualification=qualify_intraday_end_label_grid(
+                    [row["label"] for row in reference],
+                    source_token="tencent",
+                    endpoint_id="tencent.kline_intraday",
+                    interval_minutes=int(period[:-1]),
+                )
+                from zoneinfo import ZoneInfo
+                cn_day=datetime.now(timezone.utc).astimezone(
+                    ZoneInfo("Asia/Shanghai")
+                ).date().isoformat()
+                out.update(compare_tencent_qualified_price_rows(
+                    tickrows,reference,
+                    qualification_pass=qualification.status=="PASS",
+                    session_date=cn_day,
+                ))
+            except Exception:
+                # Keep errors and HTTP payloads private; classify only.
+                out["status"]="PROVIDER_OR_PARSER_BLOCKED"
+    return base
+
+
 def active(service):
     try:
         p=subprocess.run(["systemctl","is-active",service],text=True,capture_output=True,timeout=5,check=False)
@@ -168,6 +498,7 @@ def sample():
         "repo_sha_match":False,
         "cache_age_seconds":None,
         "source_frame_progress":{},
+        "independent_price_shadow":{},
         "sequence":None,
         "all_four_readonly_requests_ok":False,
         "per_period_observation":{},
@@ -196,6 +527,18 @@ def sample():
         age=(datetime.now(timezone.utc)-instant.astimezone(timezone.utc)).total_seconds()
         result["cache_age_seconds"]=round(age,2) if -5<=age<=100000 else None
         if data.get("status")=="PASS_RESEARCH_ONLY":
+            # No provider I/O: read already cached independent-lineage
+            # Eastmoney/Tencent observer, NEVER export the price-bearing rows.
+            try:
+                emeta=EASTMONEY_FILE.stat()
+                if not 0<emeta.st_size<=4000000:
+                    raise ValueError("reference cache length")
+                reference=json.loads(EASTMONEY_FILE.read_text(encoding="utf-8"))
+            except (OSError,ValueError,TypeError):
+                reference=None
+            result["independent_price_shadow"]=shadow_compare_eastmoney(
+                data,reference,now_utc=datetime.now(timezone.utc)
+            )
             # Sanitize private, price-bearing cache *before* result leaves EC2.
             for symbol in ("159611.SZ","518880.SH"):
                 for period in ("15m","60m"):
@@ -357,6 +700,7 @@ def main():
         "schema":"stock_razor_tickflow_aws_research_acceptance_v0_1",
         "measurement":"EC2_SERVICE_CACHE_AND_MCP_READONLY_TWO_SAMPLES",
         "before":before,"after":after,
+        "tencent_independent_shadow":sample_tencent_qualified_parity(),
         "sequence_advanced":progressing,
         "limited_research_usable":bool(progressing and after["all_four_readonly_requests_ok"]
                and after["mcp_cache_consumer"]=="PASS" and after["cache_private"]

@@ -2,6 +2,15 @@ name: Audit TickFlow AWS Research Feed and MCP (Read Only)
 
 on:
   workflow_dispatch:
+  # Read-only cloud audit, UTC cron. Best effort; scheduling is NOT bar finality.
+  # 02:20 UTC = 10:20 Asia/Shanghai; 06:20 UTC = 14:20 Asia/Shanghai.
+  schedule:
+    - cron: '20 2 * * 1-5'
+    - cron: '20 6 * * 1-5'
+
+concurrency:
+  group: cn-tickflow-readonly-audit-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -73,6 +82,44 @@ jobs:
           assert d.get("exchange_finality")=="NOT_VERIFIED"
           assert d.get("cross_provider_parity")=="NOT_VERIFIED"
           assert type(d.get("sequence_advanced")) is bool
+          reference=d.get("tencent_independent_shadow")
+          keys=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
+          assert isinstance(reference,dict) and set(reference)==set(keys)
+          statuses=("NO_PRIVATE_TICKFLOW_SNAPSHOT","IMPORT_BLOCKED",
+                    "URL_NOT_ALLOWLISTED","UNQUALIFIED_GRID","INVALID_ROWS",
+                    "NO_OVERLAP","OBSERVED_NOT_ADMITTED",
+                    "INSUFFICIENT_OVERLAP","PROVIDER_OR_PARSER_BLOCKED")
+          tick_diffs=("UNKNOWN","EXACT","UNDER_HALF_TICK","UP_TO_ONE_TICK",
+                      "UP_TO_TWO_TICKS","OVER_TWO_TICKS")
+          count_buckets=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
+          split_agreement=("UNKNOWN","NO_OVERLAP","INSUFFICIENT_PAIRS",
+                           "ALL_WITHIN_ONE_TICK","NONE_WITHIN_ONE_TICK",
+                           "GE90_PCT","GE50_PCT","GE25_PCT","LT25_PCT")
+          disagreement_driver=("UNKNOWN","NONE","OPEN","HIGH","LOW","CLOSE",
+                               "MULTIPLE_FIELDS","MULTIPLE_DRIVERS")
+          disagreement_phase=("UNKNOWN","NONE","OPENING","LATE_MORNING",
+                              "AFTERNOON","CLOSING","OTHER_SESSION_CLOCK",
+                              "MULTIPLE_PHASES")
+          for obj in reference.values():
+              assert isinstance(obj,dict)
+              assert set(obj)==set(("status","overlap_bucket",
+                    "max_ohlc_price_difference_ticks","reference",
+                    "earlier_session_agreement","same_session_agreement",
+                    "earlier_session_overlap_bucket","same_session_overlap_bucket",
+                    "same_session_disagreement_driver",
+                    "same_session_disagreement_phase",
+                    "same_session_disagreement_bucket"))
+              assert obj["same_session_disagreement_driver"] in disagreement_driver
+              assert obj["same_session_disagreement_phase"] in disagreement_phase
+              assert obj["same_session_disagreement_bucket"] in count_buckets
+              assert obj["status"] in statuses
+              assert obj["overlap_bucket"] in count_buckets
+              assert obj["max_ohlc_price_difference_ticks"] in tick_diffs
+              assert obj["reference"]=="TENCENT_QUALIFIED_ONLY"
+              for term in ("earlier_session_agreement","same_session_agreement"):
+                  assert obj[term] in split_agreement
+              for term in ("earlier_session_overlap_bucket","same_session_overlap_bucket"):
+                  assert obj[term] in count_buckets
           assert type(d.get("limited_research_usable")) is bool
           assert type(d.get("historical_research_usable")) is bool
           keys=("status","failure_stage","failure_reason","unit_active","mcp_unit_active","cache_private",
@@ -85,6 +132,14 @@ jobs:
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
+          parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
+                         "STALE_REFERENCE","INVALID_TICKFLOW_ROWS",
+                         "UNQUALIFIED_REFERENCE_GRID","NO_OVERLAP",
+                         "OBSERVED_NOT_ADMITTED","INSUFFICIENT_OVERLAP",
+                         "INVALID_SNAPSHOT")
+          parity_difference=("UNKNOWN","EXACT","UNDER_HALF_TICK",
+                             "UP_TO_ONE_TICK","UP_TO_TWO_TICKS","OVER_TWO_TICKS")
+          parity_lineage=("UNKNOWN","EASTMONEY","TENCENT")
           allowed_gap=("UNKNOWN","NONE","GAP_LT_1BP","GAP_1_TO_10BP",
                        "GAP_10_TO_100BP","GAP_GE_100BP")
           allowed_cause=("UNKNOWN","NONE","TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
@@ -98,6 +153,14 @@ jobs:
                    "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
           for when in ("before","after"):
               assert d[when].get("mcp_read_failure_reason") in reasons
+              parity=d[when].get("independent_price_shadow")
+              assert isinstance(parity,dict) and set(parity).issubset(periods)
+              for _v in parity.values():
+                  assert isinstance(_v,dict)
+                  assert _v.get("status") in parity_status
+                  assert _v.get("overlap_bucket") in allowed_bucket
+                  assert _v.get("max_price_difference_ticks") in parity_difference
+                  assert _v.get("lineage") in parity_lineage
               frame_map=d[when].get("source_frame_progress")
               assert isinstance(frame_map,dict)
               assert set(frame_map).issubset(periods)
@@ -133,14 +196,17 @@ jobs:
               assert type(d[when].get("all_four_historical_requests_ok")) is bool
           public={"schema":d["schema"],
                   "before":{**{k:d["before"].get(k) for k in keys},
+                            "independent_price_shadow":{p:d["before"]["independent_price_shadow"].get(p,{}) for p in periods},
                             "source_frame_progress":{p:d["before"]["source_frame_progress"].get(p,{}) for p in periods},
                             "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                             "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "after":{**{k:d["after"].get(k) for k in keys},
+                           "independent_price_shadow":{p:d["after"]["independent_price_shadow"].get(p,{}) for p in periods},
                            "source_frame_progress":{p:d["after"]["source_frame_progress"].get(p,{}) for p in periods},
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                            "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "sequence_advanced":d["sequence_advanced"],
+                  "tencent_independent_shadow":d["tencent_independent_shadow"],
                   "historical_research_usable":d["historical_research_usable"],
                   "limited_research_usable":d["limited_research_usable"],
                   "radar_admission":"BLOCKED","live_trade":"NO"}
