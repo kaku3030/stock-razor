@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS 只读云端运行审计在申请 OIDC 权限前及发送 SSM 命令前两次校验 main 当前 SHA，拒绝过期任务，不读取密钥、不改服务或交易门禁。
+
 - [新功能] 现有只读 MCP 新增固定四项 AWS EC2 本机 systemd/心跳健康查看入口，使用严格安全字段白名单；不执行 AWS API、SSM 命令、服务重启或交易，ChatGPT 远程管理权限仍待独立授权。
 
 - [chore] 统一 STOCK RAZOR 常规工程的零人工审批执行规则：按最新主分支与必需自动化 CI 门禁通过后推进 PR 合并，取消对逐次用户批准、Code Owner 签字、人工 reviewer/ACK 的隐式依赖，保持生产行情与交易安全准入独立阻断。
