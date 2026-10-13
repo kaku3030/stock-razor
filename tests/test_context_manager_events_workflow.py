@@ -25,3 +25,4 @@ def test_context_event_workflow_uses_allowlisted_payload_and_redacted_result():
     assert "CONTEXT_MANAGER_EVENT_SYNC=" in WORKFLOW
     assert "commits/$GITHUB_SHA/pulls" in WORKFLOW
     assert "CONTEXT_MANAGER_PR_SYNC=" in WORKFLOW
+    assert "GH_TOKEN: ${{ github.token }}" in WORKFLOW
