@@ -220,6 +220,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             float_only=(invalid_reason in (
                 "invalid OHLCVA high below body",
                 "invalid OHLCVA low above body")
+                and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5")
             if float_only:
