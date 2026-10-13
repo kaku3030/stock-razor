@@ -20,6 +20,7 @@ SCHEMA_VERSION = "stock-razor-context-manager-v1"
 STATE_PATH_ENV = "STOCK_RAZOR_CONTEXT_STATE_PATH"
 EVENTS_PATH_ENV = "STOCK_RAZOR_CONTEXT_EVENTS_PATH"
 KNOWN_SOURCES = frozenset({"engineering", "deployment", "ci", "radar", "mcp", "system"})
+RECOVERY_DOMAINS = ("ci", "pr", "deploy", "radar", "blockers", "priorities")
 _SENSITIVE_KEY = re.compile(r"(?:secret|token|password|api[_-]?key|authorization|cookie|private[_-]?key|access[_-]?key|refresh)", re.I)
 _SENSITIVE_VALUE = re.compile(r"(?:bearer\s+|-----BEGIN|(?:sk|ghp|github_pat|AKIA)[A-Za-z0-9_\-]{8,})", re.I)
 
@@ -117,7 +118,7 @@ class ContextManagerStore:
         if existing is not None:
             if existing.get("fingerprint") != fingerprint:
                 raise ContextManagerError("event_id already exists with different payload")
-            self._atomic_write(self._current_from_event(existing))
+            self._atomic_write(self._current_from_events(events, now=now))
             return {"status": "DUPLICATE", "event_id": event_id, "version": existing.get("version")}
         version = (events[-1].get("version", 0) if events else 0) + 1
         event = {
@@ -137,7 +138,7 @@ class ContextManagerStore:
             stream.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
             stream.flush()
             os.fsync(stream.fileno())
-        current = self._current_from_event(event)
+        current = self._current_from_events(events + [event], now=now)
         self._atomic_write(current)
         return {"status": "RECORDED", "event_id": event_id, "version": version}
 
@@ -153,6 +154,42 @@ class ContextManagerStore:
             "safety": _gates(),
         }
 
+    def _current_from_events(
+        self, events: list[Mapping[str, Any]], *, now: datetime | None = None,
+    ) -> dict[str, Any]:
+        latest = events[-1]
+        current = self._current_from_event(latest)
+        now = (now or self.clock()).astimezone(timezone.utc)
+        domains = {}
+        for domain in RECOVERY_DOMAINS:
+            candidates = [item for item in events if _event_domain(item) == domain]
+            if not candidates:
+                domains[domain] = {
+                    "status": "UNKNOWN",
+                    "acceptance": "UNVERIFIED",
+                    "last_known": None,
+                    "provenance": None,
+                    "ttl": None,
+                }
+                continue
+            event = candidates[-1]
+            expired = _parse_timestamp(event["expires_at"]) <= now
+            failed = _is_failure(event["event_type"])
+            domains[domain] = {
+                "status": "EXPIRED" if expired else ("BLOCKED" if failed else "ACTIVE"),
+                "acceptance": "UNVERIFIED",
+                "last_known": event["payload"],
+                "provenance": {key: event[key] for key in (
+                    "event_id", "event_type", "source", "source_ref", "occurred_at", "recorded_at",
+                )},
+                "ttl": {
+                    "recorded_at": event["recorded_at"],
+                    "expires_at": event["expires_at"],
+                    "expired": expired,
+                },
+            }
+        current["domains"] = domains
+        return current
     def read(self) -> dict[str, Any]:
         try:
             events = self._read_events()
@@ -165,7 +202,27 @@ class ContextManagerStore:
             _parse_timestamp(current["updated_at"])
             if current.get("safety") != _gates():
                 raise ContextManagerError("safety contract mismatch")
-            if _parse_timestamp(current["expires_at"]) <= self.clock().astimezone(timezone.utc):
+            now = self.clock().astimezone(timezone.utc)
+            if events:
+                expected_domains = self._current_from_events(events, now=now)["domains"]
+                actual_domains = current.get("domains")
+                if not isinstance(actual_domains, dict) or set(actual_domains) != set(expected_domains):
+                    raise ContextManagerError("domain snapshot does not match event log")
+                for domain, expected in expected_domains.items():
+                    actual = actual_domains[domain]
+                    expected_ttl = expected.get("ttl")
+                    actual_ttl = actual.get("ttl") if isinstance(actual, dict) else None
+                    if not isinstance(actual, dict) or any(
+                        actual.get(key) != expected.get(key)
+                        for key in ("last_known", "provenance", "acceptance")
+                    ) or actual_ttl != expected_ttl and (
+                        expected_ttl is None or not isinstance(actual_ttl, dict)
+                        or actual_ttl.get("recorded_at") != expected_ttl.get("recorded_at")
+                        or actual_ttl.get("expires_at") != expected_ttl.get("expires_at")
+                    ):
+                        raise ContextManagerError("domain snapshot does not match event log")
+                current["domains"] = expected_domains
+            if _parse_timestamp(current["expires_at"]) <= now:
                 current["status"] = "EXPIRED"
             return current
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ContextManagerError) as exc:
@@ -227,6 +284,22 @@ def _is_failure(event_type: str) -> bool:
     return normalized.startswith("failure") or normalized.endswith("_failed") or normalized in {"ci_failed", "deployment_failed"}
 
 
+def _event_domain(event: Mapping[str, Any]) -> str:
+    event_type = str(event.get("event_type", "")).lower()
+    source = str(event.get("source", "")).lower()
+    if source == "ci" or event_type.startswith("ci_"):
+        return "ci"
+    if source == "deployment" or event_type.startswith("deployment_"):
+        return "deploy"
+    if source == "radar" or event_type.startswith("radar_"):
+        return "radar"
+    if event_type.startswith("pr_") or event_type.startswith("pull_request"):
+        return "pr"
+    if "blocker" in event_type:
+        return "blockers"
+    if "priorit" in event_type:
+        return "priorities"
+    return "blockers" if _is_failure(event_type) else "priorities"
 def _fingerprint(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")

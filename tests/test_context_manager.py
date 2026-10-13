@@ -57,3 +57,21 @@ def test_corrupt_log_blocks_read(tmp_path):
     with pytest.raises(json.JSONDecodeError):
         store._read_events()
     assert store.read()["status"] == "BLOCKED"
+def test_recovery_snapshot_keeps_each_domain_with_provenance_and_ttl(tmp_path):
+    store = ContextManagerStore(tmp_path / "current.json", clock=_clock)
+    store.record(
+        event_id="pr-1", event_type="pr_merged", source="engineering",
+        payload={"number": 701, "merge_sha": "abc"}, source_ref="github/pr/701",
+    )
+    store.record(
+        event_id="ci-1", event_type="ci_failed", source="ci",
+        payload={"workflow": "backend-gate", "sha": "abc"}, source_ref="run/1",
+    )
+
+    domains = store.read()["domains"]
+    assert domains["pr"]["last_known"]["number"] == 701
+    assert domains["pr"]["provenance"]["source_ref"] == "github/pr/701"
+    assert domains["pr"]["acceptance"] == "UNVERIFIED"
+    assert domains["ci"]["status"] == "BLOCKED"
+    assert domains["deploy"]["status"] == "UNKNOWN"
+    assert domains["ci"]["ttl"]["expired"] is False
