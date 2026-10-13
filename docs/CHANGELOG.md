@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 云端 MCP 既有 `get_market_analysis` 接口支持精确只读 Cloud Ops 兼容参数，不需新增 ChatGPT 客户端工具；其他美股分析与所有交易门禁保持不变，必须经 AWS 实际部署后验收。
+
 - [改进] 在冻结的 ChatGPT STOCK RAZOR 工具清单中通过原有 `get_cn_market_analysis(symbols=["__QUICK_SCAN__"])` 复用已部署的 CN 单次紧凑研究快报，无需更新应用工具目录；普通符号调用保持旧语义、所有交易门禁不变。
 - [test] Independently cross-check historical Eastmoney and qualified Tencent Kline clock grids/price values on AWS without source promotion.
 
