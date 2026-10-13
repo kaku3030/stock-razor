@@ -189,3 +189,25 @@ def test_invalid_ws_scope_hash_or_arg_count_vetoes_before_any_provider_io(
     assert p.returncode != 0
     assert "DONT_READ_OR_LOG" not in p.stdout + p.stderr
     assert "TICKFLOW_PREMIUM_PROBE_EXECUTED=YES" not in p.stdout
+
+def test_postinitial_event_lag_public_projection_is_finite_and_non_admitting():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op":"subscribed","channel":"quotes","symbols":list(SYMS),"total":2})
+    stamp=1776754800000
+    e.consume({"op":"quotes","data":[{"symbol":SYMS[0],"timestamp":stamp}]},received_at_ms=stamp+100000)
+    e.consume({"op":"quotes","data":[{"symbol":SYMS[0],"timestamp":stamp+1000}]},received_at_ms=stamp+1700)
+    e.consume({"op":"quotes","data":[{"symbol":SYMS[0],"timestamp":stamp+2000}]},received_at_ms=stamp+2800)
+    e.window_status="COMPLETED"
+    sanitized=sanitize(e.summary(ws_handshake=True),repo_sha=SHA)
+    assert sanitized["post_initial_p95_lag_bucket"]=="UNDER_2S"
+    assert sanitized["post_initial_lag_samples"]==2
+    assert sanitized["timestamp_lag_qualification"]=="OBSERVED_NOT_QUALIFIED"
+    assert sanitized["source_arbiter_admission"]=="BLOCKED"
+    assert sanitized["data_qualification"]=="NOT_VERIFIED"
+
+def test_false_fast_lag_claim_with_future_event_is_rejected():
+    raw=_sample()
+    raw["post_initial_p95_lag_bucket"]="UNDER_2S"
+    raw["post_initial_future_timestamp_count"]=1
+    with pytest.raises(ValueError):
+        sanitize(raw,repo_sha=SHA)

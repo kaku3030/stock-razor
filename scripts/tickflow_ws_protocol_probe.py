@@ -45,8 +45,15 @@ class ProtocolEvidence:
         self.invalid_frames = 0
         self.window_status = "UNOBSERVED"
         self._latest: dict[str, int] = {}
+        self._post_initial_lags: list[int] = []
+        self.post_initial_future_timestamp_count = 0
+        self.post_initial_lag_truncated = False
 
-    def consume(self, frame: Any) -> None:
+    def consume(self, frame: Any, *, received_at_ms: int | None = None) -> None:
+        if received_at_ms is None:
+            received_at_ms = time.time_ns() // 1_000_000
+        if type(received_at_ms) is not int or received_at_ms < 0:
+            raise ValueError("invalid local receive clock")
         try:
             item = json.loads(frame) if isinstance(frame, (str, bytes)) else frame
         except (ValueError, UnicodeDecodeError, TypeError):
@@ -102,6 +109,13 @@ class ProtocolEvidence:
                 elif millis > previous:
                     self.post_initial_update_candidates += 1
                     self._latest[symbol] = millis
+                    lag_ms = received_at_ms - millis
+                    if lag_ms < 0:
+                        self.post_initial_future_timestamp_count += 1
+                    if len(self._post_initial_lags) < 4096:
+                        self._post_initial_lags.append(lag_ms)
+                    else:
+                        self.post_initial_lag_truncated = True
                 elif millis == previous:
                     self.duplicate_timestamp_count += 1
                 else:
@@ -111,6 +125,24 @@ class ProtocolEvidence:
             self.protocol_error_frames += 1
         else:
             self.invalid_frames += 1
+
+    def _lag_bucket(self) -> str:
+        # This is local EC2 receive-minus-provider-event time, NOT exchange
+        # delivery SLA proof. A bad clock, provider labeling, or truncation
+        # must veto any inferred 'fresh' bucket.
+        if not self._post_initial_lags or self.post_initial_lag_truncated:
+            return "NOT_VERIFIED"
+        if self.post_initial_future_timestamp_count:
+            return "CLOCK_CONFLICT"
+        values = sorted(self._post_initial_lags)
+        p95 = values[math.ceil(len(values) * 0.95) - 1]
+        if p95 <= 2000:
+            return "UNDER_2S"
+        if p95 <= 5000:
+            return "TWO_TO_FIVE_S"
+        if p95 <= 30000:
+            return "FIVE_TO_THIRTY_S"
+        return "OVER_THIRTY_S"
 
     def summary(self, *, ws_handshake: bool) -> dict[str, Any]:
         # A preceding ACK cannot overrule a subsequent server-level error.
@@ -141,6 +173,11 @@ class ProtocolEvidence:
             "quote_frames": self.quote_frames,
             "initial_snapshot_candidates": self.initial_snapshot_candidates,
             "post_initial_update_candidates": self.post_initial_update_candidates,
+            "post_initial_lag_samples": len(self._post_initial_lags),
+            "post_initial_p95_lag_bucket": self._lag_bucket(),
+            "post_initial_future_timestamp_count": self.post_initial_future_timestamp_count,
+            "post_initial_lag_truncated": self.post_initial_lag_truncated,
+            "timestamp_lag_not_live_qualified": True,
             "duplicate_timestamp_count": self.duplicate_timestamp_count,
             "out_of_order_timestamp_count": self.out_of_order_timestamp_count,
             "invalid_timestamp_count": self.invalid_timestamp_count,

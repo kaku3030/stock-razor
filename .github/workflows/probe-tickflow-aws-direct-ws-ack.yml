@@ -180,6 +180,14 @@ jobs:
                     "protocol_error_frames","invalid_frames"}
           assert set(counters)==expected
           assert all(type(n) is int and 0<=n<=1000000 for n in counters.values())
+          assert d.get("post_initial_p95_lag_bucket") in (
+            "NOT_VERIFIED","CLOCK_CONFLICT","UNDER_2S","TWO_TO_FIVE_S",
+            "FIVE_TO_THIRTY_S","OVER_THIRTY_S")
+          n=d.get("post_initial_lag_samples")
+          future=d.get("post_initial_future_timestamp_count")
+          assert type(n) is int and 0<=n<=4096
+          assert type(future) is int and 0<=future<=1000000
+          assert d.get("timestamp_lag_qualification")=="OBSERVED_NOT_QUALIFIED"
           assert d.get("data_qualification")=="NOT_VERIFIED"
           assert d.get("continuous_feed_qualified") is False
           assert d.get("source_arbiter_admission")=="BLOCKED"
@@ -194,6 +202,9 @@ jobs:
           print("TICKFLOW_WS_WINDOW="+d["bounded_window_status"])
           print("TICKFLOW_WS_PROGRESS="+d["protocol_progress_observation"])
           print("TICKFLOW_WS_POST_INITIAL_CANDIDATES="+str(counters["post_initial_update_candidates"]))
+          print("TICKFLOW_WS_POST_INITIAL_P95_EVENT_LAG_BUCKET="+d["post_initial_p95_lag_bucket"])
+          print("TICKFLOW_WS_POST_INITIAL_LAG_SAMPLES="+str(n))
+          print("TICKFLOW_WS_FUTURE_EVENT_TIMESTAMPS="+str(future))
           print("TICKFLOW_WS_DATA_QUALIFICATION=NOT_VERIFIED")
           print("RADAR_ADMISSION=BLOCKED")
           print("LIVE_TRADE=NO")
