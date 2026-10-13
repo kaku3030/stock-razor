@@ -195,6 +195,20 @@ jobs:
               name,state=item.get("name"),item.get("operation")
               assert name in names and state in states
               record={"name":name,"operation":state}
+              if name in ("kline_15m","kline_60m"):
+                  bar=item.get("bar_range_structure")
+                  record["bar_range_structure"]=bar if bar in ("PASS","FAIL","NOT_VERIFIED") else "NOT_VERIFIED"
+                  order=item.get("timestamp_order")
+                  record["timestamp_order"]=order if order in ("STRICTLY_INCREASING","NON_DECREASING","NOT_MONOTONIC","NOT_VERIFIED") else "NOT_VERIFIED"
+                  for field in ("numeric_ohlcv","numeric_amount"):
+                      val=item.get(field)
+                      record[field]=val if val in ("PASS","NOT_VERIFIED") else "NOT_VERIFIED"
+                  n=item.get("historical_sample_count")
+                  record["historical_sample_count"]=n if type(n) is int and 0 <= n <= 3 else None
+                  assert item.get("freshness")=="NOT_VERIFIED"
+                  assert item.get("closure")=="NOT_VERIFIED"
+                  assert item.get("provider_live_qualified") is False
+                  record["provider_live_qualified"]=False
               if name == "websocket_quote_smoke":
                   for field in (
                       "quote_callbacks","quote_events","unique_quote_samples",
