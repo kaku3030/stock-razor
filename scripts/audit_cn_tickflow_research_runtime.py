@@ -66,6 +66,7 @@ def sample():
         "all_four_readonly_requests_ok":False,
         "per_period_observation":{},
         "mcp_cache_consumer":"NOT_VERIFIED",
+        "mcp_read_failure_reason":"NOT_VERIFIED",
     }
     try:
         meta=WORKER_FILE.stat()
@@ -149,9 +150,21 @@ print('MCP_READ_OK' if r.get('ok') and r.get('radar_admission')=='BLOCKED' and
       r.get('research_only') is True and r.get('live_trade') is False else 'MCP_READ_BLOCKED')"""
         try:
             p=subprocess.run([str(MCP_PY),"-c",code],capture_output=True,text=True,timeout=12,check=False)
-            result["mcp_cache_consumer"]="PASS" if p.returncode==0 and p.stdout.strip().endswith("MCP_READ_OK") else "BLOCKED"
+            if p.returncode==0 and p.stdout.strip().endswith("MCP_READ_OK"):
+                result["mcp_cache_consumer"]="PASS"
+                result["mcp_read_failure_reason"]="NOT_APPLICABLE"
+            else:
+                result["mcp_cache_consumer"]="BLOCKED"
+                result["mcp_read_failure_reason"]=(
+                    "METHOD_RETURN_BLOCKED"
+                    if p.returncode==0 and p.stdout.strip().endswith("MCP_READ_BLOCKED")
+                    else "IMPORT_OR_RUNTIME_FAILURE"
+                )
         except (OSError,subprocess.TimeoutExpired):
             result["mcp_cache_consumer"]="BLOCKED"
+            result["mcp_read_failure_reason"]="IMPORT_OR_RUNTIME_FAILURE"
+    else:
+        result["mcp_read_failure_reason"]="SERVICE_PATH_MISSING"
     return result
 
 def main():
