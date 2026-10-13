@@ -25,6 +25,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     """Export no bars, prices, raw timestamps or provider credentials."""
     base={
         "last_due_grid":"UNKNOWN",
+        "dominant_quarantine_reason":"UNKNOWN",
         "quarantined_rows_bucket":"UNKNOWN",
         "sdk_amount_omitted_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
@@ -41,6 +42,22 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     out={**base,"quarantined_rows_bucket":bucket(quarantined),
          "retained_bar_count_bucket":("FOUR_TO_24" if len(rows)<=24
                                       else "25_TO_96")}
+    reasons=frame.get("quarantine_reason_counts")
+    allowed_reason=frozenset((
+        "TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
+        "TODAY_NONNUMERIC_OR_MISSING_VALUE","TODAY_NONPOSITIVE_OHLC",
+        "TODAY_HIGH_BELOW_BODY","TODAY_LOW_ABOVE_BODY",
+        "TODAY_NEGATIVE_VOLUME","TODAY_NEGATIVE_AMOUNT",
+    ))
+    if (isinstance(reasons,dict) and len(reasons)<=len(allowed_reason)
+        and all(isinstance(k,str) and k in allowed_reason
+                and type(v) is int and 0<v<=96
+                for k,v in reasons.items())
+        and sum(reasons.values())==quarantined):
+        out["dominant_quarantine_reason"]=(
+            max(sorted(reasons),key=lambda k: reasons[k])
+            if reasons else "NONE"
+        )
     try:
         omitted=sum(1 for row in rows if isinstance(row,dict)
                     and row.get("amount_availability")=="SDK_OMITTED")

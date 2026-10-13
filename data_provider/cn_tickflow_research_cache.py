@@ -53,8 +53,16 @@ def _select_timestamp(row: dict) -> datetime:
             return _timestamp(row[key])
     raise ValueError("no provider timestamp")
 
-def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dict]:
-    """Price-bearing bars stay on AWS; no current-bar finality is asserted."""
+def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
+                   quarantine_counts: dict[str,int]|None=None) -> list[dict]:
+    """Price-bearing bars stay on AWS; no current-bar finality is asserted.
+
+    Optional fixed-enum quarantine counters preserve *why* current-day rows
+    were withheld without logging price, raw provider payload or timestamps.
+    """
+    def quarantine(reason: str) -> None:
+        if quarantine_counts is not None:
+            quarantine_counts[reason]=quarantine_counts.get(reason,0)+1
     if timeframe not in _ALLOWED_PERIODS:
         raise ValueError("unsupported period")
     if now_utc.tzinfo is None:
@@ -105,6 +113,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
                 # labeled by its opening time (e.g. 13:00). Never turn it
                 # into a historical BAR_END observation. Quarantine only this
                 # session; historical off-grid labels remain a hard failure.
+                quarantine("TODAY_LABEL_OFF_GRID")
                 continue
             raise ValueError("unexpected Shanghai regular-session grid")
         # Reject future bars, but do not pretend already elapsed means exchange-final.
@@ -114,6 +123,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
             # A future trading *date* cannot be explained by a forming bar.
             if sh.date() != now_utc.astimezone(CN).date():
                 raise ValueError("future trading date")
+            quarantine("TODAY_FUTURE_LABEL")
             continue
         try:
             op=_number(raw,"open","open_price")
@@ -128,6 +138,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
                 # An unfinished today's bar can have missing quotes/turnover;
                 # never backfill invented OHLC or claim it is a closed bar.
                 # Historical invalid rows remain a fail-closed hard error.
+                quarantine("TODAY_NONNUMERIC_OR_MISSING_VALUE")
                 continue
             raise
         invalid_reason=None
@@ -146,6 +157,13 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
                 # Current-day partial/unqualified bar only; the reader still
                 # requires the last due 15m/60m grid label before any data
                 # can be surfaced even for research.
+                quarantine({
+                    "invalid OHLCVA nonpositive":"TODAY_NONPOSITIVE_OHLC",
+                    "invalid OHLCVA high below body":"TODAY_HIGH_BELOW_BODY",
+                    "invalid OHLCVA low above body":"TODAY_LOW_ABOVE_BODY",
+                    "invalid OHLCVA negative volume":"TODAY_NEGATIVE_VOLUME",
+                    "invalid OHLCVA negative amount":"TODAY_NEGATIVE_AMOUNT",
+                }[invalid_reason])
                 continue
             raise ValueError(invalid_reason)
         bars.append({
@@ -207,11 +225,14 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 raise
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
-                bars=normalize_bars(frame,interval,now_utc=now_utc)
+                reasons={}
+                bars=normalize_bars(frame,interval,now_utc=now_utc,
+                                    quarantine_counts=reasons)
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise
             frames[interval]={"rows":bars,
+                 "quarantine_reason_counts":reasons,
                  "quarantined_unverified_rows_count":(
                      len(frame["timestamp"])-len(bars)
                      if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)

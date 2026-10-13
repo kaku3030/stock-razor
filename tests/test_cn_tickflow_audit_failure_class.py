@@ -58,3 +58,23 @@ def test_private_latest_due_bar_diagnostics_are_bounded_enums_only(monkeypatch):
     assert "987654" not in str(result) and "2026-10-13" not in str(result)
     invalid=monitor.summarize_private_frame_progress({"rows":[]},timeframe="15m",now_utc=now)
     assert invalid["last_due_grid"]=="UNKNOWN"
+
+def test_dominant_current_day_quarantine_cause_is_enum_only():
+    import scripts.audit_cn_tickflow_research_runtime as audit
+    from datetime import datetime, timezone
+    frame={"rows":[{"label":"2026-10-13 09:45",
+                    "amount_availability":"PRESENT_UNVERIFIED",
+                    "close":99999999.0} for _ in range(4)],
+           "quarantined_unverified_rows_count":3,
+           "quarantine_reason_counts":{
+                "TODAY_NONPOSITIVE_OHLC":2,"TODAY_LABEL_OFF_GRID":1,
+           }}
+    result=audit.summarize_private_frame_progress(frame,timeframe="15m",
+         now_utc=datetime(2026,10,13,7,10,tzinfo=timezone.utc))
+    assert result["dominant_quarantine_reason"]=="TODAY_NONPOSITIVE_OHLC"
+    assert "99999999" not in str(result)
+    malicious={**frame,"quarantine_reason_counts":{
+        "API_KEY=secret":3}}
+    bad=audit.summarize_private_frame_progress(malicious,timeframe="15m",
+         now_utc=datetime(2026,10,13,7,10,tzinfo=timezone.utc))
+    assert bad["dominant_quarantine_reason"]=="UNKNOWN"

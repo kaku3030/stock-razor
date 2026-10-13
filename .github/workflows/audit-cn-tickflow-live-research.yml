@@ -85,6 +85,10 @@ jobs:
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
+          allowed_cause=("UNKNOWN","NONE","TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
+                         "TODAY_NONNUMERIC_OR_MISSING_VALUE","TODAY_NONPOSITIVE_OHLC",
+                         "TODAY_HIGH_BELOW_BODY","TODAY_LOW_ABOVE_BODY",
+                         "TODAY_NEGATIVE_VOLUME","TODAY_NEGATIVE_AMOUNT")
           states=("PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE",
                   "NO_DATA","INVALID_CACHE","INVALID_REQUEST")
           historical_states=("PASS_HISTORICAL_ONLY","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST")
@@ -98,6 +102,7 @@ jobs:
               for _v in frame_map.values():
                   assert isinstance(_v,dict)
                   assert _v.get("last_due_grid") in allowed_grid
+                  assert _v.get("dominant_quarantine_reason") in allowed_cause
                   assert _v.get("quarantined_rows_bucket") in allowed_bucket
                   assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket
                   assert _v.get("retained_bar_count_bucket") in allowed_rows
