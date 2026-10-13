@@ -598,6 +598,7 @@ def sample():
         "status":"NOT_VERIFIED",
         "failure_stage":"UNKNOWN",
         "failure_reason":"UNKNOWN",
+        "failure_ohlc_float_gap_bucket":"UNKNOWN",
         "cache_private":False,
         "repo_sha_match":False,
         "cache_age_seconds":None,
@@ -676,6 +677,12 @@ def sample():
                 "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE",
             }
             result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
+            precision=data.get("failure_ohlc_float_gap_bucket")
+            result["failure_ohlc_float_gap_bucket"]=(
+                precision if isinstance(precision,str)
+                and precision in ("WITHIN_1E_MINUS_5","OVER_1E_MINUS_5")
+                else "UNKNOWN"
+            )
         elif data.get("status")=="PASS_RESEARCH_ONLY":
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:
