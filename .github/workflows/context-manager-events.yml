@@ -1,9 +1,10 @@
 name: Sync Context Manager GitHub Events
 
-on:
+"on":
   pull_request:
     types: [closed]
   workflow_run:
+    workflows: [CI, "Research Radar Tests"]
     types: [completed]
 
 permissions:
