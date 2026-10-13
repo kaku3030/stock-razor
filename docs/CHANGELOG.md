@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] GitHub仓库Owner可用固定PR精确评论触发TickFlow AWS只读历史/分钟行情质量复验，无需个人电脑；双重Owner与最新main核验，交易门禁保持关闭。
+
 - [修复] AWS 只读 MCP 手动部署新增仓库 Owner 与最新 main SHA 双阶段守卫、固定安装脚本校验和、禁止原始远端安装日志外泄；不自动部署或解锁交易门禁。
 
 - [改进] 云端 MCP 既有 `get_market_analysis` 接口支持精确只读 Cloud Ops 兼容参数，不需新增 ChatGPT 客户端工具；其他美股分析与所有交易门禁保持不变，必须经 AWS 实际部署后验收。
