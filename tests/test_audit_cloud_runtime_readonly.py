@@ -7,6 +7,7 @@ import pytest
 from scripts.audit_cloud_runtime_readonly import (
     _COMPONENTS,
     audit_twice,
+    mcp_install_evidence,
     component_snapshot,
 )
 
@@ -243,6 +244,84 @@ def test_two_sample_audit_uses_postread_clock_per_component():
     assert result["off_pc_independent_acquisition"] == "NOT_VERIFIED"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] == "NO"
+
+
+def test_mcp_installation_inventory_is_source_only_and_secret_free():
+    source = """from mcp.server.fastmcp import FastMCP
+mcp = FastMCP("test")
+@mcp.tool()
+def get_cloud_ops_status() -> dict:
+    return {"private": "NEVER_EXPOSE_RAW"}"""
+    report = mcp_install_evidence(
+        active=lambda unit: unit == "stock-razor-mcp.service",
+        source=lambda: source,
+        revision=lambda: "a" * 40,
+    )
+    assert report["status"] == "SOURCE_PRESENT_PROTOCOL_NOT_VERIFIED"
+    assert report["deployed_repo_sha"] == "a" * 40
+    assert report["cloud_ops_tool_in_deployed_source"] is True
+    assert report["authenticated_protocol_verified"] is False
+    assert "NEVER_EXPOSE_RAW" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("def get_cloud_ops_status(): pass", False),
+    ("# @mcp.tool()\\ndef get_cloud_ops_status(): pass", False),
+    ("@other.tool()\\ndef get_cloud_ops_status(): pass", False),
+    ("@mcp.tool()\\ndef get_cloud_ops_status(): pass", True),
+    ("not python code!?!", False),
+])
+def test_mcp_installation_never_inferrs_tool_from_name_alone(text, expected):
+    report = mcp_install_evidence(
+        active=lambda _: True,
+        source=lambda: text,
+        revision=lambda: "a" * 40,
+    )
+    assert report["cloud_ops_tool_in_deployed_source"] is expected
+    assert report["authenticated_protocol_verified"] is False
+    if not expected:
+        assert report["status"] == "BLOCKED"
+
+
+def test_mcp_installation_fail_closed_if_file_or_sha_missing():
+    def error():
+        raise OSError("PRIVATE_HOST_DETAIL")
+    result = mcp_install_evidence(
+        active=lambda _: True, source=error, revision=error,
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["deployed_repo_sha"] is None
+    assert result["cloud_ops_tool_in_deployed_source"] is False
+    assert "PRIVATE_HOST_DETAIL" not in json.dumps(result)
+    assert mcp_install_evidence(
+        active=lambda _: False, source=lambda: "@mcp.tool()\\ndef get_cloud_ops_status(): pass",
+        revision=lambda: "a" * 40,
+    )["status"] == "BLOCKED"
+
+
+def test_cloud_audit_reports_mcp_provenance_without_qualifying_market():
+    fixture = {
+        "mcp_unit_active": True, "deployed_repo_sha": "a" * 40,
+        "cloud_ops_tool_in_deployed_source": True,
+        "authenticated_protocol_verified": False,
+        "status": "SOURCE_PRESENT_PROTOCOL_NOT_VERIFIED",
+    }
+    seen = {name: 0 for name in _COMPONENTS}
+    def read(path):
+        name = next(name for name, parts in _COMPONENTS.items() if parts[1] == path)
+        seen[name] += 1
+        return payload_for(name, seq=seen[name])
+    result = audit_twice(
+        interval_seconds=0, clock=lambda: NOW,
+        read_json=read, check_unit=lambda _: True,
+        read_mcp=lambda: fixture,
+    )
+    assert result["audit_status"] == "COMPLETE"
+    assert result["mcp_deployment_evidence"] == fixture
+    assert result["off_pc_independent_acquisition"] == "NOT_VERIFIED"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] == "NO"
+
 
 def test_ssm_workflow_is_read_only_and_uses_pinned_main():
     source = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
