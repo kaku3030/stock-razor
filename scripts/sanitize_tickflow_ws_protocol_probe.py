@@ -55,6 +55,27 @@ def sanitize(raw: object, *, repo_sha: str) -> dict:
             raise ValueError("invalid bounded counter")
         counts[key] = value
 
+    # An EC2 arrival-time lag bucket is diagnostic, not exchange timestamp,
+    # clock synchronization, provider continuity or Radar admission.
+    lag_samples = raw.get("post_initial_lag_samples")
+    future_count = raw.get("post_initial_future_timestamp_count")
+    lag_bucket = raw.get("post_initial_p95_lag_bucket")
+    if (type(lag_samples) is not int or not 0 <= lag_samples <= 4096
+            or type(future_count) is not int or not 0 <= future_count <= 1_000_000):
+        raise ValueError("invalid bounded lag counters")
+    if lag_bucket not in {
+        "NOT_VERIFIED", "CLOCK_CONFLICT", "UNDER_2S", "TWO_TO_FIVE_S",
+        "FIVE_TO_THIRTY_S", "OVER_THIRTY_S",
+    }:
+        raise ValueError("invalid fixed lag bucket")
+    if (raw.get("post_initial_lag_truncated") not in (True, False)
+            or raw.get("timestamp_lag_not_live_qualified") is not True):
+        raise ValueError("invalid lag qualification")
+    if (lag_samples == 0 or raw.get("post_initial_lag_truncated") is True) and lag_bucket != "NOT_VERIFIED":
+        raise ValueError("unqualified latency bucket")
+    if future_count > 0 and lag_bucket not in {"CLOCK_CONFLICT", "NOT_VERIFIED"}:
+        raise ValueError("future event timestamp not quarantined")
+
     # ACK, full-window duration and provider timestamp advances are independent
     # evidence. Not even their conjunction establishes provider currentness,
     # delivery SLO, independent historical parity or verified live admission.
@@ -81,6 +102,10 @@ def sanitize(raw: object, *, repo_sha: str) -> dict:
             "OBSERVED_NOT_QUALIFIED" if complete else "NOT_VERIFIED"
         ),
         "counters": counts,
+        "post_initial_lag_samples": lag_samples,
+        "post_initial_p95_lag_bucket": lag_bucket,
+        "post_initial_future_timestamp_count": future_count,
+        "timestamp_lag_qualification": "OBSERVED_NOT_QUALIFIED",
         "data_qualification": "NOT_VERIFIED",
         "continuous_feed_qualified": False,
         "source_arbiter_admission": "BLOCKED",

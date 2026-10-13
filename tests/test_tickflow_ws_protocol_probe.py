@@ -334,3 +334,27 @@ def test_cli_requires_clean_ack_full_window_and_update_progress(
     output = capsys.readouterr().out
     assert "DO_NOT_LEAK" not in output
     assert '"radar_admission": "BLOCKED"' in output
+
+def test_timestamp_lag_buckets_measure_post_initial_only():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op": "subscribed", "channel": "quotes", "symbols": list(SYMS), "total": 2})
+    t = 1776754800000
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": t}]}, received_at_ms=t + 300000)
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": t + 1000}]}, received_at_ms=t + 1600)
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": t + 2000}]}, received_at_ms=t + 2900)
+    result = e.summary(ws_handshake=True)
+    assert result["post_initial_lag_samples"] == 2
+    assert result["post_initial_p95_lag_bucket"] == "UNDER_2S"
+    assert result["post_initial_future_timestamp_count"] == 0
+    assert result["continuous_feed_qualified"] is False
+
+def test_future_clock_mismatch_prevents_latency_freshness_claim():
+    e = ProtocolEvidence(SYMS)
+    e.consume({"op": "subscribed", "channel": "quotes", "symbols": list(SYMS), "total": 2})
+    t = 1776754800000
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": t}]}, received_at_ms=t)
+    e.consume({"op": "quotes", "data": [{"symbol": SYMS[0], "timestamp": t+1000}]}, received_at_ms=t-5000)
+    result=e.summary(ws_handshake=True)
+    assert result["post_initial_lag_samples"] == 1
+    assert result["post_initial_p95_lag_bucket"] == "CLOCK_CONFLICT"
+    assert result["post_initial_future_timestamp_count"] == 1
