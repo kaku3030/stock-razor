@@ -126,6 +126,34 @@ def test_same_day_over_vendor_limit_is_still_quarantined():
     assert all(x["bar_finality"]=="NOT_VERIFIED" for x in rows)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("high",1.599995), ("high",1.59999),
+    ("low",1.500005), ("low",1.50001),
+])
+def test_current_session_small_vendor_float_gap_is_still_quarantined(field,value):
+    # Today's incomplete/newly due bar MUST NOT use the historical
+    # precision exception even if it is within the vendor's 1e-5 tolerance.
+    now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
+    raw=series()
+    for key in raw:
+        raw[key]=raw[key][:7]
+    label=datetime(2026,10,13,13,15,tzinfo=SH)
+    raw["timestamp"].append(int(label.timestamp())*1000)
+    for key,val in (("open",1.5),("high",1.7),("low",1.3),
+                    ("close",1.6),("volume",100),("amount",160)):
+        raw[key].append(value if key==field else val)
+    count={}
+    output=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=count)
+    assert len(output)==7
+    assert count==({
+        "TODAY_HIGH_BELOW_BODY":1
+    } if field=="high" else {
+        "TODAY_LOW_ABOVE_BODY":1
+    })
+    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in output)
+    assert all(x["ohlc_validation"]=="STRICT" for x in output)
+
+
 @pytest.mark.parametrize("field",["volume","amount"])
 def test_ohlc_tolerance_never_bypasses_other_invalid_fields(field):
     raw=series()
