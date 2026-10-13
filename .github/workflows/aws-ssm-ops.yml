@@ -310,6 +310,27 @@ jobs:
                   return result.returncode==0 and result.stdout.strip()=='active'
               except (OSError,subprocess.TimeoutExpired):
                   return False
+          def matched_fresh_cache(heartbeat, snapshot):
+              # SSM stdout is research evidence, never an admission signal.
+              # A running service alone cannot qualify stale or cross-run files.
+              if not isinstance(heartbeat,dict) or not isinstance(snapshot,dict):
+                  return False
+              instance=heartbeat.get('runtime_instance_id')
+              revision=heartbeat.get('repo_sha')
+              if not (isinstance(instance,str) and instance
+                      and instance==snapshot.get('runtime_instance_id')
+                      and isinstance(revision,str)
+                      and re.fullmatch(r'[0-9a-f]{40}',revision)
+                      and revision==snapshot.get('repo_sha')):
+                  return False
+              for record in (heartbeat,snapshot):
+                  stamp=date_string(record.get('emitted_at_utc'))
+                  if stamp is None:
+                      return False
+                  age=now-dt.datetime.fromisoformat(stamp)
+                  if not dt.timedelta(seconds=-5)<=age<=dt.timedelta(seconds=120):
+                      return False
+              return True
           hb=read_private(heartbeat_path)
           snap=read_private(snapshot_path)
           active=is_active()
@@ -320,7 +341,7 @@ jobs:
                'opend_reachable':False,'query_status':'UNKNOWN',
                'delivery_mode':'UNKNOWN','bar_closure':'UNPROVEN',
                'us_qot_right':'UNKNOWN','symbols':{}}
-          if active and isinstance(hb,dict) and isinstance(snap,dict):
+          if active and matched_fresh_cache(hb,snap):
               rights=hb.get('quote_right_evidence')
               if not isinstance(rights,dict):
                   rights={}
