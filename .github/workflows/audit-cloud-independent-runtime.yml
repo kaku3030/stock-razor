@@ -24,6 +24,29 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Verify protected main and checkout before AWS OIDC
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo 'AUDIT_NON_MAIN_REF_BLOCKED' >&2
+            exit 2
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo 'AUDIT_CHECKOUT_SHA_MISMATCH' >&2
+            exit 2
+          fi
+          main_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)" || {
+            echo 'AUDIT_MAIN_LOOKUP_BLOCKED' >&2
+            exit 2
+          }
+          if [[ "$main_head" != "$GITHUB_SHA" ]]; then
+            echo 'AUDIT_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
+
       - name: Configure temporary GitHub OIDC credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -40,6 +63,8 @@ jobs:
             --output text | grep -Fx Online
       - name: Audit deployed runtime components without state changes
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           script_sha="$(git rev-parse HEAD)"
@@ -67,6 +92,15 @@ jobs:
             exit 2
           }
           params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          # Recheck immediately before SSM; main may move after pre-OIDC.
+          latest_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)" || {
+            echo 'AUDIT_PRE_SSM_MAIN_LOOKUP_BLOCKED' >&2
+            exit 2
+          }
+          if [[ "$latest_main" != "$GITHUB_SHA" ]]; then
+            echo 'AUDIT_PRE_SSM_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
           command_id="$(aws ssm send-command \
             --document-name AWS-RunShellScript \
             --instance-ids "$TARGET_INSTANCE_ID" \
