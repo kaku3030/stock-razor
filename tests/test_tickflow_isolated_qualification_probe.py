@@ -592,7 +592,7 @@ def test_current_partial_and_unordered_intraday_rows_never_prove_grid():
     from zoneinfo import ZoneInfo
     sh=ZoneInfo("Asia/Shanghai")
     rows=[]
-    for t in ("2026-09-23T09:45","2026-10-13T09:45"):
+    for t in ("2026-09-23T09:45", datetime.now(sh).strftime("%Y-%m-%dT09:45")):
         rows.append({"timestamp":int(datetime.fromisoformat(t).replace(tzinfo=sh).timestamp()*1000),
                      "open":10,"high":11,"low":9,"close":10.5,"volume":100})
     grid=probe._kline_summary(rows,period="15m")["historical_grid"]
