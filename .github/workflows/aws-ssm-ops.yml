@@ -269,75 +269,98 @@ jobs:
               jq -c -n --arg script "$us_livefeed_runtime_diff_audit_script" '[ $script ]' > commands.json
               ;;
             us_livefeed_status)
+              # SSM StandardOutputContent is bounded to 24 KiB. The previous
+              # action emitted large service logs and multi-line heartbeat JSON
+              # before its one-line market summary, truncating evidence.
+              # Return ONE compact read-only, metadata-only JSON record.
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
-          set -u
-          unit='stock-razor-us-livefeed.service'
-          status_path='/run/stock-razor-us-livefeed/latest-heartbeat.json'
-          snapshot_path='/run/stock-razor-us-livefeed/canonical-market-snapshot.json'
-          echo '=== US LIVEFEED UNIT STATE ==='
-          systemctl is-active "$unit" 2>&1 || true
-          systemctl is-enabled "$unit" 2>&1 || true
-          systemctl show "$unit" -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainStatus -p NRestarts -p FragmentPath -p WorkingDirectory -p ExecStart --no-pager 2>&1 || true
-          echo '=== OPEND 11111 LISTENER ==='
-          ss -lntp 2>&1 | grep -E ':(11111)\b' || true
-          echo '=== US LIVEFEED HEARTBEAT ==='
-          if [ -f "$status_path" ]; then
-            cat "$status_path"
-          else
-            echo 'HEARTBEAT=UNKNOWN:FILE_MISSING'
-          fi
-          echo '=== CANONICAL SNAPSHOT EXPORT ==='
-          if [ -s "$snapshot_path" ]; then
-            /opt/stock-razor-opend-client/venv/bin/python - "$snapshot_path" <<'PY'
-          import json,sys
-          path=sys.argv[1]
-          try:
-              with open(path,encoding="utf-8") as handle:
-                  payload=json.load(handle)
-              symbols={}
-              for code,item in (payload.get("symbols") or {}).items():
-                  frames=item.get("timeframes") or {}
-                  symbols[code]={
-                      tf:{
-                          "count":len(frames.get(tf) or []),
-                          "latest_end_utc":((frames.get(tf) or [{}])[-1].get("bar_end_utc") if frames.get(tf) else None),
-                      }
-                      for tf in ("1m","5m","15m","1h")
-                  }
-              out={
-                  "status":"PASS",
-                  "schema":payload.get("schema"),
-                  "repo_sha":payload.get("repo_sha"),
-                  "runtime_instance_id":payload.get("runtime_instance_id"),
-                  "sequence":payload.get("sequence"),
-                  "emitted_at_utc":payload.get("emitted_at_utc"),
-                  "market_state_us":payload.get("market_state_us"),
-                  "cache_session_us":payload.get("cache_session_us"),
-                  "delivery_mode":payload.get("delivery_mode"),
-                  "bar_closure":payload.get("bar_closure"),
-                  "radar_admission":payload.get("radar_admission"),
-                  "live_trade":payload.get("live_trade"),
-                  "symbols":symbols,
-              }
-              print(json.dumps(out,separators=(",",":")))
-          except Exception as exc:
-              print(json.dumps({"status":"BLOCKED","error":type(exc).__name__},separators=(",",":")))
+          set -eu
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import pathlib
+          import re
+          import subprocess
+          now=dt.datetime.now(dt.timezone.utc)
+          heartbeat_path=pathlib.Path('/run/stock-razor-us-livefeed/latest-heartbeat.json')
+          snapshot_path=pathlib.Path('/run/stock-razor-us-livefeed/canonical-market-snapshot.json')
+          def read_private(path):
+              try:
+                  if not path.is_file() or path.stat().st_size>32000000:
+                      return None
+                  with path.open('rb') as handle:
+                      obj=json.loads(handle.read(32000001))
+                  return obj if isinstance(obj,dict) else None
+              except (OSError,ValueError,TypeError,RecursionError):
+                  return None
+          def token(value):
+              return value if isinstance(value,str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}',value) else 'UNKNOWN'
+          def date_string(value):
+              if not isinstance(value,str):
+                  return None
+              try:
+                  stamp=dt.datetime.fromisoformat(value.replace('Z','+00:00'))
+                  return stamp.astimezone(dt.timezone.utc).isoformat() if stamp.tzinfo else None
+              except ValueError:
+                  return None
+          def is_active():
+              try:
+                  result=subprocess.run(['systemctl','is-active','stock-razor-us-livefeed.service'],
+                                        capture_output=True,text=True,timeout=3,check=False)
+                  return result.returncode==0 and result.stdout.strip()=='active'
+              except (OSError,subprocess.TimeoutExpired):
+                  return False
+          hb=read_private(heartbeat_path)
+          snap=read_private(snapshot_path)
+          active=is_active()
+          out={'schema':'stock_razor_us_ssm_bounded_evidence_v0_1',
+               'probe':'us_livefeed_status','status':'BLOCKED',
+               'reason':'RUNTIME_OR_CACHE_NOT_PROVEN',
+               'observed_at_utc':now.isoformat(),
+               'opend_reachable':False,'query_status':'UNKNOWN',
+               'delivery_mode':'UNKNOWN','bar_closure':'UNPROVEN',
+               'us_qot_right':'UNKNOWN','symbols':{}}
+          if active and isinstance(hb,dict) and isinstance(snap,dict):
+              rights=hb.get('quote_right_evidence')
+              if not isinstance(rights,dict):
+                  rights={}
+              summary={}
+              symbols=snap.get('symbols')
+              if isinstance(symbols,dict) and 0<len(symbols)<=20:
+                  for idx,item in enumerate(symbols.values()):
+                      if not isinstance(item,dict):
+                          continue
+                      frames=item.get('timeframes')
+                      if not isinstance(frames,dict):
+                          continue
+                      available={}
+                      for source_tf,display_tf in (
+                          ('1m','1m'),('5m','5m'),('15m','15m'),
+                          ('1h','1H'),('1d','1D'),
+                      ):
+                          series=frames.get(source_tf) or []
+                          if not isinstance(series,list) or len(series)>4096:
+                              continue
+                          last=series[-1] if series else None
+                          end=last.get('bar_end_utc') if isinstance(last,dict) else None
+                          available[display_tf]={'count':len(series),
+                                                 'latest_end_utc':date_string(end)}
+                      summary['series_'+str(idx)]={'timeframes':available}
+              out['symbols']=summary
+              populated=any(any(v.get('count',0)>0 for v in row['timeframes'].values()) for row in summary.values())
+              out['status']='OBSERVED' if populated else 'BLOCKED'
+              out['reason']='RESEARCH_ONLY_NO_ADMISSION' if populated else 'SNAPSHOT_NO_BARS'
+              out['opend_reachable']=hb.get('controller_lifecycle')=='CONNECTED'
+              out['query_status']=token(rights.get('query_status'))
+              out['us_qot_right']=token(rights.get('normalized_quote_right'))
+              out['delivery_mode']=token(hb.get('delivery_mode'))
+              out['bar_closure']=token(snap.get('bar_closure'))
+              stamp=date_string(snap.get('emitted_at_utc'))
+              if stamp is not None:
+                  out['emitted_at_utc']=stamp
+          # No names, IDs, prices, positions, process metadata, or raw logs.
+          print(json.dumps(out,sort_keys=True,separators=(',',':')),flush=True)
           PY
-          else
-            echo 'CANONICAL_SNAPSHOT=UNKNOWN:FILE_MISSING'
-          fi
-          echo '=== US LIVEFEED JOURNAL ==='
-          journalctl -u "$unit" -n 120 --no-pager 2>&1 || true
-          echo '=== US LIVEFEED DEPLOYED PROVENANCE ==='
-          workdir="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
-          if [ -n "$workdir" ] && [ "$workdir" != "-" ] && [ -d "$workdir" ]; then
-            echo "DEPLOYED_EXACT_SHA=$(git -C "$workdir" rev-parse HEAD 2>/dev/null || true)"
-            git -C "$workdir" status --porcelain 2>/dev/null || true
-          else
-            echo 'DEPLOYED_EXACT_SHA=UNKNOWN'
-          fi
-          echo 'RADAR_ADMISSION=BLOCKED'
-          echo 'LIVE_TRADE=NO'
           REMOTE
               jq -c -n --arg script "$us_livefeed_status_script" '[ $script ]' > commands.json
               ;;

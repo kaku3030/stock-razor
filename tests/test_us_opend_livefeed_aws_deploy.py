@@ -40,17 +40,22 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
 
 def test_status_audit_is_read_only_and_covers_us_livefeed_runtime():
     ops = (ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
+    action = ops.split("            us_livefeed_status)\n", 1)[1].split(
+        "            futures_opend_env_probe)\n", 1
+    )[0]
     assert "- us_livefeed_status" in ops
-    assert "stock-razor-us-livefeed.service" in ops
-    assert "11111" in ops
-    assert "/run/stock-razor-us-livefeed/latest-heartbeat.json" in ops
-    assert "/run/stock-razor-us-livefeed/canonical-market-snapshot.json" in ops
-    assert "=== CANONICAL SNAPSHOT EXPORT ===" in ops
-    assert '"latest_end_utc":' in ops
-    assert '"radar_admission":payload.get("radar_admission")' in ops
-    assert "NRestarts" in ops
-    assert 'cat "$status_path"' in ops
-    assert "LIVE_TRADE=NO" in ops
+    assert "stock-razor-us-livefeed.service" in action
+    assert "/run/stock-razor-us-livefeed/latest-heartbeat.json" in action
+    assert "/run/stock-razor-us-livefeed/canonical-market-snapshot.json" in action
+    assert "'quote_right_evidence'" in action
+    assert "'latest_end_utc'" in action
+    assert "'1m','1m'" in action and "'1h','1H'" in action and "'1d','1D'" in action
+    assert "'RESEARCH_ONLY_NO_ADMISSION'" in action
+    assert "0<len(symbols)<=20" in action
+    assert "journalctl" not in action
+    assert 'cat "$status_path"' not in action
+    assert "systemctl restart" not in action
+    assert "OpenUSTradeContext" not in action
 
 
 def test_ssm_ops_has_canonical_adapter_standalone_readonly_probe():
@@ -234,15 +239,17 @@ def test_verify_gate_requires_atomic_canonical_snapshot_with_exact_provenance():
 
 def test_status_snapshot_summary_embedded_python_compiles():
     ops = (ROOT/".github/workflows/aws-ssm-ops.yml").read_text()
-    marker = '/opt/stock-razor-opend-client/venv/bin/python - "$snapshot_path" <<\'PY\''
-    start = ops.index(marker)
-    start = ops.index("\n", start) + 1
-    end = ops.index("\n          PY", start)
+    action = ops.split("            us_livefeed_status)\n", 1)[1].split(
+        "            futures_opend_env_probe)\n", 1
+    )[0]
+    source = action.split("          python3 - <<'PY'\n", 1)[1].split(
+        "\n          PY\n", 1
+    )[0]
     source = "\n".join(
         line[10:] if line.startswith("          ") else line
-        for line in ops[start:end].splitlines()
+        for line in source.splitlines()
     )
-    compile(source, "aws-ssm-ops.yml:canonical-snapshot-summary", "exec")
+    compile(source, "aws-ssm-ops.yml:bounded-livefeed-summary", "exec")
 
 
 def test_verify_snapshot_provenance_embedded_python_compiles():
