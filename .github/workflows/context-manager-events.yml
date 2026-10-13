@@ -1,6 +1,8 @@
 name: Sync Context Manager GitHub Events
 
 "on":
+  push:
+    branches: [main]
   workflow_run:
     workflows: [CI, "Research Radar Tests"]
     types: [completed]
@@ -20,7 +22,7 @@ jobs:
     if: >-
       ${{
         github.repository_owner == 'kaku3030' &&
-        github.event_name == 'workflow_run'
+        (github.event_name == 'push' || github.event_name == 'workflow_run')
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -31,20 +33,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: main
           persist-credentials: false
       - name: Verify owner and exact current main
         id: guard
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'kaku3030/stock-razor'
           test "$GITHUB_ACTOR" = 'kaku3030'
           main_head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           test "$main_head" = "$(git rev-parse HEAD)"
-          test "$main_head" = "$GITHUB_SHA"
+          if [[ "$EVENT_NAME" == push ]]; then
+            test "$main_head" = "$GITHUB_SHA"
+          fi
           echo "sha=$main_head" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -61,22 +66,26 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
           EVENT: ${{ toJSON(github.event) }}
         run: |
           set -euo pipefail
-          run_id="$(jq -r '.workflow_run.id' <<<"$EVENT")"
-          attempt="$(jq -r '.workflow_run.run_attempt' <<<"$EVENT")"
-          workflow="$(jq -r '.workflow_run.name' <<<"$EVENT")"
-          conclusion="$(jq -r '.workflow_run.conclusion' <<<"$EVENT")"
-          head_sha="$(jq -r '.workflow_run.head_sha' <<<"$EVENT")"
-          branch="$(jq -r '.workflow_run.head_branch' <<<"$EVENT")"
-          [[ "$run_id" =~ ^[0-9]+$ && "$attempt" =~ ^[0-9]+$ && "$head_sha" =~ ^[0-9a-f]{40}$ && "$branch" == main ]]
-          [[ "$conclusion" =~ ^(success|failure|cancelled|timed_out|action_required|skipped|neutral)$ ]]
-          event_id="github:ci:${run_id}:${attempt}"
-          event_type="ci_${conclusion}"
-          source=ci
-          source_ref="github/workflow/${run_id}"
-          payload="$(jq -cn --arg id "$run_id" --arg attempt "$attempt" --arg workflow "$workflow" --arg conclusion "$conclusion" --arg sha "$head_sha" --arg branch "$branch" '{run_id:($id|tonumber),attempt:($attempt|tonumber),workflow:$workflow,conclusion:$conclusion,head_sha:$sha,branch:$branch}')"
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            run_id="$(jq -r '.workflow_run.id' <<<"$EVENT")"
+            attempt="$(jq -r '.workflow_run.run_attempt' <<<"$EVENT")"
+            workflow="$(jq -r '.workflow_run.name' <<<"$EVENT")"
+            conclusion="$(jq -r '.workflow_run.conclusion' <<<"$EVENT")"
+            head_sha="$(jq -r '.workflow_run.head_sha' <<<"$EVENT")"
+            branch="$(jq -r '.workflow_run.head_branch' <<<"$EVENT")"
+            [[ "$run_id" =~ ^[0-9]+$ && "$attempt" =~ ^[0-9]+$ && "$head_sha" =~ ^[0-9a-f]{40}$ && "$branch" =~ ^[A-Za-z0-9._/-]+$ ]]
+            [[ "$conclusion" =~ ^(success|failure|cancelled|timed_out|action_required|skipped|neutral)$ ]]
+            event_id="github:ci:${run_id}:${attempt}"
+            event_type="ci_${conclusion}"
+            source=ci
+            source_ref="github/workflow/${run_id}"
+            payload="$(jq -cn --arg id "$run_id" --arg attempt "$attempt" --arg workflow "$workflow" --arg conclusion "$conclusion" --arg sha "$head_sha" --arg branch "$branch" '{run_id:($id|tonumber),attempt:($attempt|tonumber),workflow:$workflow,conclusion:$conclusion,head_sha:$sha,branch:$branch}')"
+          fi
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
           printf '%s' "$payload" | base64 -w0 > event.b64
           encoded="$(cat event.b64)"
           remote="$(cat <<REMOTE
@@ -101,8 +110,10 @@ jobs:
           result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text | tr -d '\r')"
           grep -Eq '^(\{"status":"(RECORDED|DUPLICATE)"|\{"status":"BLOCKED")' <<< "$result"
           echo "CONTEXT_MANAGER_EVENT_SYNC=$([[ "$result" == *'"status":"BLOCKED"'* ]] && echo BLOCKED || echo PASS)"
+          fi
 
-          merged_prs="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.base.ref == "main" and .merged_at != null) | {number,head_sha:.head.sha}]')"
+          if [[ "$EVENT_NAME" == push ]]; then
+            merged_prs="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.base.ref == "main" and .merged_at != null) | {number,head_sha:.head.sha}]')"
           while IFS=$'\t' read -r number pr_head_sha; do
             [[ "$number" =~ ^[0-9]+$ && "$pr_head_sha" =~ ^[0-9a-f]{40}$ ]]
             pr_event_id="github:pr:${number}:${GITHUB_SHA}"
@@ -131,4 +142,5 @@ jobs:
             result="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text | tr -d '\r')"
             grep -Eq '^(\{"status":"(RECORDED|DUPLICATE)"|\{"status":"BLOCKED")' <<< "$result"
             echo "CONTEXT_MANAGER_PR_SYNC=$([[ "$result" == *'"status":"BLOCKED"'* ]] && echo BLOCKED || echo PASS)"
-          done < <(jq -r '.[] | [.number, .head_sha] | @tsv' <<< "$merged_prs")
+            done < <(jq -r '.[] | [.number, .head_sha] | @tsv' <<< "$merged_prs")
+          fi
