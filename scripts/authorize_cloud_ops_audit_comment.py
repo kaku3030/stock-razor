@@ -37,7 +37,9 @@ def authorized_owner_comment(
         return False
     if repo.get("full_name") != repository:
         return False
-    if sender.get("login") != owner or comment.get("user", {}).get("login") != owner:
+    comment_user = comment.get("user")
+    if (sender.get("login") != owner or not isinstance(comment_user, dict)
+            or comment_user.get("login") != owner):
         return False
     if type(issue.get("number")) is not int or issue["number"] != _ANCHOR_PULL_REQUEST:
         return False
