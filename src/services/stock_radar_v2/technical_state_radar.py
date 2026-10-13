@@ -12,6 +12,7 @@ from src.repositories.stock_radar_technical_state_repo import (
 )
 
 from .technical_state import StockRadarTechnicalState
+from src.services.context_manager import record_if_configured
 
 
 class StockRadarTechnicalStateRadar:
@@ -84,8 +85,22 @@ class StockRadarTechnicalStateRadar:
                 json.dumps(payload["read_only_export"], ensure_ascii=False, indent=2, sort_keys=True, default=str),
                 encoding="utf-8",
             )
+        context_result = record_if_configured(
+            event_id=f"radar:{market}:{run_id}",
+            event_type="radar_published",
+            source="radar",
+            source_ref=run_id,
+            payload={
+                "market": market,
+                "run_id": run_id,
+                "inserted": inserted,
+                "material_count": payload["material_count"],
+                "research_only": True,
+            },
+        )
         return {
             **payload,
+            "context_manager": context_result or {"status": "NOT_CONFIGURED"},
             "json_path": str(json_path),
             "markdown_path": str(markdown_path),
             "read_only_export_path": str(readonly_path) if read_only_facts is not None else None,

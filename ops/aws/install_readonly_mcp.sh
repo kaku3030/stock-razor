@@ -5,9 +5,11 @@ INSTALL_ROOT="${INSTALL_ROOT:-/opt/stock-razor-mcp}"
 SERVICE_NAME="${SERVICE_NAME:-stock-razor-mcp.service}"
 REPO_URL="${REPO_URL:-https://github.com/kaku3030/stock-razor.git}"
 REPO_REF="${REPO_REF:?REPO_REF exact commit SHA is required}"
+INSTALL_SHA="$(sha256sum "$0" | awk '{print $1}')"
 
 test "$(id -u)" -eq 0
 install -d -m 0755 "$INSTALL_ROOT"
+install -d -m 0750 /var/lib/stock-razor/context-manager
 if [ ! -d "$INSTALL_ROOT/repo/.git" ]; then
   git clone --filter=blob:none "$REPO_URL" "$INSTALL_ROOT/repo"
 fi
@@ -35,8 +37,10 @@ from realtime_monitor.readonly_mcp_server import (
     get_market_bars,
     get_market_snapshots,
     mcp,
+    get_context_manager_state,
 )
 assert mcp is not None
+assert get_context_manager_state()["safety"]["live_trade"] is False
 result = get_futures_runtime_health()
 assert result["live_trade"] is False
 assert result["radar_admission"] == "BLOCKED"
@@ -79,6 +83,9 @@ Environment=STOCK_RAZOR_US_CANONICAL_SNAPSHOT_PATH=/run/stock-razor-us-livefeed/
 Environment=STOCK_RAZOR_US_RADAR_STATUS_PATH=/run/stock-razor-us-radar/latest-research-state.json
 Environment=STOCK_RAZOR_CN_EASTMONEY_STATUS_PATH=/run/stock-razor-cn-eastmoney/latest-observation.json
 Environment=STOCK_RAZOR_CN_RADAR_STATUS_PATH=/run/stock-razor-cn-radar/latest-research-state.json
+Environment=STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json
+Environment=STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl
+ReadWritePaths=/var/lib/stock-razor/context-manager
 ExecStart=$INSTALL_ROOT/venv/bin/python -m realtime_monitor.readonly_mcp_server
 Restart=on-failure
 RestartSec=5
@@ -95,3 +102,12 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 systemctl is-active "$SERVICE_NAME"
+PYTHONPATH="$INSTALL_ROOT/repo" \
+  STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json \
+  STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl \
+  "$INSTALL_ROOT/venv/bin/python" scripts/record_context_event.py \
+    --event-id "deployment:$REPO_REF" \
+    --event-type deployment_passed \
+    --source deployment \
+    --source-ref "$REPO_REF" \
+    --payload-json "{\"repo_sha\":\"$REPO_REF\",\"installer_sha\":\"$INSTALL_SHA\"}"
