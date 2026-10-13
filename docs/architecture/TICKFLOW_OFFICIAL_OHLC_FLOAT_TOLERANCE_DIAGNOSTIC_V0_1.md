@@ -18,7 +18,7 @@ This follows the vendor's stated OHLC serialization tolerance but does **not** s
 
 The private historical OHLC rejector computes the larger of those two discrepancies in `Decimal(str(value))` arithmetic, comparing the absolute discrepancy with `0.00001`. It annotates the existing strict `ValueError` with only `WITHIN_1E_MINUS_5`, `OVER_1E_MINUS_5`, or `UNKNOWN`. The worker persists a **fixed enum only**, and the cloud read-only audit explicitly allowlists the exact same enum. There are no prices, source times, symbol IDs, account data, raw provider payloads, or exception strings in public evidence.
 
-**No** OHLC value is rewritten, rounded, tolerated as a valid historical bar, made final, promoted into canonical cache, or allowed through source/Radar/Paper/trading admission. A historical OHLC defect *still blocks* the research snapshot; this is diagnostic evidence for a later independently reviewed provider contract remedy. A cloud deploy of the worker is required before live diagnostics can differ from `UNKNOWN`.
+**No** OHLC value is rewritten, rounded, made final, promoted into canonical cache, or allowed through source/Radar/Paper/trading admission. Prior-day OHLC discrepancies within the vendor's <=1e-5 absolute tolerance are retained **only as explicitly tagged, unfinalized private research** after the consumer independently checks the raw gap. Any larger historical defect still blocks the snapshot, and every malformed **current-session** OHLC bar remains quarantined regardless of its small float gap. A separately authorized cloud worker deployment and fresh SSM audit are necessary before interpreting real provider evidence.
 
 ## Evidence gate and rollback
 
