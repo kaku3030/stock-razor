@@ -36,3 +36,25 @@ def test_aws_history_audit_is_separate_from_currentness_and_excludes_prices():
     assert 'historical_research_usable' in workflow
     assert 'live_trade' in code
     assert 'StandardErrorContent' not in workflow
+
+def test_private_latest_due_bar_diagnostics_are_bounded_enums_only(monkeypatch):
+    from datetime import datetime, timezone
+    import scripts.audit_cn_tickflow_research_runtime as monitor
+    from data_provider.cn_tickflow_research_cache import normalize_bars
+    import pandas as pd
+    # Current Shanghai Tuesday 15:10; last retained 14:45 means exactly
+    # one scheduled 15m boundary is missing. The price never leaves audit.
+    stamps=["2026-10-09 09:45","2026-10-09 10:00",
+            "2026-10-09 10:15","2026-10-09 10:30",
+            "2026-10-13 14:30","2026-10-13 14:45"]
+    frame={"rows":[{"label":x,"amount_availability":"SDK_OMITTED",
+                    "close":987654.321,"open":123.45} for x in stamps],
+           "quarantined_unverified_rows_count":1}
+    now=datetime(2026,10,13,7,10,tzinfo=timezone.utc)
+    result=monitor.summarize_private_frame_progress(frame,timeframe="15m",now_utc=now)
+    assert result["last_due_grid"]=="ONE_DUE_BOUNDARY_MISSING"
+    assert result["quarantined_rows_bucket"]=="ONE"
+    assert result["sdk_amount_omitted_bucket"]=="FIVE_PLUS"
+    assert "987654" not in str(result) and "2026-10-13" not in str(result)
+    invalid=monitor.summarize_private_frame_progress({"rows":[]},timeframe="15m",now_utc=now)
+    assert invalid["last_due_grid"]=="UNKNOWN"

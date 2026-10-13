@@ -20,6 +20,65 @@ MCP_UNIT="stock-razor-mcp.service"
 MAX_FILE_BYTES=150000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
+
+def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: datetime) -> dict:
+    """Export no bars, prices, raw timestamps or provider credentials."""
+    base={
+        "last_due_grid":"UNKNOWN",
+        "quarantined_rows_bucket":"UNKNOWN",
+        "sdk_amount_omitted_bucket":"UNKNOWN",
+        "retained_bar_count_bucket":"UNKNOWN",
+    }
+    if timeframe not in ("15m","60m") or not isinstance(frame,dict):
+        return base
+    rows=frame.get("rows")
+    quarantined=frame.get("quarantined_unverified_rows_count")
+    if (not isinstance(rows,list) or not 4<=len(rows)<=96
+            or type(quarantined) is not int or not 0<=quarantined<=96):
+        return base
+    def bucket(n:int) -> str:
+        return "ZERO" if n==0 else "ONE" if n==1 else "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS"
+    out={**base,"quarantined_rows_bucket":bucket(quarantined),
+         "retained_bar_count_bucket":("FOUR_TO_24" if len(rows)<=24
+                                      else "25_TO_96")}
+    try:
+        omitted=sum(1 for row in rows if isinstance(row,dict)
+                    and row.get("amount_availability")=="SDK_OMITTED")
+        out["sdk_amount_omitted_bucket"]=bucket(omitted)
+        import sys as _sys
+        if str(WORKER_REPO) not in _sys.path:
+            _sys.path.insert(0,str(WORKER_REPO))
+        from data_provider.cn_tickflow_research_cache import (
+            _expected_closed_grid_label, _LABEL_END, CN,
+        )
+        shnow=now_utc.astimezone(CN)
+        expected=_expected_closed_grid_label(now_utc,timeframe)
+        if expected is None:
+            out["last_due_grid"]="NO_SESSION_GRID_DUE"
+            return out
+        rawlabel=rows[-1]["label"]
+        last=datetime.strptime(rawlabel,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+        if last.date()!=shnow.date():
+            out["last_due_grid"]="NO_SAME_DAY_RETAINED_BAR"
+            return out
+        all_end=[]
+        for clock in sorted(_LABEL_END[timeframe]):
+            hh,mm=map(int,clock.split(":"))
+            all_end.append(shnow.replace(hour=hh,minute=mm,
+                                         second=0,microsecond=0))
+        if last not in all_end:
+            out["last_due_grid"]="LAST_LABEL_OFF_GRID"
+            return out
+        missed=sum(last<x<=expected for x in all_end)
+        out["last_due_grid"]=(
+            "MATCHED_DUE_LABEL" if missed==0 else
+            "ONE_DUE_BOUNDARY_MISSING" if missed==1 else
+            "MULTIPLE_DUE_BOUNDARIES_MISSING"
+        )
+        return out
+    except (ImportError,OSError,KeyError,ValueError,TypeError,IndexError,OverflowError):
+        return out
+
 # Only these fixed exception classes can be projected from the private
 # fail-closed cache. Never return provider message, stack trace or key.
 _SAFE_FAILURE_CLASS={
@@ -62,6 +121,7 @@ def sample():
         "cache_private":False,
         "repo_sha_match":False,
         "cache_age_seconds":None,
+        "source_frame_progress":{},
         "sequence":None,
         "all_four_readonly_requests_ok":False,
         "per_period_observation":{},
@@ -89,6 +149,19 @@ def sample():
         instant=datetime.fromisoformat(data["observed_at_utc"])
         age=(datetime.now(timezone.utc)-instant.astimezone(timezone.utc)).total_seconds()
         result["cache_age_seconds"]=round(age,2) if -5<=age<=100000 else None
+        if data.get("status")=="PASS_RESEARCH_ONLY":
+            # Sanitize private, price-bearing cache *before* result leaves EC2.
+            for symbol in ("159611.SZ","518880.SH"):
+                for period in ("15m","60m"):
+                    try:
+                        frame=data["symbols"][symbol][period]
+                    except (KeyError,TypeError):
+                        frame=None
+                    result["source_frame_progress"][
+                        symbol.replace(".","_")+"_"+period
+                    ]=summarize_private_frame_progress(
+                        frame,timeframe=period,now_utc=datetime.now(timezone.utc),
+                    )
         if data.get("status")=="BLOCKED":
             result["status"]=blocked_status(data.get("failure_class"))
             stage=data.get("failure_stage")
