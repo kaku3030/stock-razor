@@ -105,7 +105,13 @@ def read_tickflow_probe_health(path: str | None = None, *,
     # Only pre-sanitized, bounded historical grid diagnostics are exposed.
     # They are never a live Kline, current-session closure, or production feed.
     minute_grid_observations = []
-    if schema == "stock_razor_tickflow_sanitized_probe_v0_1":
+    if (
+        schema == "stock_razor_tickflow_sanitized_probe_v0_1"
+        and payload.get("data_qualification") == "NOT_VERIFIED"
+        and payload.get("radar_admission") == "BLOCKED"
+        and payload.get("source_arbiter_admission") == "BLOCKED"
+        and payload.get("live_trade") is False
+    ):
         for op in payload["operations"]:
             if not isinstance(op, dict) or op.get("name") not in ("kline_15m", "kline_60m"):
                 continue

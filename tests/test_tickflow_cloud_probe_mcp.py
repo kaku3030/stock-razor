@@ -286,6 +286,7 @@ def test_canonical_mcp_installer_smokes_direct_cached_sources_without_io():
 
 def test_cloud_reader_projects_only_checked_historical_tickflow_grid(tmp_path):
     payload=sample()
+    payload["source_arbiter_admission"] = "BLOCKED"
     payload["operations"]=[{
         "name":"kline_15m","operation":"COMPLETED",
         "historical_sample_count":96,
@@ -315,6 +316,7 @@ def test_cloud_reader_projects_only_checked_historical_tickflow_grid(tmp_path):
 
 def test_cloud_reader_rejects_unsupported_timestamp_grid_claims(tmp_path):
     payload=sample()
+    payload["source_arbiter_admission"] = "BLOCKED"
     payload["operations"]=[{
         "name":"kline_60m","operation":"COMPLETED",
         "historical_sample_count":24,
@@ -332,3 +334,24 @@ def test_cloud_reader_rejects_unsupported_timestamp_grid_claims(tmp_path):
     row=read_tickflow_probe_health(str(path),now_utc=NOW)["minute_grid_observations"][0]
     assert row["historical_grid_convention"]!="BAR_END_GRID_MATCH"
     assert row["live_bar_closure_proven"] is False
+
+
+def test_unqualified_cache_parent_can_never_project_positive_grid(tmp_path):
+    payload=sample()
+    payload["source_arbiter_admission"]="PROMOTED"
+    payload["operations"]=[{
+        "name":"kline_15m","operation":"COMPLETED",
+        "historical_sample_count":96,
+        "historical_grid_convention":"BAR_END_GRID_MATCH",
+        "historical_grid_prior_sessions_observed":6,
+        "historical_grid_complete_end_sessions":5,
+        "historical_grid_complete_start_sessions":0,
+        "historical_grid_current_day_rows_excluded":8,
+        "historical_grid_is_not_closure_proof":True,
+        "provider_live_qualified":False,
+    }]
+    p=tmp_path/"unsafe.json"
+    p.write_text(json.dumps(payload),encoding="utf-8")
+    r=read_tickflow_probe_health(str(p),now_utc=NOW)
+    assert r["minute_grid_observations"] == []
+    assert r["data_admission"] == "BLOCKED"
