@@ -105,3 +105,29 @@ def test_cloud_audit_ohlc_gap_severity_is_enum_only_no_prices():
         malicious,timeframe="15m",now_utc=now,
     )
     assert restricted["largest_ohlc_gap_bucket"]=="UNKNOWN"
+
+def test_etf_lattice_quantization_compatibility_audit_has_no_price_data():
+    from datetime import datetime,timezone
+    import scripts.audit_cn_tickflow_research_runtime as audit
+    raw={"rows":[{"label":"2026-10-13 14:45",
+                  "amount_availability":"PRESENT_UNVERIFIED",
+                  "open":9999999.12} for _ in range(4)],
+         "quarantined_unverified_rows_count":3,
+         "quarantine_reason_counts":{"TODAY_HIGH_BELOW_BODY":3},
+         "quarantine_ohlc_gap_evidence":{
+             "GAP_LT_1BP":3,
+             "ETF_TICK_LATTICE_NEAR":2,
+             "ETF_TICK_LATTICE_FAR":1,
+             "ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY":2,
+         }}
+    now=datetime(2026,10,13,7,10,tzinfo=timezone.utc)
+    observed=audit.summarize_private_frame_progress(raw,timeframe="15m",now_utc=now)
+    assert observed["etf_tick_grid_near_bucket"]=="TWO_TO_FOUR"
+    assert observed["etf_tick_research_shadow_compatible_bucket"]=="TWO_TO_FOUR"
+    assert "9999999" not in str(observed)
+    corrupt={**raw,"quarantine_ohlc_gap_evidence":{
+        **raw["quarantine_ohlc_gap_evidence"],
+        "ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY":5,
+    }}
+    bad=audit.summarize_private_frame_progress(corrupt,timeframe="15m",now_utc=now)
+    assert bad["etf_tick_research_shadow_compatible_bucket"]=="UNKNOWN"

@@ -108,6 +108,8 @@ jobs:
                   assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
                   assert _v.get("gap_violation_rows_bucket") in allowed_bucket
                   assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket
+                  assert _v.get("etf_tick_grid_near_bucket") in allowed_bucket
+                  assert _v.get("etf_tick_research_shadow_compatible_bucket") in allowed_bucket
                   assert _v.get("quarantined_rows_bucket") in allowed_bucket
                   assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket
                   assert _v.get("retained_bar_count_bucket") in allowed_rows

@@ -29,6 +29,8 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "largest_ohlc_gap_bucket":"UNKNOWN",
         "gap_violation_rows_bucket":"UNKNOWN",
         "hilo_swap_candidate_bucket":"UNKNOWN",
+        "etf_tick_grid_near_bucket":"UNKNOWN",
+        "etf_tick_research_shadow_compatible_bucket":"UNKNOWN",
         "quarantined_rows_bucket":"UNKNOWN",
         "sdk_amount_omitted_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
@@ -64,8 +66,10 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     gap_evidence=frame.get("quarantine_ohlc_gap_evidence")
     ordered=("GAP_LT_1BP","GAP_1_TO_10BP","GAP_10_TO_100BP","GAP_GE_100BP")
     swap_key="HILO_SWAP_WOULD_ENCLOSE_BODY"
-    if (isinstance(gap_evidence,dict) and len(gap_evidence)<=5
-            and all(k in (*ordered,swap_key)
+    lattice_keys=("ETF_TICK_LATTICE_NEAR","ETF_TICK_LATTICE_FAR",
+                  "ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY")
+    if (isinstance(gap_evidence,dict) and len(gap_evidence)<=8
+            and all(k in (*ordered,swap_key,*lattice_keys)
                     and type(v) is int and 0<v<=96
                     for k,v in gap_evidence.items())):
         gap_total=sum(gap_evidence.get(k,0) for k in ordered)
@@ -77,6 +81,12 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
                 next((key for key in reversed(ordered)
                       if gap_evidence.get(key,0)>0),"NONE")
             )
+            near=gap_evidence.get(lattice_keys[0],0)
+            far=gap_evidence.get(lattice_keys[1],0)
+            repairable=gap_evidence.get(lattice_keys[2],0)
+            if near+far==gap_total and repairable<=near:
+                out["etf_tick_grid_near_bucket"]=bucket(near)
+                out["etf_tick_research_shadow_compatible_bucket"]=bucket(repairable)
     try:
         omitted=sum(1 for row in rows if isinstance(row,dict)
                     and row.get("amount_availability")=="SDK_OMITTED")
