@@ -25,6 +25,32 @@ PC-off independence or permission to execute any trading/Paper task.
 `paper_auto_ready=false`, `live_trade=false` and
 `mutation_allowed=false` are immutable in the tool.
 
+## Owner-only GitHub transport for read-only AWS diagnosis
+
+The existing `audit-cloud-independent-runtime.yml` workflow can also be
+requested from the authenticated repository owner's linked GitHub account,
+without logging into AWS or keeping a personal PC online:
+
+- Post exactly `/stock-razor aws-audit read-only` on **PR #665**.
+- GitHub's `issue_comment.created` event reaches AWS OIDC only if the
+  authenticated actor/comment author/repository owner, merged-PR number and
+  literal command all match. A separate Python gate rechecks the signed-by-
+  GitHub event payload before IAM/OIDC; checkout SHA and remote main SHA are
+  checked again immediately before SSM.
+- The existing fixed-instance, immutable-SHA audit reads four cached cloud
+  heartbeat/service facts. It cannot restart EC2, change IAM, fetch secrets,
+  modify data providers, place Paper/Live orders or change safety admissions.
+- A new comment is one explicit read-only request, **not** a timer or scheduled
+  monitoring task. Invalid or untrusted comments are skipped or blocked.
+- Inspect the exact `Audit Read-Only Cloud Runtime` run in GitHub Actions.
+  A SUCCESS result proves the bounded AWS audit executed; it does not prove
+  new ChatGPT MCP tooling, trade qualification or continuous off-PC uptime.
+
+Do not interpret a PR/CI pass alone as a tested owner-comment→AWS path. That
+requires a real comment-triggered run from the expected owner and examination
+of its sanitized evidence. If the remote main SHA moved, the audit must refuse
+to run; never bypass this with an older revision.
+
 ## Integration / acceptance gate
 
 1. Verify the exact-commit PR tests and installer smoke in CI.
