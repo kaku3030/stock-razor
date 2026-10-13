@@ -106,6 +106,45 @@ def read_market_source_status(
                 safe_summary["sample_count"] = count
             projected_historical["summary"] = safe_summary
         historical_kline_observation = projected_historical
+    # Revalidate even the already allowlisted local probe reader. Do not
+    # serialize arbitrary cached provider fields into the public MCP status.
+    minute_grid_observations = []
+    raw_grid = tf.get("minute_grid_observations")
+    if isinstance(raw_grid, list):
+        for row in raw_grid[:4]:
+            if not isinstance(row, dict) or row.get("period") not in ("15m","60m"):
+                continue
+            if row.get("operation") != "COMPLETED" or row.get("live_bar_closure_proven") is not False:
+                continue
+            convention = row.get("historical_grid_convention")
+            if convention not in ("BAR_END_GRID_MATCH","BAR_START_GRID_MATCH",
+                                  "GRID_CONFLICT","INSUFFICIENT","INVALID_TIMESTAMP_ORDER"):
+                continue
+            count = row.get("historical_sample_count")
+            if type(count) is not int or not 0 <= count <= 96:
+                continue
+            keys = ("prior_sessions_observed","complete_end_sessions",
+                    "complete_start_sessions","current_day_rows_excluded")
+            values = {key:row.get("historical_grid_"+key) for key in keys}
+            if any(type(v) is not int or not 0 <= v <= 120 for v in values.values()):
+                continue
+            if convention == "BAR_END_GRID_MATCH" and not (
+                values["complete_end_sessions"] >= 3 and values["complete_start_sessions"] == 0
+            ):
+                convention = "INSUFFICIENT"
+            if convention == "BAR_START_GRID_MATCH" and not (
+                values["complete_start_sessions"] >= 3 and values["complete_end_sessions"] == 0
+            ):
+                convention = "INSUFFICIENT"
+            minute_grid_observations.append({
+                "period":row["period"],
+                "operation":"COMPLETED",
+                "historical_grid_convention":convention,
+                "historical_sample_count":count,
+                **{"historical_grid_"+key:value for key,value in values.items()},
+                "live_bar_closure_proven":False,
+            })
+
     websocket_observation = "NOT_REQUESTED"
     websocket_operation_states = {
         "COMPLETED", "NO_EVENTS_OBSERVED", "OBSERVED", "CLOSE_FAILED",
@@ -203,6 +242,7 @@ def read_market_source_status(
                 "source_revision": source_revision(tf.get("repo_sha")),
                 "isolated_probe_evidence_available": tf_evidence,
                 "historical_kline_observation": historical_kline_observation,
+                "minute_grid_observations": minute_grid_observations,
                 "websocket_observation": websocket_observation,
                 "local_reader_latency_ms": tf_reader_ms,
                 "production_feed_connected": False,
