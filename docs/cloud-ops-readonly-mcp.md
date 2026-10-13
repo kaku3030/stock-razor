@@ -42,6 +42,41 @@ a safe diagnostic result, **not** report success. A successful server-local
 quick scan is not proof of a faster ChatGPT/iOS command-to-answer latency;
 measure real tool wall time and client delivery separately.
 
+## Frozen ChatGPT app compatibility: Cloud Ops status
+
+The currently connected ChatGPT STOCK RAZOR app exposes only the older
+`get_cn_market_analysis(symbols)` action, even though AWS has the separate
+`get_cloud_ops_status` tool registered in its canonical read-only MCP code.
+
+To make **existing read-only cloud health diagnostics available without
+creating another plugin or changing ChatGPT app permissions**, the same MCP
+server also recognizes one exact compatibility request:
+
+`get_cn_market_analysis(symbols=["__CLOUD_OPS__"])`
+
+Only that exact single-element array returns the existing
+`read_cloud_ops_status()` result. The already deployed
+`symbols=["__QUICK_SCAN__"]` compatibility route is unaffected. All other
+arguments still return the original CN market-analysis response, including
+invalid symbols, repeated sentinels, mixed arrays, empty/default calls and
+case/space variants.
+
+The compatibility result is **EC2-local diagnostics only**, not market
+analysis, provider data quality, SSM administration, trading authority, or
+a new external app method. The cloud reader explicitly returns
+`mutation_allowed=false`, `source_arbiter_admission=BLOCKED`,
+`radar_admission=BLOCKED`, `paper_auto_ready=false`, `live_trade=false`,
+and `off_pc_independent_acquisition=NOT_VERIFIED` independently of whether
+heartbeats are recent.
+
+Acceptance requires normal exact-head CI plus a separately authorized
+deployment of the canonical read-only MCP. Until a real invocation from
+the currently connected ChatGPT action returns the
+`stock_razor_cloud_ops_readonly_v0_1` schema, this route is **code-ready
+only**. An installer smoke check is not a remote protocol proof. This
+change does not trigger AWS deployment, restart a service, modify IAM or
+create any timed task.
+
 ## Owner-only GitHub transport for read-only AWS diagnosis
 
 The existing `audit-cloud-independent-runtime.yml` workflow can also be
