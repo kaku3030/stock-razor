@@ -85,6 +85,8 @@ jobs:
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
+          allowed_gap=("UNKNOWN","NONE","GAP_LT_1BP","GAP_1_TO_10BP",
+                       "GAP_10_TO_100BP","GAP_GE_100BP")
           allowed_cause=("UNKNOWN","NONE","TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
                          "TODAY_NONNUMERIC_OR_MISSING_VALUE","TODAY_NONPOSITIVE_OHLC",
                          "TODAY_HIGH_BELOW_BODY","TODAY_LOW_ABOVE_BODY",
@@ -103,6 +105,9 @@ jobs:
                   assert isinstance(_v,dict)
                   assert _v.get("last_due_grid") in allowed_grid
                   assert _v.get("dominant_quarantine_reason") in allowed_cause
+                  assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
+                  assert _v.get("gap_violation_rows_bucket") in allowed_bucket
+                  assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket
                   assert _v.get("quarantined_rows_bucket") in allowed_bucket
                   assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket
                   assert _v.get("retained_bar_count_bucket") in allowed_rows

@@ -334,3 +334,39 @@ def test_previous_day_invalid_ohlc_still_aborts_with_metrics_enabled():
     with pytest.raises(ValueError):
         normalize_bars(raw,"15m",now_utc=current,quarantine_counts=counts)
     assert not counts
+
+def test_ohlc_gap_evidence_is_bounded_magnitude_not_raw_prices():
+    from datetime import datetime, timezone
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    old=frame("15m","2026-10-09").iloc[:6].copy()
+    t=frame("15m","2026-10-13").iloc[8:10].copy()
+    # One near-boundary high discrepancy; another inverted high/low
+    # where swapping would enclose the body; neither is auto-corrected.
+    t.loc[t.index[0],["high","low"]]=[1.59999,1.3]
+    t.loc[t.index[1],["high","low"]]=[1.40,1.70]
+    merged=pd.concat([old,t],ignore_index=True)
+    raw={k:merged[k].tolist() for k in ("timestamp","open","high",
+             "low","close","volume","amount")}
+    quarantined={}
+    evidence={}
+    bars=normalize_bars(raw,"15m",now_utc=now,
+         quarantine_counts=quarantined,quarantine_evidence=evidence)
+    assert len(bars)==len(old)
+    assert sum(quarantined.values())==2
+    assert evidence["GAP_LT_1BP"]==1
+    assert evidence["GAP_GE_100BP"]==1
+    assert evidence["HILO_SWAP_WOULD_ENCLOSE_BODY"]==1
+    assert all("price" not in k.lower() for k in evidence)
+    assert all(type(v) is int and v>=1 for v in evidence.values())
+
+
+def test_historical_invalid_ohlc_cannot_be_waived_by_diagnostic():
+    now=datetime(2026,10,13,5,38,tzinfo=timezone.utc)
+    old=frame("15m","2026-10-09")
+    old.loc[old.index[0],"high"]=0.1
+    raw={k:old[k].tolist() for k in ("timestamp","open","high",
+             "low","close","volume","amount")}
+    evidence={}
+    with pytest.raises(ValueError):
+        normalize_bars(raw,"15m",now_utc=now,quarantine_evidence=evidence)
+    assert evidence=={}
