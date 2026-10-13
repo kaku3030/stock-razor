@@ -75,11 +75,27 @@ jobs:
           assert type(d.get("sequence_advanced")) is bool
           assert type(d.get("limited_research_usable")) is bool
           keys=("status","failure_stage","failure_reason","unit_active","mcp_unit_active","cache_private",
-                "repo_sha_match","sequence","cache_age_seconds",
+                "repo_sha_match","sequence","cache_age_seconds","mcp_read_failure_reason",
                 "mcp_cache_consumer","all_four_readonly_requests_ok")
+          periods=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
+          states=("PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE",
+                  "NO_DATA","INVALID_CACHE","INVALID_REQUEST")
+          reasons=("NOT_VERIFIED","NOT_APPLICABLE","METHOD_RETURN_BLOCKED",
+                   "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
+          for when in ("before","after"):
+              assert d[when].get("mcp_read_failure_reason") in reasons
+              period_map=d[when].get("per_period_observation")
+              assert isinstance(period_map,dict)
+              assert set(period_map).issubset(periods)
+              assert all(isinstance(v,dict) and v.get("state") in states
+                         and type(v.get("radar_blocked")) is bool
+                         and type(v.get("finality_unproven")) is bool
+                         for v in period_map.values())
           public={"schema":d["schema"],
-                  "before":{k:d["before"].get(k) for k in keys},
-                  "after":{k:d["after"].get(k) for k in keys},
+                  "before":{**{k:d["before"].get(k) for k in keys},
+                            "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
+                  "after":{**{k:d["after"].get(k) for k in keys},
+                           "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "sequence_advanced":d["sequence_advanced"],
                   "limited_research_usable":d["limited_research_usable"],
                   "radar_admission":"BLOCKED","live_trade":"NO"}
