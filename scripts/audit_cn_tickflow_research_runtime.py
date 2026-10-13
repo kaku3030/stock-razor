@@ -273,6 +273,9 @@ def compare_tencent_qualified_price_rows(
             "same_session_agreement":"UNKNOWN",
             "earlier_session_overlap_bucket":"UNKNOWN",
             "same_session_overlap_bucket":"UNKNOWN",
+            "same_session_disagreement_driver":"UNKNOWN",
+            "same_session_disagreement_phase":"UNKNOWN",
+            "same_session_disagreement_bucket":"UNKNOWN",
             "reference":"TENCENT_QUALIFIED_ONLY"}
     if qualification_pass is not True:
         return result
@@ -295,6 +298,7 @@ def compare_tencent_qualified_price_rows(
         mapped[label]=bar
     diffs=[]
     dated_diffs=[]
+    session_disagreements=[]
     for bar in tickflow_rows:
         if not isinstance(bar,dict):
             return result
@@ -314,6 +318,22 @@ def compare_tencent_qualified_price_rows(
             if not isinstance(label,str) or len(label)!=16:
                 return result
             dated_diffs.append((label[:10],diff))
+            if (isinstance(session_date,str) and len(session_date)==10
+                    and label[:10]==session_date
+                    and diff>Decimal("0.001")):
+                drivers=[field for field,delta in
+                         zip(("OPEN","HIGH","LOW","CLOSE"),values)
+                         if delta==diff]
+                driver=(drivers[0] if len(drivers)==1 else "MULTIPLE_FIELDS")
+                clock=label[11:16]
+                phase=(
+                    "OPENING" if "09:30"<=clock<"10:30" else
+                    "LATE_MORNING" if "10:30"<=clock<="11:30" else
+                    "AFTERNOON" if "13:00"<=clock<"14:30" else
+                    "CLOSING" if "14:30"<=clock<="15:00" else
+                    "OTHER_SESSION_CLOCK"
+                )
+                session_disagreements.append((driver,phase))
         except (KeyError,ValueError,TypeError,ArithmeticError):
             return result
     count=len(diffs)
@@ -353,6 +373,22 @@ def compare_tencent_qualified_price_rows(
         today=[delta for date,delta in dated_diffs if date==session_date]
         result["earlier_session_agreement"],result["earlier_session_overlap_bucket"]=agree(past)
         result["same_session_agreement"],result["same_session_overlap_bucket"]=agree(today)
+        if len(today)>=4:
+            n=len(session_disagreements)
+            result["same_session_disagreement_bucket"]=(
+                "ZERO" if n==0 else "ONE" if n==1 else
+                "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS"
+            )
+            drivers={v[0] for v in session_disagreements}
+            phases={v[1] for v in session_disagreements}
+            result["same_session_disagreement_driver"]=(
+                "NONE" if not drivers else
+                next(iter(drivers)) if len(drivers)==1 else "MULTIPLE_DRIVERS"
+            )
+            result["same_session_disagreement_phase"]=(
+                "NONE" if not phases else
+                next(iter(phases)) if len(phases)==1 else "MULTIPLE_PHASES"
+            )
     result["status"]=(
         "OBSERVED_NOT_ADMITTED" if count>=4 else "INSUFFICIENT_OVERLAP"
     )
@@ -370,6 +406,13 @@ def sample_tencent_qualified_parity() -> dict:
             "overlap_bucket":"UNKNOWN",
             "max_ohlc_price_difference_ticks":"UNKNOWN",
             "reference":"TENCENT_QUALIFIED_ONLY",
+            "earlier_session_agreement":"UNKNOWN",
+            "same_session_agreement":"UNKNOWN",
+            "earlier_session_overlap_bucket":"UNKNOWN",
+            "same_session_overlap_bucket":"UNKNOWN",
+            "same_session_disagreement_driver":"UNKNOWN",
+            "same_session_disagreement_phase":"UNKNOWN",
+            "same_session_disagreement_bucket":"UNKNOWN",
         }
         for key in ("159611.SZ","518880.SH")
         for period in ("15m","60m")
