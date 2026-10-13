@@ -100,15 +100,22 @@ jobs:
           disagreement_phase=("UNKNOWN","NONE","OPENING","LATE_MORNING",
                               "AFTERNOON","CLOSING","OTHER_SESSION_CLOCK",
                               "MULTIPLE_PHASES")
+          eastgrid=("UNKNOWN","TENCENT_UNQUALIFIED","NO_FRESH_REFERENCE",
+                    "INVALID_REFERENCE","UNQUALIFIED_REFERENCE_LINEAGE",
+                    "INSUFFICIENT_SHARED_COMPLETE_SESSIONS",
+                    "HISTORICAL_GRID_PRICE_ALIGNED_RESEARCH_ONLY",
+                    "HISTORICAL_GRID_ALIGNED_PRICE_DIVERGENCE")
           for obj in reference.values():
               assert isinstance(obj,dict)
+              assert obj.get("eastmoney_historical_grid_shadow") in eastgrid
               assert set(obj)==set(("status","overlap_bucket",
                     "max_ohlc_price_difference_ticks","reference",
                     "earlier_session_agreement","same_session_agreement",
                     "earlier_session_overlap_bucket","same_session_overlap_bucket",
                     "same_session_disagreement_driver",
                     "same_session_disagreement_phase",
-                    "same_session_disagreement_bucket"))
+                    "same_session_disagreement_bucket",
+                    "eastmoney_historical_grid_shadow"))
               assert obj["same_session_disagreement_driver"] in disagreement_driver
               assert obj["same_session_disagreement_phase"] in disagreement_phase
               assert obj["same_session_disagreement_bucket"] in count_buckets
