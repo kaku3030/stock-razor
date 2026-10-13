@@ -7,6 +7,8 @@ WORKFLOW = Path(".github/workflows/context-manager-events.yml").read_text(encodi
 def test_context_event_workflow_is_owner_bound_and_exact_main_guarded():
     assert '"on":' in WORKFLOW
     assert 'workflows: [CI, "Research Radar Tests"]' in WORKFLOW
+    assert "  pull_request:" not in WORKFLOW
+    assert "github.event_name == 'workflow_run'" in WORKFLOW
     assert "github.repository_owner == 'kaku3030'" in WORKFLOW
     assert "test \"$GITHUB_ACTOR\" = 'kaku3030'" in WORKFLOW
     assert "test \"$main_head\" = \"$(git rev-parse HEAD)\"" in WORKFLOW
@@ -21,3 +23,5 @@ def test_context_event_workflow_uses_allowlisted_payload_and_redacted_result():
     assert "StandardOutputContent" in WORKFLOW
     assert "RECORDED|DUPLICATE" in WORKFLOW
     assert "CONTEXT_MANAGER_EVENT_SYNC=" in WORKFLOW
+    assert "commits/$GITHUB_SHA/pulls" in WORKFLOW
+    assert "CONTEXT_MANAGER_PR_SYNC=" in WORKFLOW
