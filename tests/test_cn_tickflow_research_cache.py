@@ -258,3 +258,53 @@ def test_nonconforming_current_volume_is_quarantined_not_synthetically_repaired(
     raw={k:df[k].tolist() for k in
          ("timestamp","open","high","low","close","volume","amount")}
     assert len(normalize_bars(raw,"60m",now_utc=now))==4
+
+def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_path):
+    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc) # Shanghai 15:16
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="b"*40,sequence=4)
+    cache=tmp_path/"cache.json"
+    atomic_publish(str(cache),snap)
+    strict=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current)
+    assert strict["status"]=="BAR_LABEL_BEHIND_SESSION"
+    assert strict["ok"] is False
+    hist=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current,
+        research_mode="historical_only")
+    assert hist["ok"] is True
+    assert hist["status"]=="PASS_HISTORICAL_ONLY"
+    assert hist["expected_grid_progress"]=="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+    assert hist["currentness"]=="UNPROVEN"
+    assert hist["session_currentness"]=="NOT_VERIFIED"
+    assert hist["bar_finality"]=="NOT_VERIFIED"
+    assert hist["radar_admission"]=="BLOCKED"
+    assert hist["canonical_write_authorized"] is False
+    assert hist["provider_requests"]==0
+    assert len(hist["rows"])>0
+
+def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
+    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="c"*40,sequence=1)
+    p=tmp_path/"cache.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=320)
+    strict=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=later)
+    hist=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=later,research_mode="historical_only")
+    assert strict["status"]=="STALE"
+    assert hist["status"]=="PASS_HISTORICAL_ONLY"
+    assert hist["max_age_seconds"]==360
+    too_late=read_cn_tickflow_research_data("159611.SZ",
+        path=str(p),now_utc=current+timedelta(seconds=370),
+        research_mode="historical_only")
+    assert too_late["status"]=="STALE"
+
+def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
+    q=read_cn_tickflow_research_data("159611.SZ",
+            path=str(tmp_path/"fake"),research_mode="production")
+    assert q["status"]=="INVALID_REQUEST"
+    assert q["radar_admission"]=="BLOCKED"
+    assert q["live_trade"] is False

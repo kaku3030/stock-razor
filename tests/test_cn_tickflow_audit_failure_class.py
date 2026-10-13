@@ -23,3 +23,16 @@ def test_production_mcp_failure_diagnostics_never_return_stdout_errors():
     assert "period_status" in workflow
     assert "StandardErrorContent" not in workflow
     assert "CN_TICKFLOW_AWS_RESEARCH_SANITIZED=" in workflow
+
+def test_aws_history_audit_is_separate_from_currentness_and_excludes_prices():
+    from pathlib import Path
+    root=Path(__file__).resolve().parent.parent
+    code=(root/"scripts/audit_cn_tickflow_research_runtime.py").read_text(encoding="utf-8")
+    workflow=(root/".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
+    assert 'historical_research_usable' in code
+    assert 'all_four_historical_requests_ok' in code
+    assert 'limited_research_usable' in code
+    assert 'historical_period_status' in workflow
+    assert 'historical_research_usable' in workflow
+    assert 'live_trade' in code
+    assert 'StandardErrorContent' not in workflow

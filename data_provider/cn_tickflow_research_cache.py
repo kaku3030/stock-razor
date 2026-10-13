@@ -252,17 +252,27 @@ def atomic_publish(path: str, payload: dict) -> None:
             os.unlink(temporary)
 
 def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=30,
-             *, path: str=DEFAULT_PATH, now_utc:datetime|None=None) -> dict:
-    """Bounded local-cache research read. Never provider I/O or trade admission."""
+             *, path: str=DEFAULT_PATH, now_utc:datetime|None=None,
+             research_mode: str="session_progress") -> dict:
+    """Bounded research-only read, with explicitly separate historical mode.
+
+    session_progress requires the last due intraday BAR_END label; historical
+    permits verified-shape prior bars even if the current session is missing.
+    Neither mode asserts exchange finality or source/Radar eligibility.
+    """
     base={
         "ok":False,"provider":_SOURCE,"provider_first_target":True,
         "research_only":True, "bar_finality":"NOT_VERIFIED",
         "currentness":"UNPROVEN", "source_arbiter_admission":"BLOCKED",
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
         "canonical_write_authorized":False, "provider_requests":0,
+        "research_mode":research_mode if research_mode in
+            ("session_progress","historical_only") else "INVALID",
+        "exchange_bar_finality":"NOT_VERIFIED",
     }
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
+            or research_mode not in ("session_progress","historical_only")
             or type(limit)!=int or not 1<=limit<=96):
         return {**base,"status":"INVALID_REQUEST"}
     try:
@@ -288,8 +298,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         age=(now-observed).total_seconds()
     except (ValueError,TypeError,KeyError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
-    if age < -5 or age > MAX_AGE_SECONDS:
-        return {**base,"status":"STALE","age_seconds":round(age,2)}
+    # Strict live-session provenance never inherits the slower off-hours
+    # refresh schedule. Historical-only read gets a 6m bounded tolerance
+    # after close (collector polls every 300s), or 18m on weekends (900s).
+    # A 6m old snapshot is NOT represented as fresh/current live data.
+    sh_now=now.astimezone(CN)
+    historical_max_age=1080 if sh_now.weekday()>=5 else 360
+    max_age=(historical_max_age if research_mode=="historical_only"
+             else MAX_AGE_SECONDS)
+    if age < -5 or age > max_age:
+        return {**base,"status":"STALE","age_seconds":round(age,2),
+                "max_age_seconds":max_age}
     try:
         raw=obj["symbols"][symbol][timeframe]
         rows=raw["rows"]
@@ -339,17 +358,34 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
         if latest < expected:
-            # The cached polling heartbeat must not make an outdated
-            # provider Kline appear available/current for today's session.
-            return {
-                **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                "source_age_seconds":round(age,2),
-                "expected_grid_progress":"NOT_OBSERVED",
-                "bar_finality":"NOT_VERIFIED",
-                "rows":[],
-            }
-        progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+            if research_mode=="session_progress":
+                # Do not allow a stale/partial session to pass currentness
+                # merely because the poller rewrites the cache.
+                return {
+                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                    "source_age_seconds":round(age,2),
+                    "expected_grid_progress":"NOT_OBSERVED",
+                    "bar_finality":"NOT_VERIFIED",
+                    "rows":[],
+                }
+            progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        else:
+            progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
+    if research_mode=="historical_only":
+        # Stated as limited historical use, never an eligible live provider.
+        return {
+            **base,"ok":True,"status":"PASS_HISTORICAL_ONLY","repo_sha":sha,
+            "expected_grid_progress":progress,
+            "last_bar_end_label_age_seconds":round(max(0,label_age),2),
+            "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
+            "max_age_seconds":max_age,
+            "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
+            "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
+            "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
+            "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
+        }
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
         "expected_grid_progress":progress,

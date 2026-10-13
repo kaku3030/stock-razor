@@ -65,6 +65,9 @@ def sample():
         "sequence":None,
         "all_four_readonly_requests_ok":False,
         "per_period_observation":{},
+        "all_four_historical_requests_ok":False,
+        "historical_period_observation":{},
+        "mcp_historical_consumer":"NOT_VERIFIED",
         "mcp_cache_consumer":"NOT_VERIFIED",
         "mcp_read_failure_reason":"NOT_VERIFIED",
     }
@@ -139,6 +142,35 @@ def sample():
             and x["radar_blocked"] and x["finality_unproven"]
             for x in result["per_period_observation"].values()
         ) and len(result["per_period_observation"])==4
+        for symbol in ("159611.SZ","518880.SH"):
+            for period in ("15m","60m"):
+                hist=read_cn_tickflow_research_data(
+                    symbol,period,limit=2,research_mode="historical_only",
+                )
+                hstatus=hist.get("status")
+                if hstatus not in {"PASS_HISTORICAL_ONLY","STALE",
+                        "NO_DATA","INVALID_CACHE","INVALID_REQUEST"}:
+                    hstatus="INVALID_CACHE"
+                result["historical_period_observation"][
+                    symbol.replace(".","_")+"_"+period
+                ]={
+                    "state":hstatus,
+                    "research_only":hist.get("research_only") is True,
+                    "currentness_unproven":hist.get("currentness")=="UNPROVEN",
+                    "radar_blocked":hist.get("radar_admission")=="BLOCKED",
+                    "finality_unproven":hist.get("bar_finality")=="NOT_VERIFIED",
+                    "rows":len(hist.get("rows",[])) if hstatus=="PASS_HISTORICAL_ONLY" else 0,
+                }
+        result["all_four_historical_requests_ok"]=(
+            len(result["historical_period_observation"])==4
+            and all(
+                h["state"]=="PASS_HISTORICAL_ONLY"
+                and h["rows"]>0
+                and h["research_only"] and h["currentness_unproven"]
+                and h["radar_blocked"] and h["finality_unproven"]
+                for h in result["historical_period_observation"].values()
+            )
+        )
     except (ImportError,OSError,ValueError,TypeError):
         result["status"]="READER_EXCEPTION"
     # Import/call *deployed MCP app* isolated in its venv without prices.
@@ -163,6 +195,29 @@ print('MCP_READ_OK' if r.get('ok') and r.get('radar_admission')=='BLOCKED' and
         except (OSError,subprocess.TimeoutExpired):
             result["mcp_cache_consumer"]="BLOCKED"
             result["mcp_read_failure_reason"]="IMPORT_OR_RUNTIME_FAILURE"
+        # Historical mode is a distinct explicit research route; its success
+        # cannot be counted toward session-current Radar/source admission.
+        historical_code = """import sys;sys.path.insert(0,'/opt/stock-razor-mcp/repo')
+from realtime_monitor.readonly_mcp_server import get_cn_tickflow_research_data
+r=get_cn_tickflow_research_data('159611.SZ','15m',limit=2,
+                               research_mode='historical_only')
+print('MCP_HISTORY_OK' if r.get('ok') and
+      r.get('status')=='PASS_HISTORICAL_ONLY' and
+      r.get('research_only') is True and
+      r.get('radar_admission')=='BLOCKED' and
+      r.get('currentness')=='UNPROVEN' and
+      r.get('bar_finality')=='NOT_VERIFIED' and
+      r.get('live_trade') is False else 'MCP_HISTORY_BLOCKED')"""
+        try:
+            hist_proc=subprocess.run([str(MCP_PY),"-c",historical_code],
+                capture_output=True,text=True,timeout=12,check=False)
+            result["mcp_historical_consumer"]=(
+                "PASS" if hist_proc.returncode==0
+                and hist_proc.stdout.strip().endswith("MCP_HISTORY_OK")
+                else "BLOCKED"
+            )
+        except (OSError,subprocess.TimeoutExpired):
+            result["mcp_historical_consumer"]="BLOCKED"
     else:
         result["mcp_read_failure_reason"]="SERVICE_PATH_MISSING"
     return result
@@ -187,6 +242,12 @@ def main():
         "limited_research_usable":bool(progressing and after["all_four_readonly_requests_ok"]
                and after["mcp_cache_consumer"]=="PASS" and after["cache_private"]
                and after["repo_sha_match"]),
+        "historical_research_usable":bool(
+               after["all_four_historical_requests_ok"]
+               and after["mcp_historical_consumer"]=="PASS"
+               and after["cache_private"] and after["repo_sha_match"]
+               and after["unit_active"] and after["mcp_unit_active"]
+        ),
         "exchange_finality":"NOT_VERIFIED",
         "cross_provider_parity":"NOT_VERIFIED",
         "source_arbiter_admission":"BLOCKED",
