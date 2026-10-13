@@ -79,6 +79,30 @@ audit using the *merged main revision* and inspect actual US Radar
 status/sequence progression. Never promote operational heartbeat health
 to qualified market data, Radar admission, or Paper/Live trading.
 
+## Deployed MCP source inventory (AWS read-only)
+
+The owner-only AWS SSM runtime audit also checks the fixed EC2 MCP
+service and its **installed** Git checkout. The redacted
+`mcp_deployment_evidence` includes only:
+
+- whether the fixed `stock-razor-mcp.service` unit is active;
+- a 40-character validated deployed Git SHA (or null);
+- whether the installed Python source structurally declares the
+  `@mcp.tool()`-decorated `get_cloud_ops_status`;
+- `authenticated_protocol_verified=false` **always**.
+
+`SOURCE_PRESENT_PROTOCOL_NOT_VERIFIED` is *not* proof that ChatGPT can
+invoke the cloud tool, nor that the running process imported it, nor
+permission to restart/alter EC2. A direct authenticated protocol read and
+fresh remote health evidence are separate acceptance steps.
+
+This inventory adds no new workflow event, AWS permission, host command
+execution beyond fixed read-only Git revision checks, service writes,
+data-provider I/O, timer or external notifications. The existing
+`audit_status` remains the four-service heartbeat verdict, independent
+of the MCP installation inventory. Existing trading/signal gates remain
+blocked.
+
 ## Integration / acceptance gate
 
 1. Verify the exact-commit PR tests and installer smoke in CI.
