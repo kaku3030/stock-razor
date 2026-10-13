@@ -212,3 +212,31 @@ def test_tencent_shadow_never_calls_provider_without_private_tickflow_cache(monk
     states=sample_tencent_qualified_parity()
     assert len(states)==4
     assert all(x["status"]=="NO_PRIVATE_TICKFLOW_SNAPSHOT" for x in states.values())
+
+def test_qualified_tencent_price_parity_splits_closed_past_from_latest_day():
+    from scripts.audit_cn_tickflow_research_runtime import compare_tencent_qualified_price_rows
+    earlier=["2026-10-09 09:45","2026-10-09 10:00",
+             "2026-10-09 10:15","2026-10-09 10:30"]
+    today=["2026-10-13 09:45","2026-10-13 10:00",
+           "2026-10-13 10:15","2026-10-13 10:30"]
+    def base(t):
+        return {"label":t,"open":1.25,"high":1.26,"low":1.24,"close":1.255}
+    tick=[base(x) for x in earlier+today]
+    reference=[
+        {**base(x),"high":1.2603,"quality_flags":[]} for x in earlier
+    ]+[
+        {**base(x),"high":1.265,"quality_flags":[]} for x in today
+    ]+[
+        {**base("2026-10-07 09:45"),"quality_flags":[]}
+        for _ in range(40)
+    ]
+    d=compare_tencent_qualified_price_rows(
+        tick,reference,qualification_pass=True,session_date="2026-10-13"
+    )
+    assert d["status"]=="OBSERVED_NOT_ADMITTED"
+    assert d["max_ohlc_price_difference_ticks"]=="OVER_TWO_TICKS"
+    assert d["earlier_session_agreement"]=="ALL_WITHIN_ONE_TICK"
+    assert d["same_session_agreement"]=="NONE_WITHIN_ONE_TICK"
+    assert d["earlier_session_overlap_bucket"]=="TWO_TO_FOUR"
+    assert d["same_session_overlap_bucket"]=="TWO_TO_FOUR"
+    assert "2026" not in str(d) and "1.265" not in str(d)
