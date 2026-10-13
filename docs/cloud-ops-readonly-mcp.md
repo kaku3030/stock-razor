@@ -44,3 +44,42 @@ PC-off independence or permission to execute any trading/Paper task.
 
 Revert the isolated MCP tool, read-only reader, test, installer smoke and
 changelog patch. No IAM, database, broker or source migration is involved.
+
+
+## Owner-issued GitHub cloud audit (PC-independent, read-only)
+
+After the guarded audit workflow is merged to **main**, the existing
+`Audit Read-Only Cloud Runtime` GitHub Actions workflow also accepts one
+authenticated owner comment on repository PR #71:
+
+```text
+/stock-razor cloud-audit
+```
+
+This is a **fixed read-only** AWS SSM command channel via the already
+existing GitHub Actions OIDC role, not an EC2 admin shell or a newly
+installed ChatGPT AWS connector. ChatGPT can post the exact comment using
+the connected GitHub app; the GitHub workflow uses the reviewed audit
+script on the existing fixed AWS target, without the user's PC.
+
+Both the job-level condition and a pre-OIDC Python gate require
+`issue_comment.created`, repository owner identity/OWNER association,
+the fixed PR number, and an exact command match. A pinned default-branch
+checkout and two separate latest-main SHA gates reject stale GitHub runs.
+The command text is **never** passed to a shell, and no arbitrary SSM
+command can be selected through comments.
+
+For evidence, inspect the resulting `Audit Read-Only Cloud Runtime`
+GitHub Actions run and require successful AWS SSM completion plus its
+allowlisted, redacted audit schema. A comment, workflow success or
+non-stale heartbeat **alone** does not qualify TickFlow realtime bars,
+off-PC independence, Paper or live-trade admission. If the App's comment
+does not appear to GitHub as repository OWNER, this path fails closed.
+
+**Out of scope:** service restart, deployment, cost-changing changes,
+EC2/CloudWatch administrative API, IAM modification and order execution.
+Those require a separate authenticated and reviewed management control
+plane; this event bridge must not be extended to unrestricted commands.
+
+To disable, remove the `issue_comment` trigger and its dedicated
+pre-OIDC gate while retaining the existing `workflow_dispatch` audit.
