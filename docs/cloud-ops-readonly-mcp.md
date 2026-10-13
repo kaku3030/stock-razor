@@ -103,6 +103,37 @@ data-provider I/O, timer or external notifications. The existing
 of the MCP installation inventory. Existing trading/signal gates remain
 blocked.
 
+## Existing ChatGPT action compatibility (read-only)
+
+The cloud server already declares `get_cloud_ops_status` but older ChatGPT
+connector registrations can still expose only the legacy eight actions.
+To allow read-only diagnostics **without** a new client-side tool name, the
+already registered `get_market_analysis` action recognizes exactly this
+otherwise-nonmarket argument:
+
+`symbols=["__CLOUD_OPS_STATUS__"]`
+
+That literal **single-element** list delegates to the same vetted local
+`read_cloud_ops_status()` used by the native `get_cloud_ops_status`.
+It does not issue provider/AWS requests, deploy code, start/stop services or
+modify any trading gate. All other requests, including real US tickers,
+omitted symbols, mixed lists, other spellings, and malformed input retain the
+original US Radar implementation and schema.
+
+**Acceptance boundary:** GitHub CI and installer smoke prove code behavior,
+not that ChatGPT can call the new route. The immutable SHA must first be
+deployed through the existing separately authorized MCP deployment workflow,
+then the **current ChatGPT session's registered** `get_market_analysis`
+action must be called with the literal singleton sentinel; inspect the
+returned `schema=stock_razor_cloud_ops_readonly_v0_1`, closed safety
+gates, heartbeat ages and read-only metadata. Do not infer deployment from
+successful PR merge or source presence on an older EC2 revision.
+
+This compatibility path is **diagnostic only**, not an unrestricted AWS
+management API. It does not qualify market-data freshness, a live trading
+signal, or continuous off-PC uptime. No new timed task or credential is
+introduced.
+
 ## Integration / acceptance gate
 
 1. Verify the exact-commit PR tests and installer smoke in CI.
