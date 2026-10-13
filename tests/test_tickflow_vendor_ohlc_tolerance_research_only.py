@@ -124,3 +124,14 @@ def test_same_day_over_vendor_limit_is_still_quarantined():
     assert len(rows)==7
     assert count=={"TODAY_HIGH_BELOW_BODY":1}
     assert all(x["bar_finality"]=="NOT_VERIFIED" for x in rows)
+
+
+@pytest.mark.parametrize("field",["volume","amount"])
+def test_ohlc_tolerance_never_bypasses_other_invalid_fields(field):
+    raw=series()
+    raw["high"][0]=1.599995
+    raw[field][0]=-1
+    with pytest.raises(ValueError):
+        collect(raw)
+    # An independent invalid-field defect cannot be hidden by a
+    # simultaneous <=1e-5 serialization discrepancy.
