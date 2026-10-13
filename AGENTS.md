@@ -11,7 +11,7 @@
   - Web 前端改动在 `apps/dsa-web/`
   - 桌面端改动在 `apps/dsa-desktop/`
   - 部署与流水线改动在 `scripts/`、`.github/workflows/`、`docker/`
-- 未经明确确认，不执行 `git commit`、`git tag`、`git push`。
+- STOCK RAZOR 普通工程任务已有用户持续授权：可按自动化质量门禁执行 `git commit`、`git push`、创建 PR、与最新 `main` 同步和通过后合并，**无需逐次向用户申请人工批准**。创建 Release/tag、增加付费服务、改变敏感凭据/权限、真实交易或解除关键风控门禁，不得由这项普通工程授权推定许可。
 - commit message 使用英文，不添加 `Co-Authored-By`。
 - 不写死密钥、账号、路径、模型名、端口或环境差异逻辑。
 - 优先复用现有模块、配置入口、脚本和测试，不新增平行实现。
@@ -37,9 +37,17 @@
 - 本仓库不接受以堆叠代码量、扩大 diff 面、补丁式响应 review 来替代真实设计收敛的 PR。
 - 贡献质量以是否解决明确问题、是否最小化影响面、是否保持现有契约一致、是否覆盖真实风险路径为准；不以新增行数、文件数量、功能宣传或“看起来完整”为准。
 - 请不要把本仓库当作低成本试验场、简历展示场或 contribution farming 场所。任何 PR 都必须证明作者理解当前系统契约，并完成基本自审、集成和验证。
-- 使用 AI 辅助开发本身不是问题；问题是提交 AI 生成后未经人工语义审查、未验证、未收敛的代码。此类 PR 会按低质量提交处理。
+- 使用 AI 辅助开发允许自动化独立核验：未经可复现的需求/契约检查、自动化语义审查或测试验证、未收敛的 AI 生成代码仍视为低质量。**不得把人工 reviewer、人工 ACK、人工 Code Owner 审批重新加为普通工程 PR 的阻断条件**。
 - review 反馈后，不接受只在被指出的位置追加局部 patch。作者必须重新检查同一业务语义涉及的所有入口、配置、测试、文档、workflow 和用户可见路径。
 - 如果一个 PR 在多轮 review 后仍持续出现同类契约漂移、重复 fallback、测试绕过真实风险层、PR body 与实际 diff 不一致等问题，维护者可以要求关闭重做，而不是继续逐点 review。
+
+## 1.3 STOCK RAZOR 零人工审批的默认开发与合并契约（2026-10-13 用户再次确认）
+
+- **普通工程自动推进：**开发→隔离测试/自动化 Standards+Spec 审查→PR→与最新 `main` 保持一致→required CI PASS→自动合并；不因缺少人的 Approve、签字、评论、ACK 或“再确认”而暂停。审查是可核验的代码/测试工作，不是人工审批。
+- **GitHub 主分支生效规则（2026-10-13 实际核验）：**仓库 ruleset `Protect main` 已为 `required_approving_review_count=0`、无 `Code Owner` 审核、`require_last_push_approval=false`；必须满足 `backend-gate`、`focused-tests` 和 strict-current-main 规则。仓库可启用 GitHub Auto-Merge，并在非 Draft PR 上按确切 HEAD 与 CI 状态启用；不得因 0 个 Approve 等待人工审核。
+- **失败时机器阻断：**CI/安全检查失败、Head 不一致、不能快进、合并冲突或测试/数据质量 UNKNOWN 时**不合并、不伪装 PASS**；自动定位修复并复测，或明确报告工程阻断原因。异常不能以“等待审核人员”作为通用借口。
+- **风险边界不变：**普通 PR 合并不代表部署成功、生产数据源准入、Radar 信号可执行或交易授权。`SOURCE_ARBITER_ADMISSION=BLOCKED`、`RADAR_ADMISSION=BLOCKED`、`PAPER_AUTO_READY=NO`、`LIVE_TRADE=NO`、`TRADE_EXECUTION=NO` 独立生效；任何实盘下单、资金权限/密钥等高风险操作仍须遵守各自独立许可与安全控制，不得借“取消人工审核”绕过。
+- **跨窗口同一约束：**Main Control、ECT、A/US Radar、A/US 交易分析和持仓窗口均须默认使用零人工 PR 审批流程；不能让 Draft PR、内部备注中的 `independent review` 或协作者 ACK 变成新的人工门禁。沟通与同步用于留痕，而非逐次索要批准。
 
 ## 2. AI 协作资产治理
 
@@ -231,9 +239,9 @@ gh run view <run_id> --log-failed
   - `.claude/skills/fix-issue/SKILL.md`
 - 如果任务明确是 issue 分析、PR 审查、issue 修复，优先按对应 skill 执行，并将产物保存到 `.claude/reviews/`。
 - skill 中的命令、模板、验证顺序和交付结构必须与 `AGENTS.md` 保持一致。
-- 每次进行 PR 创建 / 更新、PR 审查或 issue 分析前，必须先同步最新代码基线：先检查工作区状态并执行 `git fetch --all --prune`；若工作区干净且当前分支可 fast-forward，则执行 `git pull --ff-only`。如存在本地改动、冲突状态、未跟踪风险文件或无法 fast-forward，不得强行切分支、stash、reset 或覆盖本地状态；PR 审查 / issue 分析可改用已 fetch 的远端 refs/PR head 做分析，并在分析文档中明确记录未更新本地工作树的原因、当前本地 HEAD 与使用的远端基线；PR 创建 / 更新应先说明当前分支与目标基线差异，必要时请求用户确认 rebase、merge 或继续基于当前分支推进。
+- 每次进行 PR 创建 / 更新、PR 审查或 issue 分析前，必须先同步最新代码基线：先检查工作区状态并执行 `git fetch --all --prune`；若工作区干净且当前分支可 fast-forward，则执行 `git pull --ff-only`。如存在本地改动、冲突状态、未跟踪风险文件或无法 fast-forward，不得强行切分支、stash、reset 或覆盖本地状态；PR 审查 / issue 分析可改用已 fetch 的远端 refs/PR head 做分析，并在分析文档中明确记录未更新本地工作树的原因、当前本地 HEAD 与使用的远端基线；PR 创建 / 更新应先说明当前分支与目标基线差异，普通工程任务在隔离 worktree 中自行同步、rebase 或 merge 并验证；必要时记录差异及冲突，**不再要求用户逐次确认**。
 - skill 默认优先读取 CI / 工作流证据，再决定是否补本地验证。
-- 除上述 PR 创建 / 更新、PR 审查 / issue 分析的安全 fast-forward 同步外，skill 不得默认执行 `git pull`、`git push`、`git tag`、`gh pr create` 等会改变远端或当前分支状态的操作；这些操作必须要求用户确认。
+- 普通工程任务允许在**隔离 worktree/当前受控分支**内执行必要的 `git fetch`、安全同步、`git push` 和 `gh pr create`，不因缺少人工批准暂停；禁止破坏 canonical dirty 工作树或跨越尚未授权的生产/资金/密钥控制。Release/tag 与敏感权限变更属于单独控制范围。
 - PR 审查默认顺序：
   1. 必要性
   2. 关联性
@@ -274,7 +282,7 @@ gh run view <run_id> --log-failed
 - review 后继续追加零散 patch，而不是重新收敛完整语义。
 - 同一业务语义在 runtime、Web/API、docs、workflow、tests 中表现不一致。
 
-CI 通过只能说明自动检查通过，不能替代人工语义收敛，也不能单独证明 reviewer 指出的反例已经关闭。
+CI 通过只能说明运行过的检查通过；若自动化静态审查、契约/回归测试或其他验证发现反例，必须自动修复并复测，不得以 CI 绿灯掩盖缺口。**普通工程 PR 无需人工语义审查签字或 reviewer 审批才能合并。**
 
 ## 9. 交付与发布
 

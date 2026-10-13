@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [chore] 统一 STOCK RAZOR 常规工程的零人工审批执行规则：按最新主分支与必需自动化 CI 门禁通过后推进 PR 合并，取消对逐次用户批准、Code Owner 签字、人工 reviewer/ACK 的隐式依赖，保持生产行情与交易安全准入独立阻断。
+
 - [改进] 选股接口新增 `cache_only` 研究模式：只读取现有快照缓存，缓存缺失或超过有效期时 fail-closed，不访问外部行情源；结果明确标记为 research-only、需要实时候选确认且不可直接确认信号。数据库/CNEquity 不参与该路径。
 
 - [新功能] 新增只读运行控制台 `/operations` 与 `GET /api/v1/operations/status`，集中展示 Radar/Source Arbiter、通知渠道、Paper Auto 与 LIVE_TRADE 门禁；接口不能解锁真实交易，手机接收、TickFlow 实盘连续性和 Paper 独立验收仍保持待验收。
