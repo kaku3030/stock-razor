@@ -7,19 +7,53 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: deploy-canonical-readonly-mcp
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    # Production service restarts require the authenticated repository owner.
+    if: ${{ github.ref == 'refs/heads/main' && github.actor == github.repository_owner }}
     runs-on: ubuntu-latest
+    timeout-minutes: 14
     env:
       AWS_REGION: ap-northeast-1
       TARGET_INSTANCE_ID: i-01738342af3efac72
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify protected main before AWS identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != 'refs/heads/main' || "$GITHUB_ACTOR" != "${GITHUB_REPOSITORY%%/*}" ]]; then
+            echo 'MCP_DEPLOY_UNAUTHORIZED_REF_OR_ACTOR' >&2
+            exit 2
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo 'MCP_DEPLOY_CHECKOUT_SHA_MISMATCH' >&2
+            exit 2
+          fi
+          main_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)" || {
+            echo 'MCP_DEPLOY_MAIN_LOOKUP_BLOCKED' >&2
+            exit 2
+          }
+          if [[ "$main_head" != "$GITHUB_SHA" ]]; then
+            echo 'MCP_DEPLOY_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
       - id: source
         shell: bash
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          test -s ops/aws/install_readonly_mcp.sh
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "install_sha=$(sha256sum ops/aws/install_readonly_mcp.sh | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
@@ -35,11 +69,40 @@ jobs:
         id: deploy
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           REPO_REF: ${{ steps.source.outputs.sha }}
+          INSTALL_SHA: ${{ steps.source.outputs.install_sha }}
         run: |
           set -euo pipefail
-          script="curl -fsSL https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_readonly_mcp.sh -o /tmp/install_readonly_mcp.sh && chmod 0755 /tmp/install_readonly_mcp.sh && REPO_REF=$REPO_REF /tmp/install_readonly_mcp.sh && systemctl is-active stock-razor-mcp.service"
-          params="$(jq -cn --arg c "$script" '{commands:[$c]}')"
+          [[ "$REPO_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$INSTALL_SHA" =~ ^[0-9a-f]{64}$ ]]
+          test "$REPO_REF" = "$GITHUB_SHA"
+          # A dispatch may sit in the queue while main changes. Refuse to
+          # restart the MCP process from a stale workflow checkout.
+          main_head="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null)" || {
+            echo 'MCP_DEPLOY_PRE_SSM_MAIN_LOOKUP_BLOCKED' >&2
+            exit 2
+          }
+          if [[ "$main_head" != "$REPO_REF" ]]; then
+            echo 'MCP_DEPLOY_PRE_SSM_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_readonly_mcp.sh' \
+            -o "\$stage/install.sh"
+          printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null
+          if ! REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.out" 2> "\$stage/install.err"; then
+            echo 'READONLY_MCP_INSTALL=BLOCKED' >&2
+            exit 1
+          fi
+          systemctl is-active stock-razor-mcp.service
+          REMOTE
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
           id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query 'Command.CommandId' --output text)"
           test -n "$id"
           echo "command_id=$id" >> "$GITHUB_OUTPUT"
