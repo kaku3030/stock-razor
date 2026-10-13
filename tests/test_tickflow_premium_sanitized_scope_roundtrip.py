@@ -110,6 +110,27 @@ def test_unauthorized_extra_provider_operation_rejected_in_one_quote_mode(tmp_pa
     assert "DO_NOT_LEAK_REAL_KEY" not in result.stdout
 
 
+
+def _contains_exact_quote_price_leaf(value):
+    """Reject literal price values, not coincidental digits in ISO timestamps.
+
+    E.g. an observed_at_utc timestamp may contain '1.11' as ordinary digits.
+    Check only complete primitive leaf values, and separately deny raw keys.
+    """
+    if isinstance(value, dict):
+        return any(_contains_exact_quote_price_leaf(x) for x in value.values())
+    if isinstance(value, list):
+        return any(_contains_exact_quote_price_leaf(x) for x in value)
+    return type(value) in (int, float, str) and value in (1.11, 2.22, "1.11", "2.22")
+
+
+def test_quote_price_leaf_guard_ignores_iso_timestamp_substrings():
+    safe = {"observed_at_utc": "2026-10-13T06:43:01.117797+00:00"}
+    assert "1.11" in json.dumps(safe)
+    assert _contains_exact_quote_price_leaf(safe) is False
+    assert _contains_exact_quote_price_leaf({"quote_prices": [1.11, 2.22]}) is True
+    assert _contains_exact_quote_price_leaf({"raw": "1.11"}) is True
+
 def test_websocket_counters_survive_private_sanitizer_without_quote_or_secret(tmp_path):
     ws={
         "name":"websocket_quote_smoke",
@@ -152,7 +173,8 @@ def test_websocket_counters_survive_private_sanitizer_without_quote_or_secret(tm
     assert "arrival_minus_provider_timestamp_ms" not in sanitized
     result_json=json.dumps(data)
     assert "UNSAFE_ACCOUNT_PRIVATE_STRING" not in result_json
-    assert "1.11" not in result_json
+    assert '"quote_prices"' not in result_json
+    assert not _contains_exact_quote_price_leaf(data)
     assert json.loads(cache.read_text())==data
     assert data["radar_admission"]=="BLOCKED"
     assert data["source_arbiter_admission"]=="BLOCKED"
