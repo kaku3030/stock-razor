@@ -79,3 +79,21 @@ SHA with the last recorded deployment SHA; it does **not** query GitHub's
 current main head, prove runtime freshness, or grant any trading permission.
 For full production acceptance independently verify the exact main SHA and
 AWS MCP runtime via the protected deployment workflow and a ChatGPT readback.
+
+## Bounded automatic read-only MCP deployment
+
+The canonical `.github/workflows/deploy-readonly-mcp.yml` workflow keeps
+`workflow_dispatch` for explicit owner operations and also triggers on
+**protected main pushes changing the workflow or the five allowlisted
+read-only MCP installer/runtime paths**. Unrelated merged PRs do not
+automatically restart the cloud MCP service. It still requires the actual
+repository owner as GitHub actor, GitHub OIDC, the existing fixed SSM
+instance, an exact current main SHA checked before and immediately before
+the remote command, installer checksum, and sanitized response evidence.
+
+The deployment may legitimately be `BLOCKED` if main moves while it is
+queued, AWS is unavailable, or the installer fails. The path-scoped
+trigger is **not** a promise that every main commit is the deployed MCP
+version. Read `domains.deploy` and verify the exact SHA independently;
+neither deployment nor an ACTIVE Context Manager implies provider,
+Radar, Paper, or trading admission.

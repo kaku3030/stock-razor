@@ -2,6 +2,16 @@ name: Deploy Canonical Read-Only MCP
 
 on:
   workflow_dispatch:
+  # Only code used by the canonical read-only MCP installer/server may
+  # trigger an automatic restart. Unrelated merged PRs must not restart it.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/deploy-readonly-mcp.yml
+      - ops/aws/install_readonly_mcp.sh
+      - realtime_monitor/readonly_mcp_server.py
+      - src/services/context_manager.py
+      - scripts/record_context_event.py
 
 permissions:
   id-token: write
