@@ -107,14 +107,18 @@ for symbol, item in warm_symbols.items():
     methods = item.get("closure_methods") or []
     anchors = item.get("closure_anchor_time_keys") or []
     assert len(methods) == 3
-    assert set(methods) <= {
-        "NEXT_TIME_KEY_PROGRESS",
+    # The terminal full-grid row may be closed either on a prior NY date
+    # or on the *same* NY date after the explicit 16:30 ET + 390-row guard.
+    # Both remain historical, never a live closure/admission signal.
+    terminal_methods = {
         "QUALIFIED_PRIOR_SESSION_FULL_GRID",
+        "QUALIFIED_POST_SESSION_FULL_GRID",
     }
-    terminal_count = methods.count("QUALIFIED_PRIOR_SESSION_FULL_GRID")
+    assert set(methods) <= {"NEXT_TIME_KEY_PROGRESS"} | terminal_methods
+    terminal_count = sum(method in terminal_methods for method in methods)
     assert terminal_count in {0, 1}
     if terminal_count:
-        assert methods[-1] == "QUALIFIED_PRIOR_SESSION_FULL_GRID"
+        assert methods[-1] in terminal_methods
         assert len(anchors) == 2
         assert item.get("closure_anchor_time_key") is None
     else:
