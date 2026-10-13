@@ -67,18 +67,24 @@ def get_cn_tickflow_research_data(
 # Backward-compatible compact path for ChatGPT's existing frozen tool snapshot.
 # Exact sentinel only; every ordinary symbol request keeps its original result.
 _CN_QUICK_SCAN_COMPAT_REQUEST = ["__QUICK_SCAN__"]
+_CLOUD_OPS_COMPAT_REQUEST = ["__CLOUD_OPS__"]
 
 
 @mcp.tool()
 def get_cn_market_analysis(symbols: list[str] | None = None) -> dict:
     """Return precomputed A-share Radar research.
 
-    Use symbols=["__QUICK_SCAN__"] for the bounded read-only quick scan
-    while an existing ChatGPT app action snapshot lacks get_cn_quick_scan.
-    All other requests keep the original response and safety contract.
+    Exact symbols=["__QUICK_SCAN__"] routes to the bounded CN quick scan;
+    exact symbols=["__CLOUD_OPS__"] routes to EC2-local read-only health.
+    Both are compatibility requests for a frozen ChatGPT action snapshot;
+    all other requests retain the original response and safety contract.
     """
     if symbols == _CN_QUICK_SCAN_COMPAT_REQUEST:
         return read_cn_quick_scan()
+    if symbols == _CLOUD_OPS_COMPAT_REQUEST:
+        # Existing ChatGPT action schema is frozen; expose the already
+        # registered read-only Cloud Ops reader without new privileges.
+        return read_cloud_ops_status()
     return read_cn_radar_analysis(symbols)
 
 
