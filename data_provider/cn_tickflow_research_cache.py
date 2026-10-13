@@ -54,7 +54,8 @@ def _select_timestamp(row: dict) -> datetime:
     raise ValueError("no provider timestamp")
 
 def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
-                   quarantine_counts: dict[str,int]|None=None) -> list[dict]:
+                   quarantine_counts: dict[str,int]|None=None,
+                   quarantine_evidence: dict[str,int]|None=None) -> list[dict]:
     """Price-bearing bars stay on AWS; no current-bar finality is asserted.
 
     Optional fixed-enum quarantine counters preserve *why* current-day rows
@@ -63,6 +64,24 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
     def quarantine(reason: str) -> None:
         if quarantine_counts is not None:
             quarantine_counts[reason]=quarantine_counts.get(reason,0)+1
+    def summarize_invalid_ohlc(op: float, hi: float, lo: float, cl: float,
+                               reason: str) -> None:
+        # This is PRIVATE AWS accounting, strictly restricted to rejected
+        # TODAY rows. Prices/timestamps must never leave the collector.
+        if quarantine_evidence is None or reason not in (
+                "invalid OHLCVA high below body",
+                "invalid OHLCVA low above body"):
+            return
+        gap=max(0.0, max(op,cl,lo)-hi,lo-min(op,cl,hi))
+        bps=(gap/max(op,cl))*10000
+        category=("GAP_LT_1BP" if bps<1 else
+                  "GAP_1_TO_10BP" if bps<10 else
+                  "GAP_10_TO_100BP" if bps<100 else
+                  "GAP_GE_100BP")
+        quarantine_evidence[category]=quarantine_evidence.get(category,0)+1
+        if lo >= max(op,cl) and hi <= min(op,cl) and hi<lo:
+            key="HILO_SWAP_WOULD_ENCLOSE_BODY"
+            quarantine_evidence[key]=quarantine_evidence.get(key,0)+1
     if timeframe not in _ALLOWED_PERIODS:
         raise ValueError("unsupported period")
     if now_utc.tzinfo is None:
@@ -157,6 +176,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 # Current-day partial/unqualified bar only; the reader still
                 # requires the last due 15m/60m grid label before any data
                 # can be surfaced even for research.
+                summarize_invalid_ohlc(op,hi,lo,cl,invalid_reason)
                 quarantine({
                     "invalid OHLCVA nonpositive":"TODAY_NONPOSITIVE_OHLC",
                     "invalid OHLCVA high below body":"TODAY_HIGH_BELOW_BODY",
@@ -226,13 +246,16 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
                 reasons={}
+                evidence={}
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
-                                    quarantine_counts=reasons)
+                                    quarantine_counts=reasons,
+                                    quarantine_evidence=evidence)
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise
             frames[interval]={"rows":bars,
                  "quarantine_reason_counts":reasons,
+                 "quarantine_ohlc_gap_evidence":evidence,
                  "quarantined_unverified_rows_count":(
                      len(frame["timestamp"])-len(bars)
                      if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)
