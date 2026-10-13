@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS US LiveFeed SSM 只读状态探针改为单条有界脱敏元数据（心跳、QOT_RIGHT、时间周期 K 线数量及结束时间），不再被大型原始服务日志或 SSM stdout 截断遮蔽；仍为研究状态、不解锁数据源或交易。
+
 - [改进] Context Manager 新增按 CI、PR、部署、Radar、阻塞和优先事项分域的可恢复快照，并通过 owner/OIDC/固定 SSM/exact-main 守卫自动接收合并 PR 与 main CI 完成事件；恢复入口明确保留 provenance、TTL、未验收和关闭状态，不改变交易门禁。
 - [修复] AWS OpenD SSM 只读探针日志采用有限状态枚举、严格时间戳与行情周期白名单；隐藏私有路径、端点、任意数值及成交数据，脱敏成功不等于实时行情准入。
 
