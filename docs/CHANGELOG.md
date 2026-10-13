@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [运维] 在受保护 main 的 AWS SSM 只读路由更新后，由 GitHub 云端自主派发唯一固定 `us_livefeed_status` 脱敏数据探针；仅标记已派发、不把工作流成功当作行情闭合或交易准入，不依赖用户电脑持续开机。
+
 - [改进] Context Manager 新增按 CI、PR、部署、Radar、阻塞和优先事项分域的可恢复快照，并通过 owner/OIDC/固定 SSM/exact-main 守卫自动接收合并 PR 与 main CI 完成事件；恢复入口明确保留 provenance、TTL、未验收和关闭状态，不改变交易门禁。
 - [修复] AWS OpenD SSM 只读探针日志采用有限状态枚举、严格时间戳与行情周期白名单；隐藏私有路径、端点、任意数值及成交数据，脱敏成功不等于实时行情准入。
 

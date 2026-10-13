@@ -1,0 +1,59 @@
+name: Guarded US LiveFeed SSM Readback Dispatch
+
+# Guarded one-shot dispatch after this workflow or the read-only SSM
+# router changes on protected main. The existing AWS SSM Ops workflow
+# owns all AWS IAM/OIDC, target and source gates.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/aws-ssm-ops.yml"
+      - ".github/workflows/audit-us-livefeed-after-merge.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: us-livefeed-postmerge-readonly-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify exact protected main and fixed read-only workflow before dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo 'US_LIVEFEED_POSTMERGE_MAIN_MOVED_ABORT' >&2
+            exit 2
+          fi
+          # Fail closed if the exact expected read-only router is not present.
+          workflow_state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/aws-ssm-ops.yml" --jq '.state')"
+          test "$workflow_state" = active
+
+      - name: Dispatch single bounded AWS US LiveFeed observation (not acceptance)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          gh workflow run aws-ssm-ops.yml --repo "$GITHUB_REPOSITORY" --ref main -f action=us_livefeed_status
+          echo 'US_LIVEFEED_POSTMERGE_DISPATCH=SUBMITTED_NOT_VERIFIED'
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'SOURCE_ARBITER_ADMISSION=BLOCKED'
+          echo 'PAPER_AUTO_READY=NO'
+          echo 'LIVE_TRADE=NO'
+          echo 'TRADE_EXECUTION=NO'
