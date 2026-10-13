@@ -73,6 +73,24 @@ jobs:
           assert d.get("exchange_finality")=="NOT_VERIFIED"
           assert d.get("cross_provider_parity")=="NOT_VERIFIED"
           assert type(d.get("sequence_advanced")) is bool
+          reference=d.get("tencent_independent_shadow")
+          keys=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
+          assert isinstance(reference,dict) and set(reference)==set(keys)
+          statuses=("NO_PRIVATE_TICKFLOW_SNAPSHOT","IMPORT_BLOCKED",
+                    "URL_NOT_ALLOWLISTED","UNQUALIFIED_GRID","INVALID_ROWS",
+                    "NO_OVERLAP","OBSERVED_NOT_ADMITTED",
+                    "INSUFFICIENT_OVERLAP","PROVIDER_OR_PARSER_BLOCKED")
+          tick_diffs=("UNKNOWN","EXACT","UNDER_HALF_TICK","UP_TO_ONE_TICK",
+                      "UP_TO_TWO_TICKS","OVER_TWO_TICKS")
+          count_buckets=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
+          for obj in reference.values():
+              assert isinstance(obj,dict)
+              assert set(obj)==set(("status","overlap_bucket",
+                    "max_ohlc_price_difference_ticks","reference"))
+              assert obj["status"] in statuses
+              assert obj["overlap_bucket"] in count_buckets
+              assert obj["max_ohlc_price_difference_ticks"] in tick_diffs
+              assert obj["reference"]=="TENCENT_QUALIFIED_ONLY"
           assert type(d.get("limited_research_usable")) is bool
           assert type(d.get("historical_research_usable")) is bool
           keys=("status","failure_stage","failure_reason","unit_active","mcp_unit_active","cache_private",
@@ -159,6 +177,7 @@ jobs:
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                            "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "sequence_advanced":d["sequence_advanced"],
+                  "tencent_independent_shadow":d["tencent_independent_shadow"],
                   "historical_research_usable":d["historical_research_usable"],
                   "limited_research_usable":d["limited_research_usable"],
                   "radar_admission":"BLOCKED","live_trade":"NO"}
