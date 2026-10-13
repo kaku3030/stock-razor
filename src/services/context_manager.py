@@ -207,9 +207,9 @@ class ContextManagerStore:
         latest_pr_sha = pr_payload.get("merge_sha") if isinstance(pr_payload, dict) else None
         deployed_sha = deploy_payload.get("repo_sha") if isinstance(deploy_payload, dict) else None
         domains["deploy"]["latest_recorded_pr_sha_match"] = (
-            "MATCH" if latest_pr_sha == deployed_sha
-            else "MISMATCH"
-            if isinstance(latest_pr_sha, str) and isinstance(deployed_sha, str)
+            ("MATCH" if latest_pr_sha == deployed_sha else "MISMATCH")
+            if isinstance(latest_pr_sha, str) and bool(latest_pr_sha)
+            and isinstance(deployed_sha, str) and bool(deployed_sha)
             else "UNKNOWN"
         )
         current["domains"] = domains
