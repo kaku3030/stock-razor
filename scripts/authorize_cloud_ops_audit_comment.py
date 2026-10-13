@@ -14,6 +14,8 @@ from typing import Any
 
 _ANCHOR_PULL_REQUEST = 665
 _ALLOWED_COMMAND = "/stock-razor aws-audit read-only"
+_TICKFLOW_ANCHOR_PULL_REQUEST = 658
+_TICKFLOW_ALLOWED_COMMAND = "/stock-razor tickflow-audit read-only"
 _MAX_EVENT_BYTES = 262_144
 
 
@@ -41,7 +43,10 @@ def authorized_owner_comment(
     if (sender.get("login") != owner or not isinstance(comment_user, dict)
             or comment_user.get("login") != owner):
         return False
-    if type(issue.get("number")) is not int or issue["number"] != _ANCHOR_PULL_REQUEST:
+    pr_number = issue.get("number")
+    if type(pr_number) is not int or pr_number not in (
+        _ANCHOR_PULL_REQUEST, _TICKFLOW_ANCHOR_PULL_REQUEST,
+    ):
         return False
     if not isinstance(issue.get("pull_request"), dict):
         return False
@@ -49,7 +54,11 @@ def authorized_owner_comment(
         return False
     if comment.get("author_association") != "OWNER":
         return False
-    return type(comment.get("body")) is str and comment["body"] == _ALLOWED_COMMAND
+    expected_command = (
+        _ALLOWED_COMMAND if pr_number == _ANCHOR_PULL_REQUEST
+        else _TICKFLOW_ALLOWED_COMMAND
+    )
+    return type(comment.get("body")) is str and comment["body"] == expected_command
 
 
 def main() -> int:
