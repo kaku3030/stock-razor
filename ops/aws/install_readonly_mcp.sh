@@ -43,6 +43,7 @@ assert result["radar_admission"] == "BLOCKED"
 for result in (
     get_cloud_ops_status(),
     get_cn_market_analysis(["159611"]),
+    get_cn_market_analysis(["__QUICK_SCAN__"]),
     get_cn_market_data("159611", timeframe="1d", limit=1),
     get_cn_quick_scan(["159611"]),
     get_livefeed_health(),

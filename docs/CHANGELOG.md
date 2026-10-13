@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [修复] AWS 只读 MCP 手动部署新增仓库 Owner 与最新 main SHA 双阶段守卫、固定安装脚本校验和、禁止原始远端安装日志外泄；不自动部署或解锁交易门禁。
 
+- [改进] 在冻结的 ChatGPT STOCK RAZOR 工具清单中通过原有 `get_cn_market_analysis(symbols=["__QUICK_SCAN__"])` 复用已部署的 CN 单次紧凑研究快报，无需更新应用工具目录；普通符号调用保持旧语义、所有交易门禁不变。
+
 - [chore] Run the existing cloud-only TickFlow research acceptance audit on weekday Shanghai market sessions; keep all source, Radar and trading gates closed.
 
 - [修复] 修正 CN Quick Scan AWS SSM 审计使用 dash 不支持的 `set -o pipefail` 导致返回码 2；改为 POSIX `set -eu`，并增加回归契约检查。
