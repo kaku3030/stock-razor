@@ -58,7 +58,9 @@ def main() -> int:
             with redirect_stdout(null), redirect_stderr(null):
                 api_key=_credential()
                 from tickflow import TickFlow
-                client=TickFlow(api_key=api_key,timeout=15)
+                # Do not magnify a 4-request sample into hidden SDK retries
+                # under throttling or expired subscriptions.
+                client=TickFlow(api_key=api_key,timeout=8.0,max_retries=0)
             del api_key
     except Exception as exc:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)

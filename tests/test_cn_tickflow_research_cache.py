@@ -10,7 +10,7 @@ from data_provider.cn_tickflow_research_cache import (
 )
 
 SH=ZoneInfo("Asia/Shanghai")
-NOW=datetime(2026,10,13,5,0,tzinfo=timezone.utc)
+NOW=datetime(2026,10,11,5,0,tzinfo=timezone.utc)  # Sunday: historical research only
 TIMES={
  "15m":("09:45","10:00","10:15","10:30","10:45","11:00",
          "11:15","11:30","13:15","13:30","13:45","14:00",
@@ -134,3 +134,32 @@ def test_compact_sdk_missing_or_length_mismatched_columns_fail_closed():
     missing={k:v for k,v in raw.items() if k!="timestamp"}
     with pytest.raises(ValueError,match="missing compact"):
         normalize_bars(missing,"15m",now_utc=NOW)
+
+
+def test_cache_heartbeat_does_not_make_yesterdays_bars_current_in_market():
+    # A fresh cache written at 14:00 Shanghai with only previous-day Klines
+    # MUST NOT be labeled a usable live-session feed.
+    active=datetime(2026,10,13,6,5,tzinfo=timezone.utc)
+    snap=build_observation(FakeClient(),now_utc=active,
+                           repo_sha="f"*40,sequence=1)
+    from tempfile import TemporaryDirectory
+    from pathlib import Path
+    with TemporaryDirectory() as d:
+        p=Path(d)/"o.json"
+        atomic_publish(str(p),snap)
+        for period in ("15m","60m"):
+            v=read_cn_tickflow_research_data("159611.SZ",period,path=str(p),
+                                            now_utc=active)
+            assert v["ok"] is False
+            assert v["status"]=="BAR_LABEL_BEHIND_SESSION"
+            assert v["radar_admission"]=="BLOCKED"
+            assert v["rows"]==[]
+
+
+def test_expected_closed_labels_do_not_assert_exchange_bar_finality():
+    from data_provider.cn_tickflow_research_cache import _expected_closed_grid_label
+    active=datetime(2026,10,13,5,17,tzinfo=timezone.utc)  # Shanghai 13:17
+    assert _expected_closed_grid_label(active,"15m").strftime("%H:%M")=="13:15"
+    assert _expected_closed_grid_label(active,"60m").strftime("%H:%M")=="11:30"
+    first=datetime(2026,10,13,1,37,tzinfo=timezone.utc)  # Shanghai 09:37
+    assert _expected_closed_grid_label(first,"15m") is None

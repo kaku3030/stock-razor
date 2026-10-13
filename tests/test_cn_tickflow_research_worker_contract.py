@@ -20,6 +20,9 @@ def test_paid_research_worker_is_explicitly_separate_from_trade_writer():
     assert "approve_paid_tickflow_ingestion" in workflow
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "SOURCE_ARBITER_ADMISSION=BLOCKED" in install
+    assert "max_retries=0" in worker
+    assert "RestartSec=180" in install
+    assert "StartLimitBurst=4" in install
     assert "LIVE_TRADE=NO" in workflow
     assert "REPO_REF" in install and "repo_sha" not in workflow
 

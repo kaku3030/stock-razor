@@ -32,6 +32,8 @@ cat >"/etc/systemd/system/$SERVICE" <<EOF
 Description=STOCK RAZOR CN TickFlow Premium isolated research-only minute cache
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=900
+StartLimitBurst=4
 
 [Service]
 Type=simple
@@ -45,7 +47,7 @@ RuntimeDirectory=stock-razor-cn-tickflow
 RuntimeDirectoryMode=0700
 ExecStart=$ROOT/venv/bin/python -m scripts.run_cn_tickflow_research_worker
 Restart=on-failure
-RestartSec=15
+RestartSec=180
 NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true

@@ -1,7 +1,7 @@
 """Read-only, isolated TickFlow Premium minute observation (not canonical/trade)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import isfinite
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -117,6 +117,27 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
     if len(bars)<4:
         raise ValueError("no sufficient historical closed-time candidates")
     return bars
+
+def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime | None:
+    """Return last scheduled A-share BAR_END label due, not finality evidence.
+
+    The 90s grace addresses ordinary provider publishing delay; if a due
+    Shanghai session boundary is absent, label progression is not ready for
+    live research. No exchange calendar is available: weekdays on holidays
+    intentionally fail closed rather than invent an open market.
+    """
+    sh_now=now_utc.astimezone(CN)
+    if sh_now.weekday()>=5:
+        return None
+    cutoff=sh_now-timedelta(seconds=90)
+    candidates=[]
+    for clock in _LABEL_END[timeframe]:
+        hour,minute=map(int,clock.split(":"))
+        proposed=sh_now.replace(hour=hour,minute=minute,second=0,microsecond=0)
+        if proposed<=cutoff and proposed.date()==sh_now.date():
+            candidates.append(proposed)
+    return max(candidates) if candidates else None
+
 
 def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence: int,
                       symbols: tuple[str,...]=SYMBOLS) -> dict:
@@ -238,8 +259,27 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             safe.append({"label":label,**numerical,"is_partial_bar":True,"bar_finality":"NOT_VERIFIED"})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
+    expected=_expected_closed_grid_label(now,timeframe)
+    latest=bar_stamp
+    progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
+    if expected is not None:
+        if latest < expected:
+            # The cached polling heartbeat must not make an outdated
+            # provider Kline appear available/current for today's session.
+            return {
+                **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                "source_age_seconds":round(age,2),
+                "expected_grid_progress":"NOT_OBSERVED",
+                "bar_finality":"NOT_VERIFIED",
+                "rows":[],
+            }
+        progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
+        "expected_grid_progress":progress,
+        "last_bar_end_label_age_seconds":round(max(0,label_age),2),
+        "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
