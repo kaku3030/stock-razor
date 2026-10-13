@@ -265,3 +265,75 @@ def test_ssm_inline_source_transport_executes_under_posix_sh():
     )
     assert failed.returncode != 0
     assert "SSM_PRIVATE_TRANSPORT_ROUNDTRIP=PASS" not in failed.stdout
+
+def test_ssm_audit_protected_main_guard_executes_offline(tmp_path):
+    """Exercise the actual pre-OIDC shell, not a mocked Python reimplementation."""
+    import os
+    import subprocess
+
+    workflow = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
+        encoding="utf-8"
+    )
+    guard = workflow.split(
+        "      - name: Verify protected main and checkout before AWS OIDC\\n", 1
+    )[1].split("      - name: Configure temporary GitHub OIDC credentials", 1)[0]
+    script = guard.split("        run: |\\n", 1)[1]
+    script = "\\n".join(
+        line[10:] if line.startswith("          ") else line
+        for line in script.splitlines()
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_gh = fake_bin / "gh"
+    fake_git.write_text(
+        '#!/bin/sh\\n'
+        '[ "$1" = rev-parse ] && [ "$2" = HEAD ] || exit 4\\n'
+        'printf "%s\\\\n" "$TEST_CHECKOUT_SHA"\\n',
+        encoding="utf-8",
+    )
+    fake_gh.write_text(
+        '#!/bin/sh\\n'
+        '[ "$1" = api ] || exit 4\\n'
+        '[ "$TEST_GH_FAIL" != YES ] || exit 5\\n'
+        'printf "%s\\\\n" "$TEST_MAIN_SHA"\\n',
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+    fake_gh.chmod(0o755)
+    sha = "a" * 40
+    env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
+               GITHUB_REF="refs/heads/main", GITHUB_SHA=sha,
+               GITHUB_REPOSITORY="kaku3030/stock-razor", TEST_CHECKOUT_SHA=sha,
+               TEST_MAIN_SHA=sha, TEST_GH_FAIL="NO", GH_TOKEN="fixture-only")
+    cases = [
+        ({}, 0, ""),
+        ({"GITHUB_REF": "refs/heads/research"}, 2, "AUDIT_NON_MAIN_REF_BLOCKED"),
+        ({"TEST_CHECKOUT_SHA": "b" * 40}, 2, "AUDIT_CHECKOUT_SHA_MISMATCH"),
+        ({"GITHUB_SHA": "invalid"}, 2, "AUDIT_CHECKOUT_SHA_MISMATCH"),
+        ({"TEST_MAIN_SHA": "b" * 40}, 2, "AUDIT_MAIN_MOVED_ABORT"),
+        ({"TEST_GH_FAIL": "YES"}, 2, "AUDIT_MAIN_LOOKUP_BLOCKED"),
+    ]
+    for overrides, expected_code, marker in cases:
+        result = subprocess.run(
+            ["bash", "-c", script], env={**env, **overrides},
+            text=True, capture_output=True, timeout=5, check=False,
+        )
+        assert result.returncode == expected_code, (overrides, result.stderr)
+        if marker:
+            assert marker in result.stderr
+        assert "fixture-only" not in (result.stdout + result.stderr)
+
+
+def test_ssm_audit_rechecks_main_before_remote_execution():
+    source = Path(".github/workflows/audit-cloud-independent-runtime.yml").read_text(
+        encoding="utf-8"
+    )
+    before_iam = source.index("AUDIT_MAIN_MOVED_ABORT")
+    aws_oidc = source.index("      - name: Configure temporary GitHub OIDC credentials")
+    pre_ssm = source.index("AUDIT_PRE_SSM_MAIN_MOVED_ABORT")
+    remote_call = source.index("aws ssm send-command")
+    assert before_iam < aws_oidc < pre_ssm < remote_call
+    assert source.count("GH_TOKEN: ${{ github.token }}") == 2
+    assert "persist-credentials: false" in source
+    assert "AUDIT_PRE_SSM_MAIN_LOOKUP_BLOCKED" in source
