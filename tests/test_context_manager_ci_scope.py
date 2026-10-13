@@ -28,6 +28,9 @@ def test_pr_head_success_stays_unverified_for_main(tmp_path):
 
 def test_deployment_alignment_relative_only_to_recorded_merge(tmp_path):
     store = ContextManagerStore(tmp_path / "state.json")
+    store.record(event_id="radar:initial", event_type="radar_published",
+                 source="radar", payload={"research_only": True})
+    assert store.read()["domains"]["deploy"]["latest_recorded_pr_sha_match"] == "UNKNOWN"
     store.record(event_id="deploy:1", event_type="deployment_passed",
                  source="deployment", payload={"repo_sha": "aaa"})
     assert store.read()["domains"]["deploy"]["latest_recorded_pr_sha_match"] == "UNKNOWN"
