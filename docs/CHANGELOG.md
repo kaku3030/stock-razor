@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] GitHub仓库Owner可用固定PR精确评论触发TickFlow AWS只读历史/分钟行情质量复验，无需个人电脑；双重Owner与最新main核验，交易门禁保持关闭。
+
 - [chore] Trigger protected AWS TickFlow read-only research re-audit after scoped main-branch audit changes without paid ingestion or trading changes.
 
 - [修复] AWS 只读 MCP 手动部署新增仓库 Owner 与最新 main SHA 双阶段守卫、固定安装脚本校验和、禁止原始远端安装日志外泄；不自动部署或解锁交易门禁。
