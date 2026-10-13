@@ -109,7 +109,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         raise ValueError("invalid wall clock or source revision")
     if type(sequence) is not int or sequence < 1:
         raise ValueError("invalid monotonic sequence")
-    if not symbols or len(symbols)>4 or any(not _SYMBOL_RE.fullmatch(x) for x in symbols):
+    if (
+        not symbols or len(symbols) > len(SYMBOLS)
+        or any(not isinstance(x, str) or x not in SYMBOLS for x in symbols)
+        or len(set(symbols)) != len(symbols)
+    ):
         raise ValueError("unapproved symbols")
     output={}
     for symbol in symbols:
