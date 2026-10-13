@@ -170,3 +170,28 @@ def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
         with pytest.raises(ValueError,match="unapproved symbols"):
             build_observation(FakeClient(),now_utc=NOW,repo_sha="a"*40,
                               sequence=1,symbols=syms)
+
+def test_current_session_offgrid_start_label_quarantined_without_false_finality():
+    current=datetime(2026,10,13,5,8,tzinfo=timezone.utc) # Shanghai 13:08
+    old=frame("15m","2026-10-09").iloc[:7].copy()
+    today=frame("15m","2026-10-13").iloc[:1].copy()
+    from datetime import datetime as dt
+    today.loc[today.index[0],"timestamp"]=int(dt(2026,10,13,13,0,
+                                                tzinfo=SH).timestamp()*1000)
+    merged=pd.concat([old,today],ignore_index=True)
+    rows=normalize_bars({col:merged[col].tolist() for col in
+        ("timestamp","open","high","low","close","volume","amount")},
+        "15m",now_utc=current)
+    assert len(rows)==len(old)
+    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in rows)
+
+
+def test_historical_offgrid_start_label_is_always_rejected():
+    old=frame("15m","2026-10-09")
+    from datetime import datetime as dt
+    old.loc[old.index[0],"timestamp"]=int(dt(2026,10,9,9,30,
+                                               tzinfo=SH).timestamp()*1000)
+    with pytest.raises(ValueError,match="unexpected Shanghai regular-session grid"):
+        normalize_bars({col:old[col].tolist() for col in
+            ("timestamp","open","high","low","close","volume","amount")},
+            "15m",now_utc=NOW)
