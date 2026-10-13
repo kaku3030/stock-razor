@@ -85,4 +85,4 @@ def test_cloud_audit_projection_never_prints_unbounded_gap():
     assert '"failure_ohlc_float_gap_bucket":"UNKNOWN"' in audit
     assert "WITHIN_1E_MINUS_5" in workflow and "OVER_1E_MINUS_5" in workflow
     assert 'assert d.get("radar_admission")=="BLOCKED"' in workflow
-    assert 'assert d.get("live_trade") is False' in workflow
+    assert 'assert d.get("live_trade")=="NO"' in workflow
