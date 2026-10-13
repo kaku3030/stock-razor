@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
+from data_provider.cn_fast_research_brief import read_cn_quick_scan
 from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
 from data_provider.market_source_status import read_market_source_status
@@ -42,6 +43,12 @@ def get_tickflow_probe_health() -> dict:
 def get_cn_market_analysis(symbols: list[str] | None = None) -> dict:
     """Return precomputed A-share cloud Radar research state without recomputation."""
     return read_cn_radar_analysis(symbols)
+
+
+@mcp.tool()
+def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
+    """Small, one-call precomputed CN research preview; always ENTRY_BLOCKED."""
+    return read_cn_quick_scan(symbols)
 
 
 @mcp.tool()

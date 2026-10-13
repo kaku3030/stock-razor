@@ -22,6 +22,7 @@ PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from realtime_monitor.readonly_mcp_server import (
     get_cn_market_analysis,
     get_cn_market_data,
+    get_cn_quick_scan,
     get_futures_runtime_health,
     get_market_source_status,
     get_tickflow_probe_health,
@@ -40,6 +41,7 @@ assert result["radar_admission"] == "BLOCKED"
 for result in (
     get_cn_market_analysis(["159611"]),
     get_cn_market_data("159611", timeframe="1d", limit=1),
+    get_cn_quick_scan(["159611"]),
     get_livefeed_health(),
     get_market_snapshots(["AMD"]),
     get_market_bars("AMD", timeframe="1m", limit=1),
