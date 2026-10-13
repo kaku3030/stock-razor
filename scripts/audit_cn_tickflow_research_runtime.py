@@ -57,6 +57,7 @@ def sample():
         "unit_active":active(WORKER_UNIT),
         "mcp_unit_active":active(MCP_UNIT),
         "status":"NOT_VERIFIED",
+        "failure_stage":"UNKNOWN",
         "cache_private":False,
         "repo_sha_match":False,
         "cache_age_seconds":None,
@@ -85,6 +86,11 @@ def sample():
         result["cache_age_seconds"]=round(age,2) if -5<=age<=100000 else None
         if data.get("status")=="BLOCKED":
             result["status"]=blocked_status(data.get("failure_class"))
+            stage=data.get("failure_stage")
+            allowed={f"S{i}_{period}_{action}"
+                for i in range(2) for period in ("15M","60M")
+                for action in ("FETCH","NORMALIZE")}
+            result["failure_stage"]=stage if isinstance(stage,str) and stage in allowed else "UNKNOWN"
         elif data.get("status")=="PASS_RESEARCH_ONLY":
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:
