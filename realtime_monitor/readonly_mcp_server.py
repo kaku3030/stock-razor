@@ -9,6 +9,7 @@ from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.cn_fast_research_brief import read_cn_quick_scan
 from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
+from data_provider.cn_tickflow_research_cache import read_cn_tickflow_research_data
 from data_provider.market_source_status import read_market_source_status
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
@@ -37,6 +38,20 @@ def get_market_source_status(cn_symbol: str = "159611.SZ") -> dict:
 def get_tickflow_probe_health() -> dict:
     """Read sanitized AWS TickFlow probe evidence, never live TickFlow market data."""
     return read_tickflow_probe_health()
+
+
+@mcp.tool()
+def get_cn_tickflow_research_data(
+    symbol: str = "159611.SZ",
+    timeframe: str = "15m",
+    limit: int = 30,
+) -> dict:
+    """Read direct AWS Premium TickFlow 15m/60m cache, strictly research-only.
+
+    Uses no provider network requests, never marks current candle finalized,
+    never asserts Radar/Source Arbiter admission or trading permission.
+    """
+    return read_cn_tickflow_research_data(symbol, timeframe=timeframe, limit=limit)
 
 
 @mcp.tool()
