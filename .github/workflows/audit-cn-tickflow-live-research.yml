@@ -2,6 +2,13 @@ name: Audit TickFlow AWS Research Feed and MCP (Read Only)
 
 on:
   workflow_dispatch:
+  # Re-audit the protected, exact main SHA after audit-script changes.
+  # Does not trigger paid ingestion/deployment or any trading path.
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/audit_cn_tickflow_research_runtime.py'
+      - '.github/workflows/audit-cn-tickflow-live-research.yml'
   # Read-only cloud audit, UTC cron. Best effort; scheduling is NOT bar finality.
   # 02:20 UTC = 10:20 Asia/Shanghai; 06:20 UTC = 14:20 Asia/Shanghai.
   schedule:
