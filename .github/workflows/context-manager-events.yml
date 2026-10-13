@@ -89,7 +89,7 @@ jobs:
           printf '%s' "$payload" | base64 -w0 > event.b64
           encoded="$(cat event.b64)"
             remote="$(printf '%s\n' \
-              "set -euo pipefail" \
+              "set -eu" \
               "export PYTHONPATH='$INSTALL_ROOT/repo'" \
               "export STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json" \
               "export STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl" \
@@ -117,7 +117,7 @@ jobs:
             printf '%s' "$pr_payload" | base64 -w0 > event.b64
             encoded="$(cat event.b64)"
             remote="$(printf '%s\n' \
-              "set -euo pipefail" \
+              "set -eu" \
               "export PYTHONPATH='$INSTALL_ROOT/repo'" \
               "export STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json" \
               "export STOCK_RAZOR_CONTEXT_EVENTS_PATH=/var/lib/stock-razor/context-manager/events.jsonl" \
