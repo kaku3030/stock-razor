@@ -11,7 +11,7 @@ class FakeKlines:
     def get(self, symbol, *, period, count):
         assert symbol in {"159611.SZ", "518880.SH"}
         assert period in {"1d", "1m", "5m", "15m", "30m", "60m"}
-        assert count in (3, 5)
+        assert count in (3, 5, 24, 96)
         return {
             "timestamp": ["2026-10-09T01:00:00+00:00"],
             "open": [10],
@@ -556,3 +556,47 @@ def test_ws_quote_with_boolean_or_non_finite_timestamp_is_never_age_sample(monke
     assert ws["initial_snapshot_candidates"] == 1
     assert ws["arrival_minus_provider_timestamp_ms"]["count"] == 0
     assert ws["sample_latency_qualification"] == "NOT_VERIFIED"
+
+
+def test_completed_three_day_cn_grid_is_historical_only():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    sh = ZoneInfo("Asia/Shanghai")
+    labels = {
+        "15m": ("09:45","10:00","10:15","10:30","10:45","11:00","11:15","11:30",
+                "13:15","13:30","13:45","14:00","14:15","14:30","14:45","15:00"),
+        "60m": ("10:30","11:30","14:00","15:00"),
+    }
+    for period, clock_labels in labels.items():
+        rows=[]
+        for day in ("2026-09-23","2026-09-24","2026-09-25"):
+            for clock in clock_labels:
+                tick=datetime.fromisoformat(day+"T"+clock).replace(tzinfo=sh)
+                rows.append({"timestamp":int(tick.timestamp()*1000),
+                             "open":10.0,"high":11.0,"low":9.0,
+                             "close":10.5,"volume":100,"amount":1000,
+                             "api_key":"SECRET_DO_NOT_LEAK"})
+        result=probe._kline_summary(rows,period=period)
+        grid=result["historical_grid"]
+        assert grid["label_convention"]=="BAR_END_GRID_MATCH"
+        assert grid["complete_end_sessions"]==3
+        assert grid["complete_start_sessions"]==0
+        assert grid["current_day_rows_excluded"]==0
+        assert result["closure"]=="NOT_VERIFIED"
+        assert result["freshness"]=="NOT_VERIFIED"
+        assert "SECRET_DO_NOT_LEAK" not in json.dumps(grid)
+
+
+def test_current_partial_and_unordered_intraday_rows_never_prove_grid():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    sh=ZoneInfo("Asia/Shanghai")
+    rows=[]
+    for t in ("2026-09-23T09:45","2026-10-13T09:45"):
+        rows.append({"timestamp":int(datetime.fromisoformat(t).replace(tzinfo=sh).timestamp()*1000),
+                     "open":10,"high":11,"low":9,"close":10.5,"volume":100})
+    grid=probe._kline_summary(rows,period="15m")["historical_grid"]
+    assert grid["label_convention"]=="INSUFFICIENT"
+    assert grid["current_day_rows_excluded"]==1
+    rows.reverse()
+    assert probe._kline_summary(rows,period="15m")["historical_grid"]["label_convention"]=="INVALID_TIMESTAMP_ORDER"

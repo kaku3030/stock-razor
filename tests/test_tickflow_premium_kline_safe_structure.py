@@ -142,3 +142,61 @@ def test_public_workflow_reprojects_kline_schema_only_as_bounded_enums():
     assert '"radar_admission":"BLOCKED"' in wf
     assert "timestamp_first" not in wf
     assert "raw_close" not in wf
+
+def test_safe_historical_grid_confirmation_is_never_live_bar_proof(tmp_path):
+    grid = {
+        "label_convention": "BAR_END_GRID_MATCH",
+        "prior_sessions_observed": 5,
+        "complete_end_sessions": 3,
+        "complete_start_sessions": 0,
+        "current_day_rows_excluded": 7,
+        "currentness_proven": False,
+        "closure_proven": False,
+        "raw_provider_timestamp": "SECRET_DO_NOT_PRINT",
+    }
+    result, cache = _run_private_sanitizer(
+        tmp_path, [_kline("kline_15m", historical_grid=grid, sample_count=96)])
+    assert result.returncode == 0
+    item = json.loads(result.stdout)["operations"][2]
+    assert item["historical_grid_convention"] == "BAR_END_GRID_MATCH"
+    assert item["historical_sample_count"] == 96
+    assert item["historical_grid_complete_end_sessions"] == 3
+    assert item["historical_grid_current_day_rows_excluded"] == 7
+    assert item["historical_grid_is_not_closure_proof"] is True
+    assert item["freshness"] == "NOT_VERIFIED"
+    assert item["closure"] == "NOT_VERIFIED"
+    assert item["provider_live_qualified"] is False
+    assert "SECRET_DO_NOT_PRINT" not in result.stdout
+    assert json.loads(cache.read_text())["radar_admission"] == "BLOCKED"
+
+
+def test_untrusted_grid_enum_and_boolean_counts_fail_closed(tmp_path):
+    raw = {
+        "label_convention": "BAR_END_GRID_MATCH\napi_key=SECRET_DO_NOT_PRINT",
+        "prior_sessions_observed": True,
+        "complete_end_sessions": -5,
+        "complete_start_sessions": 9999999,
+        "current_day_rows_excluded": "secret",
+        "key": "SECRET_DO_NOT_PRINT",
+    }
+    result, _ = _run_private_sanitizer(
+        tmp_path, [_kline("kline_60m", historical_grid=raw, sample_count=120)])
+    assert result.returncode == 0
+    item = json.loads(result.stdout)["operations"][2]
+    assert item["historical_grid_convention"] == "INSUFFICIENT"
+    assert item["historical_sample_count"] is None
+    assert item["historical_grid_prior_sessions_observed"] is None
+    assert item["historical_grid_complete_end_sessions"] is None
+    assert item["historical_grid_complete_start_sessions"] is None
+    assert item["historical_grid_current_day_rows_excluded"] is None
+    assert item["historical_grid_is_not_closure_proof"] is True
+    assert "SECRET_DO_NOT_PRINT" not in result.stdout
+    assert "9999999" not in result.stdout
+
+
+def test_public_workflow_requires_safe_grid_projection_and_nonlive_gate():
+    source=WORKFLOW.read_text(encoding="utf-8")
+    assert 'record["historical_grid_convention"]' in source
+    assert '"BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT"' in source
+    assert 'item.get("historical_grid_is_not_closure_proof") is True' in source
+    assert 'record["provider_live_qualified"]=False' in source
