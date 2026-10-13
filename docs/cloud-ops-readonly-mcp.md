@@ -25,6 +25,23 @@ PC-off independence or permission to execute any trading/Paper task.
 `paper_auto_ready=false`, `live_trade=false` and
 `mutation_allowed=false` are immutable in the tool.
 
+## ChatGPT legacy action snapshot: CN Fast Report compatibility
+
+The existing ChatGPT STOCK RAZOR action manifest currently exposes
+`get_cn_market_analysis` but may not yet expose the separately deployed
+`get_cn_quick_scan`. Until the app actions refresh, the same read-only
+MCP endpoint supports **exactly** `get_cn_market_analysis(symbols=["__QUICK_SCAN__"])`
+as a backward-compatible routing request, returning the **existing**
+`stock_razor_cn_quick_scan_v0_1` compact research schema.
+
+All ordinary requests (including empty/default, real six-digit symbols,
+and other invalid symbols) keep the pre-existing Radar analysis response.
+No provider network call, trading admission, bar-finality claim, mutation,
+or new MCP action is introduced. A returned `BLOCKED` with reason codes is
+a safe diagnostic result, **not** report success. A successful server-local
+quick scan is not proof of a faster ChatGPT/iOS command-to-answer latency;
+measure real tool wall time and client delivery separately.
+
 ## Owner-only GitHub transport for read-only AWS diagnosis
 
 The existing `audit-cloud-independent-runtime.yml` workflow can also be

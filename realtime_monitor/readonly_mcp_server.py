@@ -64,9 +64,21 @@ def get_cn_tickflow_research_data(
     )
 
 
+# Backward-compatible compact path for ChatGPT's existing frozen tool snapshot.
+# Exact sentinel only; every ordinary symbol request keeps its original result.
+_CN_QUICK_SCAN_COMPAT_REQUEST = ["__QUICK_SCAN__"]
+
+
 @mcp.tool()
 def get_cn_market_analysis(symbols: list[str] | None = None) -> dict:
-    """Return precomputed A-share cloud Radar research state without recomputation."""
+    """Return precomputed A-share Radar research.
+
+    Use symbols=["__QUICK_SCAN__"] for the bounded read-only quick scan
+    while an existing ChatGPT app action snapshot lacks get_cn_quick_scan.
+    All other requests keep the original response and safety contract.
+    """
+    if symbols == _CN_QUICK_SCAN_COMPAT_REQUEST:
+        return read_cn_quick_scan()
     return read_cn_radar_analysis(symbols)
 
 
