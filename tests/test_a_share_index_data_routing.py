@@ -682,3 +682,16 @@ def test_csi_daily_route_returns_empty_when_akshare_fails() -> None:
         "unsupported",
         "unsupported",
     ]
+
+def test_configured_tickflow_precedes_tencent_for_cn_index_daily() -> None:
+    tencent = _FakeFetcher("TencentFetcher", priority=0, daily_result=_daily_frame())
+    tickflow = _FakeFetcher("TickFlowFetcher", priority=0, daily_result=_daily_frame())
+    tickflow.api_key = "synthetic-not-a-real-key"
+    manager = DataFetcherManager(fetchers=[tencent, tickflow])
+    with patch("data_provider.base.record_provider_run") as record:
+        frame, name = manager.get_daily_data("sh000016")
+    assert not frame.empty
+    assert name == "TickFlowFetcher"
+    assert tickflow.daily_calls == ["000016.SH"]
+    assert tencent.daily_calls == []
+    assert record.call_args.kwargs["provider"] == "TickFlowFetcher"

@@ -881,7 +881,7 @@ class Config:
     tushare_token: Optional[str] = None
     tickflow_api_key: Optional[str] = None
     tickflow_kline_adjust: str = "none"
-    tickflow_priority: int = 2
+    tickflow_priority: int = 0
     tickflow_batch_daily_enabled: bool = True
     tickflow_batch_size: int = 100
     futu_opend_host: Optional[str] = None
@@ -1796,7 +1796,7 @@ class Config:
             tushare_token=os.getenv('TUSHARE_TOKEN'),
             tickflow_api_key=os.getenv('TICKFLOW_API_KEY'),
             tickflow_kline_adjust=normalize_tickflow_kline_adjust(os.getenv('TICKFLOW_KLINE_ADJUST')),
-            tickflow_priority=parse_env_int(os.getenv('TICKFLOW_PRIORITY'), 2, field_name='TICKFLOW_PRIORITY', minimum=0),
+            tickflow_priority=parse_env_int(os.getenv('TICKFLOW_PRIORITY'), 0, field_name='TICKFLOW_PRIORITY', minimum=0),
             tickflow_batch_daily_enabled=parse_env_bool(os.getenv('TICKFLOW_BATCH_DAILY_ENABLED'), default=True),
             tickflow_batch_size=parse_env_int(os.getenv('TICKFLOW_BATCH_SIZE'), 100, field_name='TICKFLOW_BATCH_SIZE', minimum=1),
             futu_opend_host=os.getenv('FUTU_OPEND_HOST') or None,
@@ -2961,9 +2961,16 @@ class Config:
         explicit = os.getenv('REALTIME_SOURCE_PRIORITY')
         default_priority = 'tencent,akshare_sina,efinance,akshare_em'
 
+        # CN TickFlow is primary by user policy wherever configured, even
+        # when an old fallback-first list remains in environment. Preserve
+        # explicit ordering only among the remaining fallback providers.
+        tickflow_available = bool(os.getenv('TICKFLOW_API_KEY', '').strip())
         if explicit:
-            # User explicitly set priority, respect it
-            return explicit
+            entries = [part.strip().lower() for part in explicit.split(',')
+                       if part.strip()]
+            if tickflow_available:
+                entries = ["tickflow", *[v for v in entries if v != "tickflow"]]
+            return ",".join(entries)
 
         tushare_token = os.getenv('TUSHARE_TOKEN', '').strip()
         if tushare_token:
@@ -2972,12 +2979,14 @@ class Config:
             import logging
             logger = logging.getLogger(__name__)
             resolved = f'tushare,{default_priority}'
+            if tickflow_available:
+                resolved = f'tickflow,{resolved}'
             logger.info(
                 f"TUSHARE_TOKEN detected, auto-injecting tushare into realtime priority: {resolved}"
             )
             return resolved
 
-        return default_priority
+        return f'tickflow,{default_priority}' if tickflow_available else default_priority
 
     @classmethod
     def reset_instance(cls) -> None:

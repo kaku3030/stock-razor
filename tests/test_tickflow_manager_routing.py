@@ -153,12 +153,39 @@ class TestTickFlowManagerRouting(unittest.TestCase):
 
         self.assertEqual(config.tickflow_priority, 0)
 
-    def test_tickflow_api_key_does_not_auto_inject_realtime_priority(self):
+    def test_tickflow_key_makes_it_default_first_for_cn_realtime(self):
         with patch.dict(os.environ, {"TICKFLOW_API_KEY": "tk-test"}, clear=True):
+            self.assertEqual(
+                Config._resolve_realtime_source_priority(),
+                "tickflow,tencent,akshare_sina,efinance,akshare_em",
+            )
+
+    def test_tickflow_key_prioritizes_over_explicit_legacy_order(self):
+        with patch.dict(os.environ, {
+            "TICKFLOW_API_KEY": "tk-test",
+            "REALTIME_SOURCE_PRIORITY": "tencent,tickflow,akshare_sina",
+        }, clear=True):
+            self.assertEqual(
+                Config._resolve_realtime_source_priority(),
+                "tickflow,tencent,akshare_sina",
+            )
+
+    def test_without_tickflow_key_fallback_stays_as_configured(self):
+        with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
                 Config._resolve_realtime_source_priority(),
                 "tencent,akshare_sina,efinance,akshare_em",
             )
+
+    def test_cn_daily_fetcher_sort_gives_tied_tickflow_first(self):
+        class EqualPriorityFetcher:
+            name = "EfinanceFetcher"
+            priority = 0
+        class Primary:
+            name = "TickFlowFetcher"
+            priority = 0
+        manager = DataFetcherManager(fetchers=[EqualPriorityFetcher(), Primary()])
+        self.assertEqual(manager._fetchers[0].name, "TickFlowFetcher")
 
 
 if __name__ == "__main__":

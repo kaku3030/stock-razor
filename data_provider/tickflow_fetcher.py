@@ -85,7 +85,7 @@ class TickFlowFetcher(BaseFetcher):
     """TickFlow-backed optional A-share fetcher."""
 
     name = "TickFlowFetcher"
-    priority = 2
+    priority = 0
 
     def __init__(
         self,
@@ -257,12 +257,12 @@ class TickFlowFetcher(BaseFetcher):
     @staticmethod
     def _normalize_priority(value: Optional[int]) -> int:
         if value is None:
-            return _parse_env_int("TICKFLOW_PRIORITY", 2, minimum=0)
+            return _parse_env_int("TICKFLOW_PRIORITY", 0, minimum=0)
         try:
             return max(0, int(value))
         except (TypeError, ValueError):
-            logger.warning("Invalid TickFlow priority=%r; falling back to 2", value)
-            return 2
+            logger.warning("Invalid TickFlow priority=%r; falling back to 0", value)
+            return 0
 
     @staticmethod
     def _normalize_adjust(value: Optional[str]) -> str:

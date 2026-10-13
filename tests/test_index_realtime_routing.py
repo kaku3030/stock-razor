@@ -333,3 +333,18 @@ class AugmentRealtimeIndexMarketTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_cn_index_tickflow_with_key_is_first_then_falls_back():
+    akshare = _FakeAkshareFetcher()
+    tickflow = _FakeTickFlowFetcher()
+    tickflow.api_key = "synthetic-not-a-real-key"
+    mgr = DataFetcherManager(fetchers=[akshare, tickflow])
+    with patch("src.config.get_config", return_value=SimpleNamespace(
+            enable_realtime_quote=True, realtime_source_priority="tickflow,tencent",
+            realtime_cache_ttl=600,
+    )):
+        quote = mgr.get_realtime_quote("sh000016")
+    assert quote is not None
+    assert tickflow.calls == ["000016.SH"]
+    assert akshare.calls == [("sh000016", "tencent")]
