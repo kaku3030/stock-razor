@@ -97,6 +97,7 @@ def component_snapshot(
     check_unit: Callable[[str], bool] = _service_active,
     read_json: Callable[[str], dict | None] = _load_snapshot,
     max_heartbeat_age_seconds: int = 300,
+    clock_after_read: Callable[[], datetime] | None = None,
 ) -> dict:
     """Classify operational heartbeat only; not market Data/Radar Admission."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -152,7 +153,20 @@ def component_snapshot(
         result["operational_state"] = "TIMESTAMP_INVALID"
         return result
 
-    age = (now.astimezone(timezone.utc) - observed).total_seconds()
+    # Capture observation time AFTER loading the atomic heartbeat. US Radar
+    # publishes ~4 Hz: a common pre-read timestamp can be overtaken by the
+    # newest file during systemctl/JSON I/O and falsely look like clock skew.
+    # Keep the caller's explicit clock when no post-read clock is supplied,
+    # and never waive genuine future timestamps or backward wall-clock jumps.
+    observed_now = clock_after_read() if clock_after_read is not None else now
+    if (not isinstance(observed_now, datetime) or observed_now.tzinfo is None
+            or observed_now.utcoffset() is None):
+        result["operational_state"] = "TIMESTAMP_INVALID"
+        return result
+    if observed_now.astimezone(timezone.utc) < now.astimezone(timezone.utc):
+        result["operational_state"] = "CLOCK_REVERSAL"
+        return result
+    age = (observed_now.astimezone(timezone.utc) - observed).total_seconds()
     if age < 0:
         result["operational_state"] = "CLOCK_REVERSAL"
         return result
@@ -202,10 +216,12 @@ def audit_twice(
         raise ValueError("interval_seconds must be between 0 and 60")
 
     def sample() -> dict:
-        instant = clock()
+        # Each service gets its own before/after JSON-read timestamps. Do not
+        # reuse one wall-clock for four files refreshed at different cadences.
         return {
             name: component_snapshot(
-                name, now=instant, check_unit=check_unit, read_json=read_json
+                name, now=clock(), check_unit=check_unit,
+                read_json=read_json, clock_after_read=clock,
             )
             for name in _COMPONENTS
         }
