@@ -305,3 +305,20 @@ def test_market_status_carries_tickflow_grid_only_as_isolated_probe(monkeypatch)
     assert source["data_admission"]=="BLOCKED"
     assert r["radar_admission"]=="BLOCKED"
     assert "NEVER_LEAK" not in json.dumps(r)
+
+def test_connected_tickflow_research_status_does_not_promote_source(monkeypatch):
+    monkeypatch.setattr(status,"read_us_livefeed_health",lambda **kw:{"ok":False,"status":"STALE"})
+    monkeypatch.setattr(status,"read_cn_market_data",lambda *a,**kw:{"ok":False,"status":"NO_DATA"})
+    monkeypatch.setattr(status,"read_tickflow_probe_health",lambda **kw:{"ok":False,"status":"STALE"})
+    monkeypatch.setattr(status,"read_cn_tickflow_research_data",lambda *a,**kw:{
+       "ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":"a"*40,
+       "radar_admission":"BLOCKED","source_arbiter_admission":"BLOCKED",
+       "bar_finality":"NOT_VERIFIED","rows":[{"close":999999,"credential":"KEY_MUST_NOT_LEAK"}],
+    })
+    result=status.read_market_source_status(now_utc=NOW)
+    research=result["sources"]["cn_tickflow_research"]
+    assert research["research_cache_readable"] is True
+    assert research["data_admission"]=="BLOCKED"
+    assert research["tickflow_to_radar_e2e"]=="NOT_VERIFIED"
+    assert result["radar_admission"]=="BLOCKED"
+    assert "KEY_MUST_NOT_LEAK" not in json.dumps(result)
