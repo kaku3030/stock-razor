@@ -26,6 +26,10 @@ def test_canonical_readonly_mcp_declares_cn_fast_read_tool():
     assert "read_cn_radar_analysis(symbols)" in source
     assert "def get_cn_market_data(" in source
     assert "read_cn_market_data(symbol, timeframe=timeframe, limit=limit)" in source
+    assert "def get_cn_quick_scan(" in source
+    assert "return read_cn_quick_scan(symbols)" in source
+    installer = Path("ops/aws/install_readonly_mcp.sh").read_text(encoding="utf-8")
+    assert "get_cn_quick_scan([\"159611\"])" in installer
 
 
 def test_installer_keeps_runtime_read_only_and_exact_sha():
