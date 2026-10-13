@@ -89,7 +89,14 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime) -> list[dic
             raise ValueError("reordered/duplicate timestamp")
         previous=stamp
         sh=stamp.astimezone(CN)
+        current_shanghai_day = sh.date() == now_utc.astimezone(CN).date()
         if sh.second != 0 or sh.microsecond or sh.strftime("%H:%M") not in _LABEL_END[timeframe]:
+            if current_shanghai_day:
+                # Current provider response can contain a *forming* candle
+                # labeled by its opening time (e.g. 13:00). Never turn it
+                # into a historical BAR_END observation. Quarantine only this
+                # session; historical off-grid labels remain a hard failure.
+                continue
             raise ValueError("unexpected Shanghai regular-session grid")
         # Reject future bars, but do not pretend already elapsed means exchange-final.
         if stamp > now_utc:
@@ -152,13 +159,23 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         # separate reviewed quota and license approvals.
         raise ValueError("unapproved symbols")
     output={}
-    for symbol in symbols:
+    for index,symbol in enumerate(symbols):
         frames={}
         for interval, n in _ALLOWED_PERIODS.items():
             # SDK's isolated Premium Kline contract was separately verified on AWS.
-            frame=client.klines.get(symbol, period=interval,count=n,
-                                    adjust="none",as_dataframe=False)
-            bars=normalize_bars(frame,interval,now_utc=now_utc)
+            stage=f"S{index}_{interval.upper()}_FETCH"
+            try:
+                frame=client.klines.get(symbol, period=interval,count=n,
+                                        adjust="none",as_dataframe=False)
+            except Exception as exc:
+                exc._tickflow_stage=stage
+                raise
+            stage=f"S{index}_{interval.upper()}_NORMALIZE"
+            try:
+                bars=normalize_bars(frame,interval,now_utc=now_utc)
+            except Exception as exc:
+                exc._tickflow_stage=stage
+                raise
             frames[interval]={"rows":bars,
                  "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",

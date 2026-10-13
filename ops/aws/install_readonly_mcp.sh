@@ -20,6 +20,7 @@ python3 -m venv "$INSTALL_ROOT/venv"
 
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from realtime_monitor.readonly_mcp_server import (
+    get_cloud_ops_status,
     get_cn_market_analysis,
     get_cn_market_data,
     get_futures_runtime_health,
@@ -39,6 +40,7 @@ result = get_futures_runtime_health()
 assert result["live_trade"] is False
 assert result["radar_admission"] == "BLOCKED"
 for result in (
+    get_cloud_ops_status(),
     get_cn_market_analysis(["159611"]),
     get_cn_market_data("159611", timeframe="1d", limit=1),
     get_livefeed_health(),

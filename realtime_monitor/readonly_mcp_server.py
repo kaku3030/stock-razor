@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from data_provider.cloud_ops_readonly_status import read_cloud_ops_status
 from data_provider.cn_cloud_runtime_reader import read_cn_market_data
 from data_provider.cn_radar_runtime_reader import read_cn_radar_analysis
 from data_provider.futures_runtime_health import read_futures_runtime_health
@@ -19,6 +20,12 @@ from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 from data_provider.us_fast_research_brief import read_us_fast_research_brief, read_us_quick_scan
 
 mcp = FastMCP("stock-razor-readonly")
+
+
+@mcp.tool()
+def get_cloud_ops_status() -> dict:
+    """EC2-local services and heartbeats only: no AWS APIs or mutations."""
+    return read_cloud_ops_status()
 
 
 @mcp.tool()
