@@ -14,6 +14,7 @@ import re, stat, subprocess, sys, time
 WORKER_REPO=Path("/opt/stock-razor-cn-tickflow/repo")
 WORKER_FILE=Path("/run/stock-razor-cn-tickflow/latest-research-observation.json")
 MCP_REPO=Path("/opt/stock-razor-mcp/repo")
+EASTMONEY_FILE=Path("/run/stock-razor-cn-eastmoney/latest-observation.json")
 MCP_PY=Path("/opt/stock-razor-mcp/venv/bin/python")
 WORKER_UNIT="stock-razor-cn-tickflow-research.service"
 MCP_UNIT="stock-razor-mcp.service"
@@ -150,6 +151,117 @@ def blocked_status(failure_class: object) -> str:
     )
 
 
+def shadow_compare_eastmoney(tickflow: object, reference: object, *,
+                             now_utc: datetime) -> dict:
+    """Private cached-price parity: only categorical counts may leave EC2.
+
+    No network, no provider subscription, no synthetic Klines, no source
+    admission. Fail closed if reference time semantics are not qualified.
+    """
+    categories={}
+    symbols=(("159611.SZ","159611"),("518880.SH","518880"))
+    periods=("15m","60m")
+    allowed_ohlc=("open","high","low","close")
+    from math import isfinite
+    from decimal import Decimal
+    def bucket(n):
+        return "ZERO" if n==0 else "ONE" if n==1 else (
+            "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS")
+    for t_sym,e_sym in symbols:
+        for period in periods:
+            key=t_sym.replace(".","_")+"_"+period
+            item={"status":"NOT_VERIFIED","overlap_bucket":"UNKNOWN",
+                  "max_price_difference_ticks":"UNKNOWN","lineage":"UNKNOWN"}
+            categories[key]=item
+            try:
+                if not isinstance(tickflow,dict) or not isinstance(reference,dict):
+                    continue
+                if (reference.get("schema")!="stock_razor_cn_eastmoney_observation_v1"
+                    or reference.get("research_only") is not True
+                    or reference.get("radar_admission")!="BLOCKED"
+                    or reference.get("live_trade") is not False):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                timestamp=datetime.fromisoformat(reference["emitted_at_utc"])
+                if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                age=(now_utc-timestamp.astimezone(timezone.utc)).total_seconds()
+                if not -5<=age<=240:
+                    item["status"]="STALE_REFERENCE"
+                    continue
+                fr=reference["symbols"][e_sym]["timeframes"][period]
+                tick_rows=tickflow["symbols"][t_sym][period]["rows"]
+                if not isinstance(tick_rows,list) or not 4<=len(tick_rows)<=96:
+                    item["status"]="INVALID_TICKFLOW_ROWS"
+                    continue
+                if (not isinstance(fr,dict) or fr.get("status")!="PASS"
+                        or fr.get("adjustment")!="NONE"):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                lineage=fr.get("provider_used")
+                if lineage not in ("eastmoney","tencent"):
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                item["lineage"]=lineage.upper()
+                qual=fr.get("timestamp_qualification")
+                if (fr.get("timestamp_semantic")!="BAR_END"
+                        or not isinstance(qual,dict)
+                        or qual.get("status")!="PASS"
+                        or qual.get("timestamp_semantic")!="BAR_END"):
+                    item["status"]="UNQUALIFIED_REFERENCE_GRID"
+                    continue
+                erows=fr.get("rows")
+                if not isinstance(erows,list) or not erows:
+                    item["status"]="INVALID_REFERENCE"
+                    continue
+                mapped={}
+                for bar in erows:
+                    if not isinstance(bar,dict):
+                        raise ValueError("reference row invalid")
+                    label=bar.get("label")
+                    if not isinstance(label,str) or len(label)!=16:
+                        raise ValueError("reference label invalid")
+                    if bar.get("quality_flags") not in ([],()):
+                        continue
+                    mapped[label]=bar
+                diffs=[]
+                for row in tick_rows:
+                    if not isinstance(row,dict): raise ValueError("tickflow row invalid")
+                    reference_row=mapped.get(row.get("label"))
+                    if reference_row is None: continue
+                    pairs=[]
+                    for field in allowed_ohlc:
+                        tv=row.get(field)
+                        ev=reference_row.get(field)
+                        if (type(tv) not in (float,int) or type(ev) not in (float,int)
+                                or not isfinite(tv) or not isfinite(ev)
+                                or tv<=0 or ev<=0):
+                            raise ValueError("OHLC shadow number invalid")
+                        pairs.append(abs(Decimal(str(tv))-Decimal(str(ev))))
+                    diffs.append(max(pairs))
+                item["overlap_bucket"]=bucket(len(diffs))
+                if not diffs:
+                    item["status"]="NO_OVERLAP"
+                    continue
+                maxdiff=max(diffs)
+                tick=Decimal("0.001")
+                item["max_price_difference_ticks"]=(
+                    "EXACT" if maxdiff==0 else
+                    "UNDER_HALF_TICK" if maxdiff<tick/2 else
+                    "UP_TO_ONE_TICK" if maxdiff<=tick else
+                    "UP_TO_TWO_TICKS" if maxdiff<=tick*2 else
+                    "OVER_TWO_TICKS"
+                )
+                item["status"]=("OBSERVED_NOT_ADMITTED" if len(diffs)>=4
+                                else "INSUFFICIENT_OVERLAP")
+            except (OSError,ValueError,TypeError,KeyError,OverflowError,ArithmeticError):
+                item["status"]="INVALID_SNAPSHOT"
+                item["overlap_bucket"]="UNKNOWN"
+                item["max_price_difference_ticks"]="UNKNOWN"
+    return categories
+
+
 def active(service):
     try:
         p=subprocess.run(["systemctl","is-active",service],text=True,capture_output=True,timeout=5,check=False)
@@ -168,6 +280,7 @@ def sample():
         "repo_sha_match":False,
         "cache_age_seconds":None,
         "source_frame_progress":{},
+        "independent_price_shadow":{},
         "sequence":None,
         "all_four_readonly_requests_ok":False,
         "per_period_observation":{},
@@ -196,6 +309,18 @@ def sample():
         age=(datetime.now(timezone.utc)-instant.astimezone(timezone.utc)).total_seconds()
         result["cache_age_seconds"]=round(age,2) if -5<=age<=100000 else None
         if data.get("status")=="PASS_RESEARCH_ONLY":
+            # No provider I/O: read already cached independent-lineage
+            # Eastmoney/Tencent observer, NEVER export the price-bearing rows.
+            try:
+                emeta=EASTMONEY_FILE.stat()
+                if not 0<emeta.st_size<=4000000:
+                    raise ValueError("reference cache length")
+                reference=json.loads(EASTMONEY_FILE.read_text(encoding="utf-8"))
+            except (OSError,ValueError,TypeError):
+                reference=None
+            result["independent_price_shadow"]=shadow_compare_eastmoney(
+                data,reference,now_utc=datetime.now(timezone.utc)
+            )
             # Sanitize private, price-bearing cache *before* result leaves EC2.
             for symbol in ("159611.SZ","518880.SH"):
                 for period in ("15m","60m"):
