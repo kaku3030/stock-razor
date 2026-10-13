@@ -59,10 +59,10 @@ def normalize_futu_k1m_history_rows(
 
     Futu US K1M time_key is a qualified interval-END label. By default, only
     a row followed by a strictly later provider label is emitted as a closed
-    canonical fact. A caller may also allow the terminal row of a complete
-    390-row regular session when that session is on a prior New York calendar
-    date relative to received_at. That path is historical-only evidence and
-    never proves realtime currentness or authorizes Radar or trading.
+    canonical fact. An explicitly opted-in full 390-row prior-session grid may
+    close the terminal row; a same-NY-day full grid requires an additional
+    30-minute post-16:00 ET finality buffer. This is historical-only evidence,
+    never provider-stream currentness or Radar/trading admission.
     """
 
     if received_at.tzinfo is None or received_at.utcoffset() is None:
@@ -97,6 +97,11 @@ def normalize_futu_k1m_history_rows(
             received_at=received_at,
         )
     )
+    terminal_same_day = (
+        terminal_closed
+        and parsed[-1].interval_end.astimezone(FUTU_US_KLINE_TIMEZONE).date()
+        == received_at.astimezone(FUTU_US_KLINE_TIMEZONE).date()
+    )
     emitted = parsed if terminal_closed else parsed[:-1]
     bars = tuple(
         _to_historical_bar(row, received_at=received_at)
@@ -111,8 +116,8 @@ def normalize_futu_k1m_history_rows(
         unresolved_tail=tail,
         rows_seen=len(parsed),
         closure_method=(
-            "QUALIFIED_PRIOR_SESSION_FULL_GRID"
-            if terminal_closed
+            "QUALIFIED_POST_SESSION_FULL_GRID" if terminal_same_day
+            else "QUALIFIED_PRIOR_SESSION_FULL_GRID" if terminal_closed
             else "NEXT_TIME_KEY_PROGRESS"
         ),
     )
@@ -133,9 +138,21 @@ def _is_complete_prior_regular_session(
     if len(session_dates) != 1:
         return False
     session_date = local_ends[0].date()
-    observed_date = received_at.astimezone(FUTU_US_KLINE_TIMEZONE).date()
-    if session_date >= observed_date:
+    local_received = received_at.astimezone(FUTU_US_KLINE_TIMEZONE)
+    observed_date = local_received.date()
+    if session_date > observed_date:
         return False
+    if session_date == observed_date:
+        # The OpenD 16:00 interval-end time key is only historical after a
+        # conservative bounded provider-finality interval, and ONLY when all
+        # 390 independently returned labels pass the exact regular grid.
+        from datetime import datetime as _datetime
+        safe_time = _datetime.combine(
+            session_date, FUTU_US_REGULAR_LAST_END,
+            tzinfo=FUTU_US_KLINE_TIMEZONE,
+        ) + timedelta(minutes=30)
+        if local_received < safe_time:
+            return False
     if local_ends[0].time() != FUTU_US_REGULAR_FIRST_END:
         return False
     if local_ends[-1].time() != FUTU_US_REGULAR_LAST_END:
