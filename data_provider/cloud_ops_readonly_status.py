@@ -70,6 +70,10 @@ def read_cloud_ops_status(
         return {**base, "ok": False, "status": "INVALID_CLOCK", "components": {}}
     results = {}
     kwargs = {}
+    # Production status reads must sample the clock after each independently
+    # refreshed JSON file. Injected now_utc stays deterministic for tests.
+    if now_utc is None:
+        kwargs["clock_after_read"] = lambda: datetime.now(timezone.utc)
     if check_unit is not None:
         kwargs["check_unit"] = check_unit
     if read_json is not None:
