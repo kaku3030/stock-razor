@@ -278,3 +278,30 @@ def test_recent_cache_and_proven_closure_do_not_automatically_authorize_signals(
     assert us["realtime_signal_permission"] == "BLOCKED"
     assert us["provider_to_radar_e2e"] == "NOT_VERIFIED"
     assert result["source_arbiter_admission"] == "BLOCKED"
+
+
+def test_market_status_carries_tickflow_grid_only_as_isolated_probe(monkeypatch):
+    monkeypatch.setattr(status,"read_us_livefeed_health",lambda **kw:{"ok":False,"status":"STALE"})
+    monkeypatch.setattr(status,"read_cn_market_data",lambda *a,**kw:{"ok":False,"status":"NO_DATA"})
+    monkeypatch.setattr(status,"read_tickflow_probe_health",lambda **kw:{
+        "ok":True,"status":"PROBE_ONLY","minute_grid_observations":[{
+            "period":"60m",
+            "operation":"COMPLETED",
+            "historical_grid_convention":"BAR_END_GRID_MATCH",
+            "historical_grid_complete_end_sessions":5,
+            "historical_grid_complete_start_sessions":0,
+            "historical_grid_prior_sessions_observed":6,
+            "historical_grid_current_day_rows_excluded":2,
+            "historical_sample_count":24,
+            "live_bar_closure_proven":False,
+            "private_date":"NEVER_LEAK",
+        }]
+    })
+    r=status.read_market_source_status(now_utc=NOW)
+    source=r["sources"]["cn_tickflow"]
+    assert source["minute_grid_observations"][0]["historical_grid_convention"]=="BAR_END_GRID_MATCH"
+    assert source["production_feed_connected"] is False
+    assert source["tickflow_to_radar_e2e"]=="NOT_VERIFIED"
+    assert source["data_admission"]=="BLOCKED"
+    assert r["radar_admission"]=="BLOCKED"
+    assert "NEVER_LEAK" not in json.dumps(r)
