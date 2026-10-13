@@ -2,6 +2,15 @@ name: Audit TickFlow AWS Research Feed and MCP (Read Only)
 
 on:
   workflow_dispatch:
+  # Read-only cloud audit, UTC cron. Best effort; scheduling is NOT bar finality.
+  # 02:20 UTC = 10:20 Asia/Shanghai; 06:20 UTC = 14:20 Asia/Shanghai.
+  schedule:
+    - cron: '20 2 * * 1-5'
+    - cron: '20 6 * * 1-5'
+
+concurrency:
+  group: cn-tickflow-readonly-audit-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
