@@ -19,8 +19,15 @@ from data_provider.us_canonical_runtime_reader import (
 )
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 from data_provider.us_fast_research_brief import read_us_fast_research_brief, read_us_quick_scan
+from src.services.context_manager import default_store
 
 mcp = FastMCP("stock-razor-readonly")
+
+
+@mcp.tool()
+def get_context_manager_state() -> dict:
+    """Restore the compact engineering context; expired or invalid state stays blocked."""
+    return default_store().read()
 
 
 @mcp.tool()

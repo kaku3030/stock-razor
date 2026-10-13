@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增可持续 Context Manager MVP：工程、部署、CI 与 Radar 事件可通过统一 append-only JSONL 记录，当前状态原子落盘并带版本、时间戳、来源、TTL、幂等与凭据过滤；现有只读 MCP 新增 `get_context_manager_state` 恢复入口，失效、损坏和失败状态保持阻断，不改变交易权限。
 - [修复] TickFlow云端只读审计并发锁从工作流级移到授权后的job级，防止无权限GitHub评论替换已排队的Owner验收请求。
 
 - [改进] GitHub仓库Owner可用固定PR精确评论触发TickFlow AWS只读历史/分钟行情质量复验，无需个人电脑；双重Owner与最新main核验，交易门禁保持关闭。
