@@ -40,9 +40,11 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
         if isinstance(item, (str, int, float, bool)) and _safe_scalar(key, item) is not None:
             result[key] = item
     symbols = value.get("symbols")
-    if isinstance(symbols, Mapping):
+    if isinstance(symbols, Mapping) and len(symbols) <= 500:
         result["symbol_count"] = len(symbols)
         timeframes: dict[str, dict[str, object]] = {}
+        # Never forward provider-defined field names, arbitrary numbers or
+        # unvalidated timestamps to PUBLIC GitHub Actions output.
         for item in symbols.values():
             if not isinstance(item, Mapping):
                 continue
@@ -50,12 +52,15 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
             if not isinstance(frames, Mapping):
                 continue
             for timeframe, frame in frames.items():
-                if not isinstance(frame, Mapping):
+                if timeframe not in ("D1", "1D", "1d", "1H", "60m", "15m", "5m", "1m") or not isinstance(frame, Mapping):
                     continue
-                summary = timeframes.setdefault(str(timeframe), {"count": 0, "latest_end_utc": None})
-                summary["count"] = max(int(summary["count"]), int(frame.get("count") or 0))
+                count = frame.get("count")
+                if type(count) is not int or count < 0 or count > 4096:
+                    continue
+                summary = timeframes.setdefault(timeframe, {"count": 0, "latest_end_utc": None})
+                summary["count"] = max(summary["count"], count)
                 latest = frame.get("latest_end_utc")
-                if isinstance(latest, str) and latest > str(summary["latest_end_utc"] or ""):
+                if _safe_scalar("latest_end_utc", latest) is not None and latest > str(summary["latest_end_utc"] or ""):
                     summary["latest_end_utc"] = latest
         if timeframes:
             result["timeframes"] = timeframes
@@ -63,17 +68,24 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
 
 
 def _safe_scalar(key: str, value: object) -> object | None:
-    if not isinstance(value, (str, int, float, bool)):
+    """Allow only bounded typed evidence, never arbitrary remote text."""
+    if type(value) is bool:
+        return value
+    if type(value) is int:
+        return value if 0 <= value <= 1_000_000 else None
+    if not isinstance(value, str):
         return None
-    if isinstance(value, str):
-        lowered = value.lower()
-        if len(value) > 120 or any(term in lowered for term in ("secret", "token", "password", "account", "bearer", "api_key")):
-            return None
-        if key.endswith("_utc") and not re.fullmatch(r"[0-9T:+.Z-]{1,40}", value):
-            return None
-        if key.endswith("_sha256") and not re.fullmatch(r"[a-f0-9]{64}|UNAVAILABLE", value):
-            return None
-    return value
+    if any(term in value.lower() for term in ("secret", "token", "password", "account", "bearer", "api_key", "credential")):
+        return None
+    if key.endswith("_utc"):
+        return value if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.][0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})", value) else None
+    if key.endswith("_sha256"):
+        return value if re.fullmatch(r"[a-f0-9]{64}|UNAVAILABLE", value) else None
+    if key in ("schema", "probe"):
+        return value if re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", value) else None
+    # All remaining fields are finite-style status tokens; URLs, hostnames,
+    # exception strings, paths, raw symbols, arbitrary identifiers are denied.
+    return value if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", value) else None
 
 
 def project(raw: str) -> list[str]:
@@ -83,7 +95,7 @@ def project(raw: str) -> list[str]:
         if stripped.startswith("{"):
             try:
                 value = json.loads(stripped)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, RecursionError):
                 continue
             if isinstance(value, dict):
                 safe = _safe_json(value)
@@ -105,7 +117,7 @@ def main() -> int:
     del args
     result = project(sys.stdin.read())
     if result:
-        print("SANITIZED_EVIDENCE=PASS")
+        print("SANITIZED_EVIDENCE=AVAILABLE_NOT_QUALIFIED")
         print("\n".join(result))
     else:
         print("SANITIZED_EVIDENCE=NOT_VERIFIED")
