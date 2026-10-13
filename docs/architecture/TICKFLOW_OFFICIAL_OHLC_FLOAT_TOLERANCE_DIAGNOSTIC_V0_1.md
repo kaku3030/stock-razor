@@ -8,7 +8,7 @@ TickFlow Support's October 13, 2026 reply described a JSON floating-point tolera
 
 ## Reviewed research-only acceptance of the vendor float contract
 
-In the subsequent guarded research-only adjustment, an OHLC violation is accepted **only when the strict raw high/low inequality is fully explained by an absolute gap <= `0.00001` CNY**, using `Decimal(str(original_json_number))` math as confirmed by TickFlow Support. No rounding, quote rewrite, synthetic high/low, inferred volume, or bar-finality promotion occurs.
+In the subsequent guarded research-only adjustment, a **prior Shanghai trading-day** OHLC violation is accepted **only when the strict raw high/low inequality is fully explained by an absolute gap <= `0.00001` CNY**, using `Decimal(str(original_json_number))` math as confirmed by TickFlow Support. **Same-day rows are still quarantined** under the previous conservative current-session contract, even within this tolerance; they do not become live or finality-qualified. No rounding, quote rewrite, synthetic high/low, inferred volume, or bar-finality promotion occurs.
 
 A retained raw row gets an explicit `ohlc_validation=VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY` tag. The PRIVATE research reader independently revalidates that exact threshold; a missing/forged tag, mismatch, non-positive OHLC, negative volume, or a gap greater than `1e-5` remains `INVALID_CACHE` or rejected/quarantined by the original worker. Strictly valid rows retain the `STRICT` tag. All exposed rows remain `is_partial_bar=true` and `bar_finality=NOT_VERIFIED`. Source arbitration, Radar, Paper and live trading stay blocked. This is **not** authorization to publish canonical data or generate signals.
 
