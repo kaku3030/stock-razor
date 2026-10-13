@@ -266,6 +266,38 @@ for raw in d["operations"]:
         for field in ("freshness","closure"):
             if summary.get(field) in ("NOT_VERIFIED","PROVEN","UNPROVEN","PASS","BLOCKED"):
                 item[field]=summary[field]
+    if raw["name"] in ("kline_15m","kline_60m"):
+        # Private raw Kline samples are NEVER exported; even structurally
+        # clean historical 15m/60m rows cannot establish live currentness.
+        kline=raw.get("summary")
+        kline=kline if isinstance(kline,dict) else {}
+        value=kline.get("ohlcv_range_valid")
+        item["bar_range_structure"]=(
+            "PASS" if value is True else "FAIL" if value is False else "NOT_VERIFIED"
+        )
+        order=kline.get("timestamp_monotonicity")
+        item["timestamp_order"]=(
+            order if order in (
+                "STRICTLY_INCREASING","NON_DECREASING","NOT_MONOTONIC","NOT_VERIFIED"
+            ) else "NOT_VERIFIED"
+        )
+        fields=kline.get("numeric_fields")
+        fields=fields if isinstance(fields,dict) else {}
+        item["numeric_ohlcv"]=(
+            "PASS" if all(fields.get(k) is True for k in (
+                "open","high","low","close","volume"
+            )) else "NOT_VERIFIED"
+        )
+        item["numeric_amount"]=(
+            "PASS" if fields.get("amount") is True else "NOT_VERIFIED"
+        )
+        n=kline.get("sample_count")
+        item["historical_sample_count"]=(
+            n if type(n) is int and 0 <= n <= 3 else None
+        )
+        item["freshness"]="NOT_VERIFIED"
+        item["closure"]="NOT_VERIFIED"
+        item["provider_live_qualified"]=False
     if raw["name"] == "websocket_quote_smoke":
         # Only finite bounded counters from provider callbacks, never
         # symbols, quote payload, raw error text or unqualified latency.
