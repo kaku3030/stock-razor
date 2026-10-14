@@ -68,8 +68,16 @@ jobs:
             echo 'OPEND_NATIVE_BENCHMARK_OVERSIZE=BLOCKED'
             exit 1
           fi
-          printf '%s' "$raw" | jq -ec '
-            select(.schema=="stock_razor_opend_native_kline_bounded_benchmark_v1"
+          # OpenD Python may emit SDK diagnostic lines alongside its single
+          # JSON report. Parse ONLY well-formed JSON lines of the exact schema;
+          # do not expose untrusted log lines, provider payloads or exceptions.
+          printf '%s' "$raw" | jq -Rsec '
+            [split("\\n")[] | try fromjson catch empty
+              | select(type=="object"
+                       and .schema=="stock_razor_opend_native_kline_bounded_benchmark_v1")] as $reports
+            | if ($reports | length)==1 then $reports[0]
+              else error("EXPECTED_EXACTLY_ONE_SANITIZED_JSON_REPORT") end
+            | select(.schema=="stock_razor_opend_native_kline_bounded_benchmark_v1"
               and .source=="FUTU_OPEND_NATIVE_GET_CUR_KLINE"
               and .subscription_changes==0
               and .historical_quota_consumed_by_explicit_history_api==0
