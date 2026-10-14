@@ -10,6 +10,7 @@ import os
 from threading import RLock
 from time import perf_counter
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_STATUS_PATH = "/run/stock-razor-us-livefeed/latest-heartbeat.json"
@@ -312,8 +313,15 @@ def read_us_livefeed_health(
         }
         requests = postclose.get("provider_requests")
         seeded = postclose.get("seeded_count")
+        session_date = postclose.get("session_date")
+        # A previously repaired session must not be advertised as today's.
+        expected_session_date = now.astimezone(
+            ZoneInfo("America/New_York")
+        ).date().isoformat()
         safety_ok = (
-            postclose.get("status") in allowed_status
+            type(session_date) is str
+            and session_date == expected_session_date
+            and postclose.get("status") in allowed_status
             and type(requests) is int and 0 <= requests <= 20
             and type(seeded) is int and 0 <= seeded <= requests
             and postclose.get("historical_query") is True
@@ -333,6 +341,7 @@ def read_us_livefeed_health(
                 if len(raw_symbols) <= 20 else 0
             )
             postclose_summary = {
+                "session_date": session_date,
                 "status": postclose["status"],
                 "reason": str(postclose.get("reason") or "")[:100],
                 "provider_requests": requests,
