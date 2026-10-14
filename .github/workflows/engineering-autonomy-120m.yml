@@ -34,6 +34,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Install pinned test dependencies
+        run: python -m pip install --disable-pip-version-check pytest==8.4.2
       - name: Validate explicit resume run ID
         env:
           RESUME_RUN_ID: ${{ inputs.resume_run_id }}
