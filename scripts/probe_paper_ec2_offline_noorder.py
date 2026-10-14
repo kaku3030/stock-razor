@@ -87,6 +87,9 @@ def run_offline_cloud_soak(*, runtime_root: Path, expected_sha: str) -> dict[str
             account_generation="ec2-synthetic-account",
             shadow_store=ExecutionStore(root / "shadow.sqlite"),
         )
+        owner.initialize_offline_balance(
+            Decimal("100000"), datetime.now(timezone.utc),
+        )
         return owner, capability.adapter
 
     def permission(seq: int, now: datetime) -> Observation:
@@ -128,6 +131,8 @@ def run_offline_cloud_soak(*, runtime_root: Path, expected_sha: str) -> dict[str
         assert first_result.broker_order_id == "paper-order-1"
         assert len(paper_one.calls) == 1
         assert first.stop().state is PaperRuntimeState.STOPPED
+        for store in (first._engine.store, first._shadow._store):
+            store.connection.close()
 
         second, paper_two = make_runtime(root)
         assert second.start().state is PaperRuntimeState.READY
@@ -145,6 +150,8 @@ def run_offline_cloud_soak(*, runtime_root: Path, expected_sha: str) -> dict[str
         assert second_result.broker_order_id == "paper-order-2"
         assert len(paper_two.calls) == 1
         assert second.stop().state is PaperRuntimeState.STOPPED
+        for store in (second._engine.store, second._shadow._store):
+            store.connection.close()
 
         recovered, paper_three = make_runtime(root)
         snap = recovered.start()
@@ -152,6 +159,8 @@ def run_offline_cloud_soak(*, runtime_root: Path, expected_sha: str) -> dict[str
         assert snap.order_records == 2
         assert paper_three.calls == []
         assert recovered.stop().state is PaperRuntimeState.STOPPED
+        for store in (recovered._engine.store, recovered._shadow._store):
+            store.connection.close()
         result["isolated_paper_restart"] = "PASS"
     return result
 

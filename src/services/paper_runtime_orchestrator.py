@@ -122,6 +122,14 @@ class PaperRuntimeOrchestrator:
     def state(self) -> PaperRuntimeState:
         return self._state
 
+    def initialize_offline_balance(self, initial_cash: Decimal, at: datetime) -> None:
+        """Seed explicit scenario capital before an offline runtime starts."""
+
+        with self._lock:
+            if self._state is not PaperRuntimeState.NEW:
+                raise ExecutionBlocked("offline balance can only be initialized before start")
+            self._engine.ledger.initialize(initial_cash, at, "offline_simulation")
+
     def start(self) -> PaperRuntimeSnapshot:
         """Reconcile before accepting any permission or order intent."""
 

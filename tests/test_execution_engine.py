@@ -124,6 +124,26 @@ def test_non_paper_adapter_is_hard_blocked():
         ExecutionEngine(LiveLike(), RiskGuard(RiskLimits(frozenset(), Decimal("1"), Decimal("1"), Decimal("1"), Decimal("1"), Decimal("0"), 1, 1, 1)))
 
 
+def test_default_paper_reconcile_does_not_invent_balance():
+    capability = create_paper_adapter()
+    with pytest.raises(ExecutionBlocked, match="UNKNOWN"):
+        capability.adapter.reconcile()
+
+
+def test_engine_projects_explicit_ledger_and_commits_fill_once(tmp_path):
+    capability = create_paper_adapter(fills={"i-1": (("f-1", Decimal("1"), Decimal("100")),)})
+    limits = RiskLimits(frozenset({"AMD"}), Decimal("5000"), Decimal("100"), Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60)
+    engine_with_ledger = ExecutionEngine(capability, RiskGuard(limits), ExecutionStore(tmp_path / "ledger.sqlite"))
+    engine_with_ledger.ledger.initialize(Decimal("1000"), NOW)
+    engine_with_ledger.reconcile()
+
+    engine_with_ledger.submit(intent(), context())
+
+    assert engine_with_ledger.ledger.balance().cash == Decimal("900")
+    assert engine_with_ledger.ledger.balance().reserved_cash == Decimal("900")
+    assert engine_with_ledger.ledger.positions()[0].qty == Decimal("1")
+
+
 def test_intent_requires_lineage_and_timezone():
     with pytest.raises(ValueError):
         OrderIntent("i", "AMD", Side.BUY, OrderType.LIMIT, Decimal("1"), limit_price=Decimal("1"))
