@@ -81,6 +81,7 @@ def reconcile_us_postclose_terminal_minutes(
 
     local_now = observed_at.astimezone(EASTERN)
     day = local_now.date()
+    result["session_date"] = day.isoformat()
     if local_now.time() < POSTCLOSE_BUFFER_END or str(market_state).upper() not in POSTCLOSE_MARKET_STATES:
         return {**result, "status": "NOT_DUE", "reason": "POSTCLOSE_WINDOW_NOT_QUALIFIED"}
 
