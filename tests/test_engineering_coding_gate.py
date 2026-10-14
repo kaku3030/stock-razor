@@ -27,7 +27,7 @@ def test_autonomy_workflow_protects_gitignore_from_agent_writes():
     workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
         encoding="utf-8"
     )
-    assert "--file tests/test_engineering_autonomy.py \\\n            --read .gitignore" in workflow
+    assert "--file tests/test_engineering_autonomy.py \\\n            --read .gitignore \\\n            --no-gitignore" in workflow
 
 
 @pytest.mark.parametrize("patch", [
