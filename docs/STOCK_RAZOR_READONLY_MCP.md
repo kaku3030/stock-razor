@@ -164,3 +164,27 @@ expected model token load; actual tunnel RTT and p50/p95 speedup are
 The source SHA reported by the runtime must be checked against
 deployed revision separately. OpenAI Responses API token costs do not
 directly measure ChatGPT plugin token accounting.
+
+## CN TickFlow historical readback through an existing ChatGPT tool
+
+The canonical cloud MCP already registers `get_cn_tickflow_research_data`, but
+older ChatGPT app snapshots can expose only `get_cn_market_data`. An **opt-in**
+compatibility route lets that existing action read the *same AWS-local,
+provider-native TickFlow research cache* without rescanning tools:
+
+- Call `get_cn_market_data(symbol="TICKFLOW:159611.SZ", timeframe="15m", limit=3)`.
+- Or use `TICKFLOW:518880.SH` and `timeframe="60m"`.
+- Prefix matching is exact; other symbols continue the existing
+  Eastmoney-primary/Tencent-fallback reader, unchanged.
+- The prefix strips only `TICKFLOW:`, and the existing cache reader retains
+  its symbol/period/limit allowlist, freshness checks and all fail-closed gates.
+- `research_mode="historical_only"` is forced. `PASS_HISTORICAL_ONLY`
+  **never** means live-feed continuity, provider bar finality, canonical
+  Source Arbiter admission, Radar entry, Paper readiness or trade permission.
+- This adds no network access to TickFlow from MCP and does not install any
+  new cloud service. Calls only read the periodically updated private cache.
+
+The independent AWS loopback smoke workflow
+`.github/workflows/verify-tickflow-cloud-mcp-loopback.yml` verifies the actual
+MCP HTTP protocol and original tool, using four bounded historical calls; it
+never reports provider prices or secrets to public Actions logs.

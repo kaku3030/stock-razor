@@ -104,7 +104,16 @@ def get_cn_market_data(
     timeframe: str = "1d",
     limit: int = 120,
 ) -> dict:
-    """Return bounded A-share cloud observation rows without provider I/O."""
+    """Read cached CN data; TICKFLOW: selects native historical research only.
+
+    The exact opt-in prefix preserves the old ChatGPT MCP tool schema.
+    Other symbols retain the existing Eastmoney/Tencent observation path.
+    """
+    if isinstance(symbol, str) and symbol.startswith("TICKFLOW:"):
+        return read_cn_tickflow_research_data(
+            symbol[len("TICKFLOW:"):], timeframe=timeframe, limit=limit,
+            research_mode="historical_only",
+        )
     return read_cn_market_data(symbol, timeframe=timeframe, limit=limit)
 
 
