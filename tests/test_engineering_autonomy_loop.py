@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from engineering_autonomy.loop import load_queue, run_queue
+from engineering_autonomy.loop import ALLOWED_COMMANDS, load_queue, load_state, run_queue
 
 
 def queue_file(tmp_path, cost_units=1):
@@ -12,7 +12,7 @@ def queue_file(tmp_path, cost_units=1):
         "tasks": [{
             "id": "one",
             "kind": "quality-check",
-            "command": ["python", "-c", "pass"],
+            "command": list(ALLOWED_COMMANDS["quality-check"]),
             "max_attempts": 2,
             "cost_units": cost_units,
         }]
@@ -69,3 +69,64 @@ def test_queue_rejects_unsupported_kind(tmp_path):
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):
         load_queue(path)
+
+
+def test_queue_rejects_unreviewed_command(tmp_path):
+    queue = queue_file(tmp_path)
+    data = json.loads(queue.read_text())
+    data["tasks"][0]["command"] = ["python", "-c", "print(123)"]
+    queue.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="reviewed read-only"):
+        load_queue(queue)
+
+
+def test_changed_queue_cannot_resume_checkpoint(tmp_path):
+    queue = queue_file(tmp_path)
+    state = tmp_path / "state.json"
+    assert run_queue(queue, state, executor=lambda task: 0)["status"] == "PASS"
+    data = json.loads(queue.read_text())
+    data["tasks"][0]["cost_units"] = 2
+    queue.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="fingerprint"):
+        load_state(state, load_queue(queue))
+
+
+def test_each_retry_consumes_budget(tmp_path):
+    queue = queue_file(tmp_path, cost_units=2)
+    state = tmp_path / "state.json"
+    calls = []
+    result = run_queue(queue, state, budget_units=3,
+        executor=lambda task: calls.append(task.id) or 1)
+    assert result["status"] == "BLOCKED"
+    assert result["spent_cost_units"] == 2
+    assert result["attempts"]["one"] == 1
+    assert calls == ["one"]
+
+
+def test_default_executor_deadline_is_enforced(tmp_path, monkeypatch):
+    import subprocess
+    from engineering_autonomy import loop
+    queue = queue_file(tmp_path)
+    state = tmp_path / "state.json"
+    called = []
+
+    def timeout_run(command, *, check, timeout):
+        called.append(timeout)
+        raise subprocess.TimeoutExpired(command, timeout)
+
+    monkeypatch.setattr(loop.subprocess, "run", timeout_run)
+    result = run_queue(queue, state, max_runtime_seconds=4)
+    assert result["status"] == "STOPPED"
+    assert result["spent_cost_units"] == 1
+    assert called and 0 < called[0] <= 4
+
+
+def test_invalid_attempt_checkpoint_fails_closed(tmp_path):
+    queue = queue_file(tmp_path)
+    state = tmp_path / "state.json"
+    run_queue(queue, state, executor=lambda task: 0)
+    saved = json.loads(state.read_text())
+    saved["attempts"]["one"] = -1
+    state.write_text(json.dumps(saved))
+    with pytest.raises(ValueError, match="attempt count"):
+        load_state(state, load_queue(queue))
