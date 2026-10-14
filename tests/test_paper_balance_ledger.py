@@ -177,3 +177,48 @@ def test_partial_fill_cannot_overspend_same_reservation_with_second_receipt(tmp_
     reopened.release("order", NOW)
     assert reopened.balance().reserved_cash == Decimal("0")
     assert reopened.balance().cash == Decimal("400")
+
+
+
+def test_duplicate_reservation_same_amount_is_idempotent_but_conflict_blocks():
+    ledger = PaperBalanceLedger(sqlite3.connect(":memory:"))
+    ledger.initialize(Decimal("500"), NOW)
+    first = ledger.reserve("i-one", Decimal("100.00"), NOW)
+    assert ledger.reserve("i-one", Decimal("100"), NOW) == first
+    with pytest.raises(LedgerUnknown, match="conflicting reservation"):
+        ledger.reserve("i-one", Decimal("200"), NOW)
+    assert ledger.balance() == first
+
+
+def test_conflicting_duplicate_fill_receipt_is_not_silently_replayed(tmp_path):
+    path = tmp_path / "receipt-conflict.sqlite"
+    ledger = PaperBalanceLedger(sqlite3.connect(path))
+    ledger.initialize(Decimal("500"), NOW)
+    ledger.reserve("order", Decimal("300"), NOW)
+    def fill(**overrides):
+        params = {
+            "fill_id": "same-fill", "intent_id": "order",
+            "reservation_id": "order", "symbol": "AMD", "side": "BUY",
+            "quantity": Decimal("1"), "price": Decimal("100"),
+            "fee": Decimal("1"), "at": NOW,
+        }
+        params.update(overrides)
+        return ledger.record_fill(**params)
+    first = fill()
+    assert fill(price=Decimal("100.00")) == first
+    for conflict in (
+        {"intent_id": "other"},
+        {"reservation_id": "different"},
+        {"symbol": "AAPL"},
+        {"side": "SELL"},
+        {"quantity": Decimal("2")},
+        {"price": Decimal("101")},
+        {"fee": Decimal("2")},
+    ):
+        with pytest.raises(LedgerUnknown, match="conflicting fill"):
+            fill(**conflict)
+    assert ledger.balance() == first
+    ledger.connection.close()
+    recovered = PaperBalanceLedger(sqlite3.connect(path))
+    assert recovered.balance() == first
+    assert recovered.positions()[0].qty == Decimal("1")
