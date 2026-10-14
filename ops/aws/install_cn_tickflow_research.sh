@@ -4,6 +4,8 @@ umask 077
 REPO_REF="${REPO_REF:?exact SHA required}"
 [[ "$REPO_REF" =~ ^[0-9a-f]{40}$ ]]
 [[ "$(id -u)" == 0 ]]
+DEPLOY_DRY_RUN="${DEPLOY_DRY_RUN:-false}"
+ALLOW_SERVICE_MUTATION="${ALLOW_SERVICE_MUTATION:-false}"
 ROOT=/opt/stock-razor-cn-tickflow
 SERVICE=stock-razor-cn-tickflow-research.service
 REPO=https://github.com/kaku3030/stock-razor.git
@@ -11,6 +13,36 @@ install -d -m 0755 "$ROOT"
 if [[ ! -d "$ROOT/repo/.git" ]]; then
   git clone --filter=blob:none "$REPO" "$ROOT/repo" >/dev/null 2>&1
 fi
+previous_sha="$(git -C "$ROOT/repo" rev-parse HEAD 2>/dev/null || true)"
+previous_active="false"
+if systemctl is-active --quiet "$SERVICE"; then previous_active="true"; fi
+
+if [[ "$DEPLOY_DRY_RUN" == "true" ]]; then
+  [[ "$ALLOW_SERVICE_MUTATION" != "true" ]]
+  echo "CN_TICKFLOW_DEPLOY_DRY_RUN=PASS"
+  echo "CN_TICKFLOW_PREVIOUS_REPO_SHA=${previous_sha:-UNKNOWN}"
+  echo "CN_TICKFLOW_SERVICE_MUTATION=NO"
+  echo "SOURCE_ARBITER_ADMISSION=BLOCKED"
+  echo "RADAR_ADMISSION=BLOCKED"
+  echo "LIVE_TRADE=NO"
+  exit 0
+fi
+[[ "$ALLOW_SERVICE_MUTATION" == "true" ]]
+
+rollback() {
+  local rc=$?
+  trap - ERR
+  if [[ "$rc" -ne 0 && "$previous_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    git -C "$ROOT/repo" checkout --detach "$previous_sha" >/dev/null 2>&1 || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [[ "$previous_active" == "true" ]]; then
+      systemctl restart "$SERVICE" >/dev/null 2>&1 || true
+    fi
+    echo "CN_TICKFLOW_ROLLBACK=ATTEMPTED" >&2
+  fi
+  return "$rc"
+}
+trap rollback ERR
 git -C "$ROOT/repo" fetch --depth=1 origin "$REPO_REF" >/dev/null 2>&1
 git -C "$ROOT/repo" checkout --detach "$REPO_REF" >/dev/null 2>&1
 [[ "$(git -C "$ROOT/repo" rev-parse HEAD)" == "$REPO_REF" ]]
@@ -64,6 +96,9 @@ systemctl enable "$SERVICE" >/dev/null
 systemctl restart "$SERVICE"
 systemctl is-active "$SERVICE"
 echo "CN_TICKFLOW_RESEARCH_SERVICE_DEPLOY=PASS"
+echo "CN_TICKFLOW_PREVIOUS_REPO_SHA=${previous_sha:-UNKNOWN}"
+echo "CN_TICKFLOW_TARGET_REPO_SHA=$REPO_REF"
+echo "CN_TICKFLOW_SERVICE_MUTATION=APPLIED"
 echo "SOURCE_ARBITER_ADMISSION=BLOCKED"
 echo "RADAR_ADMISSION=BLOCKED"
 echo "LIVE_TRADE=NO"
