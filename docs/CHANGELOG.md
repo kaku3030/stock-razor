@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [性能] 云端 TickFlow 新增 `TICKFLOW:FAST` 精简行情快照，利用已连接的 `get_cn_market_data` 一次返回 2 ETF×(15m,60m) 最近一根原生 OHLCV、K线质量与缓存同源版本，并返回 AWS 本地读耗时；不要求新增 MCP 安装、不修改原始行情、交易门禁不变。
 - [修复] TickFlow 当日盘后（15:02 上海时间后）仅在原始 ETF 价格全部贴合最小跳动、OHLC 偏差不超过 1e-5 时保留微小浮点误差的历史研究 K 线，保持原始价、不证明终态，盘中与 Session Progress 仍严格阻断。
 - [改进] 云端 ChatGPT 已连接 MCP 的 `TICKFLOW:BATCH` 显式只读别名可一次获取两只 ETF 的 15m/60m 四组历史研究 K 线，严格要求缓存 SHA/sequence 同源；不改变普通行情路径、数据最终闭合、Radar 或交易门禁。
 - [改进] ChatGPT 现有 `get_cn_market_data` 只读工具支持显式 `TICKFLOW:159611.SZ` / `TICKFLOW:518880.SH` 前缀，读取 AWS 原生 TickFlow 15m/60m 历史研究缓存；普通行情路径、最终闭合和全部交易门禁均不变。
