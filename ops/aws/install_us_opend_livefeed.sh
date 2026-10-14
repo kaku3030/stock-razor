@@ -47,6 +47,7 @@ from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
+from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache
 from src.services.live_feed.futu_us_daily_history import (
@@ -61,6 +62,7 @@ PY
 cat >"$INSTALL_ROOT/run.py" <<'PY'
 import json, os, socket, threading, time, uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import futu as ft
 from data_provider.futu_k1m_streaming_adapter import (
     FutuK1MStreamingAdapter,
@@ -82,6 +84,7 @@ from src.services.live_feed.futu_k1m_closure_qualification import (
     summarize_futu_k1m_closure_qualification,
 )
 from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
+from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
     futu_us_market_state_to_session,
@@ -294,6 +297,16 @@ daily_history_summary={
     "live_trade":False,
 }
 seq=0
+# One bounded historical RTH tail check per exchange-local day, after 16:30 ET.
+# This never qualifies the realtime bar-closure/trading admission gate.
+postclose_attempted_date=None
+postclose_reconciliation={
+    "status":"NOT_DUE","reason":"WAITING_FOR_POSTCLOSE_FULL_GRID",
+    "provider_requests":0,"seeded_count":0,
+    "historical_query":True,"currentness_proven":False,
+    "bar_closure_promotion_authorized":False,
+    "radar_admission":"BLOCKED","live_trade":False,
+}
 canonical_export_sequence=0
 canonical_export_status="UNKNOWN"
 canonical_export_error=None
@@ -440,6 +453,32 @@ try:
             accepted_count=accepted_event_count
             push_utc=last_push_utc
             time_keys=dict(latest_time_keys)
+        postclose_seeded_this_pass=0
+        local_now=now.astimezone(ZoneInfo("America/New_York"))
+        local_day=local_now.date().isoformat()
+        if (
+            postclose_attempted_date != local_day
+            and (local_now.hour,local_now.minute) >= (16,30)
+            and market_state in ("AFTER_HOURS_BEGIN","AFTER_HOURS_END","CLOSED","WAITING_OPEN")
+            and any(
+                isinstance(label,str)
+                and label >= local_day+" 16:00:00"
+                and label.startswith(local_day+" ")
+                for label in time_keys.values()
+            )
+        ):
+            # The existing RTH history fetch is already bound to the same
+            # OpenD context and explicitly excludes extended-hour candles.
+            postclose_attempted_date=local_day
+            postclose_reconciliation=reconcile_us_postclose_terminal_minutes(
+                CODES,
+                fetch_page=fetch_history_page,
+                market_data=market_data,
+                latest_time_keys=time_keys,
+                observed_at=now,
+                market_state=market_state,
+            )
+            postclose_seeded_this_pass=int(postclose_reconciliation["seeded_count"])
         currentness={
             code:classify_futu_us_k1m_currentness(
                 time_keys.get(code),observed_at_utc=now,market_state=market_state
@@ -555,6 +594,7 @@ try:
         canonical_export_updated=False
         should_export=(
             consumer_result.bars_ingested > 0
+            or postclose_seeded_this_pass > 0
             or (warm_start_seeded_total > 0 and canonical_export_sequence == 0)
             or not os.path.exists(canonical_snapshot_path)
             or market_state != last_export_market_state
@@ -675,6 +715,7 @@ try:
           "quote_right_evidence":quote_right_payload,
           "research_consumer":consumer_payload,
           "warm_start":warm_start_payload,
+          "postclose_reconciliation":postclose_reconciliation,
           "daily_history":daily_history_summary,
           "canonical_cache":canonical_cache,
           "canonical_snapshot_export":{
