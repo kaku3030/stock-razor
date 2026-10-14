@@ -131,7 +131,13 @@ class PaperBalanceLedger:
         self._require_known()
         event_id = f"reserve:{reservation_id}"
         with self.connection:
-            if self._event_exists(event_id):
+            old = self.connection.execute(
+                "SELECT account_id,amount,reservation_id FROM paper_ledger_events "
+                "WHERE event_id=? AND kind='RESERVE'", (event_id,),
+            ).fetchone()
+            if old is not None:
+                if old[0] != self.account_id or Decimal(old[1]) != amount or old[2] != reservation_id:
+                    raise LedgerUnknown("conflicting reservation receipt")
                 return self.balance()
             balance = self.balance()
             if balance.cash - balance.reserved_cash < amount:
@@ -164,7 +170,24 @@ class PaperBalanceLedger:
             raise ValueError("invalid fill")
         event_id = f"fill:{fill_id}"
         with self.connection:
-            if self._event_exists(event_id):
+            existing = self.connection.execute(
+                "SELECT account_id,intent_id,reservation_id,symbol,side,quantity,price,fee "
+                "FROM paper_ledger_events WHERE event_id=? AND kind='FILL'",
+                (event_id,),
+            ).fetchone()
+            if existing is not None:
+                identity = (
+                    existing[0] == self.account_id
+                    and existing[1] == intent_id
+                    and existing[2] == reservation_id
+                    and existing[3] == symbol
+                    and existing[4] == side
+                    and Decimal(existing[5]) == quantity
+                    and Decimal(existing[6]) == price
+                    and Decimal(existing[7]) == fee
+                )
+                if not identity:
+                    raise LedgerUnknown("conflicting fill receipt")
                 return self.balance()
             balance = self.balance()
             notional = quantity * price
