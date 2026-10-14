@@ -76,6 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           aider \
+            --file tests/test_engineering_autonomy.py \
             --model deepseek/deepseek-chat \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \

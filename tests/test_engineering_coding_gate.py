@@ -56,6 +56,7 @@ def test_workflow_uses_deepseek_aider_without_codex_or_openai_secret():
     )
     assert 'secrets.DEEPSEEK_API_KEY' in workflow
     assert 'aider-chat==0.86.2' in workflow
+    assert '--file tests/test_engineering_autonomy.py' in workflow
     assert '--model deepseek/deepseek-chat' in workflow
     assert 'openai/codex-action' not in workflow
     assert 'secrets.OPENAI_API_KEY' not in workflow
