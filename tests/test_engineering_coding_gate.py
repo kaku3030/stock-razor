@@ -23,6 +23,13 @@ def test_allowlisted_patch_is_accepted():
     validate_patch(make_patch())
 
 
+def test_autonomy_workflow_protects_gitignore_from_agent_writes():
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "--file tests/test_engineering_autonomy.py \\\n            --read .gitignore" in workflow
+
+
 @pytest.mark.parametrize("patch", [
     b"", b"bad", make_patch("src/trading.py"),
     make_patch() + b"\x00",
