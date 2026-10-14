@@ -16,7 +16,7 @@ from .futu_k1m_history import normalize_futu_k1m_history_rows
 EASTERN = ZoneInfo("America/New_York")
 POSTCLOSE_BUFFER_END = time(16, 30)
 POSTCLOSE_MARKET_STATES = frozenset({
-    "AFTER_HOURS_BEGIN", "AFTER_HOURS_END", "CLOSED", "WAITING_OPEN",
+    "AFTER_HOURS_BEGIN", "AFTER_HOURS_END", "OVERNIGHT", "CLOSED", "WAITING_OPEN",
 })
 MAX_SYMBOLS = 20
 
