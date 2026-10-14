@@ -188,3 +188,20 @@ The independent AWS loopback smoke workflow
 `.github/workflows/verify-tickflow-cloud-mcp-loopback.yml` verifies the actual
 MCP HTTP protocol and original tool, using four bounded historical calls; it
 never reports provider prices or secrets to public Actions logs.
+
+### Fast four-frame cloud TickFlow research read
+
+The already-connected ChatGPT `get_cn_market_data` tool also accepts
+`symbol="TICKFLOW:BATCH"` with `limit=1..24`. The `timeframe` parameter
+is ignored for this exact literal; the result contains 159611.SZ and
+518880.SH, 15m and 60m each, in one remote MCP round trip. It makes **zero
+provider requests**. Every frame uses the same historical-only TickFlow
+private cache reader. The batch requires all four calls to pass and their
+`repo_sha` and `sequence` to match; stale/misaligned results never return a
+partial price-bearing batch. Ordinary `get_cn_market_data("159611.SZ",...)`
+retains the original provider.
+
+All returned rows remain research-only with unverified finality, unverified
+live currentness, no source/Radar/Paper/Live trading admission. During market
+hours `TICKFLOW:BATCH` is **not** evidence of WS continuity or a current
+completed bar; check each frame's `expected_grid_progress`.
