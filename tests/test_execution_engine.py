@@ -528,3 +528,32 @@ def test_ledger_sell_does_not_reserve_cash_for_position_disposal(tmp_path):
     assert e.ledger.balance().reserved_cash == Decimal("0")
     assert e.ledger.balance().cash == Decimal("910")
     assert e.ledger.positions()[0].qty == Decimal("1")
+
+
+
+def test_insufficient_buying_power_does_not_write_submitting_intent(tmp_path):
+    file_path = tmp_path / "cash-block.sqlite"
+    capability = create_paper_adapter()
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(capability, RiskGuard(limits), ExecutionStore(file_path))
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent("first", qty="9"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("900")
+    # Earlier reconciliation can say cash=1000; independent reservations
+    # must still reject second intent before recording a SUBMITTING state.
+    with pytest.raises(Exception, match="insufficient available cash"):
+        e.submit(intent("second", qty="2"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("900")
+    assert "second" not in e.records
+    assert all(entry.intent_id != "second" for entry in e.journal)
+    assert e.store.has_ambiguous_submission() is False
+    assert capability.adapter.calls == [("place", "first")]
+    reopened = ExecutionEngine(
+        create_paper_adapter(), RiskGuard(limits), ExecutionStore(file_path),
+    )
+    assert reopened.store.has_ambiguous_submission() is False
+    assert "second" not in reopened.records
