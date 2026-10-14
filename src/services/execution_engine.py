@@ -264,11 +264,12 @@ class ExecutionEngine:
         self.risk_guard.check(intent,self.reconciliation,context); self.store.save_intent(intent); record=OrderRecord(intent); self.records[intent.intent_id]=record
         self._transition(record,OrderState.VALIDATED,context.now); self._transition(record,OrderState.SUBMITTING,context.now)
         ledger_known = self.ledger.balance().status == "KNOWN"
-        if ledger_known:
+        cash_reserved = ledger_known and intent.side is Side.BUY
+        if cash_reserved:
             self.ledger.reserve(intent.intent_id, intent.qty * intent.limit_price, context.now)
         try: broker_order_id,fills=self.adapter.place(intent)
         except PaperOrderRejected:
-            if ledger_known:
+            if cash_reserved:
                 self.ledger.release(intent.intent_id, context.now)
             self._transition(record,OrderState.REJECTED,context.now); return record
         if not broker_order_id: raise ExecutionBlocked("paper broker order identity is missing")
@@ -281,16 +282,33 @@ class ExecutionEngine:
         for fill_id,quantity,price in validated:
             record.fill_ids.append(fill_id); record.filled_qty+=quantity; self._transition(record,OrderState.FILLED if record.filled_qty==intent.qty else OrderState.PARTIAL,context.now,fill_id=fill_id,quantity=quantity,price=price,broker_order_id=broker_order_id)
             if ledger_known:
-                self.ledger.record_fill(fill_id=fill_id, intent_id=intent.intent_id, reservation_id=intent.intent_id, symbol=intent.symbol, side=intent.side.value, quantity=quantity, price=price, at=context.now)
+                self.ledger.record_fill(
+                    fill_id=fill_id, intent_id=intent.intent_id,
+                    reservation_id=(intent.intent_id if cash_reserved else None),
+                    symbol=intent.symbol, side=intent.side.value,
+                    quantity=quantity, price=price, at=context.now,
+                )
+        if cash_reserved and record.state is OrderState.FILLED:
+            # Full execution may cost less than the limit-price reservation.
+            # Return only unused cash from this order, not from other intents.
+            self.ledger.release(intent.intent_id, context.now)
         return record
     def cancel(self, intent_id: str, at: datetime) -> OrderRecord:
         record=self.records.get(intent_id)
         if record is None or record.broker_order_id is None or record.state not in {OrderState.ACCEPTED,OrderState.PARTIAL}: raise ExecutionBlocked("order cannot be cancelled")
-        self._mutation_gate(record.intent, RiskContext(at, at, record.intent.allowed_session)); self._append("CANCEL_REQUESTED",record,at,broker_order_id=record.broker_order_id); self.adapter.cancel(record.broker_order_id); self._transition(record,OrderState.CANCELLED,at,broker_order_id=record.broker_order_id); return record
+        self._mutation_gate(record.intent, RiskContext(at, at, record.intent.allowed_session)); self._append("CANCEL_REQUESTED",record,at,broker_order_id=record.broker_order_id); self.adapter.cancel(record.broker_order_id); self._transition(record,OrderState.CANCELLED,at,broker_order_id=record.broker_order_id)
+        if self.ledger.balance().status == "KNOWN" and record.intent.side is Side.BUY:
+            self.ledger.release(intent_id, at)
+        return record
     def replace(self, intent_id: str, replacement: OrderIntent, context: RiskContext) -> OrderRecord:
         record=self.records.get(intent_id)
         if record is None or record.broker_order_id is None or record.state not in {OrderState.ACCEPTED,OrderState.PARTIAL}: raise ExecutionBlocked("order cannot be replaced")
         if replacement.intent_id in self.records or self.reconciliation is None: raise ExecutionBlocked("replacement intent_id already exists or reconciliation is missing")
+        if self.ledger.balance().status == "KNOWN":
+            # Original and new reservations cannot be atomically reassigned
+            # across an external broker replace callback. Until independent
+            # receipts/reconciliation exist, fail before any adapter mutation.
+            raise ExecutionBlocked("ledger-backed replace requires receipt reconciliation")
         self._mutation_gate(replacement,context); self.store.save_intent(replacement); self._append("REPLACE_REQUESTED",record,context.now,replaced_by=replacement.intent_id); new_broker_order_id=self.adapter.replace(record.broker_order_id,replacement); self._transition(record,OrderState.SUPERSEDED,context.now,replaced_by=replacement.intent_id)
         new_record=OrderRecord(replacement,OrderState.ACCEPTED,new_broker_order_id); self.records[replacement.intent_id]=new_record; self._append("ACCEPTED",new_record,context.now,_state=OrderState.ACCEPTED,broker_order_id=new_broker_order_id,replaces=intent_id)
         return new_record
