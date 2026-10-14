@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta, timezone
+from datetime import time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from data_provider.market_data_adapter import Bar, evaluate_health
@@ -34,6 +34,12 @@ def closed_futu_minute_to_bar(minute: FormingMinuteBar, *, received_at):
         end = minute.start.replace(tzinfo=FUTU_US_KLINE_TIMEZONE).astimezone(timezone.utc)
     else:
         end = minute.start.astimezone(timezone.utc)
+    # The OpenD stream may remain active in premarket or after-hours.
+    # Do not mislabel those K_1M rows as RTH without a separately
+    # qualified extended-session normalization contract.
+    local_end = end.astimezone(FUTU_US_KLINE_TIMEZONE)
+    if not time(9, 31) <= local_end.time() <= time(16, 0):
+        raise ValueError("US_RTH_END_LABEL_REQUIRED")
     start = end - timedelta(minutes=1)
     received = received_at.astimezone(timezone.utc)
     age_seconds = (received - end).total_seconds()
