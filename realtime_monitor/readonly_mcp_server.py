@@ -98,6 +98,77 @@ def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
     return read_cn_quick_scan(symbols)
 
 
+def _read_tickflow_historical_batch(limit: int) -> dict:
+    """One remote MCP round trip for two ETF research histories; no provider IO.
+
+    Four independent cache reads must share one source SHA and sequence.
+    Never promote an incomplete or misaligned set to a usable batch.
+    """
+    base = {
+        "ok": False, "status": "INVALID_REQUEST",
+        "provider": "TICKFLOW_PREMIUM", "research_only": True,
+        "bar_finality": "NOT_VERIFIED", "currentness": "UNPROVEN",
+        "source_arbiter_admission": "BLOCKED",
+        "radar_admission": "BLOCKED", "can_confirm_signal": False,
+        "live_trade": False, "provider_requests": 0,
+        "canonical_write_authorized": False,
+        "research_mode": "historical_only",
+    }
+    if type(limit) is not int or not 1 <= limit <= 24:
+        return base
+    raw = {}
+    states = {}
+    source_versions = set()
+    for symbol in ("159611.SZ", "518880.SH"):
+        frames = {}
+        for period in ("15m", "60m"):
+            result = read_cn_tickflow_research_data(
+                symbol, timeframe=period, limit=limit,
+                research_mode="historical_only",
+            )
+            states[f"{symbol}:{period}"] = result.get("status", "INVALID_CACHE")
+            if not (
+                result.get("ok") is True
+                and result.get("status") == "PASS_HISTORICAL_ONLY"
+                and result.get("research_only") is True
+                and result.get("radar_admission") == "BLOCKED"
+                and result.get("source_arbiter_admission") == "BLOCKED"
+                and result.get("live_trade") is False
+                and result.get("bar_finality") == "NOT_VERIFIED"
+                and result.get("provider_requests") == 0
+                and isinstance(result.get("rows"), list)
+                and len(result["rows"]) > 0
+            ):
+                return {**base, "status": "PARTIAL_OR_STALE",
+                        "frame_status": states}
+            version = (result.get("repo_sha"), result.get("sequence"))
+            if not isinstance(version[0], str) or len(version[0]) != 40 or type(version[1]) is not int:
+                return {**base, "status": "INVALID_SOURCE_ALIGNMENT",
+                        "frame_status": states}
+            source_versions.add(version)
+            frames[period] = {
+                "rows": result["rows"],
+                "expected_grid_progress": result.get("expected_grid_progress"),
+                "latest_bar_age_seconds": result.get("last_bar_end_label_age_seconds"),
+                "source_age_seconds": result.get("source_age_seconds"),
+            }
+        raw[symbol] = frames
+    if len(source_versions) != 1:
+        return {**base, "status": "INVALID_SOURCE_ALIGNMENT",
+                "frame_status": states}
+    sha, sequence = next(iter(source_versions))
+    return {
+        **base, "ok": True, "status": "PASS_HISTORICAL_ONLY",
+        "repo_sha": sha, "sequence": sequence,
+        "symbols": raw, "frame_status": states,
+        "frame_count": 4,
+        "source_age_seconds": max(
+            frame["source_age_seconds"]
+            for frames in raw.values() for frame in frames.values()
+        ),
+    }
+
+
 @mcp.tool()
 def get_cn_market_data(
     symbol: str,
@@ -109,6 +180,8 @@ def get_cn_market_data(
     The exact opt-in prefix preserves the old ChatGPT MCP tool schema.
     Other symbols retain the existing Eastmoney/Tencent observation path.
     """
+    if symbol == "TICKFLOW:BATCH":
+        return _read_tickflow_historical_batch(limit)
     if isinstance(symbol, str) and symbol.startswith("TICKFLOW:"):
         return read_cn_tickflow_research_data(
             symbol[len("TICKFLOW:"):], timeframe=timeframe, limit=limit,
