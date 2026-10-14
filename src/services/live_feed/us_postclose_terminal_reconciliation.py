@@ -108,8 +108,20 @@ def reconcile_us_postclose_terminal_minutes(
         final_start = datetime.combine(day, time(15, 59), tzinfo=EASTERN)
         final_end = final_start + timedelta(minutes=1)
         preterminal_start = final_start - timedelta(minutes=1)
-        if any(bar.bar_start == final_start for bar in existing):
-            item.update(status="ALREADY_PRESENT", reason="TERMINAL_MINUTE_ALREADY_IN_CACHE")
+        existing_terminal = [bar for bar in existing if bar.bar_start == final_start]
+        if existing_terminal:
+            if (
+                len(existing_terminal) == 1
+                and existing_terminal[0].bar_end == final_end
+                and existing_terminal[0].provider == "futu"
+                and existing_terminal[0].feed == "opend"
+                and existing_terminal[0].session == "regular"
+                and existing_terminal[0].is_closed is True
+                and existing_terminal[0].is_complete is True
+            ):
+                item.update(status="ALREADY_PRESENT", reason="TERMINAL_MINUTE_ALREADY_IN_CACHE")
+            else:
+                item["reason"] = "EXISTING_TERMINAL_BAR_UNQUALIFIED"
             continue
         if not any(
             bar.symbol == symbol
@@ -173,7 +185,8 @@ def reconcile_us_postclose_terminal_minutes(
         for item in result["symbols"].values()
     )
     result["status"] = (
-        "PASS_HISTORICAL_ONLY" if good == len(symbols)
+        "ALREADY_PRESENT" if good == len(symbols) and result["seeded_count"] == 0
+        else "PASS_HISTORICAL_ONLY" if good == len(symbols)
         else "PARTIAL_HISTORICAL_ONLY" if good else "BLOCKED"
     )
     result["reason"] = (
