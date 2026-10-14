@@ -1,43 +1,23 @@
-# Engineering Autonomy V1.1 — controlled code-writing pilot
+# Engineering Autonomy V1.1 — manually confirmed test-only coding pilot
 
-**Not production autonomous coding until real GitHub-hosted E2E evidence exists.**
+**Status:** DeepSeek credential and Aider invocation have worked in cloud E2E runs, but no independent, test-only, auto-generated PR has yet been published successfully. The third E2E after the `--no-gitignore` fix remains **NOT_VERIFIED**.
 
-This is a deliberately **one-task, one-PR, test-only** bridge from PR #720's
-audit-only control plane to a real Coding Agent. It does not replace the V1
-scheduler or touch deployments, Radar/Paper admission, or trading gates.
+## One-shot invocation and safety
 
-## Architecture and run states
+The GitHub Actions workflow `.github/workflows/engineering-autonomy-coding-v1-1.yml` has **only** `workflow_dispatch`, with a required confirmation input (boolean, default false), and runs only on `main`. It no longer needs a persistent `ENGINEERING_CODING_ENABLED` variable. There is no schedule and therefore no hidden automatic repeat. A user with repository Actions write privileges must intentionally dispatch the single run with `confirm=true`.
 
-1. Disabled unless repository variable `ENGINEERING_CODING_ENABLED=true`.
-2. Read-only preflight rejects non-main refs, validates the one-shot allowlist,
-   and checks prior PRs for `AUTO_TASK_ID=autonomy-test-hardening`.
-3. A disposable GitHub-hosted job with no GitHub write token invokes the pinned
-   Aider CLI with `DEEPSEEK_API_KEY` and the native DeepSeek provider route.
-4. The agent may propose changes **only** to
-   `tests/test_engineering_autonomy.py`. All other modifications fail closed.
-5. A separate **secretless** job applies the bounded patch and runs tests.
-6. A fresh publisher uses the existing `ENGINEERING_AUTONOMY_APP_TOKEN`
-   to publish a PR **without executing modified files**, and never auto-merges.
-7. An existing PR for this task prevents repeat work; another reviewed task
-   recipe is required after the one-shot smoke test.
+1. The preflight validates the strict one-task allowlist and refuses an already-claimed `AUTO_TASK_ID=autonomy-test-hardening` PR.
+2. The untrusted generation job runs pinned `aider-chat==0.86.2`, using `DEEPSEEK_API_KEY`, `--file tests/test_engineering_autonomy.py`, `--read .gitignore` and `--no-gitignore`; GitHub write tokens are explicitly unset.
+3. Capture rejects any change beyond the single allowlisted test file, as well as malformed/oversized patches.
+4. A separate secretless job validates the patch and runs focused regression tests.
+5. The publisher obtains a short-lived GitHub App installation token via `actions/create-github-app-token@v2` from `vars.ENGINEERING_AUTONOMY_APP_ID` and `secrets.ENGINEERING_AUTONOMY_APP_PRIVATE_KEY`. It publishes a PR only, **without executing the patch or automatically merging**.
 
-Do not enable until the DeepSeek credential, branch protection, checks and
-Actions permissions have been verified. API usage is paid separately from
-ChatGPT Plus. The official Codex Action is not used here because its documented
-custom endpoint is for the Responses API, while DeepSeek's public compatible
-endpoint is Chat Completions-oriented.
+The normal CI and protected-main required checks then run on that generated PR. A generated PR is **never automatically merged**, including during a long-running Engineering Autonomy session.
 
-## Acceptance
+## Acceptance evidence and current boundary
 
-- `python -m pytest -q tests/test_engineering_coding_gate.py` passes.
-- A real scheduled or manually dispatched run edits only the allowed test.
-- Secretless verification completes; publisher creates exactly one PR.
-- Later scheduled runs skip the completed task.
-- Modified binary/oversized/untrusted patches fail before publication.
+The earlier E2E runs `38578349405` and `38583786495` reached Aider but failed the fail-closed capture stage after Aider appended to `.gitignore`. PR #747 added `--no-gitignore` to prevent this startup side effect, but the first complete end-to-end run after that change is still pending. **A CI-green workflow patch is not proof that automatic PR publication works.**
 
-## Limitations
+For a genuinely unattended 120-minute / multi-hour coding agent, a separate orchestrator must prove multi-cycle task selection, independent verification, finite API billing limits, deadline, retries, safe cancellation and robust checkpoint recovery. PR #748's bounded loop is an offline pytest-task scaffold, not this full functionality.
 
-GitHub scheduled Actions are best-effort, not exact timers. This is an
-**executable one-shot pilot, not yet a general continuous engineer**.
-Full Engineering Autonomy needs a reviewed task queue, per-run budgets,
-retries, independent branch protection and demonstrated end-to-end safety.
+No schedule, secrets/IAM changes, production deployment, Radar/Paper admission, or real trades are authorized by this change. On any failure, the single manual run stops rather than retrying indefinitely.
