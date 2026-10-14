@@ -66,6 +66,38 @@ def _vendor_ohlc_float_gap_bucket(op: float, hi: float, lo: float, cl: float) ->
         return "UNKNOWN"
 
 
+def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: float) -> bool:
+    """Only tiny serialized ETF float drift; no rounding/mutation of OHLC.
+
+    Post-close *historical research* may preserve original <=1e-5 drift
+    only when every field is already within <=1e-5 of a 0.001 CNY tick
+    and the rounded lattice would enclose the candle's body.
+    """
+    try:
+        prices = tuple(Decimal(str(x)) for x in (op, hi, lo, cl))
+        if not all(x.is_finite() and x > 0 for x in prices):
+            return False
+        tick = Decimal("0.001")
+        lattice = tuple(x.quantize(tick, rounding=ROUND_HALF_UP) for x in prices)
+        if not all(abs(raw - snapped) <= Decimal("0.00001")
+                   for raw, snapped in zip(prices, lattice)):
+            return False
+        o, h, l, c = lattice
+        return h >= max(o, c, l) and l <= min(o, c, h)
+    except (InvalidOperation, TypeError, ValueError, OverflowError):
+        return False
+
+
+def _post_close_research_eligible(stamp: datetime, now_utc: datetime) -> bool:
+    """Only settled-clock post-close historical research (never live/current)."""
+    local = now_utc.astimezone(CN)
+    return (
+        stamp.astimezone(CN).date() == local.date()
+        and (local.hour, local.minute) >= (15, 2)
+        and stamp <= now_utc - timedelta(seconds=90)
+    )
+
+
 def _select_timestamp(row: dict) -> datetime:
     for key in ("timestamp", "time", "datetime", "date"):
         if key in row:
@@ -217,16 +249,20 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             # non-mutating <= 1e-5 absolute float serialization gap.
             # This is OHLC shape only, NOT exchange finality, currentness
             # or canonical/source admission.
-            float_only=(not current_shanghai_day and invalid_reason in (
+            float_only=(invalid_reason in (
                 "invalid OHLCVA high below body",
                 "invalid OHLCVA low above body")
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
-                    == "WITHIN_1E_MINUS_5")
-            if float_only and not current_shanghai_day:
-                # Vendor JSON-float exception is historical research ONLY.
-                # The current Shanghai session can still contain a forming,
-                # revision-prone candle, so quarantine it unconditionally.
+                    == "WITHIN_1E_MINUS_5"
+                and (not current_shanghai_day or (
+                    _post_close_research_eligible(stamp, now_utc)
+                    and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                )))
+            if float_only:
+                # Post-close same-day *historical-only* exception is gated
+                # again in the reader; never grant session_currentness,
+                # closure or any Radar admission. Preserve vendor floats.
                 ohlc_validation="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
             else:
                 if current_shanghai_day:
@@ -457,10 +493,15 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                     or tolerance not in (
                         "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
                     or (shape_gap and (
-                        bar_stamp.date()==now.astimezone(CN).date()
-                        or tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+                        tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
-                            !="WITHIN_1E_MINUS_5"))
+                            !="WITHIN_1E_MINUS_5"
+                        or (bar_stamp.date()==now.astimezone(CN).date()
+                            and not (
+                                research_mode=="historical_only"
+                                and _post_close_research_eligible(bar_stamp, now)
+                                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                            ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
             safe.append({"label":label,**numerical,"amount_availability":availability,
