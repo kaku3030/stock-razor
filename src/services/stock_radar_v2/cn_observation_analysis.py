@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, time
 import math
 from typing import Mapping
 from zoneinfo import ZoneInfo
@@ -204,6 +204,56 @@ def _quarantine_future_intraday_labels(
         "FUTURE_PROVIDER_LABEL_EXCLUDED",
     ]))
     return kept, revised
+
+
+
+def _quarantine_unfinalized_daily(
+    frame: pd.DataFrame,
+    provenance: dict,
+    *,
+    observed_at: datetime,
+) -> tuple[pd.DataFrame, dict]:
+    """Calendar-date D1 labels are not proof of a finalized exchange close.
+
+    Before (and at) the Shanghai cash close, remove today's forming daily
+    candle from indicator input. Later the bar may be used for *research*,
+    but remains marked unverified until separate finality evidence exists.
+    """
+    clock = observed_at.astimezone(ZoneInfo(CN_MARKET_TIMEZONE))
+    today = pd.Timestamp(clock.date())
+    stamps = frame["date"]
+    if getattr(stamps.dt, "tz", None) is not None:
+        stamps = stamps.dt.tz_convert(CN_MARKET_TIMEZONE).dt.tz_localize(None)
+    dates = stamps.dt.normalize()
+    future = dates > today
+    forming = (dates == today) & (clock.time() <= time(15, 0))
+    kept = frame.loc[~(future | forming)].copy()
+    if kept.empty:
+        raise CnObservationAnalysisError("1d has no nonfuture finalized-date candidate")
+    finality_unproven = bool((dates == today).any())
+    if not (future.any() or forming.any() or finality_unproven):
+        return frame, provenance
+    revised = dict(provenance)
+    revised["analysis_row_count"] = len(kept)
+    revised["forming_rows_excluded"] = int(forming.sum())
+    revised["future_rows_excluded"] = int(future.sum())
+    revised["analysis_warnings"] = list(dict.fromkeys([
+        *provenance.get("analysis_warnings", []),
+        *(["D1_FINALITY_UNPROVEN"] if finality_unproven else []),
+        *(["D1_FORMING_BAR_EXCLUDED"] if forming.any() else []),
+        *(["D1_FUTURE_BAR_EXCLUDED"] if future.any() else []),
+    ]))
+    return kept, revised
+
+
+def _mark_daily_unqualified(state: TimeframeState) -> TimeframeState:
+    quality = replace(
+        state.quality,
+        status="partial",
+        is_partial_bar=True,
+        warnings=list(dict.fromkeys([*state.quality.warnings, "1d_finality_unproven"])),
+    )
+    return replace(state, confidence=min(state.confidence, 0.65), quality=quality)
 
 
 def _qualified_intraday_bar_end(item: Mapping[str, object]) -> bool:
@@ -426,6 +476,9 @@ def evaluate_cn_observation_payload(
             continue
         try:
             daily, daily_prov = _frame(item, "1d")
+            daily, daily_prov = _quarantine_unfinalized_daily(
+                daily, daily_prov, observed_at=emitted_at,
+            )
             hourly, hourly_prov = _frame(item, "60m")
             intraday, intraday_prov = _frame(item, "15m")
             hourly, hourly_prov = _quarantine_future_intraday_labels(
@@ -455,6 +508,8 @@ def evaluate_cn_observation_payload(
                 hourly_partial=False,
                 intraday_partial=False,
             )
+            if "D1_FINALITY_UNPROVEN" in daily_prov.get("analysis_warnings", []):
+                technical.daily = _mark_daily_unqualified(technical.daily)
             if not currentness_proven:
                 technical.hourly = _mark_intraday_unproven(
                     technical.hourly,
@@ -475,6 +530,11 @@ def evaluate_cn_observation_payload(
                 dict.fromkeys(
                     [
                         *technical.risk_flags,
+                        *(
+                            ["cn_daily_finality_unproven"]
+                            if "D1_FINALITY_UNPROVEN" in daily_prov.get("analysis_warnings", [])
+                            else []
+                        ),
                         *(
                             []
                             if timestamp_semantics_proven
