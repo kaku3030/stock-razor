@@ -434,6 +434,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
+            or (timeframe=="1d" and research_mode!="historical_only")
             or type(limit)!=int or not 1<=limit<=144):
         return {**base,"status":"INVALID_REQUEST"}
     try:
