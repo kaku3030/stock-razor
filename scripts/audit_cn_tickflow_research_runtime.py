@@ -18,7 +18,8 @@ EASTMONEY_FILE=Path("/run/stock-razor-cn-eastmoney/latest-observation.json")
 MCP_PY=Path("/opt/stock-razor-mcp/venv/bin/python")
 WORKER_UNIT="stock-razor-cn-tickflow-research.service"
 MCP_UNIT="stock-razor-mcp.service"
-MAX_FILE_BYTES=150000
+# Must match cn_tickflow_research_cache.MAX_BYTES (writer/read-cache 350 KB).
+MAX_FILE_BYTES=350_000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
 
