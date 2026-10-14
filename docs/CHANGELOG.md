@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] ChatGPT 现有 `get_cn_market_data` 只读工具支持显式 `TICKFLOW:159611.SZ` / `TICKFLOW:518880.SH` 前缀，读取 AWS 原生 TickFlow 15m/60m 历史研究缓存；普通行情路径、最终闭合和全部交易门禁均不变。
 - [改进] 为 CN Worker/TickFlow 增加显式目标、默认 dry-run、SSM 身份预检、受控回滚和独立版本/来源读回的安全部署入口
 
 - [修复] 研究 EOD 定时采集要求完整 universe 与独立 A/US 样本验证，缺失或供应商非有限 OHLCV 时整条工作流 fail-closed，仍保留失败 manifest 与 artifact；不混淆研究采集与 OpenD/交易准入。
