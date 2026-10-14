@@ -16,6 +16,9 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
     if: >-
       github.repository == 'kaku3030/stock-razor' &&
       github.ref == 'refs/heads/main' &&
