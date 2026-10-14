@@ -147,14 +147,24 @@ jobs:
           git apply --check /tmp/autonomy-artifact/verified.patch
           git apply --index /tmp/autonomy-artifact/verified.patch
           git diff --cached --check
-      - name: Require separate publication credential
+      - name: Mint short-lived GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.ENGINEERING_AUTONOMY_APP_ID }}
+          private-key: ${{ secrets.ENGINEERING_AUTONOMY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: stock-razor
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Require short-lived publication credential
         env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          test -n "$GH_TOKEN" || { echo 'BLOCKED: App token not configured' >&2; exit 1; }
+          test -n "$GH_TOKEN" || { echo 'BLOCKED: App installation token not configured' >&2; exit 1; }
       - name: Publish PR only, never merge
         env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         shell: bash
         run: |
           set -euo pipefail
