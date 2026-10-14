@@ -104,7 +104,7 @@ jobs:
           jq -e --arg id "$TARGET_INSTANCE_ID" '
             (.InstanceId == $id) and (.PingStatus == "Online") and (
               .PlatformName == "Amazon Linux" or
-              (.PlatformName == "Ubuntu" and $id == "i-01738342af3efac72")
+              (.PlatformType == "Linux" and $id == "i-01738342af3efac72")
             )' <<< "$info" >/dev/null
           echo "platform=$platform" >> "$GITHUB_OUTPUT"
           echo 'CN_TICKFLOW_SSM_TARGET_PREFLIGHT=PASS'
