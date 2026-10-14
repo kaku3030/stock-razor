@@ -304,3 +304,50 @@ def test_livefeed_health_rejects_malformed_provider_callback_latency(tmp_path):
     assert result["error"] == "INVALID_PROVIDER_CALLBACK_LATENCY"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_postclose_historical_repair_evidence_is_visible_without_promoting(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "status": "PASS_HISTORICAL_ONLY",
+        "reason": "HISTORICAL_TERMINAL_RECONCILIATION",
+        "provider_requests": 1,
+        "seeded_count": 1,
+        "historical_query": True,
+        "currentness_proven": False,
+        "bar_closure_promotion_authorized": False,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "symbols": {"US.AMD": {"status": "PASS_HISTORICAL_ONLY"}},
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    evidence = out["postclose_reconciliation"]
+    assert evidence["status"] == "PASS_HISTORICAL_ONLY"
+    assert evidence["provider_requests"] == 1
+    assert evidence["seeded_count"] == 1
+    assert evidence["qualified_symbol_count"] == 1
+    assert evidence["provider_finality"] == "NOT_VERIFIED"
+    assert evidence["bar_closure_promotion_authorized"] is False
+    assert out["radar_admission"] == "BLOCKED"
+
+
+def test_postclose_subtree_cannot_launder_admission_or_fake_cost(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "status": "PASS_HISTORICAL_ONLY",
+        "provider_requests": True,
+        "seeded_count": 999,
+        "historical_query": True,
+        "currentness_proven": True,
+        "bar_closure_promotion_authorized": True,
+        "radar_admission": "ADMITTED",
+        "live_trade": True,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
+    assert out["radar_admission"] == "BLOCKED"
+    assert out["live_trade"] is False
