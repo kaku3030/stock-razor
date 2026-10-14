@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "record-run",
+      "kind": "audit-only",
+      "path": "docs/engineering-autonomy/runs",
+      "enabled": true
+    }
+  ]
+}
