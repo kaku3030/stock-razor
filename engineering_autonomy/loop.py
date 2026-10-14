@@ -8,6 +8,7 @@ deploy, schedule, or trade.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -18,7 +19,16 @@ from pathlib import Path
 from typing import Callable, Any
 
 SCHEMA_VERSION = 1
-ALLOWED_KINDS = frozenset({"quality-check", "e2e-evidence"})
+ALLOWED_COMMANDS = {
+    "quality-check": (
+        "python", "-m", "pytest", "-q",
+        "tests/test_engineering_autonomy.py", "tests/test_engineering_coding_gate.py",
+    ),
+    "e2e-evidence": (
+        "python", "-m", "pytest", "-q", "tests/test_engineering_coding_gate.py",
+    ),
+}
+ALLOWED_KINDS = frozenset(ALLOWED_COMMANDS)
 MAX_TASKS = 32
 MAX_ATTEMPTS = 3
 MAX_COST_UNITS = 32
@@ -66,6 +76,8 @@ def load_queue(path: Path = DEFAULT_QUEUE) -> list[Task]:
             not isinstance(part, str) or not part or len(part) > 200 for part in command
         ):
             raise ValueError("task command is invalid")
+        if tuple(command) != ALLOWED_COMMANDS[kind]:
+            raise ValueError("task command is not a reviewed read-only check")
         attempts = item["max_attempts"]
         cost = item["cost_units"]
         if type(attempts) is not int or not 1 <= attempts <= MAX_ATTEMPTS:
@@ -75,9 +87,19 @@ def load_queue(path: Path = DEFAULT_QUEUE) -> list[Task]:
         result.append(Task(task_id, kind, tuple(command), attempts, cost))
     return result
 
+def _queue_fingerprint(queue: list[Task]) -> str:
+    canonical = [
+        [task.id, task.kind, list(task.command), task.max_attempts, task.cost_units]
+        for task in queue
+    ]
+    raw = json.dumps(canonical, separators=(",", ":"), sort_keys=True).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _initial_state(queue: list[Task]) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
+        "queue_sha256": _queue_fingerprint(queue),
         "status": "RUNNING",
         "next_index": 0,
         "attempts": {task.id: 0 for task in queue},
@@ -94,15 +116,23 @@ def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
     if not isinstance(state, dict) or state.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported state schema")
     if set(state) != {
-        "schema_version", "status", "next_index", "attempts", "completed",
+        "schema_version", "queue_sha256", "status", "next_index", "attempts", "completed",
         "failed", "spent_cost_units", "updated_at_epoch"
     }:
         raise ValueError("state fields are not allowlisted")
+    if state["queue_sha256"] != _queue_fingerprint(queue):
+        raise ValueError("checkpoint queue fingerprint mismatch")
     if state["status"] not in {"RUNNING", "STOPPED", "PASS", "BLOCKED"}:
         raise ValueError("invalid state status")
     ids = [task.id for task in queue]
-    if set(state["attempts"]) != set(ids):
+    if not isinstance(state["attempts"], dict) or set(state["attempts"]) != set(ids):
         raise ValueError("state does not match queue")
+    if any(
+        type(state["attempts"][task.id]) is not int
+        or not 0 <= state["attempts"][task.id] <= task.max_attempts
+        for task in queue
+    ):
+        raise ValueError("invalid checkpoint attempt count")
     if type(state["next_index"]) is not int or not 0 <= state["next_index"] <= len(ids):
         raise ValueError("invalid next_index")
     if type(state["spent_cost_units"]) is not int or state["spent_cost_units"] < 0:
@@ -115,6 +145,16 @@ def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
         raise ValueError("state contains duplicate task results")
     if set(state["completed"]) & set(state["failed"]):
         raise ValueError("task cannot be both completed and failed")
+    if state["completed"] != ids[:state["next_index"]]:
+        raise ValueError("checkpoint completed tasks do not match queue position")
+    if state["failed"] and (
+        len(state["failed"]) != 1
+        or state["next_index"] >= len(ids)
+        or state["failed"][0] != ids[state["next_index"]]
+    ):
+        raise ValueError("checkpoint failure does not match queue position")
+    if state["status"] == "PASS" and state["next_index"] != len(ids):
+        raise ValueError("incomplete queue cannot be marked PASS")
     return state
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
@@ -145,51 +185,51 @@ def run_queue(
     state = load_state(state_path, queue)
     if state["status"] in {"PASS", "BLOCKED"}:
         return state
-    executor = executor or (lambda task: subprocess.run(task.command, check=False).returncode)
     started = clock()
-    state["status"] = "RUNNING"
-    save_state(state_path, state)
+
+    def checkpoint(status: str) -> dict[str, Any]:
+        state["status"] = status
+        state["updated_at_epoch"] = int(time.time())
+        save_state(state_path, state)
+        return state
+
+    def bounded_executor(task: Task) -> int:
+        remaining = max_runtime_seconds - (clock() - started)
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(task.command, timeout=0)
+        return subprocess.run(task.command, check=False, timeout=remaining).returncode
+
+    executor = executor or bounded_executor
+    checkpoint("RUNNING")
     while state["next_index"] < len(queue):
-        if stop_requested() or clock() - started >= max_runtime_seconds:
-            state["status"] = "STOPPED"
-            state["updated_at_epoch"] = int(time.time())
-            save_state(state_path, state)
-            return state
         task = queue[state["next_index"]]
-        if state["spent_cost_units"] + task.cost_units > budget_units:
-            state["status"] = "BLOCKED"
-            state["updated_at_epoch"] = int(time.time())
-            save_state(state_path, state)
-            return state
         attempts = state["attempts"][task.id]
         success = False
         while attempts < task.max_attempts:
             if stop_requested() or clock() - started >= max_runtime_seconds:
-                state["status"] = "STOPPED"
-                save_state(state_path, state)
-                return state
+                return checkpoint("STOPPED")
+            # Each retry consumes an explicit cost unit; persist BEFORE the call.
+            if state["spent_cost_units"] + task.cost_units > budget_units:
+                return checkpoint("BLOCKED")
             attempts += 1
             state["attempts"][task.id] = attempts
-            save_state(state_path, state)
-            code = executor(task)
+            state["spent_cost_units"] += task.cost_units
+            checkpoint("RUNNING")
+            try:
+                code = executor(task)
+            except subprocess.TimeoutExpired:
+                return checkpoint("STOPPED")
             if code == 0:
                 success = True
                 break
-        state["spent_cost_units"] += task.cost_units
         if success:
             state["completed"].append(task.id)
             state["next_index"] += 1
+            checkpoint("RUNNING")
         else:
             state["failed"].append(task.id)
-            state["status"] = "BLOCKED"
-        state["updated_at_epoch"] = int(time.time())
-        save_state(state_path, state)
-        if not success:
-            return state
-    state["status"] = "PASS"
-    state["updated_at_epoch"] = int(time.time())
-    save_state(state_path, state)
-    return state
+            return checkpoint("BLOCKED")
+    return checkpoint("PASS")
 
 def main() -> int:
     parser = argparse.ArgumentParser()
