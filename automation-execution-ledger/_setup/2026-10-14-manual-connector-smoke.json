@@ -1,0 +1,9 @@
+{
+  "schema": "stock-razor-automation-ledger-setup-v1",
+  "kind": "MANUAL_SETUP_TEST",
+  "date_jst": "2026-10-14",
+  "purpose": "Validate GitHub connector can create unique ledger files on isolated branch without changing main; NOT a scheduled run",
+  "main_reference_sha": "8077146c58f5a5a83c353209e954fbe943c59682",
+  "outcome": "WRITE_ATTEMPT",
+  "safety": "ADMISSION_BLOCKED_NO_ORDERS"
+}
