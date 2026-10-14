@@ -76,6 +76,7 @@ jobs:
           aider \
             --file tests/test_engineering_autonomy.py \
             --read .gitignore \
+            --no-gitignore \
             --model deepseek/deepseek-chat \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \
