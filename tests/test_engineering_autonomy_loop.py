@@ -130,3 +130,15 @@ def test_invalid_attempt_checkpoint_fails_closed(tmp_path):
     state.write_text(json.dumps(saved))
     with pytest.raises(ValueError, match="attempt count"):
         load_state(state, load_queue(queue))
+
+
+def test_resume_requires_exact_cache_hit():
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/engineering-autonomy-120m.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "id: resume-cache" in workflow
+    assert "steps.resume-cache.outputs.cache-hit != 'true'" in workflow
+    assert "fail-on-cache-miss: true" in workflow
+    assert "restore-keys:" not in workflow
