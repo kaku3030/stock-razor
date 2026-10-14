@@ -2,8 +2,6 @@ name: Engineering Autonomy Coding V1.1 (test-only pilot)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '23,53 * * * *'
 
 concurrency:
   group: engineering-autonomy-coding-v1-1
@@ -151,7 +149,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ secrets.ENGINEERING_AUTONOMY_APP_ID }}
+          app-id: ${{ vars.ENGINEERING_AUTONOMY_APP_ID }}
           private-key: ${{ secrets.ENGINEERING_AUTONOMY_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: stock-razor
