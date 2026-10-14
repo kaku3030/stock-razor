@@ -30,6 +30,19 @@ def test_workflow_checks_pre_and_post_identity_without_raw_ssm_logs():
     assert "MCP_DEPLOY" not in WORKFLOW
 
 
+def test_workflow_classifies_ssm_target_failure_without_emitting_raw_metadata():
+    assert "CN_TICKFLOW_SSM_RECORD=" in WORKFLOW
+    assert "CN_TICKFLOW_SSM_ID_MATCH=" in WORKFLOW
+    assert "CN_TICKFLOW_SSM_PING=" in WORKFLOW
+    assert "CN_TICKFLOW_SSM_PLATFORM=" in WORKFLOW
+    assert "CN_TICKFLOW_SSM_TARGET_DIAGNOSIS=" in WORKFLOW
+    assert '"TARGET_NOT_REGISTERED"' in WORKFLOW
+    assert '"SSM_NOT_ONLINE"' in WORKFLOW
+    assert '"PLATFORM_NAME_MISMATCH"' in WORKFLOW
+    assert 'elif (.PlatformName // "") | test("Amazon Linux")' in WORKFLOW
+    assert 'echo "$info"' not in WORKFLOW
+
+
 def test_installer_is_fail_closed_and_has_rollback():
     assert 'DEPLOY_DRY_RUN="${DEPLOY_DRY_RUN:-false}"' in INSTALL
     assert 'ALLOW_SERVICE_MUTATION="${ALLOW_SERVICE_MUTATION:-false}"' in INSTALL

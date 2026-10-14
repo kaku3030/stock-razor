@@ -76,6 +76,28 @@ jobs:
         run: |
           set -euo pipefail
           info="$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0]' --output json)"
+          diagnosis="$(jq -r --arg id "$TARGET_INSTANCE_ID" '
+            if . == null then
+              ["NOT_REGISTERED", "NO_RECORD", "NO_RECORD", "NO_RECORD", "TARGET_NOT_REGISTERED"]
+            else
+              (.InstanceId == $id) as $id_match |
+              (if .PingStatus == "Online" then "ONLINE" else (.PingStatus // "UNKNOWN") end) as $ping |
+              (if .PlatformName == "Amazon Linux" then "AMAZON_LINUX_EXACT"
+               elif (.PlatformName // "") | test("Amazon Linux") then "AMAZON_LINUX_VARIANT"
+               elif .PlatformName == null then "MISSING"
+               else "OTHER" end) as $platform |
+              (if ($id_match | not) then "ID_MISMATCH"
+               elif $ping != "ONLINE" then "SSM_NOT_ONLINE"
+               elif $platform != "AMAZON_LINUX_EXACT" then "PLATFORM_NAME_MISMATCH"
+               else "IDENTITY_PRECHECK_PASS" end) as $diagnosis |
+              ["FOUND", (if $id_match then "PASS" else "FAIL" end), $ping, $platform, $diagnosis]
+            end | @tsv' <<< "$info")"
+          IFS=$'\t' read -r record id_match ping platform diagnosis <<< "$diagnosis"
+          echo "CN_TICKFLOW_SSM_RECORD=$record"
+          echo "CN_TICKFLOW_SSM_ID_MATCH=$id_match"
+          echo "CN_TICKFLOW_SSM_PING=$ping"
+          echo "CN_TICKFLOW_SSM_PLATFORM=$platform"
+          echo "CN_TICKFLOW_SSM_TARGET_DIAGNOSIS=$diagnosis"
           jq -e --arg id "$TARGET_INSTANCE_ID" '(.InstanceId == $id) and (.PingStatus == "Online") and (.PlatformName == "Amazon Linux")' <<< "$info" >/dev/null
           echo 'CN_TICKFLOW_SSM_TARGET_PREFLIGHT=PASS'
       - name: Read pre-deploy worker identity and source/provider evidence
