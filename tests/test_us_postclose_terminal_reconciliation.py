@@ -101,7 +101,7 @@ def test_no_query_outside_qualified_postclose_window(when, market):
 
 @pytest.mark.parametrize("last_key", [
     "2026-10-13 16:00:00",
-    "2026-10-14 15:59:00",
+    "2026-10-14 15:58:00",
     "bad-label",
 ])
 def test_absent_regular_final_label_never_triggers_provider(last_key):
@@ -117,6 +117,16 @@ def test_overnight_same_ny_day_after_close_can_reconcile_historically():
     )
     assert report["status"] == "PASS_HISTORICAL_ONLY"
     assert len(calls) == 1 and cache.ingestions == 1
+    assert report["bar_closure_promotion_authorized"] is False
+
+
+def test_actual_incident_no_1600_push_with_last_1559_label_is_repaired():
+    report, calls, cache = _call(label=DAY + " 15:59:00")
+    assert len(calls) == 1
+    assert report["status"] == "PASS_HISTORICAL_ONLY"
+    assert report["provider_requests"] == 1
+    assert cache.ingestions == 1
+    assert "HISTORICAL_QUERY" in cache.values[-1].quality_flags
     assert report["bar_closure_promotion_authorized"] is False
 
 
