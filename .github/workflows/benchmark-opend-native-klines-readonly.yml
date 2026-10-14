@@ -72,7 +72,7 @@ jobs:
           # JSON report. Parse ONLY well-formed JSON lines of the exact schema;
           # do not expose untrusted log lines, provider payloads or exceptions.
           printf '%s' "$raw" | jq -Rsec '
-            [split("\\n")[] | try fromjson catch empty
+            [split("\n")[] | try fromjson catch empty
               | select(type=="object"
                        and .schema=="stock_razor_opend_native_kline_bounded_benchmark_v1")] as $reports
             | if ($reports | length)==1 then $reports[0]
