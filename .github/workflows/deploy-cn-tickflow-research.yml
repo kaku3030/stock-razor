@@ -84,13 +84,14 @@ jobs:
               (.InstanceId == $id) as $id_match |
               (if .PingStatus == "Online" then "ONLINE" else (.PingStatus // "UNKNOWN") end) as $ping |
               (if .PlatformName == "Amazon Linux" then "AMAZON_LINUX_EXACT"
-               elif .PlatformName == "Ubuntu" and $id == "i-01738342af3efac72" and $id_match then "UBUNTU_PINNED_EXISTING"
+               elif .PlatformType == "Linux" and $id == "i-01738342af3efac72" and $id_match
+                    then "PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF"
                elif (.PlatformName // "") | test("Amazon Linux") then "AMAZON_LINUX_VARIANT"
                elif .PlatformName == null then "MISSING"
                else "OTHER" end) as $platform |
               (if ($id_match | not) then "ID_MISMATCH"
                elif $ping != "ONLINE" then "SSM_NOT_ONLINE"
-               elif ($platform != "AMAZON_LINUX_EXACT" and $platform != "UBUNTU_PINNED_EXISTING") then "PLATFORM_NAME_MISMATCH"
+               elif ($platform != "AMAZON_LINUX_EXACT" and $platform != "PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF") then "PLATFORM_NAME_MISMATCH"
                else "IDENTITY_PRECHECK_PASS" end) as $diagnosis |
               ["FOUND", (if $id_match then "PASS" else "FAIL" end), $ping, $platform, $diagnosis]
             end | @tsv' <<< "$info")"
@@ -103,7 +104,7 @@ jobs:
           jq -e --arg id "$TARGET_INSTANCE_ID" '
             (.InstanceId == $id) and (.PingStatus == "Online") and (
               .PlatformName == "Amazon Linux" or
-              (.PlatformName == "Ubuntu" and $id == "i-01738342af3efac72")
+              (.PlatformType == "Linux" and $id == "i-01738342af3efac72")
             )' <<< "$info" >/dev/null
           echo "platform=$platform" >> "$GITHUB_OUTPUT"
           echo 'CN_TICKFLOW_SSM_TARGET_PREFLIGHT=PASS'
@@ -116,11 +117,14 @@ jobs:
           # The pinned mixed Ubuntu instance is allowed ONLY for an already
           # running, clean, isolated CN worker; the US OpenD/MCP units must be
           # healthy before any service mutation. All other Ubuntu targets fail.
-          if [[ "${{ steps.target.outputs.platform }}" == "UBUNTU_PINNED_EXISTING" ]]; then
+          if [[ "${{ steps.target.outputs.platform }}" == "PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF" ]]; then
             read -r -d '' proof <<'REMOTE' || true
           set -eu
           repo=/opt/stock-razor-cn-tickflow/repo
           unit=stock-razor-cn-tickflow-research.service
+          . /etc/os-release
+          test "${ID:-}" = ubuntu
+          test "$(uname -s)" = Linux
           test "$(systemctl is-active "$unit")" = active
           test "$(systemctl is-active stock-razor-us-livefeed.service)" = active
           test "$(systemctl is-active stock-razor-mcp.service)" = active
@@ -142,7 +146,7 @@ jobs:
           test "$status" = Success
           out="$(jq -r '.StandardOutputContent // ""' <<< "$inv")"
           grep -E '^CN_TICKFLOW_(PREVIOUS_REPO_SHA|PREVIOUS_SOURCE_REPO_SHA|PREVIOUS_PROVIDER)=' <<< "$out"
-          if [[ "${{ steps.target.outputs.platform }}" == "UBUNTU_PINNED_EXISTING" ]]; then
+          if [[ "${{ steps.target.outputs.platform }}" == "PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF" ]]; then
             grep -Fxq 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS' <<< "$out"
             echo 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS'
           fi

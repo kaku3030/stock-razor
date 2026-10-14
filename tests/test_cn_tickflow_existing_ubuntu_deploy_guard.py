@@ -4,8 +4,10 @@ from pathlib import Path
 
 def test_ubuntu_target_exception_requires_exact_ec2_and_pre_existing_worker():
     workflow = Path(".github/workflows/deploy-cn-tickflow-research.yml").read_text("utf-8")
-    assert 'elif .PlatformName == "Ubuntu" and $id == "i-01738342af3efac72" and $id_match then "UBUNTU_PINNED_EXISTING"' in workflow
-    assert '(.PlatformName == "Ubuntu" and $id == "i-01738342af3efac72")' in workflow
+    assert 'elif .PlatformType == "Linux" and $id == "i-01738342af3efac72" and $id_match' in workflow
+    assert 'PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF' in workflow
+    assert 'test "${ID:-}" = ubuntu' in workflow
+    assert '(.PlatformType == "Linux" and $id == "i-01738342af3efac72")' in workflow
     assert 'PLATFORM_NAME_MISMATCH' in workflow
     assert 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS' in workflow
     assert 'test "$(systemctl is-active stock-razor-us-livefeed.service)" = active' in workflow
