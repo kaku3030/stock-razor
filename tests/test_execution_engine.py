@@ -440,3 +440,64 @@ def test_remaining_risk_matrix_rejects_before_any_adapter_mutation():
         with pytest.raises(ExecutionBlocked):
             e.submit(candidate, candidate_context)
         assert adapter.calls == []
+
+
+def test_ledger_order_cancel_returns_only_unfilled_cash(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("partial", Decimal("1"), Decimal("100")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "cancel.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent(qty="5"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("400")
+    e.cancel("i-1", NOW)
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert e.ledger.balance().cash == Decimal("900")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+
+
+def test_ledger_full_buy_releases_unused_limit_price_difference(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("fill", Decimal("2"), Decimal("99")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "full.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    record = e.submit(intent(qty="2"), context())
+    assert record.state is OrderState.FILLED
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert e.ledger.balance().cash == Decimal("802")
+
+
+def test_ledger_backed_replace_refuses_external_mutation_without_cash_transfer(tmp_path):
+    capability = create_paper_adapter()
+    adapter = capability.adapter
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "replace.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent(qty="2"), context())
+    cash = e.ledger.balance()
+    with pytest.raises(ExecutionBlocked, match="ledger-backed replace"):
+        e.replace("i-1", intent("i-2", qty="1"), context())
+    assert e.ledger.balance() == cash
+    assert adapter.calls == [("place", "i-1")]
+    assert e.records["i-1"].state is OrderState.ACCEPTED
