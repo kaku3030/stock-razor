@@ -24,10 +24,11 @@ permissions:
 
 jobs:
   audit:
-    # Only admitted jobs serialize. Untrusted public PR comments must not
-    # cancel queued owner audits before the job-level if gate evaluates.
+    # Share deployment's lock to avoid a 65-second two-snapshot audit
+    # straddling a paid worker restart/cache replacement. Only admitted
+    # jobs enter this group: untrusted PR comments remain job-if skipped.
     concurrency:
-      group: cn-tickflow-readonly-audit-${{ github.ref }}
+      group: cn-tickflow-research-worker
       cancel-in-progress: false
     if: >-
       github.ref == 'refs/heads/main' && (
