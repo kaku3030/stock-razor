@@ -29,11 +29,28 @@ if [[ "$DEPLOY_DRY_RUN" == "true" ]]; then
 fi
 [[ "$ALLOW_SERVICE_MUTATION" == "true" ]]
 
+# Preserve the existing isolated unit's exact revision pin before any
+# installer changes. Rollback must restore BOTH git code and unit environment.
+unit_file="/etc/systemd/system/$SERVICE"
+unit_backup=""
+if [[ -f "$unit_file" ]]; then
+  unit_backup="$(mktemp -t sr-cn-tickflow-research-unit.XXXXXXXX)"
+  cp -p -- "$unit_file" "$unit_backup"
+fi
+trap 'if [[ -n "${unit_backup:-}" ]]; then rm -f -- "$unit_backup"; fi' EXIT
+
 rollback() {
   local rc=$?
   trap - ERR
-  if [[ "$rc" -ne 0 && "$previous_sha" =~ ^[0-9a-f]{40}$ ]]; then
-    git -C "$ROOT/repo" checkout --detach "$previous_sha" >/dev/null 2>&1 || true
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ -n "$unit_backup" && -f "$unit_backup" ]]; then
+      cp -p -- "$unit_backup" "$unit_file" >/dev/null 2>&1 || true
+    elif [[ -z "$unit_backup" ]]; then
+      rm -f -- "$unit_file" >/dev/null 2>&1 || true
+    fi
+    if [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]; then
+      git -C "$ROOT/repo" checkout --detach "$previous_sha" >/dev/null 2>&1 || true
+    fi
     systemctl daemon-reload >/dev/null 2>&1 || true
     if [[ "$previous_active" == "true" ]]; then
       systemctl restart "$SERVICE" >/dev/null 2>&1 || true

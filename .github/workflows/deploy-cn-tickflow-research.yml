@@ -72,6 +72,7 @@ jobs:
           role-session-name: cn-tickflow-safe-deploy-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Verify explicit SSM target identity
+        id: target
         shell: bash
         run: |
           set -euo pipefail
@@ -83,12 +84,13 @@ jobs:
               (.InstanceId == $id) as $id_match |
               (if .PingStatus == "Online" then "ONLINE" else (.PingStatus // "UNKNOWN") end) as $ping |
               (if .PlatformName == "Amazon Linux" then "AMAZON_LINUX_EXACT"
+               elif .PlatformName == "Ubuntu" and $id == "i-01738342af3efac72" and $id_match then "UBUNTU_PINNED_EXISTING"
                elif (.PlatformName // "") | test("Amazon Linux") then "AMAZON_LINUX_VARIANT"
                elif .PlatformName == null then "MISSING"
                else "OTHER" end) as $platform |
               (if ($id_match | not) then "ID_MISMATCH"
                elif $ping != "ONLINE" then "SSM_NOT_ONLINE"
-               elif $platform != "AMAZON_LINUX_EXACT" then "PLATFORM_NAME_MISMATCH"
+               elif ($platform != "AMAZON_LINUX_EXACT" and $platform != "UBUNTU_PINNED_EXISTING") then "PLATFORM_NAME_MISMATCH"
                else "IDENTITY_PRECHECK_PASS" end) as $diagnosis |
               ["FOUND", (if $id_match then "PASS" else "FAIL" end), $ping, $platform, $diagnosis]
             end | @tsv' <<< "$info")"
@@ -98,7 +100,12 @@ jobs:
           echo "CN_TICKFLOW_SSM_PING=$ping"
           echo "CN_TICKFLOW_SSM_PLATFORM=$platform"
           echo "CN_TICKFLOW_SSM_TARGET_DIAGNOSIS=$diagnosis"
-          jq -e --arg id "$TARGET_INSTANCE_ID" '(.InstanceId == $id) and (.PingStatus == "Online") and (.PlatformName == "Amazon Linux")' <<< "$info" >/dev/null
+          jq -e --arg id "$TARGET_INSTANCE_ID" '
+            (.InstanceId == $id) and (.PingStatus == "Online") and (
+              .PlatformName == "Amazon Linux" or
+              (.PlatformName == "Ubuntu" and $id == "i-01738342af3efac72")
+            )' <<< "$info" >/dev/null
+          echo "platform=$platform" >> "$GITHUB_OUTPUT"
           echo 'CN_TICKFLOW_SSM_TARGET_PREFLIGHT=PASS'
       - name: Read pre-deploy worker identity and source/provider evidence
         id: preflight
@@ -106,6 +113,26 @@ jobs:
         run: |
           set -euo pipefail
           remote='set -euo pipefail; repo=/opt/stock-razor-cn-tickflow/repo; status=/run/stock-razor-cn-tickflow/latest-research-observation.json; test -d "$repo/.git"; printf "CN_TICKFLOW_PREVIOUS_REPO_SHA=%s\n" "$(git -C "$repo" rev-parse HEAD)"; if test -s "$status"; then /opt/stock-razor-cn-tickflow/venv/bin/python -c "import json,sys,re; p=json.load(open(sys.argv[1],encoding=\"utf-8\")); v=p.get(\"repo\"+\"_sha\",\"\"); print(\"CN_TICKFLOW_PREVIOUS_SOURCE_REPO_SHA=\"+(v if re.fullmatch(r\"[0-9a-f]{40}\",v) else \"UNKNOWN\")); print(\"CN_TICKFLOW_PREVIOUS_PROVIDER=\"+(p.get(\"provider\") if p.get(\"provider\")==\"TICKFLOW_PREMIUM\" else \"UNKNOWN\"))" "$status"; else printf "%s\n" CN_TICKFLOW_PREVIOUS_SOURCE_REPO_SHA=UNKNOWN CN_TICKFLOW_PREVIOUS_PROVIDER=UNKNOWN; fi'
+          # The pinned mixed Ubuntu instance is allowed ONLY for an already
+          # running, clean, isolated CN worker; the US OpenD/MCP units must be
+          # healthy before any service mutation. All other Ubuntu targets fail.
+          if [[ "${{ steps.target.outputs.platform }}" == "UBUNTU_PINNED_EXISTING" ]]; then
+            read -r -d '' proof <<'REMOTE' || true
+          set -eu
+          repo=/opt/stock-razor-cn-tickflow/repo
+          unit=stock-razor-cn-tickflow-research.service
+          test "$(systemctl is-active "$unit")" = active
+          test "$(systemctl is-active stock-razor-us-livefeed.service)" = active
+          test "$(systemctl is-active stock-razor-mcp.service)" = active
+          test "$(systemctl show "$unit" -p WorkingDirectory --value)" = "$repo"
+          test -x /opt/stock-razor-cn-tickflow/venv/bin/python
+          test -d "$repo/.git"
+          test -z "$(git -C "$repo" status --porcelain)"
+          systemctl cat "$unit" | grep -Fq 'ExecStart=/opt/stock-razor-cn-tickflow/venv/bin/python -m scripts.run_cn_tickflow_research_worker'
+          echo 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS'
+          REMOTE
+            remote="$proof"$'\n'"$remote"
+          fi
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           cid="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --query Command.CommandId --output text)"
@@ -115,6 +142,10 @@ jobs:
           test "$status" = Success
           out="$(jq -r '.StandardOutputContent // ""' <<< "$inv")"
           grep -E '^CN_TICKFLOW_(PREVIOUS_REPO_SHA|PREVIOUS_SOURCE_REPO_SHA|PREVIOUS_PROVIDER)=' <<< "$out"
+          if [[ "${{ steps.target.outputs.platform }}" == "UBUNTU_PINNED_EXISTING" ]]; then
+            grep -Fxq 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS' <<< "$out"
+            echo 'CN_TICKFLOW_PINNED_UBUNTU_PROOF=PASS'
+          fi
           echo 'CN_TICKFLOW_PRE_DEPLOY_READBACK=PASS'
       - name: Dry-run gate (no installer, no restart)
         if: env.DEPLOY_MODE == 'dry-run'
