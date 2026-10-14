@@ -1,0 +1,77 @@
+name: Engineering Autonomy 120m (manual, bounded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Explicitly run this one-shot 120-minute engineering loop"
+        required: true
+        type: boolean
+        default: false
+      resume_run_id:
+        description: "Exact prior run ID to resume; leave blank for a fresh run"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: engineering-autonomy-120m
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    if: ${{ inputs.confirm == true && vars.ENGINEERING_AUTONOMY_STOP == 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install pinned test dependencies
+        run: python -m pip install --disable-pip-version-check pytest==8.4.2
+      - name: Validate explicit resume run ID
+        env:
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$RESUME_RUN_ID" && ! "$RESUME_RUN_ID" =~ ^[0-9]{1,20}$ ]]; then
+            echo 'BLOCKED: resume_run_id must be numeric' >&2
+            exit 1
+          fi
+      - name: Restore only the requested checkpoint
+        if: ${{ inputs.resume_run_id != '' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: engineering_autonomy/state.json
+          key: engineering-autonomy-120m-state-${{ inputs.resume_run_id }}
+          fail-on-cache-miss: true
+      - name: Run bounded resumable queue
+        id: run
+        continue-on-error: true
+        env:
+          AUTONOMY_STOP: ${{ vars.ENGINEERING_AUTONOMY_STOP }}
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.loop \
+            --state engineering_autonomy/state.json \
+            --budget-units 8 \
+            --max-runtime-seconds 7200
+      - name: Persist checkpoint for a later manual resume
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: engineering_autonomy/state.json
+          key: engineering-autonomy-120m-state-${{ github.run_id }}
+      - name: Require PASS terminal state
+        if: steps.run.outcome != 'success'
+        run: |
+          echo "Bounded loop did not reach PASS; checkpoint was preserved."
+          exit 1
