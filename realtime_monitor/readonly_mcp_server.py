@@ -169,6 +169,67 @@ def _read_tickflow_historical_batch(limit: int) -> dict:
     }
 
 
+def _read_tickflow_fast_snapshot() -> dict:
+    """Compact 2-symbol/2-timeframe historical watchlist, never live advice.
+
+    Calls the same four-source-aligned, fail-closed research reader as BATCH.
+    No TickFlow provider network I/O and no cached state held in the MCP.
+    """
+    from time import perf_counter
+
+    start = perf_counter()
+    full = _read_tickflow_historical_batch(1)
+    common = {
+        "ok": False,
+        "status": full.get("status", "INVALID_CACHE"),
+        "provider": "TICKFLOW_PREMIUM",
+        "research_only": True,
+        "bar_finality": "NOT_VERIFIED",
+        "currentness": "UNPROVEN",
+        "source_arbiter_admission": "BLOCKED",
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "can_confirm_signal": False,
+        "canonical_write_authorized": False,
+        "provider_requests": 0,
+        "research_mode": "historical_only",
+        "frame_count": 4,
+        "read_scope": "CLOUD_MCP_LOCAL_CACHE_NOT_CHATGPT_RTT",
+    }
+    if not full.get("ok") or full.get("status") != "PASS_HISTORICAL_ONLY":
+        return {**common, "frame_status": full.get("frame_status", {}),
+                "read_ms": round((perf_counter() - start) * 1000, 2)}
+    latest = {}
+    for symbol in ("159611.SZ", "518880.SH"):
+        frames = {}
+        for tf in ("15m", "60m"):
+            detail = full["symbols"][symbol][tf]
+            rows = detail["rows"]
+            if len(rows) != 1:
+                return {**common, "status": "INVALID_BATCH_FRAME"}
+            row = rows[0]
+            # Preserve native float precision and explicit unknown finality.
+            frames[tf] = {
+                "t": row["label"],
+                "o": row["open"], "h": row["high"],
+                "l": row["low"], "c": row["close"],
+                "v": row["volume"], "a": row["amount"],
+                "amount_availability": row["amount_availability"],
+                "ohlc_validation": row["ohlc_validation"],
+                "expected_grid_progress": detail["expected_grid_progress"],
+                "is_partial_bar": True,
+                "bar_finality": "NOT_VERIFIED",
+            }
+        latest[symbol] = frames
+    return {
+        **common, "ok": True, "status": "PASS_HISTORICAL_ONLY",
+        "repo_sha": full["repo_sha"], "sequence": full["sequence"],
+        "source_age_seconds": full["source_age_seconds"],
+        "symbols": latest,
+        "read_ms": round((perf_counter() - start) * 1000, 2),
+    }
+
+
 @mcp.tool()
 def get_cn_market_data(
     symbol: str,
@@ -180,6 +241,8 @@ def get_cn_market_data(
     The exact opt-in prefix preserves the old ChatGPT MCP tool schema.
     Other symbols retain the existing Eastmoney/Tencent observation path.
     """
+    if symbol == "TICKFLOW:FAST":
+        return _read_tickflow_fast_snapshot()
     if symbol == "TICKFLOW:BATCH":
         return _read_tickflow_historical_batch(limit)
     if isinstance(symbol, str) and symbol.startswith("TICKFLOW:"):
