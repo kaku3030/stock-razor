@@ -301,6 +301,7 @@ seq=0
 # This never qualifies the realtime bar-closure/trading admission gate.
 postclose_attempted_date=None
 postclose_reconciliation={
+    "session_date":None,
     "status":"NOT_DUE","reason":"WAITING_FOR_POSTCLOSE_FULL_GRID",
     "provider_requests":0,"seeded_count":0,
     "historical_query":True,"currentness_proven":False,
@@ -456,6 +457,17 @@ try:
         postclose_seeded_this_pass=0
         local_now=now.astimezone(ZoneInfo("America/New_York"))
         local_day=local_now.date().isoformat()
+        if postclose_reconciliation.get("session_date") != local_day:
+            # Never carry yesterday's PASS_HISTORICAL_ONLY report forward
+            # as if it applied to today's NY exchange date.
+            postclose_reconciliation={
+                "session_date":local_day,
+                "status":"NOT_DUE","reason":"WAITING_FOR_POSTCLOSE_FULL_GRID",
+                "provider_requests":0,"seeded_count":0,
+                "historical_query":True,"currentness_proven":False,
+                "bar_closure_promotion_authorized":False,
+                "radar_admission":"BLOCKED","live_trade":False,
+            }
         if (
             postclose_attempted_date != local_day
             and (local_now.hour,local_now.minute) >= (16,30)
