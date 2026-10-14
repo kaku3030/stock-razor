@@ -596,6 +596,7 @@ def sample():
         "unit_active":active(WORKER_UNIT),
         "mcp_unit_active":active(MCP_UNIT),
         "status":"NOT_VERIFIED",
+        "cache_unavailable_reason":"NOT_APPLICABLE",
         "failure_stage":"UNKNOWN",
         "failure_reason":"UNKNOWN",
         "failure_ohlc_float_gap_bucket":"UNKNOWN",
@@ -614,12 +615,28 @@ def sample():
         "mcp_read_failure_reason":"NOT_VERIFIED",
     }
     try:
-        meta=WORKER_FILE.stat()
+        try:
+            meta=WORKER_FILE.stat()
+        except FileNotFoundError:
+            result["cache_unavailable_reason"]="FILE_MISSING"
+            raise
+        except PermissionError:
+            result["cache_unavailable_reason"]="FILE_PERMISSION_BLOCKED"
+            raise
         result["cache_private"]=stat.S_IMODE(meta.st_mode)==0o600
         if not 0<meta.st_size<=MAX_FILE_BYTES:
+            result["cache_unavailable_reason"]="FILE_SIZE_INVALID"
             raise ValueError("bounded cache bytes violated")
-        data=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        try:
+            data=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            result["cache_unavailable_reason"]="JSON_INVALID"
+            raise
+        except UnicodeError:
+            result["cache_unavailable_reason"]="DECODE_INVALID"
+            raise
         if not isinstance(data,dict) or data.get("schema")!="stock_razor_cn_tickflow_research_observation_v0_1":
+            result["cache_unavailable_reason"]="SCHEMA_INVALID"
             raise ValueError("schema error")
         repo_sha=data.get("repo_sha")
         expect=(WORKER_REPO/".git").exists()
@@ -687,8 +704,10 @@ def sample():
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:
             result["status"]="INVALID_CACHE"
-    except (OSError,ValueError,TypeError,KeyError,subprocess.TimeoutExpired):
+    except (OSError,ValueError,TypeError,KeyError,UnicodeError,subprocess.TimeoutExpired):
         result["status"]="NO_VALID_CACHE"
+        if result["cache_unavailable_reason"]=="NOT_APPLICABLE":
+            result["cache_unavailable_reason"]="UNCLASSIFIED"
         return result
     if not (result["unit_active"] and result["cache_private"] and result["repo_sha_match"]):
         result["status"]="INCOMPLETE"
