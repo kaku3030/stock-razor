@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [性能] TickFlow云端新增 `TICKFLOW:FULL` 一次MCP调用返回两ETF各5m/15m/60m/D1历史研究数据，统一源版本对齐，任何周期失效均整组拒绝，无交易权限晋级。
+- [改进] TickFlow 云端隔离研究缓存补齐受限5m（48根/完整交易日）及1d日期K线，保持两ETF白名单、无下单权限、未知闭合、日线仅历史研究；原有15m/60m调用兼容不变。
 - [测试] 增加 AWS OpenD 原生已订阅 K线深度与速度的有界只读验收（至2000请求，最多65次），并严格区分 native、Radar缓存、ChatGPT MCP 与报告生成耗时。
 - [修复] 现有 CN TickFlow 研究服务允许仅在东京固定 Ubuntu EC2 实例上经 SSM 已在线、研究服务已运行、部署工作树干净且美股 LiveFeed/MCP 运行正常的独立验证后更新；其他 Ubuntu 实例、交易准入及默认 dry-run 保持阻断。
 - [性能] 云端 TickFlow 新增 `TICKFLOW:FAST` 精简行情快照，利用已连接的 `get_cn_market_data` 一次返回 2 ETF×(15m,60m) 最近一根原生 OHLCV、K线质量与缓存同源版本，并返回 AWS 本地读耗时；不要求新增 MCP 安装、不修改原始行情、交易门禁不变。

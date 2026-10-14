@@ -224,3 +224,20 @@ Any stale, malformed or mismatched source fails closed without returning
 partial price-bearing data. The response never asserts Radar/Source Arbiter
 or trading admission; use regular `TICKFLOW:BATCH` when historical depth
 is needed. This is not a replacement for D1/5m or a validated live WS feed.
+
+### Single-call full TickFlow multi-timeframe research
+
+Once the bounded 5m/D1 cloud research worker and this MCP revision are
+deployed, existing ChatGPT `get_cn_market_data(symbol="TICKFLOW:FULL",
+limit=40)` returns two fixed ETFs `159611.SZ` and `518880.SH`,
+each with 5m, 15m, 60m and 1d historical native rows in **one**
+cloud MCP tool call. Eight frame reads must share a single cache SHA
+and sequence and all pass; any stale/misaligned frame rejects the whole
+batch without leaking partial prices. This API never contacts TickFlow
+directly, never claims provider bar finality, and does not authorize
+Radar, Source Arbiter, Paper or Live Trade.
+
+The existing `TICKFLOW:BATCH` (15m+60m, limit<=24),
+`TICKFLOW:FAST` (compact 15m+60m latest) and normal Eastmoney/Tencent
+read routes remain unchanged. The provider's daily 00:00 timestamp is
+a DATE stamp only, not a BAR_END assertion; daily remains historical-only.

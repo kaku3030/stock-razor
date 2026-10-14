@@ -17,16 +17,22 @@ SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
 SYMBOLS = ("159611.SZ", "518880.SH")
 TIMEFRAMES = ("15m", "60m")
-MAX_BYTES = 150_000
+MAX_BYTES = 350_000
 MAX_AGE_SECONDS = 180
 _LABEL_END = {
     "15m": frozenset(("09:45","10:00","10:15","10:30","10:45","11:00",
        "11:15","11:30","13:15","13:30","13:45","14:00","14:15",
        "14:30","14:45","15:00")),
     "60m": frozenset(("10:30","11:30","14:00","15:00")),
+    "5m": frozenset(f"{minute//60:02d}:{minute%60:02d}"
+        for minute in (*range(9*60+35,11*60+31,5),
+                       *range(13*60+5,15*60+1,5))),
+    # The provider 1d row is calendar-date stamped 00:00 local;
+    # not an exchange bar-end timestamp and never proof of close.
+    "1d": frozenset(("00:00",)),
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
-_ALLOWED_PERIODS = {"15m":96,"60m":24}
+_ALLOWED_PERIODS = {"15m":96,"60m":24,"5m":144,"1d":40}
 _SOURCE = "TICKFLOW_PREMIUM"
 
 def _timestamp(value: object) -> datetime:
@@ -198,6 +204,11 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         previous=stamp
         sh=stamp.astimezone(CN)
         current_shanghai_day = sh.date() == now_utc.astimezone(CN).date()
+        if timeframe == "1d" and current_shanghai_day and not _post_close_research_eligible(stamp, now_utc):
+            # A daily row dated 00:00 is NOT closed just because its
+            # calendar label has elapsed. Never expose it before 15:02.
+            quarantine("TODAY_DAILY_NOT_POSTCLOSE")
+            continue
         if sh.second != 0 or sh.microsecond or sh.strftime("%H:%M") not in _LABEL_END[timeframe]:
             if current_shanghai_day:
                 # Current provider response can contain a *forming* candle
@@ -308,6 +319,8 @@ def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime |
     if sh_now.weekday()>=5:
         return None
     cutoff=sh_now-timedelta(seconds=90)
+    if timeframe == "1d" and (sh_now.hour,sh_now.minute) < (15,2):
+        return None
     candidates=[]
     for clock in _LABEL_END[timeframe]:
         hour,minute=map(int,clock.split(":"))
@@ -318,7 +331,8 @@ def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime |
 
 
 def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence: int,
-                      symbols: tuple[str,...]=SYMBOLS) -> dict:
+                      symbols: tuple[str,...]=SYMBOLS,
+                      include_supplemental: bool=False) -> dict:
     if now_utc.tzinfo is None or not re.fullmatch("[0-9a-f]{40}",repo_sha):
         raise ValueError("invalid wall clock or source revision")
     if type(sequence) is not int or sequence < 1:
@@ -329,10 +343,14 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         # Hard billing/entitlement boundary: no arbitrary A-share scan until
         # separate reviewed quota and license approvals.
         raise ValueError("unapproved symbols")
+    if type(include_supplemental) is not bool:
+        raise ValueError("invalid supplemental timeframe flag")
     output={}
+    periods=(_ALLOWED_PERIODS if include_supplemental
+             else {"15m":96,"60m":24})
     for index,symbol in enumerate(symbols):
         frames={}
-        for interval, n in _ALLOWED_PERIODS.items():
+        for interval, n in periods.items():
             # SDK's isolated Premium Kline contract was separately verified on AWS.
             stage=f"S{index}_{interval.upper()}_FETCH"
             try:
@@ -359,7 +377,8 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                      if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)
                      else 0
                  ),
-                 "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
+                 "timestamp_semantic":("DATE_LABEL_UNPROVEN_CLOSE" if interval=="1d"
+                    else "BAR_END_GRID_MATCH_HISTORICAL_ONLY"),
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",
                  "volume_units":"NOT_VERIFIED",
                  "adjustment":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED"}
@@ -415,7 +434,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
-            or type(limit)!=int or not 1<=limit<=96):
+            or (timeframe=="1d" and research_mode!="historical_only")
+            or type(limit)!=int or not 1<=limit<=144):
         return {**base,"status":"INVALID_REQUEST"}
     try:
         with open(path,"rb") as f:
