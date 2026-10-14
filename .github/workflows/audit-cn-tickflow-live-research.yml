@@ -168,7 +168,7 @@ jobs:
                   assert obj[term] in count_buckets
           assert type(d.get("limited_research_usable")) is bool
           assert type(d.get("historical_research_usable")) is bool
-          keys=("status","failure_stage","failure_reason","failure_ohlc_float_gap_bucket","unit_active","mcp_unit_active","cache_private",
+          keys=("status","cache_unavailable_reason","failure_stage","failure_reason","failure_ohlc_float_gap_bucket","unit_active","mcp_unit_active","cache_private",
                 "repo_sha_match","sequence","cache_age_seconds","mcp_read_failure_reason",
                 "mcp_cache_consumer","mcp_historical_consumer",
                 "all_four_readonly_requests_ok","all_four_historical_requests_ok")
@@ -197,7 +197,11 @@ jobs:
           historical_states=("PASS_HISTORICAL_ONLY","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST")
           reasons=("NOT_VERIFIED","NOT_APPLICABLE","METHOD_RETURN_BLOCKED",
                    "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
+          cache_absence=("NOT_APPLICABLE","FILE_MISSING","FILE_PERMISSION_BLOCKED",
+                         "FILE_SIZE_INVALID","JSON_INVALID","DECODE_INVALID",
+                         "SCHEMA_INVALID","UNCLASSIFIED")
           for when in ("before","after"):
+              assert d[when].get("cache_unavailable_reason") in cache_absence
               assert d[when].get("failure_ohlc_float_gap_bucket") in (
                   "UNKNOWN","WITHIN_1E_MINUS_5","OVER_1E_MINUS_5"
               )
