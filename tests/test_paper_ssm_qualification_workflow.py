@@ -32,9 +32,29 @@ def test_workflow_has_no_mutation_or_order_capability():
             continue
         assert forbidden not in text
     assert "aws ssm send-command" in text
-    assert "PAPER_EXTERNAL_BROKER_ORDERS NONE" in text
-    assert "PAPER_SIMULATED_ORDERS NONE" in text
+    assert "SSM_PROBE_ORDER_ACTIONS NONE" in text
+    assert "PAPER_EXTERNAL_TRADING_ACTIVITY NOT_VERIFIED" in text
+    assert "grep -E '^(PAPER_|SSM_PROBE_|RAW_RUNTIME_)'" in text
+    assert "PAPER_EXTERNAL_BROKER_ORDERS" not in text
+    assert "PAPER_SIMULATED_ORDERS" not in text
     assert "PAPER_RESTART_RECOVERY UNVERIFIED" in text
+
+
+def test_schedule_probe_uses_controlled_config_without_process_environment():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "/proc/" not in text
+    assert "environ" not in text
+    assert 'systemctl show "$unit" -p ExecStart --value' in text
+    assert '"$working/.env"' in text
+    assert "SCHEDULE_TIMES" in text
+    assert "PAPER_HALF_HOUR_SCHEDULE UNKNOWN" in text
+
+
+def test_order_activity_is_not_claimed_from_a_read_only_probe():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "runtime orders were not inspected" in text
+    assert "PAPER_EXTERNAL_TRADING_ACTIVITY=(YES|true|PASS)" in text
+    assert "External trading activity: NOT_VERIFIED" in text
 
 
 def test_workflow_withholds_raw_runtime_output_and_checks_exact_main():
