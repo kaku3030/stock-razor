@@ -5,7 +5,7 @@ import pytest
 from engineering_autonomy.loop import load_queue, run_queue
 
 
-def queue_file(tmp_path):
+def queue_file(tmp_path, cost_units=1):
     path = tmp_path / "queue.json"
     path.write_text(json.dumps({
         "schema_version": 1,
@@ -14,7 +14,7 @@ def queue_file(tmp_path):
             "kind": "quality-check",
             "command": ["python", "-c", "pass"],
             "max_attempts": 2,
-            "cost_units": 1,
+            "cost_units": cost_units,
         }]
     }), encoding="utf-8")
     return path
@@ -45,12 +45,12 @@ def test_retry_and_checkpoint_then_resume(tmp_path):
 
 
 def test_cost_budget_blocks_before_execution(tmp_path):
-    queue = queue_file(tmp_path)
+    queue = queue_file(tmp_path, cost_units=2)
     state = tmp_path / "state.json"
     called = []
     result = run_queue(queue, state, budget_units=1, executor=lambda task: called.append(task.id) or 0)
-    assert result["status"] == "PASS"
-    assert called == ["one"]
+    assert result["status"] == "BLOCKED"
+    assert called == []
 
 
 def test_stop_switch_stops_before_work(tmp_path, monkeypatch):
