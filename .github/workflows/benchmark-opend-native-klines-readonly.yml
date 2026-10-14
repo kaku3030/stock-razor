@@ -68,7 +68,25 @@ jobs:
             echo 'OPEND_NATIVE_BENCHMARK_OVERSIZE=BLOCKED'
             exit 1
           fi
-          printf '%s' "$raw" | jq -ec '
+          # The futu SDK may emit unrelated status lines before the final
+          # single JSON payload; parse only a complete, validated last JSON
+          # line. Never echo raw provider stdout or stderr.
+          printf '%s' "$raw" | python3 -c '
+          import json,sys
+          raw=sys.stdin.read().splitlines()
+          for line in reversed(raw):
+              try:
+                  obj=json.loads(line)
+              except (ValueError,TypeError):
+                  continue
+              if (isinstance(obj,dict)
+                      and obj.get("schema")=="stock_razor_opend_native_kline_bounded_benchmark_v1"):
+                  print(json.dumps(obj,sort_keys=True,separators=(",",":")))
+                  break
+          else:
+              print("OPEND_NATIVE_BENCHMARK_SANITIZED_RESULT_NOT_FOUND",file=sys.stderr)
+              raise SystemExit(2)
+          ' | jq -ec '
             select(.schema=="stock_razor_opend_native_kline_bounded_benchmark_v1"
               and .source=="FUTU_OPEND_NATIVE_GET_CUR_KLINE"
               and .subscription_changes==0
