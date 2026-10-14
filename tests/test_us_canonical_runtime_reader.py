@@ -309,6 +309,7 @@ def test_livefeed_health_rejects_malformed_provider_callback_latency(tmp_path):
 def test_postclose_historical_repair_evidence_is_visible_without_promoting(tmp_path):
     heartbeat = _heartbeat()
     heartbeat["postclose_reconciliation"] = {
+        "session_date": "2026-10-06",
         "status": "PASS_HISTORICAL_ONLY",
         "reason": "HISTORICAL_TERMINAL_RECONCILIATION",
         "provider_requests": 1,
@@ -351,3 +352,23 @@ def test_postclose_subtree_cannot_launder_admission_or_fake_cost(tmp_path):
     assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
     assert out["radar_admission"] == "BLOCKED"
     assert out["live_trade"] is False
+
+
+def test_postclose_mcp_rejects_yesterday_repair_as_current_session(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "session_date": "2026-10-05",
+        "status": "PASS_HISTORICAL_ONLY",
+        "provider_requests": 1,
+        "seeded_count": 1,
+        "historical_query": True,
+        "currentness_proven": False,
+        "bar_closure_promotion_authorized": False,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
+    assert out["radar_admission"] == "BLOCKED"
