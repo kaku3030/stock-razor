@@ -110,6 +110,16 @@ def test_absent_regular_final_label_never_triggers_provider(last_key):
     assert not calls and cache.ingestions == 0
 
 
+def test_overnight_same_ny_day_after_close_can_reconcile_historically():
+    report, calls, cache = _call(
+        at=datetime(2026, 10, 14, 21, 1, tzinfo=NY),
+        state="OVERNIGHT",
+    )
+    assert report["status"] == "PASS_HISTORICAL_ONLY"
+    assert len(calls) == 1 and cache.ingestions == 1
+    assert report["bar_closure_promotion_authorized"] is False
+
+
 def test_missing_regular_1558_live_evidence_does_not_trigger_query():
     cache = _Cache(preterminal=False)
     report, calls, _ = _call(cache=cache)
