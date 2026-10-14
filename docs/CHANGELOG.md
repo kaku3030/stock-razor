@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 研究 EOD 定时采集要求完整 universe 与独立 A/US 样本验证，缺失或供应商非有限 OHLCV 时整条工作流 fail-closed，仍保留失败 manifest 与 artifact；不混淆研究采集与 OpenD/交易准入。
+
 - [修复] TickFlow 官方绝对 1e-5 OHLC 浮点精度容差仅在研究缓存与只读消费者中双重校验，保留原始价格及异常标记；超限仍拒绝，K 线终态、数据源/雷达/Paper/实盘门禁不变。
 
 - [改进] 受限只读 MCP/Context Manager 代码变更合入受保护 main 时，沿用仓库 Owner、OIDC、固定 AWS 目标与精确 SHA 校验自动触发云端只读服务部署；无关 PR 不触发服务重启，失败继续阻断。
