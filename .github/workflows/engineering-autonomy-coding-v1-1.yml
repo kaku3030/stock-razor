@@ -83,11 +83,31 @@ jobs:
             --file tests/test_engineering_autonomy.py \
             --read .gitignore \
             --no-gitignore \
+            --input-history-file "$RUNNER_TEMP/autonomy-aider-input.history" \
+            --chat-history-file "$RUNNER_TEMP/autonomy-aider-chat.history.md" \
+            --map-tokens 0 \
+            --no-analytics \
             --model deepseek/deepseek-chat \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \
             --no-auto-commits \
             --no-check-update
+      - name: Diagnose changed worktree paths only (no file contents)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess
+          entries = subprocess.check_output(
+              ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
+          ).split(b"\x00")
+          entries = [entry for entry in entries if entry]
+          print(f"WORKTREE_CHANGED_PATH_COUNT={len(entries)}")
+          for entry in entries[:30]:
+              # Git filenames only; never emit patch bodies, history, or secrets.
+              print("WORKTREE_PATH_STATUS", repr(entry[:220]))
+          if len(entries) > 30:
+              print("WORKTREE_STATUS_TRUNCATED")
+          PY
       - name: Capture allowlisted test-only patch
         run: python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch
       - uses: actions/upload-artifact@v4
