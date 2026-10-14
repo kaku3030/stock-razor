@@ -1,7 +1,8 @@
 """One-shot, fail-closed OpenD US RTH terminal-minute historical reconciliation.
 
 The live push accumulator requires a later provider end label to close the
-16:00 ET time_key. Do not pretend an after-hours transition is provider proof:
+15:59 ET time_key. A 16:00 label may never arrive in the live stream;
+never pretend an after-hours transition is provider proof:
 only an independent 390-row same-OpenD historical RTH grid observed after
 16:30 ET can supply that final minute, marked HISTORICAL_QUERY.
 """
@@ -96,7 +97,7 @@ def reconcile_us_postclose_terminal_minutes(
             label = datetime.strptime(latest_key, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
-        if label.time() < time(16, 0):
+        if label.time() < time(15, 59):
             continue
 
         try:
