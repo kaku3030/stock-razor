@@ -60,6 +60,9 @@ def read_us_completed_daily_research(
     daily, provider closure, a trade signal or an admission claim.
     """
     normalized = str(symbol or "").strip().upper()
+    # Never reinterpret another exchange prefix as a US ticker.
+    if normalized.startswith(("HK.", "CN.", "SH.", "SZ.", "BJ.")):
+        return _blocked("INVALID_SYMBOL")
     if not normalized.startswith("US."):
         normalized = "US." + normalized
     if not SYMBOL.fullmatch(normalized):
