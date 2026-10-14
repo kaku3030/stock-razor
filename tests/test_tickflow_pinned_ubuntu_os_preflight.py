@@ -23,4 +23,4 @@ def test_pinned_ssm_linux_requires_runtime_ubuntu_os_verification():
 def test_unpinned_other_linux_not_whitelisted():
     workflow=Path(".github/workflows/deploy-cn-tickflow-research.yml").read_text("utf8")
     assert 'elif .PlatformType == "Linux" and $id == "i-01738342af3efac72" and $id_match' in workflow
-    assert 'test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"' not in workflow or "GITHUB_REPOSITORY_OWNER" in workflow
+    assert '[[ "$GITHUB_REF" == refs/heads/main && "$GITHUB_ACTOR" == "$GITHUB_REPOSITORY_OWNER" ]]' in workflow
