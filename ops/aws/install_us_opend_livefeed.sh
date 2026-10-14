@@ -459,7 +459,7 @@ try:
         if (
             postclose_attempted_date != local_day
             and (local_now.hour,local_now.minute) >= (16,30)
-            and market_state in ("AFTER_HOURS_BEGIN","AFTER_HOURS_END","CLOSED","WAITING_OPEN")
+            and market_state in ("AFTER_HOURS_BEGIN","AFTER_HOURS_END","OVERNIGHT","CLOSED","WAITING_OPEN")
             and any(
                 isinstance(label,str)
                 and label >= local_day+" 16:00:00"
