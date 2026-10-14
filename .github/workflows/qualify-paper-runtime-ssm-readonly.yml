@@ -1,0 +1,188 @@
+name: Qualify Paper Runtime via SSM (Read Only)
+
+# Bounded inspection of an already deployed Paper runtime. This workflow does
+# not start, stop, restart, or mutate a service and never calls a provider,
+# broker, account, SecretString, or order API.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_runtime_sha:
+        description: "Exact deployed Paper runtime repository SHA"
+        type: string
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: qualify-paper-runtime-ssm-readonly
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-1
+  TARGET_INSTANCE_ID: i-01738342af3efac72
+  EXPECTED_ACCOUNT_ID: "888425712426"
+  PAPER_UNIT: stock-razor-paper.service
+  PAPER_STATUS_PATH: /run/stock-razor-paper/latest-heartbeat.json
+  RADAR_ADMISSION: BLOCKED
+  SOURCE_ARBITER_ADMISSION: BLOCKED
+  PAPER_AUTO_READY: "NO"
+  LIVE_TRADE: "NO"
+  TRADE_EXECUTION: "NO"
+
+jobs:
+  readonly-qualification:
+    if: ${{ github.ref == 'refs/heads/main' && github.actor == github.repository_owner }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reviewed immutable main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify protected main and immutable scope
+        shell: bash
+        env:
+          EXPECTED_RUNTIME_SHA: ${{ inputs.expected_runtime_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_RUNTIME_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          test "$RADAR_ADMISSION" = BLOCKED
+          test "$SOURCE_ARBITER_ADMISSION" = BLOCKED
+          test "$PAPER_AUTO_READY" = NO
+          test "$LIVE_TRADE" = NO
+          test "$TRADE_EXECUTION" = NO
+
+      - name: Assume existing GitHub Ops role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: paper-runtime-readonly-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify caller and fixed target without exposing identity data
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "$EXPECTED_ACCOUNT_ID"
+          state="$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text)"
+          test "$state" = running
+          record="$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0]' --output json)"
+          python3 - "$record" <<'PY'
+          import json, sys
+          record = json.loads(sys.argv[1])
+          assert record.get("InstanceId") == "i-01738342af3efac72"
+          assert record.get("PingStatus") == "Online"
+          assert record.get("PlatformType") == "Linux"
+          print("AWS_CALLER_ACCOUNT=PASS")
+          print("EC2_TARGET_RUNNING=PASS")
+          print("SSM_TARGET_ID_AND_ONLINE=PASS")
+          print("RAW_IDENTITY_FIELDS_WITHHELD=YES")
+          PY
+
+      - name: Inspect Paper runtime through fixed-target read-only SSM
+        id: inspect
+        shell: bash
+        env:
+          EXPECTED_RUNTIME_SHA: ${{ inputs.expected_runtime_sha }}
+        run: |
+          set -euo pipefail
+          read -r -d '' remote <<'REMOTE' || true
+          set -eu
+          unit='stock-razor-paper.service'
+          status_path='/run/stock-razor-paper/latest-heartbeat.json'
+          expected_sha='EXPECTED_RUNTIME_SHA_PLACEHOLDER'
+          emit(){ printf '%s=%s\n' "$1" "$2"; }
+          emit PAPER_RUNTIME_READONLY NO_MUTATION
+          active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+          enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+          test "$active" = active && emit PAPER_UNIT_ACTIVE PASS || emit PAPER_UNIT_ACTIVE UNKNOWN
+          test "$enabled" = enabled || test "$enabled" = static && emit PAPER_UNIT_ENABLED PASS || emit PAPER_UNIT_ENABLED UNKNOWN
+          working="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
+          main_pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+          restart_policy="$(systemctl show "$unit" -p Restart --value 2>/dev/null || true)"
+          test -n "$working" && test "$working" != - && emit PAPER_WORKING_DIRECTORY PRESENT || emit PAPER_WORKING_DIRECTORY UNKNOWN
+          if test -d "$working/.git" && test "$(git -C "$working" rev-parse HEAD 2>/dev/null || true)" = "$expected_sha"; then
+            emit PAPER_RUNTIME_SHA PASS
+          else
+            emit PAPER_RUNTIME_SHA UNKNOWN
+          fi
+          test "$main_pid" -gt 0 2>/dev/null && emit PAPER_MAIN_PID PRESENT || emit PAPER_MAIN_PID UNKNOWN
+          case "$restart_policy" in always|on-failure|on-abnormal|on-watch) emit PAPER_RESTART_POLICY PASS;; *) emit PAPER_RESTART_POLICY UNKNOWN;; esac
+          if test -r "$status_path"; then
+            /usr/bin/python3 - "$status_path" <<'PY'
+          import json, os, sys, time
+          path = sys.argv[1]
+          try:
+              with open(path, encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              assert isinstance(payload, dict)
+              assert payload.get("live_trade") is False
+              assert payload.get("trade_execution") is False
+              assert payload.get("paper_auto_ready") is False
+              assert payload.get("radar_admission") == "BLOCKED"
+              assert payload.get("source_arbiter_admission") == "BLOCKED"
+              print("PAPER_HEARTBEAT_SCHEMA=PASS")
+              print("PAPER_RUNTIME_GATES_CLOSED=PASS")
+              print("PAPER_HEARTBEAT_FRESHNESS=PASS" if time.time() - os.stat(path).st_mtime <= 900 else "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
+          except Exception:
+              print("PAPER_HEARTBEAT_SCHEMA=UNKNOWN")
+              print("PAPER_RUNTIME_GATES_CLOSED=UNKNOWN")
+              print("PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
+          PY
+          else
+            emit PAPER_HEARTBEAT_SCHEMA UNKNOWN
+            emit PAPER_RUNTIME_GATES_CLOSED UNKNOWN
+            emit PAPER_HEARTBEAT_FRESHNESS UNKNOWN
+          fi
+          if test "$main_pid" -gt 0 2>/dev/null && test -r "/proc/$main_pid/cmdline"; then
+            tr '\0' ' ' < "/proc/$main_pid/cmdline" | grep -Eq -- '(^| )(--schedule|main.py --schedule)( |$)' && emit PAPER_SCHEDULE_PROCESS PASS || emit PAPER_SCHEDULE_PROCESS UNKNOWN
+            tr '\0' '\n' < "/proc/$main_pid/environ" | grep -Eq '^SCHEDULE_(TIME|TIMES)=([01][0-9]|2[0-3]):(00|30)(,([01][0-9]|2[0-3]):(00|30))*$' && emit PAPER_HALF_HOUR_SCHEDULE PASS || emit PAPER_HALF_HOUR_SCHEDULE UNKNOWN
+          else
+            emit PAPER_SCHEDULE_PROCESS UNKNOWN
+            emit PAPER_HALF_HOUR_SCHEDULE UNKNOWN
+          fi
+          emit PAPER_RESTART_RECOVERY UNVERIFIED
+          emit PAPER_EXTERNAL_PROVIDER_CALLS NOT_VERIFIED
+          emit PAPER_EXTERNAL_BROKER_ORDERS NONE
+          emit PAPER_SIMULATED_ORDERS NONE
+          emit RAW_RUNTIME_OUTPUT_WITHHELD YES
+          REMOTE
+          remote="${remote//EXPECTED_RUNTIME_SHA_PLACEHOLDER/$EXPECTED_RUNTIME_SHA}"
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 120 --query 'Command.CommandId' --output text)"
+          [[ "$command_id" =~ ^[a-f0-9-]{36}$ ]]
+          for _ in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 2
+          done
+          test "${status:-UNKNOWN}" = Success
+          output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
+          printf '%s\n' "$output" | grep -E '^(PAPER_|RAW_RUNTIME_)' | tee qualification.txt
+          ! grep -Eq '^PAPER_(EXTERNAL_BROKER_ORDERS|SIMULATED_ORDERS)=(YES|true|PASS)$' qualification.txt
+
+      - name: Emit bounded qualification summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Paper runtime SSM qualification (read only)'
+            echo ''
+            echo '- Service/provider/broker/order mutation: NONE'
+            echo '- Simulated orders: NONE'
+            echo '- SecretString: NOT_READ'
+            echo '- Restart recovery: UNVERIFIED (no restart was performed)'
+            echo '- PAPER_AUTO_READY: NO'
+            echo '- RADAR_ADMISSION: BLOCKED'
+            echo '- SOURCE_ARBITER_ADMISSION: BLOCKED'
+            echo '- LIVE_TRADE: NO'
+          } >> "$GITHUB_STEP_SUMMARY"
