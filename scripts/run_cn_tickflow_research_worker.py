@@ -41,6 +41,7 @@ _NORMALIZE_REJECTION_REASON = {
     "invalid OHLCVA negative volume": "OHLCVA_VOLUME_NEGATIVE",
     "invalid OHLCVA negative amount": "OHLCVA_AMOUNT_NEGATIVE",
     "no sufficient historical closed-time candidates": "VALID_BAR_COUNT_LOW",
+    "invalid supplemental timeframe flag": "INVALID_EXTRA_PERIODS",
 }
 
 def _normalize_rejection_reason(error: Exception) -> str:
@@ -86,7 +87,7 @@ def _interval(now: datetime, failure: bool=False) -> int:
         return 900
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
-    # Read-only REST, 4 batched-minute Kline requests per cadence, not ticks.
+    # Read-only REST, 8 bounded Kline requests per cadence, not ticks.
     return 300 if failure or not session else 60
 
 def main() -> int:
@@ -122,7 +123,7 @@ def main() -> int:
                 with open(os.devnull,"w",encoding="utf-8") as null:
                     with redirect_stdout(null), redirect_stderr(null):
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
-                              sequence=sequence,symbols=SYMBOLS)
+                              sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
                 atomic_publish(status_path,snapshot)
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
@@ -143,6 +144,10 @@ def main() -> int:
                             "S0_60M_FETCH","S0_60M_NORMALIZE",
                             "S1_15M_FETCH","S1_15M_NORMALIZE",
                             "S1_60M_FETCH","S1_60M_NORMALIZE",
+                            "S0_5M_FETCH","S0_5M_NORMALIZE",
+                            "S1_5M_FETCH","S1_5M_NORMALIZE",
+                            "S0_1D_FETCH","S0_1D_NORMALIZE",
+                            "S1_1D_FETCH","S1_1D_NORMALIZE",
                         } else "UNKNOWN"
                     ),
                     "symbols":{},"research_only":True,
