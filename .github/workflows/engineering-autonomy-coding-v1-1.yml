@@ -1,0 +1,160 @@
+name: Engineering Autonomy Coding V1.1 (test-only pilot)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23,53 * * * *'
+
+concurrency:
+  group: engineering-autonomy-coding-v1-1
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main' && vars.ENGINEERING_CODING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      pending: ${{ steps.queue.outputs.pending }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }
+          persist-credentials: false
+      - name: Validate trusted one-shot task
+        run: python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
+      - name: Skip if any existing PR already claims this ID
+        id: queue
+        env:
+          GH_TOKEN: ${{ github.token }
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Single reviewed smoke task; never generate an endless PR stream.
+          if [ "$(gh pr list --repo "$GITHUB_REPOSITORY" --state all --limit 200 --json body \
+               --jq 'any(.[]; (.body // "") | contains("AUTO_TASK_ID=autonomy-test-hardening"))')" = 'true' ]; then
+            echo 'pending=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'pending=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  generate:
+    needs: preflight
+    if: needs.preflight.outputs.pending == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }
+          persist-credentials: false
+      - name: Create trusted prompt and require provider secret
+        env:
+          API_KEY: ${{ secrets.OPENAI_API_KEY }
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$API_KEY" ]; then
+            echo 'BLOCKED: OPENAI_API_KEY missing' >&2
+            exit 1
+          fi
+          python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
+      - name: Run isolated Codex coding agent
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12 commit
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }
+          prompt-file: /tmp/autonomy-prompt.txt
+          permission-profile: ':workspace'
+          safety-strategy: drop-sudo
+      - name: Capture allowlisted test-only patch
+        run: python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: untrusted-autonomy-patch
+          path: /tmp/autonomy.patch
+          retention-days: 1
+          if-no-files-found: error
+
+  verify:
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: untrusted-autonomy-patch
+          path: /tmp/autonomy-artifact
+      - name: Validate and apply patch, without secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.coding_gate check-patch --output /tmp/autonomy-artifact/autonomy.patch
+          git apply --check /tmp/autonomy-artifact/autonomy.patch
+          git apply --index /tmp/autonomy-artifact/autonomy.patch
+          python -m engineering_autonomy.coding_gate capture --output /tmp/verified.patch
+      - name: Install isolated test dependency
+        run: python -m pip install pytest==8.4.2
+      - name: Execute focused tests, without secrets
+        run: python -m pytest -q tests/test_engineering_autonomy.py tests/test_engineering_coding_gate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-autonomy-patch
+          path: /tmp/verified.patch
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-autonomy-patch
+          path: /tmp/autonomy-artifact
+      - name: Apply verified patch without executing its code
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.coding_gate check-patch --output /tmp/autonomy-artifact/verified.patch
+          git apply --check /tmp/autonomy-artifact/verified.patch
+          git apply --index /tmp/autonomy-artifact/verified.patch
+          git diff --cached --check
+      - name: Require separate publication credential
+        env:
+          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }
+        run: |
+          test -n "$GH_TOKEN" || { echo 'BLOCKED: App token not configured' >&2; exit 1; }
+      - name: Publish PR only, never merge
+        env:
+          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="autonomy/test-hardening-$GITHUB_RUN_ID"
+          git switch -c "$BRANCH"
+          git config user.name 'stock-razor-engineering-autonomy'
+          git config user.email '322462903+kaku3030@users.noreply.github.com'
+          git commit -m 'test: autonomously harden audit record regression tests'
+          gh auth setup-git
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title 'test: Autonomy V1.1 bounded coding pilot' \
+            --body 'AUTO_TASK_ID=autonomy-test-hardening — Test-only bounded Coding Agent pilot. Secretless verification passed. No auto-merge, deployment, Radar, Paper or trading changes. Independent CI and review required.'
