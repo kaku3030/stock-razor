@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -47,3 +48,14 @@ def test_disabled_task_is_rejected(tmp_path):
     path.write_text(json.dumps({"version": 1, "tasks": [{"id": TASK_ID, "enabled": False}]}))
     with pytest.raises(ValueError):
         validate_task(path)
+
+
+def test_workflow_uses_deepseek_aider_without_codex_or_openai_secret():
+    workflow = Path('.github/workflows/engineering-autonomy-coding-v1-1.yml').read_text(
+        encoding='utf-8'
+    )
+    assert 'secrets.DEEPSEEK_API_KEY' in workflow
+    assert 'aider-chat==0.86.2' in workflow
+    assert '--model deepseek/deepseek-chat' in workflow
+    assert 'openai/codex-action' not in workflow
+    assert 'secrets.OPENAI_API_KEY' not in workflow

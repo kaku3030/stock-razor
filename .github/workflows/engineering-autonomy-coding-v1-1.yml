@@ -54,24 +54,33 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Create trusted prompt and require provider secret
+      - name: Create trusted prompt and require DeepSeek secret
         env:
-          API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "$API_KEY" ]; then
-            echo 'BLOCKED: OPENAI_API_KEY missing' >&2
+            echo 'BLOCKED: DEEPSEEK_API_KEY missing' >&2
             exit 1
           fi
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
-      - name: Run isolated Codex coding agent
-        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12 commit
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: /tmp/autonomy-prompt.txt
-          permission-profile: ':workspace'
-          safety-strategy: drop-sudo
+      - name: Install pinned Aider coding CLI
+        run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
+      - name: Run isolated DeepSeek coding agent
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          aider \
+            --model deepseek/deepseek-chat \
+            --message-file /tmp/autonomy-prompt.txt \
+            --yes-always \
+            --no-auto-commits \
+            --no-check-update
       - name: Capture allowlisted test-only patch
         run: python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch
       - uses: actions/upload-artifact@v4

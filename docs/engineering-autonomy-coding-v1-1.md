@@ -11,8 +11,8 @@ scheduler or touch deployments, Radar/Paper admission, or trading gates.
 1. Disabled unless repository variable `ENGINEERING_CODING_ENABLED=true`.
 2. Read-only preflight rejects non-main refs, validates the one-shot allowlist,
    and checks prior PRs for `AUTO_TASK_ID=autonomy-test-hardening`.
-3. A disposable GitHub-hosted job with a read-only token invokes an official
-   pinned Codex Action with `OPENAI_API_KEY` through its constrained API proxy.
+3. A disposable GitHub-hosted job with no GitHub write token invokes the pinned
+   Aider CLI with `DEEPSEEK_API_KEY` and the native DeepSeek provider route.
 4. The agent may propose changes **only** to
    `tests/test_engineering_autonomy.py`. All other modifications fail closed.
 5. A separate **secretless** job applies the bounded patch and runs tests.
@@ -21,8 +21,11 @@ scheduler or touch deployments, Radar/Paper admission, or trading gates.
 7. An existing PR for this task prevents repeat work; another reviewed task
    recipe is required after the one-shot smoke test.
 
-Do not enable until credentials, branch protection, checks and Actions
-permissions have been verified. API usage is paid separately from ChatGPT Plus.
+Do not enable until the DeepSeek credential, branch protection, checks and
+Actions permissions have been verified. API usage is paid separately from
+ChatGPT Plus. The official Codex Action is not used here because its documented
+custom endpoint is for the Responses API, while DeepSeek's public compatible
+endpoint is Chat Completions-oriented.
 
 ## Acceptance
 
