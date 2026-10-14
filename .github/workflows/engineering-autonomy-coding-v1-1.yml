@@ -2,6 +2,12 @@ name: Engineering Autonomy Coding V1.1 (test-only pilot)
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'I authorize one test-only DeepSeek+Aider run (never a schedule)'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: engineering-autonomy-coding-v1-1
@@ -13,7 +19,7 @@ permissions:
 
 jobs:
   preflight:
-    if: github.ref == 'refs/heads/main' && vars.ENGINEERING_CODING_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && inputs.confirm == true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

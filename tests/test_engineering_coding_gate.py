@@ -30,6 +30,20 @@ def test_autonomy_workflow_protects_gitignore_from_agent_writes():
     assert "--file tests/test_engineering_autonomy.py \\\n            --read .gitignore \\\n            --no-gitignore" in workflow
 
 
+
+def test_manual_coding_pilot_requires_explicit_one_shot_confirmation():
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in workflow
+    assert "type: boolean" in workflow
+    assert "default: false" in workflow
+    assert "inputs.confirm == true" in workflow
+    assert "ENGINEERING_CODING_ENABLED" not in workflow
+    assert "schedule:" not in workflow
+
+
+
 @pytest.mark.parametrize("patch", [
     b"", b"bad", make_patch("src/trading.py"),
     make_patch() + b"\x00",
