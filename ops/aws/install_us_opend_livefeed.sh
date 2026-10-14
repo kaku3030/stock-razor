@@ -474,7 +474,7 @@ try:
             and market_state in ("AFTER_HOURS_BEGIN","AFTER_HOURS_END","OVERNIGHT","CLOSED","WAITING_OPEN")
             and any(
                 isinstance(label,str)
-                and label >= local_day+" 16:00:00"
+                and label >= local_day+" 15:59:00"
                 and label.startswith(local_day+" ")
                 for label in time_keys.values()
             )
