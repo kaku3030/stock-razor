@@ -1,0 +1,200 @@
+"""Bounded, resumable Engineering Autonomy queue runner.
+
+This module is intentionally provider-agnostic. It executes only reviewed task
+kinds, checkpoints state atomically, retries within a finite budget, and stops
+when a local stop file or AUTONOMY_STOP=true is observed. It does not merge,
+deploy, schedule, or trade.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Any
+
+SCHEMA_VERSION = 1
+ALLOWED_KINDS = frozenset({"quality-check", "e2e-evidence"})
+MAX_TASKS = 32
+MAX_ATTEMPTS = 3
+MAX_COST_UNITS = 32
+MAX_RUNTIME_SECONDS = 120 * 60
+DEFAULT_QUEUE = Path("engineering_autonomy/queue.json")
+DEFAULT_STATE = Path("engineering_autonomy/state.json")
+STOP_FILE = Path("engineering_autonomy/STOP")
+
+@dataclass(frozen=True)
+class Task:
+    id: str
+    kind: str
+    command: tuple[str, ...]
+    max_attempts: int
+    cost_units: int
+
+def _bounded_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value or len(value) > 160:
+        raise ValueError(f"{field} must be a short non-empty string")
+    return value
+
+def load_queue(path: Path = DEFAULT_QUEUE) -> list[Task]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported queue schema")
+    raw = payload.get("tasks")
+    if not isinstance(raw, list) or not raw or len(raw) > MAX_TASKS:
+        raise ValueError("queue size is outside bounds")
+    result: list[Task] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict) or set(item) != {
+            "id", "kind", "command", "max_attempts", "cost_units"
+        }:
+            raise ValueError("task fields are not allowlisted")
+        task_id = _bounded_text(item["id"], "task id")
+        if task_id in seen or any(c in task_id for c in "/\\"):
+            raise ValueError("task ids must be unique and path-safe")
+        seen.add(task_id)
+        kind = item["kind"]
+        if kind not in ALLOWED_KINDS:
+            raise ValueError("task kind is not allowlisted")
+        command = item["command"]
+        if not isinstance(command, list) or not command or any(
+            not isinstance(part, str) or not part or len(part) > 200 for part in command
+        ):
+            raise ValueError("task command is invalid")
+        attempts = item["max_attempts"]
+        cost = item["cost_units"]
+        if type(attempts) is not int or not 1 <= attempts <= MAX_ATTEMPTS:
+            raise ValueError("max_attempts is outside bounds")
+        if type(cost) is not int or not 1 <= cost <= MAX_COST_UNITS:
+            raise ValueError("cost_units is outside bounds")
+        result.append(Task(task_id, kind, tuple(command), attempts, cost))
+    return result
+
+def _initial_state(queue: list[Task]) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "status": "RUNNING",
+        "next_index": 0,
+        "attempts": {task.id: 0 for task in queue},
+        "completed": [],
+        "failed": [],
+        "spent_cost_units": 0,
+        "updated_at_epoch": 0,
+    }
+
+def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
+    if not path.exists():
+        return _initial_state(queue)
+    state = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(state, dict) or state.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported state schema")
+    if set(state) != {
+        "schema_version", "status", "next_index", "attempts", "completed",
+        "failed", "spent_cost_units", "updated_at_epoch"
+    }:
+        raise ValueError("state fields are not allowlisted")
+    if state["status"] not in {"RUNNING", "STOPPED", "PASS", "BLOCKED"}:
+        raise ValueError("invalid state status")
+    ids = [task.id for task in queue]
+    if set(state["attempts"]) != set(ids):
+        raise ValueError("state does not match queue")
+    if type(state["next_index"]) is not int or not 0 <= state["next_index"] <= len(ids):
+        raise ValueError("invalid next_index")
+    if type(state["spent_cost_units"]) is not int or state["spent_cost_units"] < 0:
+        raise ValueError("invalid spent cost")
+    if not isinstance(state["completed"], list) or not isinstance(state["failed"], list):
+        raise ValueError("invalid result lists")
+    return state
+
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                     prefix=f".{path.name}.", delete=False) as handle:
+        json.dump(state, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        temporary = Path(handle.name)
+    temporary.replace(path)
+
+def stop_requested(stop_file: Path = STOP_FILE) -> bool:
+    return os.environ.get("AUTONOMY_STOP", "").lower() == "true" or stop_file.exists()
+
+def run_queue(
+    queue_path: Path = DEFAULT_QUEUE,
+    state_path: Path = DEFAULT_STATE,
+    budget_units: int = MAX_COST_UNITS,
+    max_runtime_seconds: int = MAX_RUNTIME_SECONDS,
+    executor: Callable[[Task], int] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
+    if type(budget_units) is not int or not 1 <= budget_units <= MAX_COST_UNITS:
+        raise ValueError("budget_units is outside bounds")
+    if type(max_runtime_seconds) is not int or not 1 <= max_runtime_seconds <= MAX_RUNTIME_SECONDS:
+        raise ValueError("max_runtime_seconds is outside bounds")
+    queue = load_queue(queue_path)
+    state = load_state(state_path, queue)
+    if state["status"] in {"PASS", "BLOCKED"}:
+        return state
+    executor = executor or (lambda task: subprocess.run(task.command, check=False).returncode)
+    started = clock()
+    state["status"] = "RUNNING"
+    save_state(state_path, state)
+    while state["next_index"] < len(queue):
+        if stop_requested() or clock() - started >= max_runtime_seconds:
+            state["status"] = "STOPPED"
+            state["updated_at_epoch"] = int(time.time())
+            save_state(state_path, state)
+            return state
+        task = queue[state["next_index"]]
+        if state["spent_cost_units"] + task.cost_units > budget_units:
+            state["status"] = "BLOCKED"
+            state["updated_at_epoch"] = int(time.time())
+            save_state(state_path, state)
+            return state
+        attempts = state["attempts"][task.id]
+        success = False
+        while attempts < task.max_attempts:
+            if stop_requested() or clock() - started >= max_runtime_seconds:
+                state["status"] = "STOPPED"
+                save_state(state_path, state)
+                return state
+            attempts += 1
+            state["attempts"][task.id] = attempts
+            save_state(state_path, state)
+            code = executor(task)
+            if code == 0:
+                success = True
+                break
+        state["spent_cost_units"] += task.cost_units
+        if success:
+            state["completed"].append(task.id)
+            state["next_index"] += 1
+        else:
+            state["failed"].append(task.id)
+            state["status"] = "BLOCKED"
+        state["updated_at_epoch"] = int(time.time())
+        save_state(state_path, state)
+        if not success:
+            return state
+    state["status"] = "PASS"
+    state["updated_at_epoch"] = int(time.time())
+    save_state(state_path, state)
+    return state
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--queue", type=Path, default=DEFAULT_QUEUE)
+    parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
+    parser.add_argument("--budget-units", type=int, default=MAX_COST_UNITS)
+    parser.add_argument("--max-runtime-seconds", type=int, default=MAX_RUNTIME_SECONDS)
+    args = parser.parse_args()
+    state = run_queue(args.queue, args.state, args.budget_units, args.max_runtime_seconds)
+    print(json.dumps(state, sort_keys=True))
+    return 0 if state["status"] == "PASS" else 2
+
+if __name__ == "__main__":
+    raise SystemExit(main())
