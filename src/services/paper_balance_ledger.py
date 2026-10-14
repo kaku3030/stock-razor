@@ -146,11 +146,13 @@ class PaperBalanceLedger:
         with self.connection:
             if self._event_exists(event_id):
                 return self.balance()
-            reserved = self._reservation_amount(reservation_id)
+            reserved = self._reservation_remaining(reservation_id)
             balance = self.balance()
             if reserved is None:
                 raise LedgerUnknown("reservation is unknown")
-            self.connection.execute("UPDATE paper_ledger_accounts SET reserved_cash=?,as_of=? WHERE account_id=?", (str(max(Decimal("0"), balance.reserved_cash - reserved)), _utc(at).isoformat(), self.account_id))
+            if reserved > balance.reserved_cash:
+                raise LedgerUnknown("reservation ledger cannot cover release")
+            self.connection.execute("UPDATE paper_ledger_accounts SET reserved_cash=?,as_of=? WHERE account_id=?", (str(balance.reserved_cash - reserved), _utc(at).isoformat(), self.account_id))
             self._event(event_id, "RELEASE", at, reservation_id=reservation_id, amount=reserved)
         return self.balance()
 
@@ -167,10 +169,21 @@ class PaperBalanceLedger:
             balance = self.balance()
             notional = quantity * price
             cash_delta = -notional - fee if side == "BUY" else notional - fee
-            release_amount = notional + fee if side == "BUY" else Decimal("0")
-            new_reserved = max(Decimal("0"), balance.reserved_cash - min(balance.reserved_cash, release_amount))
-            if side == "BUY" and balance.cash + cash_delta < 0:
-                raise LedgerUnknown("fill exceeds ledger cash")
+            new_reserved = balance.reserved_cash
+            if side == "BUY":
+                amount_due = notional + fee
+                if reservation_id:
+                    remaining = self._reservation_remaining(reservation_id)
+                    if remaining is None or self._event_exists(f"release:{reservation_id}"):
+                        raise LedgerUnknown("reservation missing or already released")
+                    if amount_due > remaining or amount_due > balance.reserved_cash:
+                        raise LedgerUnknown("fill exceeds its own reservation")
+                    new_reserved -= amount_due
+                elif amount_due > balance.cash - balance.reserved_cash:
+                    # Unreserved fills cannot spend another intent's cash.
+                    raise LedgerUnknown("unreserved fill exceeds buying power")
+                if balance.cash + cash_delta < 0:
+                    raise LedgerUnknown("fill exceeds ledger cash")
             position = self._position(symbol)
             realized = Decimal("0")
             if side == "BUY":
@@ -231,11 +244,34 @@ class PaperBalanceLedger:
     def _save_position(self, symbol: str, qty: Decimal, average_cost: Decimal, market_value: Decimal, unrealized_pnl: Decimal) -> None:
         self.connection.execute("INSERT INTO paper_ledger_positions VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,symbol) DO UPDATE SET qty=excluded.qty,average_cost=excluded.average_cost,market_value=excluded.market_value,unrealized_pnl=excluded.unrealized_pnl", (self.account_id, symbol, str(qty), str(average_cost), str(market_value), str(unrealized_pnl)))
 
-    def _reservation_amount(self, reservation_id: str | None) -> Decimal | None:
-        if not reservation_id:
-            return Decimal("0")
-        row = self.connection.execute("SELECT amount FROM paper_ledger_events WHERE event_id=? AND kind='RESERVE'", (f"reserve:{reservation_id}",)).fetchone()
-        return Decimal(row[0]) if row else None
+    def _reservation_remaining(self, reservation_id: str) -> Decimal | None:
+        """Compute this intent's unspent reservation from durable events.
+
+        Never release another intent's funds merely because the account
+        reserved_cash total is large enough. A release is terminal; an
+        out-of-order later fill must reconcile as UNKNOWN before retry.
+        """
+        row = self.connection.execute(
+            "SELECT amount FROM paper_ledger_events WHERE event_id=? AND account_id=? AND kind='RESERVE'",
+            (f"reserve:{reservation_id}", self.account_id),
+        ).fetchone()
+        if row is None:
+            return None
+        original = Decimal(row[0])
+        debits = self.connection.execute(
+            "SELECT quantity,price,fee FROM paper_ledger_events "
+            "WHERE account_id=? AND kind='FILL' AND side='BUY' AND reservation_id=?",
+            (self.account_id, reservation_id),
+        ).fetchall()
+        consumed = sum(
+            (Decimal(qty) * Decimal(price) + Decimal(fee)
+             for qty, price, fee in debits),
+            Decimal("0"),
+        )
+        remainder = original - consumed
+        if remainder < 0:
+            raise LedgerUnknown("reservation event ledger is inconsistent")
+        return remainder
 
     def _event_exists(self, event_id: str) -> bool:
         return bool(self.connection.execute("SELECT 1 FROM paper_ledger_events WHERE event_id=?", (event_id,)).fetchone())
