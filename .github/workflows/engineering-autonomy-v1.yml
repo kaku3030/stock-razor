@@ -1,0 +1,91 @@
+name: Engineering Autonomy V1
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: engineering-autonomy-v1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read PR metadata without checking out PR code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+            --jq '{base_repo:.base.repo.full_name,head_repo:(.head.repo.full_name // "UNKNOWN"),head_sha:.head.sha,draft:.draft,body:(.body // "")}' \
+            > pr-metadata.json
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | .filename' > changed-files.txt
+
+      - name: Evaluate bounded low-risk policy
+        id: policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          decision="$(python scripts/engineering_autonomy_v1.py --metadata pr-metadata.json --changed-files changed-files.txt)"
+          printf '%s\n' "$decision" > autonomy-state.json
+          echo "decision=$(jq -r '.decision' autonomy-state.json)" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(jq -r '.head_sha' autonomy-state.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge for eligible candidate
+        if: steps.policy.outputs.decision == 'AUTO_MERGE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.policy.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash \
+            --match-head-commit "$HEAD_SHA"
+
+      - name: Persist bounded decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-autonomy-v1-${{ github.run_id }}
+          path: autonomy-state.json
+          retention-days: 14
+
+  state:
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read current main state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          jq -n \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg main_sha "$main_sha" \
+            '{schema_version:"engineering-autonomy-v1",workflow:$workflow,run_id:$run_id,main_sha:$main_sha,decision:"STATE_READ_ONLY",live_trade:false,radar_admission:"BLOCKED",paper_auto_ready:false}' \
+            > autonomy-state.json
+
+      - name: Persist state
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-autonomy-v1-${{ github.run_id }}
+          path: autonomy-state.json
+          retention-days: 14
