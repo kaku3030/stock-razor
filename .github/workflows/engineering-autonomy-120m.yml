@@ -24,16 +24,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Restore latest checkpoint
+        uses: actions/cache/restore@v4
+        with:
+          path: engineering_autonomy/state.json
+          key: engineering-autonomy-120m-state-${{ github.run_id }}
+          restore-keys: |
+            engineering-autonomy-120m-state-
       - name: Run bounded resumable queue
+        id: run
+        continue-on-error: true
         env:
           AUTONOMY_STOP: ${{ vars.ENGINEERING_AUTONOMY_STOP }}
         run: |
           set -euo pipefail
           python -m engineering_autonomy.loop \
+            --state engineering_autonomy/state.json \
             --budget-units 8 \
             --max-runtime-seconds 7200
+      - name: Persist checkpoint for a later manual resume
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: engineering_autonomy/state.json
+          key: engineering-autonomy-120m-state-${{ github.run_id }}
+      - name: Require PASS terminal state
+        if: steps.run.outcome != 'success'
+        run: |
+          echo "Bounded loop did not reach PASS; checkpoint was preserved."
+          exit 1
