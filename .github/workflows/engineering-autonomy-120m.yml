@@ -1,0 +1,39 @@
+name: Engineering Autonomy 120m (manual, bounded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Explicitly run this one-shot 120-minute engineering loop"
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: engineering-autonomy-120m
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    if: ${{ inputs.confirm == true && vars.ENGINEERING_AUTONOMY_STOP != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Run bounded resumable queue
+        env:
+          AUTONOMY_STOP: ${{ vars.ENGINEERING_AUTONOMY_STOP }}
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.loop \
+            --budget-units 8 \
+            --max-runtime-seconds 7200
