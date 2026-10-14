@@ -82,3 +82,98 @@ def test_conflicting_reinitialization_fails_closed():
 
     with pytest.raises(LedgerUnknown, match="conflicting"):
         ledger.initialize(Decimal("101"), NOW)
+
+
+def test_release_consumes_only_remaining_reservation_after_partial_fill():
+    ledger = PaperBalanceLedger(sqlite3.connect(":memory:"))
+    ledger.initialize(Decimal("1000"), NOW)
+    ledger.reserve("one", Decimal("300"), NOW)
+    ledger.reserve("two", Decimal("400"), NOW)
+    ledger.record_fill(
+        fill_id="f-one", intent_id="i-one", reservation_id="one",
+        symbol="AMD", side="BUY", quantity=Decimal("1"),
+        price=Decimal("100"), at=NOW,
+    )
+    assert ledger.balance().reserved_cash == Decimal("600")
+    ledger.release("one", NOW)
+    assert ledger.balance().reserved_cash == Decimal("400")
+    ledger.release("one", NOW)  # restart/idempotent duplicate
+    assert ledger.balance().reserved_cash == Decimal("400")
+    ledger.record_fill(
+        fill_id="f-two", intent_id="i-two", reservation_id="two",
+        symbol="AAPL", side="BUY", quantity=Decimal("1"),
+        price=Decimal("400"), at=NOW,
+    )
+    assert ledger.balance().reserved_cash == Decimal("0")
+    assert ledger.balance().cash == Decimal("500")
+
+
+def test_unreserved_fill_cannot_spend_other_intents_cash():
+    ledger = PaperBalanceLedger(sqlite3.connect(":memory:"))
+    ledger.initialize(Decimal("1000"), NOW)
+    ledger.reserve("other", Decimal("800"), NOW)
+    with pytest.raises(LedgerUnknown, match="buying power"):
+        ledger.record_fill(
+            fill_id="f-unreserved", intent_id="unreserved", reservation_id=None,
+            symbol="AMD", side="BUY", quantity=Decimal("3"),
+            price=Decimal("100"), at=NOW,
+        )
+    assert ledger.balance().cash == Decimal("1000")
+    assert ledger.balance().reserved_cash == Decimal("800")
+    assert ledger.positions() == ()
+
+
+def test_wrong_reservation_id_and_cross_reservation_fill_fail_closed():
+    ledger = PaperBalanceLedger(sqlite3.connect(":memory:"))
+    ledger.initialize(Decimal("1000"), NOW)
+    ledger.reserve("small", Decimal("50"), NOW)
+    ledger.reserve("large", Decimal("700"), NOW)
+    for reservation in ("missing", "small"):
+        with pytest.raises(LedgerUnknown, match="reservation"):
+            ledger.record_fill(
+                fill_id="bad-" + reservation,
+                intent_id="other", reservation_id=reservation,
+                symbol="AMD", side="BUY", quantity=Decimal("1"),
+                price=Decimal("100"), at=NOW,
+            )
+    assert ledger.balance().cash == Decimal("1000")
+    assert ledger.balance().reserved_cash == Decimal("750")
+
+
+def test_fill_after_reservation_release_is_an_unreconciled_late_fill():
+    ledger = PaperBalanceLedger(sqlite3.connect(":memory:"))
+    ledger.initialize(Decimal("500"), NOW)
+    ledger.reserve("cancelled", Decimal("100"), NOW)
+    ledger.release("cancelled", NOW)
+    with pytest.raises(LedgerUnknown, match="already released"):
+        ledger.record_fill(
+            fill_id="late-fill", intent_id="cancelled",
+            reservation_id="cancelled", symbol="AMD", side="BUY",
+            quantity=Decimal("1"), price=Decimal("100"), at=NOW,
+        )
+    assert ledger.balance().cash == Decimal("500")
+    assert ledger.positions() == ()
+
+
+def test_partial_fill_cannot_overspend_same_reservation_with_second_receipt(tmp_path):
+    path = tmp_path / "paper-ledger.sqlite"
+    ledger = PaperBalanceLedger(sqlite3.connect(path))
+    ledger.initialize(Decimal("500"), NOW)
+    ledger.reserve("order", Decimal("150"), NOW)
+    ledger.record_fill(
+        fill_id="first", intent_id="order", reservation_id="order",
+        symbol="AMD", side="BUY", quantity=Decimal("1"),
+        price=Decimal("100"), at=NOW,
+    )
+    with pytest.raises(LedgerUnknown, match="own reservation"):
+        ledger.record_fill(
+            fill_id="second", intent_id="order", reservation_id="order",
+            symbol="AMD", side="BUY", quantity=Decimal("1"),
+            price=Decimal("100"), at=NOW,
+        )
+    assert ledger.balance().reserved_cash == Decimal("50")
+    ledger.connection.close()
+    reopened = PaperBalanceLedger(sqlite3.connect(path))
+    reopened.release("order", NOW)
+    assert reopened.balance().reserved_cash == Decimal("0")
+    assert reopened.balance().cash == Decimal("400")
