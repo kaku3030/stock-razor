@@ -309,7 +309,7 @@ def test_livefeed_health_rejects_malformed_provider_callback_latency(tmp_path):
 def test_postclose_historical_repair_evidence_is_visible_without_promoting(tmp_path):
     heartbeat = _heartbeat()
     heartbeat["postclose_reconciliation"] = {
-        "session_date": "2026-10-06",
+        "session_date": "2026-10-07",
         "status": "PASS_HISTORICAL_ONLY",
         "reason": "HISTORICAL_TERMINAL_RECONCILIATION",
         "provider_requests": 1,
