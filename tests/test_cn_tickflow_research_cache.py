@@ -405,3 +405,85 @@ def test_today_ohlc_off_tick_grid_never_counted_as_repairable():
     assert len(out)==6
     assert evidence["ETF_TICK_LATTICE_FAR"]==1
     assert evidence.get("ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY",0)==0
+
+
+
+def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_research(tmp_path):
+    """Same-day TickFlow floats may be observed only after close, without fixing price."""
+    now=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    prior=frame("15m","2026-10-13").iloc[:8].copy()
+    today=frame("15m","2026-10-14").copy()
+    # Original TickFlow float JSON can represent 1.600 as 1.599999999999999.
+    today["high"]=1.5999999999999994
+    mixed=pd.concat([prior,today],ignore_index=True)
+    raw={k:mixed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    quarantined={}
+    output=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=quarantined)
+    assert len(output)==len(mixed)
+    assert output[-1]["label"]=="2026-10-14 15:00"
+    assert output[-1]["high"]==1.5999999999999994
+    assert output[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert output[-1]["bar_finality"]=="NOT_VERIFIED"
+    assert output[-1]["is_partial_bar"] is True
+    assert not quarantined
+
+    class Klines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            if period=="15m":
+                return raw
+            p=frame(period,"2026-10-14")
+            return {k:p[k].tolist() for k in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class Client:
+        klines=Klines()
+    snap=build_observation(Client(),now_utc=now,repo_sha="e"*40,sequence=1)
+    p=tmp_path/"native-eod.json"
+    atomic_publish(str(p),snap)
+    hist=read_cn_tickflow_research_data("159611.SZ","15m",
+         limit=1,path=str(p),now_utc=now,research_mode="historical_only")
+    assert hist["status"]=="PASS_HISTORICAL_ONLY" and hist["ok"] is True
+    assert hist["rows"][-1]["high"]==1.5999999999999994
+    assert hist["rows"][-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert hist["bar_finality"]=="NOT_VERIFIED"
+    assert hist["currentness"]=="UNPROVEN"
+    assert hist["can_confirm_signal"] is False
+    assert hist["radar_admission"]=="BLOCKED"
+    assert hist["source_arbiter_admission"]=="BLOCKED"
+    assert hist["live_trade"] is False
+    strict=read_cn_tickflow_research_data("159611.SZ","15m",
+         limit=1,path=str(p),now_utc=now,research_mode="session_progress")
+    assert strict["ok"] is False and strict["status"]=="INVALID_CACHE"
+
+
+def test_intraday_current_vendor_float_stays_quarantined_and_unclosed():
+    now=datetime(2026,10,14,5,37,tzinfo=timezone.utc)  # Shanghai 13:37
+    prior=frame("15m","2026-10-13").iloc[:8].copy()
+    current=frame("15m","2026-10-14").iloc[8:10].copy()
+    current["high"]=1.5999999999999994
+    mixed=pd.concat([prior,current],ignore_index=True)
+    raw={k:mixed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    reasons={}
+    got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
+    assert len(got)==len(prior)
+    assert reasons.get("TODAY_HIGH_BELOW_BODY")==2
+    assert all(item["bar_finality"]=="NOT_VERIFIED" for item in got)
+
+
+def test_postclose_large_gap_and_non_tick_lattice_stay_quarantined():
+    now=datetime(2026,10,14,7,5,tzinfo=timezone.utc)
+    old=frame("15m","2026-10-13").iloc[:8].copy()
+    today=frame("15m","2026-10-14").iloc[14:16].copy()
+    today.loc[today.index[0],"high"]=1.598  # 0.002 true shape violation
+    today.loc[today.index[1],"high"]=1.599995  # tiny gap but not <=1e-5 from tick?
+    # second is within 1e-5 from 1.600 and valid by vendor's precision
+    # contract; use off-grid 1.59949 to ensure it remains excluded.
+    today.loc[today.index[1],"high"]=1.59949
+    merged=pd.concat([old,today],ignore_index=True)
+    raw={k:merged[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    reasons={}
+    got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
+    assert len(got)==len(old)
+    assert reasons["TODAY_HIGH_BELOW_BODY"]==2
