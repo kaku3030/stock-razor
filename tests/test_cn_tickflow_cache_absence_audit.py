@@ -42,7 +42,9 @@ def test_oversized_private_cache_never_read_or_exported(tmp_path, monkeypatch):
     result = audit.sample()
     assert result["status"] == "NO_VALID_CACHE"
     assert result["cache_unavailable_reason"] == "FILE_SIZE_INVALID"
-    assert "Z" not in str(result)
+    # An isolated character can appear in safe enum names (e.g. SIZE).
+    # Only the full unique raw fixture payload must remain undisclosed.
+    assert "Z" * 64 not in str(result)
 
 
 def test_public_workflow_requires_fixed_failure_enum_and_serialized_deploy():
