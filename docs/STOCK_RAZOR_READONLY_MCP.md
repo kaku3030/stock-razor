@@ -205,3 +205,22 @@ All returned rows remain research-only with unverified finality, unverified
 live currentness, no source/Radar/Paper/Live trading admission. During market
 hours `TICKFLOW:BATCH` is **not** evidence of WS continuity or a current
 completed bar; check each frame's `expected_grid_progress`.
+
+### Fast TickFlow compact watchlist
+
+For routine read-only watchlist refreshes, use the already connected
+`get_cn_market_data(symbol="TICKFLOW:FAST", limit=1)` action. It reads
+exactly one native 15m and 60m historical OHLCV row for each of the two
+fixed ETFs (159611.SZ and 518880.SH) through the validated four-frame
+`TICKFLOW:BATCH` cache reader, retaining source SHA and sequence alignment.
+It returns compact native `t/o/h/l/c/v/a` values, amount availability,
+OHLC float-validation status, session grid progression and explicit
+`bar_finality=NOT_VERIFIED` / `is_partial_bar=true` on every row.
+
+The added `read_ms` field measures in-process **MCP-local reader** execution
+only. It does **not** measure chat-to-connector network RTT, cloud polling
+latency, SDK/network/provider latency, or actual exchange finality.
+Any stale, malformed or mismatched source fails closed without returning
+partial price-bearing data. The response never asserts Radar/Source Arbiter
+or trading admission; use regular `TICKFLOW:BATCH` when historical depth
+is needed. This is not a replacement for D1/5m or a validated live WS feed.
