@@ -19,18 +19,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      pending: ${{ steps.queue.outputs.pending }
+      pending: ${{ steps.queue.outputs.pending }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Validate trusted one-shot task
         run: python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
       - name: Skip if any existing PR already claims this ID
         id: queue
         env:
-          GH_TOKEN: ${{ github.token }
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -52,11 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Create trusted prompt and require provider secret
         env:
-          API_KEY: ${{ secrets.OPENAI_API_KEY }
+          API_KEY: ${{ secrets.OPENAI_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +68,7 @@ jobs:
       - name: Run isolated Codex coding agent
         uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12 commit
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: /tmp/autonomy-prompt.txt
           permission-profile: ':workspace'
           safety-strategy: drop-sudo
@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -102,7 +102,7 @@ jobs:
           set -euo pipefail
           python -m engineering_autonomy.coding_gate check-patch --output /tmp/autonomy-artifact/autonomy.patch
           git apply --check /tmp/autonomy-artifact/autonomy.patch
-          git apply --index /tmp/autonomy-artifact/autonomy.patch
+          git apply /tmp/autonomy-artifact/autonomy.patch
           python -m engineering_autonomy.coding_gate capture --output /tmp/verified.patch
       - name: Install isolated test dependency
         run: python -m pip install pytest==8.4.2
@@ -124,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -139,12 +139,12 @@ jobs:
           git diff --cached --check
       - name: Require separate publication credential
         env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }
+          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
         run: |
           test -n "$GH_TOKEN" || { echo 'BLOCKED: App token not configured' >&2; exit 1; }
       - name: Publish PR only, never merge
         env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }
+          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
