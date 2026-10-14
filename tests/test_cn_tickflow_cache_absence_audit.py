@@ -56,3 +56,11 @@ def test_public_workflow_requires_fixed_failure_enum_and_serialized_deploy():
     assert "cancel-in-progress: false" in source
     assert "RADAR_ADMISSION=BLOCKED" in source
     assert "LIVE_TRADE=NO" in source
+
+
+def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
+    from data_provider.cn_tickflow_research_cache import MAX_BYTES
+
+    # Auditor used to impose a smaller 150 KB limit and falsely report
+    # NO_VALID_CACHE for a legitimate 150-350 KB private snapshot.
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
