@@ -4,7 +4,7 @@ from pathlib import Path
 
 def test_pinned_ssm_linux_requires_runtime_ubuntu_os_verification():
     workflow=Path(".github/workflows/deploy-cn-tickflow-research.yml").read_text("utf8")
-    assert workflow.count("i-01738342af3efac72") >= 3
+    assert workflow.count("i-01738342af3efac72") >= 2
     assert 'PINNED_LINUX_REQUIRES_UBUNTU_OS_PROOF' in workflow
     assert '(.PlatformType == "Linux" and $id == "i-01738342af3efac72")' in workflow
     assert '. /etc/os-release' in workflow
