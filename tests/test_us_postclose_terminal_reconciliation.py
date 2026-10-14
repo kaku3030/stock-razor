@@ -147,7 +147,7 @@ def test_existing_terminal_live_bar_is_not_overwritten_by_historical():
     ).bars[-1]
     cache.values.append(original)
     report, calls, _ = _call(cache=cache)
-    assert report["status"] == "PASS_HISTORICAL_ONLY"
+    assert report["status"] == "ALREADY_PRESENT"
     assert report["symbols"]["US.NVDA"]["status"] == "ALREADY_PRESENT"
     assert cache.ingestions == 0
     assert not calls
@@ -174,3 +174,19 @@ def test_installer_wires_one_shot_historical_reconciliation_without_promotion():
     assert "postclose_attempted_date" in script
     assert '"postclose_reconciliation":postclose_reconciliation' in script
     assert "or postclose_seeded_this_pass > 0" in script
+
+
+def test_existing_incomplete_terminal_is_not_accepted_or_replaced():
+    cache = _Cache()
+    final = normalize_futu_k1m_history_rows(
+        _rows(), received_at=AT,
+        expected_symbol="US.NVDA",
+        allow_completed_prior_session_tail=True,
+    ).bars[-1]
+    cache.values.append(replace(final, is_complete=False))
+    report, calls, _ = _call(cache=cache)
+    assert report["status"] == "BLOCKED"
+    assert report["symbols"]["US.NVDA"]["reason"] == "EXISTING_TERMINAL_BAR_UNQUALIFIED"
+    assert report["seeded_count"] == 0
+    assert cache.ingestions == 0
+    assert calls == []
