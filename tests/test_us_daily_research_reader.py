@@ -159,3 +159,32 @@ def test_existing_mcp_market_bars_routes_daily_only():
     assert 'if timeframe == "1d":' in text
     assert "return read_us_market_bars(symbol, timeframe=timeframe, limit=limit)" in text
     assert "get_market_bars" in text
+
+
+def test_off_session_canonical_snapshot_stale_does_not_disable_historical_d1(tmp_path):
+    # Real cloud can have a fresh connected heartbeat while no new canonical
+    # intraday bars arrive during after-hours. K_DAY remains historical-only.
+    evidence = _health(
+        canonical_snapshot_status="STALE",
+        delivery_mode="UNKNOWN",
+        market_state_us="AFTER_HOURS_BEGIN",
+    )
+    result = _read(tmp_path, _payload(), health=evidence)
+    assert result["status"] == "PASS_HISTORICAL_ONLY"
+    assert result["bar_count"] == 5
+    assert result["provider_requests"] == 0
+    assert result["provider_finality"] == "NOT_VERIFIED"
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_historical_d1_still_blocks_invalid_canonical_runtime(tmp_path):
+    for bad_health in (
+        _health(canonical_snapshot_status="INVALID"),
+        _health(canonical_snapshot_status="UNAVAILABLE"),
+        _health(delivery_mode="DELAYED"),
+        _health(ok=False),
+    ):
+        result = _read(tmp_path, _payload(), health=bad_health)
+        assert result["status"] == "BLOCKED"
+        assert result["reason"] == "LIVEFEED_HEALTH_UNVERIFIED"
+        assert result["bars"] == []
