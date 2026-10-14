@@ -15,6 +15,8 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
+from .paper_balance_ledger import PaperBalanceLedger
+
 
 class ExecutionBlocked(RuntimeError): pass
 class PaperOrderRejected(RuntimeError): pass
@@ -190,7 +192,7 @@ class PaperBrokerAdapter:
     def replace(self, broker_order_id: str, intent: OrderIntent) -> str:
         self.calls.append(("replace",broker_order_id)); self._next += 1; return f"paper-order-{self._next}"
     def reconcile(self) -> ReconciliationSnapshot:
-        now=datetime.now(timezone.utc); return ReconciliationSnapshot(AccountSnapshot("paper",Decimal("100000"),Decimal("100000"),now,"paper"),as_of=now)
+        raise ExecutionBlocked("paper balance is UNKNOWN; reconcile from an explicit ledger or provider read-back")
 
 def _age_seconds(now: datetime, as_of: datetime | None) -> int | None: return None if as_of is None else int((now-_utc(as_of)).total_seconds())
 
@@ -233,6 +235,7 @@ class ExecutionEngine:
                     record.fill_ids.append(details["fill_id"]); record.filled_qty += Decimal(details.get("quantity", "0"))
         if self.store.has_ambiguous_submission(): raise ExecutionBlocked("ambiguous submission requires resync; automatic resubmit is blocked")
         self.reconciliation=None
+        self.ledger = PaperBalanceLedger(self.store.connection, "paper")
     def _append(self, kind: str, record: OrderRecord, at: datetime, **details: object) -> None:
         event=JournalEvent(len(self.journal)+1,kind,record.intent.intent_id,details.pop("_state",record.state),(record.intent.evidence_snapshot_id,*record.fill_ids),_utc(at),tuple(sorted((str(k),str(v)) for k,v in details.items())))
         self.store.append(event); self.journal+=(event,)
@@ -244,7 +247,15 @@ class ExecutionEngine:
         self.risk_guard.check(intent,self.reconciliation,context)
         if self.store.has_ambiguous_submission(): raise ExecutionBlocked("pending mutation requires resync")
     def reconcile(self) -> ReconciliationSnapshot:
-        snapshot=self.adapter.reconcile(); self.reconciliation=snapshot
+        balance = self.ledger.balance()
+        if balance.status == "KNOWN":
+            positions = tuple(PositionSnapshot(p.symbol, p.qty, p.market_value) for p in self.ledger.positions())
+            now = balance.as_of
+            account = AccountSnapshot("paper", balance.buying_power, balance.equity, now, "paper")
+            snapshot = ReconciliationSnapshot(account, positions, as_of=now)
+        else:
+            snapshot=self.adapter.reconcile()
+        self.reconciliation=snapshot
         if snapshot.as_of is None or not snapshot.complete or any(r.identity != snapshot.account.account_id or r.source != snapshot.account.source or not r.complete or not r.fresh for r in snapshot.resources()): raise ExecutionBlocked("reconciliation is incomplete or stale")
         return snapshot
     def submit(self, intent: OrderIntent, context: RiskContext) -> OrderRecord:
@@ -252,8 +263,14 @@ class ExecutionEngine:
         if self.reconciliation is None: raise ExecutionBlocked("startup reconciliation is required")
         self.risk_guard.check(intent,self.reconciliation,context); self.store.save_intent(intent); record=OrderRecord(intent); self.records[intent.intent_id]=record
         self._transition(record,OrderState.VALIDATED,context.now); self._transition(record,OrderState.SUBMITTING,context.now)
+        ledger_known = self.ledger.balance().status == "KNOWN"
+        if ledger_known:
+            self.ledger.reserve(intent.intent_id, intent.qty * intent.limit_price, context.now)
         try: broker_order_id,fills=self.adapter.place(intent)
-        except PaperOrderRejected: self._transition(record,OrderState.REJECTED,context.now); return record
+        except PaperOrderRejected:
+            if ledger_known:
+                self.ledger.release(intent.intent_id, context.now)
+            self._transition(record,OrderState.REJECTED,context.now); return record
         if not broker_order_id: raise ExecutionBlocked("paper broker order identity is missing")
         fills=tuple(fills); seen=set(); validated=[]; total=Decimal("0")
         for fill_id,quantity,price in fills:
@@ -263,6 +280,8 @@ class ExecutionEngine:
         record.broker_order_id=broker_order_id; self._transition(record,OrderState.ACCEPTED,context.now,broker_order_id=broker_order_id)
         for fill_id,quantity,price in validated:
             record.fill_ids.append(fill_id); record.filled_qty+=quantity; self._transition(record,OrderState.FILLED if record.filled_qty==intent.qty else OrderState.PARTIAL,context.now,fill_id=fill_id,quantity=quantity,price=price,broker_order_id=broker_order_id)
+            if ledger_known:
+                self.ledger.record_fill(fill_id=fill_id, intent_id=intent.intent_id, reservation_id=intent.intent_id, symbol=intent.symbol, side=intent.side.value, quantity=quantity, price=price, at=context.now)
         return record
     def cancel(self, intent_id: str, at: datetime) -> OrderRecord:
         record=self.records.get(intent_id)

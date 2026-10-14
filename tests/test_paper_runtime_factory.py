@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -79,8 +81,9 @@ def test_explicit_start_requires_opt_in_and_reconciles_offline(tmp_path: Path, m
         runtime_generation="runtime-1",
         account_generation="account-1",
         config=_config(tmp_path),
-        start=True,
     )
+    runtime.initialize_offline_balance(Decimal("100000"), datetime(2026, 1, 1, tzinfo=timezone.utc))
+    runtime.start()
 
     assert runtime.state is PaperRuntimeState.READY
     assert capability.adapter.calls == []

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -48,6 +49,7 @@ def test_from_config_requires_matching_execution_store_and_builds_shadow_store(t
     )
 
     assert owner.state is PaperRuntimeState.NEW
+    owner.initialize_offline_balance(Decimal("100000"), datetime(2026, 1, 1, tzinfo=timezone.utc))
     owner.start()
     assert owner.state is PaperRuntimeState.READY
     owner.stop()
