@@ -81,3 +81,18 @@ def test_workflow_uses_deepseek_aider_without_codex_or_openai_secret():
     assert '--model deepseek/deepseek-chat' in workflow
     assert 'openai/codex-action' not in workflow
     assert 'secrets.OPENAI_API_KEY' not in workflow
+
+
+def test_aider_history_files_outside_checkout_and_capture_still_fail_closed():
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
+        encoding="utf-8"
+    )
+    assert '--input-history-file "$RUNNER_TEMP/autonomy-aider-input.history"' in workflow
+    assert '--chat-history-file "$RUNNER_TEMP/autonomy-aider-chat.history.md"' in workflow
+    assert "--map-tokens 0" in workflow
+    assert "--no-gitignore" in workflow
+    assert "--no-analytics" in workflow
+    assert 'git", "status", "--porcelain=v1", "-z", "--untracked-files=all"' in workflow
+    assert "python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch" in workflow
+    assert "git clean" not in workflow
+    assert "git restore" not in workflow
