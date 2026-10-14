@@ -1,7 +1,7 @@
 """Offline contract tests for instance-scoped OpenD subscription orchestration."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from data_provider.live_feed_types import SemanticStreamKey
 from src.services.live_feed.opend_subscription_manager import (
@@ -175,3 +175,19 @@ def test_manager_has_no_global_unsubscribe_or_execution_surface():
     assert not hasattr(service, "unsubscribe_all")
     assert not hasattr(service, "place_order")
     assert not hasattr(service, "promote_live")
+
+
+def test_optional_mutation_frequency_limit_covers_recovery():
+    adapter = FakeAdapter()
+    clock = [NOW]
+    service = OpenDSubscriptionManager(
+        adapter,
+        runtime_instance_id="runtime-a",
+        now_utc=lambda: clock[0],
+        min_mutation_interval_seconds=30,
+    )
+
+    assert service.add(KEY_A, quota=quota()).status == "APPLIED"
+    assert service.recover("generation-2", quota=quota()).reason == "MUTATION_RATE_LIMITED"
+    clock[0] += timedelta(seconds=30)
+    assert service.recover("generation-2", quota=quota()).status == "RECOVERED"

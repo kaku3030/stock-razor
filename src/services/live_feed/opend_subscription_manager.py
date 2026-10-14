@@ -105,6 +105,7 @@ class OpenDSubscriptionManagerSnapshot:
     radar_admission: str = "BLOCKED"
     source_arbiter_admission: str = "BLOCKED"
     live_trade: bool = False
+    last_mutation_at_utc: datetime | None = None
 
 
 def _default_now_utc() -> datetime:
@@ -158,22 +159,27 @@ class OpenDSubscriptionManager:
         runtime_instance_id: str,
         now_utc: Callable[[], datetime] = _default_now_utc,
         quota_max_age_seconds: int = 120,
+        min_mutation_interval_seconds: int = 0,
     ) -> None:
         instance_id = str(runtime_instance_id or "").strip()
         if not instance_id:
             raise ValueError("runtime_instance_id must not be empty")
         if type(quota_max_age_seconds) is not int or quota_max_age_seconds <= 0:
             raise ValueError("quota_max_age_seconds must be a positive integer")
+        if type(min_mutation_interval_seconds) is not int or min_mutation_interval_seconds < 0:
+            raise ValueError("min_mutation_interval_seconds must be a non-negative integer")
         self._adapter = adapter
         self._runtime_instance_id = instance_id
         self._now_utc = now_utc
         self._quota_max_age_seconds = quota_max_age_seconds
+        self._min_mutation_interval_seconds = min_mutation_interval_seconds
         self._lock = threading.RLock()
         self._candidate_pool: set[SemanticStreamKey] = set()
         self._applied: set[SemanticStreamKey] = set()
         self._transport_state = "KNOWN"
         self._last_recovery_token: str | None = None
         self._history: dict[SemanticStreamKey, HistoryWarmStartState] = {}
+        self._last_mutation_at_utc: datetime | None = None
 
     def snapshot(self) -> OpenDSubscriptionManagerSnapshot:
         with self._lock:
@@ -186,6 +192,7 @@ class OpenDSubscriptionManager:
                 history_warm_start=tuple(
                     self._history[key] for key in sorted(self._history, key=_key_sort)
                 ),
+                last_mutation_at_utc=self._last_mutation_at_utc,
             )
 
     def preview_candidates(
@@ -289,6 +296,8 @@ class OpenDSubscriptionManager:
                 return self._blocked("RECOVERY_TOKEN_REQUIRED")
             if token == self._last_recovery_token:
                 return self._result("NOOP", "RECOVERY_ALREADY_APPLIED")
+            if self._rate_limit_reason():
+                return self._blocked("MUTATION_RATE_LIMITED")
 
             desired = self._ordered(self._candidate_pool)
             if desired:
@@ -301,6 +310,7 @@ class OpenDSubscriptionManager:
             self._last_recovery_token = token
             if not desired:
                 return self._result("NOOP", "RECOVERY_EMPTY_CANDIDATE_POOL")
+            self._last_mutation_at_utc = self._now_utc().astimezone(timezone.utc)
             try:
                 self._adapter.subscribe_streams(desired)
             except Exception:
@@ -378,7 +388,11 @@ class OpenDSubscriptionManager:
         if not additions and not removals:
             return self._result("NOOP", "ALREADY_RECONCILED")
 
+        if self._rate_limit_reason():
+            return self._blocked("MUTATION_RATE_LIMITED")
+
         attempted = 0
+        self._last_mutation_at_utc = self._now_utc().astimezone(timezone.utc)
         try:
             if additions:
                 attempted += 1
@@ -425,6 +439,15 @@ class OpenDSubscriptionManager:
 
     def _blocked(self, reason: str) -> SubscriptionMutationResult:
         return self._result("BLOCKED", reason)
+
+    def _rate_limit_reason(self) -> str | None:
+        if self._min_mutation_interval_seconds == 0 or self._last_mutation_at_utc is None:
+            return None
+        now = self._now_utc()
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            return "INVALID_CLOCK"
+        age = (now.astimezone(timezone.utc) - self._last_mutation_at_utc).total_seconds()
+        return "MUTATION_RATE_LIMITED" if age < self._min_mutation_interval_seconds else None
 
     def _result(
         self,
