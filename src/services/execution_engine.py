@@ -261,12 +261,22 @@ class ExecutionEngine:
     def submit(self, intent: OrderIntent, context: RiskContext) -> OrderRecord:
         if intent.intent_id in self.records or any(e.intent_id==intent.intent_id for e in self.journal): raise ExecutionBlocked("duplicate intent_id")
         if self.reconciliation is None: raise ExecutionBlocked("startup reconciliation is required")
-        self.risk_guard.check(intent,self.reconciliation,context); self.store.save_intent(intent); record=OrderRecord(intent); self.records[intent.intent_id]=record
-        self._transition(record,OrderState.VALIDATED,context.now); self._transition(record,OrderState.SUBMITTING,context.now)
+        self.risk_guard.check(intent,self.reconciliation,context)
         ledger_known = self.ledger.balance().status == "KNOWN"
         cash_reserved = ledger_known and intent.side is Side.BUY
+        # Check and durably reserve *before* writing SUBMITTING or contacting
+        # any adapter. Otherwise a harmless insufficient-cash rejection leaves
+        # an ambiguous order journal that unnecessarily blocks later recovery.
         if cash_reserved:
             self.ledger.reserve(intent.intent_id, intent.qty * intent.limit_price, context.now)
+        try:
+            self.store.save_intent(intent)
+        except Exception:
+            if cash_reserved:
+                self.ledger.release(intent.intent_id, context.now)
+            raise
+        record=OrderRecord(intent); self.records[intent.intent_id]=record
+        self._transition(record,OrderState.VALIDATED,context.now); self._transition(record,OrderState.SUBMITTING,context.now)
         try: broker_order_id,fills=self.adapter.place(intent)
         except PaperOrderRejected:
             if cash_reserved:
