@@ -1,0 +1,102 @@
+name: Test OpenD Owned Multi-Timeframe Depth (Ephemeral)
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: opend-native-owned-multitimeframe
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.ref == 'refs/heads/main' && github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact protected current main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/benchmark_opend_owned_multitimeframe.py
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: opend-owned-kline-${{ github.run_id }}
+          aws-region: ap-northeast-1
+      - name: Run isolated, self-owned OpenD probe only if available subscription headroom
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_b64="$(base64 -w0 scripts/benchmark_opend_owned_multitimeframe.py)"
+          remote="printf '%s' '$source_b64' | base64 -d | HOME=/root /opt/stock-razor-opend-client/venv/bin/python -"
+          params="$(jq -cn --arg cmd "$remote" '{commands:[$cmd]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript \
+            --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" \
+            --timeout-seconds 135 --query Command.CommandId --output text)"
+          state=UNKNOWN
+          for _ in $(seq 1 75); do
+            state="$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$state" in Success|Failed|TimedOut|Cancelled) break ;; esac
+            sleep 2
+          done
+          if [ "$state" != Success ]; then
+            echo "OPEND_OWNED_PROBE_SSM=$state"
+            echo 'SSM_STDOUT_STDERR_WITHHELD=YES'
+            exit 1
+          fi
+          raw="$(aws ssm get-command-invocation --command-id "$command_id" \
+            --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null)"
+          if [ "$(printf '%s' "$raw" | wc -c)" -gt 16000 ]; then
+            echo 'OPEND_OWNED_PROBE_SIZE=BLOCKED'
+            exit 1
+          fi
+          printf '%s' "$raw" | jq -Rsec '
+            [split("\n")[] | try fromjson catch empty
+              | select(type=="object"
+                and .schema=="stock_razor_opend_temporary_owned_multitimeframe_benchmark_v1")] as $reports
+            | if ($reports|length)==1 then $reports[0]
+              else error("EXACTLY_ONE_OWNED_BENCHMARK_SCHEMA_REQUIRED") end
+            | select(.production_subscription_mutations==0
+              and .explicit_history_requests==0 and .trade_requests==0
+              and .radar_admission=="BLOCKED"
+              and .source_arbiter_admission=="BLOCKED"
+              and .live_trade==false
+              and .temporary_context_closed==true
+              and .max_native_calls==60)
+            | {schema,observed_utc,status,mode,
+               requested_symbols,requested_periods,
+               own_used_at_start,preflight_remain,
+               temporary_subscriptions_established,temporary_context_closed,
+               reason,exception_class,call_count,valid_depth_calls,
+               depth_p50_ms,depth_p95_ms,repeat_valid,repeat_p50_ms,repeat_p95_ms,
+               requested_over_provider_cap,elapsed_s,records,
+               production_subscription_mutations,radar_admission,
+               source_arbiter_admission,live_trade}
+          ' | tee /tmp/opend-owned-sanitized-result.json
+          # Completion is only PASS when at least one actual native K-line returned.
+          jq -e '.status=="PASS_NATIVE" and .valid_depth_calls>=32
+                 and .temporary_context_closed==true
+                 and .temporary_subscriptions_established<=8
+                 and .depth_p50_ms!=null
+                 and (([.records[] | select(.count==1000 and .status=="PASS") | (.symbol+":"+.period)] | unique | length)==8)' /tmp/opend-owned-sanitized-result.json >/dev/null
+          echo 'OPEND_NATIVE_MULTIFRAME=PASS'
+          echo 'OPEND_PRODUCTION_SUBSCRIPTIONS_UNCHANGED=YES'
+          echo 'RADAR_ADMISSION=BLOCKED'
+          echo 'LIVE_TRADE=NO'
