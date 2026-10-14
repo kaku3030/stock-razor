@@ -47,12 +47,18 @@ jobs:
             exit 1
           fi
       - name: Restore only the requested checkpoint
+        id: resume-cache
         if: ${{ inputs.resume_run_id != '' }}
         uses: actions/cache/restore@v4
         with:
           path: engineering_autonomy/state.json
           key: engineering-autonomy-120m-state-${{ inputs.resume_run_id }}
           fail-on-cache-miss: true
+      - name: Require exact checkpoint cache hit (reject prefix matches)
+        if: ${{ inputs.resume_run_id != '' && steps.resume-cache.outputs.cache-hit != 'true' }}
+        run: |
+          echo 'BLOCKED: only an exact cache hit may be resumed' >&2
+          exit 1
       - name: Run bounded resumable queue
         id: run
         continue-on-error: true
