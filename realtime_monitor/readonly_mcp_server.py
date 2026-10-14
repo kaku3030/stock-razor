@@ -98,10 +98,10 @@ def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
     return read_cn_quick_scan(symbols)
 
 
-def _read_tickflow_historical_batch(limit: int) -> dict:
+def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
     """One remote MCP round trip for two ETF research histories; no provider IO.
 
-    Four independent cache reads must share one source SHA and sequence.
+    Four or eight independent cache reads must share a source SHA and sequence.
     Never promote an incomplete or misaligned set to a usable batch.
     """
     base = {
@@ -114,14 +114,17 @@ def _read_tickflow_historical_batch(limit: int) -> dict:
         "canonical_write_authorized": False,
         "research_mode": "historical_only",
     }
-    if type(limit) is not int or not 1 <= limit <= 24:
+    if type(full) is not bool:
+        return base
+    periods=(("5m","15m","60m","1d") if full else ("15m","60m"))
+    if type(limit) is not int or not 1 <= limit <= (48 if full else 24):
         return base
     raw = {}
     states = {}
     source_versions = set()
     for symbol in ("159611.SZ", "518880.SH"):
         frames = {}
-        for period in ("15m", "60m"):
+        for period in periods:
             result = read_cn_tickflow_research_data(
                 symbol, timeframe=period, limit=limit,
                 research_mode="historical_only",
@@ -161,7 +164,7 @@ def _read_tickflow_historical_batch(limit: int) -> dict:
         **base, "ok": True, "status": "PASS_HISTORICAL_ONLY",
         "repo_sha": sha, "sequence": sequence,
         "symbols": raw, "frame_status": states,
-        "frame_count": 4,
+        "frame_count": 2*len(periods),
         "source_age_seconds": max(
             frame["source_age_seconds"]
             for frames in raw.values() for frame in frames.values()
@@ -245,6 +248,8 @@ def get_cn_market_data(
         return _read_tickflow_fast_snapshot()
     if symbol == "TICKFLOW:BATCH":
         return _read_tickflow_historical_batch(limit)
+    if symbol == "TICKFLOW:FULL":
+        return _read_tickflow_historical_batch(limit, full=True)
     if isinstance(symbol, str) and symbol.startswith("TICKFLOW:"):
         return read_cn_tickflow_research_data(
             symbol[len("TICKFLOW:"):], timeframe=timeframe, limit=limit,
