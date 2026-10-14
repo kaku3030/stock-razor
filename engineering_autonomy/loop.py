@@ -109,6 +109,12 @@ def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
         raise ValueError("invalid spent cost")
     if not isinstance(state["completed"], list) or not isinstance(state["failed"], list):
         raise ValueError("invalid result lists")
+    if any(item not in ids for item in state["completed"] + state["failed"]):
+        raise ValueError("state contains an unknown task result")
+    if len(state["completed"]) != len(set(state["completed"])) or len(state["failed"]) != len(set(state["failed"])):
+        raise ValueError("state contains duplicate task results")
+    if set(state["completed"]) & set(state["failed"]):
+        raise ValueError("task cannot be both completed and failed")
     return state
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
