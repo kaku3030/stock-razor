@@ -80,8 +80,13 @@ def read_us_completed_daily_research(
     if not isinstance(health, dict) or not (
         health.get("ok") is True
         and health.get("status") == "HEALTHY"
-        and health.get("canonical_snapshot_status") == "PASS"
-        and health.get("delivery_mode") == "REALTIME"
+        # Intraday canonical snapshot age and current-session delivery
+        # are independent of a prior-session K_DAY historical file. A
+        # healthy heartbeat may coexist with a STALE intraday snapshot
+        # off-session; never turn that snapshot staleness into a false
+        # historical D1 outage. INVALID/UNAVAILABLE still fail closed.
+        and health.get("canonical_snapshot_status") in ("PASS", "STALE")
+        and health.get("delivery_mode") in ("REALTIME", "UNKNOWN")
         and health.get("radar_admission") == "BLOCKED"
         and health.get("live_trade") is False
     ):
