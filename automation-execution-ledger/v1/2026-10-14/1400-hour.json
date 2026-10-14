@@ -1,0 +1,22 @@
+{
+  "schema": "stock-razor-automation-execution-v1",
+  "scheduled_at_jst": "2026-10-14T14:00:00+09:00",
+  "observed_at_utc": "2026-10-14T05:06:29.902Z",
+  "lane": "hour",
+  "session_cn": "OPEN",
+  "session_us": "CLOSED",
+  "session_evidence": "SSE 2026-09-17 official Oct holiday notice: reopen Oct 8; SZSE aligned. At 14:04 JST=13:04 CST inside PM core; NYSE/Nasdaq 2026 calendars: 01:04 EDT outside core. No emergency closure observed.",
+  "selected": "A_TICKFLOW",
+  "action": "Read protected main/AGENTS, PR717 exact-head CI, latest Actions, CN/US read-only MCP; attempt guarded merge; readback showed PR still open after tool safety block.",
+  "outcome": "PARTIAL",
+  "work_product": "CI_VERIFIED",
+  "evidence": {
+    "main_sha": "8077146c58f5a5a83c353209e954fbe943c59682",
+    "pr": 717,
+    "pr_head": "00e5958ada062f77351c7efd4b52d0fee9c3ba7e",
+    "workflow_run": 38513820751,
+    "readback": "backend-gate/focused-tests PASS on exact head; PR717 OPEN after merge safety block; CN Eastmoney/Tencent 15m currentness UNPROVEN (not TickFlow); US old SHA 28dd570e, 15m STALE; Context Manager sentinel BLOCKED by tool safety."
+  },
+  "next_safe_step": "Recheck PR717 merge eligibility and owner merge path; obtain explicitly authorized paid TickFlow worker deploy separately, then RTH source/finality proof. No deployment performed.",
+  "safety": "ADMISSION_BLOCKED_NO_ORDERS"
+}
