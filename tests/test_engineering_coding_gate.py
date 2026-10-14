@@ -67,3 +67,17 @@ def test_workflow_uses_deepseek_aider_without_codex_or_openai_secret():
     assert '--model deepseek/deepseek-chat' in workflow
     assert 'openai/codex-action' not in workflow
     assert 'secrets.OPENAI_API_KEY' not in workflow
+
+
+def test_autonomy_workflow_requires_explicit_one_shot_confirmation():
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in workflow
+    assert "description: \"Explicitly authorize ONE bounded DeepSeek test-only E2E run\"" in workflow
+    assert "type: boolean" in workflow
+    assert "default: false" in workflow
+    assert "github.ref == 'refs/heads/main' && inputs.confirm == true" in workflow
+    assert "vars.ENGINEERING_CODING_ENABLED" not in workflow
+    assert "schedule:" not in workflow
+    assert "auto-merge" not in workflow.lower().replace("no auto-merge", "")
