@@ -176,6 +176,10 @@ jobs:
           allowed_grid=("UNKNOWN","NO_SESSION_GRID_DUE","NO_SAME_DAY_RETAINED_BAR",
                         "LAST_LABEL_OFF_GRID","MATCHED_DUE_LABEL",
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
+          allowed_continuity=("UNKNOWN","NO_SESSION_GRID_DUE",
+                              "NO_SAME_DAY_RETAINED_BAR","INVALID_TODAY_LABEL_GRID",
+                              "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY",
+                              "ONE_DUE_LABEL_MISSING","MULTIPLE_DUE_LABELS_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
           parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
@@ -223,6 +227,7 @@ jobs:
               for _v in frame_map.values():
                   assert isinstance(_v,dict)
                   assert _v.get("last_due_grid") in allowed_grid
+                  assert _v.get("due_grid_continuity") in allowed_continuity
                   assert _v.get("dominant_quarantine_reason") in allowed_cause
                   assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
                   assert _v.get("gap_violation_rows_bucket") in allowed_bucket
