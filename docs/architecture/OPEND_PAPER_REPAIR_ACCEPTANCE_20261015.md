@@ -54,5 +54,11 @@ cache provenance independently after deployment. Revert the integration
 commit for a code rollback; use the existing controlled installer rollback
 for a failed service update. Do not rewrite live journals or synthesize bars.
 
+The MCP deployment workflow retains private installer output only within EC2
+and publishes fixed failure diagnoses for Context Manager event schema,
+sequence or integrity rejection, missing Python dependencies, or permissions.
+The runner independently filters those enums. Unknown failures remain blocked;
+diagnostics never repair or bypass an invalid event log.
+
 `SOURCE_ARBITER_ADMISSION=BLOCKED`, `RADAR_ADMISSION=BLOCKED`,
 `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO`, `TRADE_EXECUTION=NO`.
