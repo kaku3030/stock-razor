@@ -260,3 +260,32 @@ def test_manual_discord_delivery_remains_opt_in_and_scheduled_balance_only():
         "- name: Send one explicitly requested Discord delivery test", 1
     )[1]
     assert "gh pr merge" not in workflow
+
+
+def test_discord_error_categories_do_not_emit_sensitive_exception_text(monkeypatch, capsys):
+    import sys
+    import urllib.error
+
+    webhook = "https://discord.com/api/webhooks/123456789012345678/abcDEF01234567890123"
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", webhook)
+    monkeypatch.setattr(sys, "argv", ["deepseek_budget_discord", "--test-delivery"])
+
+    outcomes = [
+        (ValueError("invalid webhook path"), "INVALID_WEBHOOK_PATH"),
+        (ValueError("unexpected webhook components"), "INVALID_WEBHOOK_COMPONENTS"),
+        (urllib.error.HTTPError(webhook, 401, "secret", None, None), "DISCORD_HTTP_401"),
+        (urllib.error.HTTPError(webhook, 404, "secret", None, None), "DISCORD_HTTP_404"),
+        (urllib.error.URLError("sensitive provider response"), "NETWORK_OR_TIMEOUT"),
+        (ValueError("contains private API secret"), "INVALID_DATA"),
+    ]
+    for exc, category in outcomes:
+        def send_failure(*_args, **_kwargs):
+            raise exc
+
+        monkeypatch.setattr(alerts, "send_discord", send_failure)
+        assert alerts.main() == 2
+        line = capsys.readouterr().out
+        assert f"BUDGET_ALERT=FAILED_CLOSED;CATEGORY={category}" in line
+        assert webhook not in line
+        assert "secret" not in line
+        assert "sensitive" not in line
