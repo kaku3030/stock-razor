@@ -69,6 +69,15 @@ jobs:
             exit 1
           fi
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
+      - name: Enforce official DeepSeek balance budget before any paid completion
+        id: budget
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
       - name: Block coding if DeepSeek provider API is unhealthy (one low-token request)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -102,6 +111,7 @@ jobs:
             --chat-history-file "$RUNNER_TEMP/autonomy-aider-chat.history.md" \
             --map-tokens 0 \
             --no-analytics \
+            --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" \
             --no-cache-prompts \
             --no-stream \
             --timeout 90 \
@@ -122,6 +132,31 @@ jobs:
             echo "BLOCKED: bounded DeepSeek/Aider exited nonzero" >&2
             exit "$rc"
           fi
+      - name: Summarize Aider token usage without publishing raw analytics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget usage \
+            --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" \
+            --output "$RUNNER_TEMP/autonomy-deepseek-usage.json"
+      - name: Retain sanitized token counters only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-deepseek-usage
+          path: ${{ runner.temp }}/autonomy-deepseek-usage.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Recheck official DeepSeek budget after attempted coding
+        if: always() && steps.budget.outcome == 'success'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --monitor --status-file "$RUNNER_TEMP/deepseek-budget-after.json"
       - name: Diagnose changed worktree paths only (no file contents)
         shell: bash
         run: |
