@@ -49,6 +49,16 @@ _SENSITIVE_TEXT = re.compile(
 _SAFE_EVIDENCE_STRING = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/+\-]{0,255}$")
 _MAX_EVIDENCE_DEPTH = 4
 _MAX_EVIDENCE_ELEMENTS = 120
+_EVIDENCE_ENUM_FIELDS = frozenset({
+    "status", "reason", "source_status", "poll_status", "bar_finality",
+    "quality", "health", "lease_state", "error_code",
+})
+_EVIDENCE_COUNT_FIELDS = frozenset({
+    "run", "run_id", "sequence", "provider_requests", "count",
+    "attempt", "attempts", "symbol_count", "missing_bars",
+})
+_EVIDENCE_DURATION_FIELDS = frozenset({"source_age_seconds", "latency_ms"})
+_SAFE_STATUS = re.compile(r"^[A-Z][A-Z0-9_]{0,79}$")
 
 
 class FeedbackHubError(ValueError):
@@ -119,18 +129,32 @@ def _safe_evidence(value: Mapping[str, Any]) -> dict[str, Any]:
         raise FeedbackHubError("evidence must be an object")
     visited = 0
 
-    def check(item: Any, depth: int) -> None:
+    def check(item: Any, depth: int, field: str | None = None) -> None:
         nonlocal visited
         visited += 1
         if visited > _MAX_EVIDENCE_ELEMENTS or depth > _MAX_EVIDENCE_DEPTH:
             raise FeedbackHubError("evidence exceeds structural bounds")
+        if field in _EVIDENCE_ENUM_FIELDS and (
+            type(item) is not str or _SAFE_STATUS.fullmatch(item) is None
+        ):
+            raise FeedbackHubError("evidence enum is not allowlisted")
+        if field in _EVIDENCE_COUNT_FIELDS and (
+            type(item) is not int or item < 0
+        ):
+            raise FeedbackHubError("evidence count is not allowlisted")
+        if field in _EVIDENCE_DURATION_FIELDS and (
+            type(item) not in (int, float) or not isfinite(item) or item < 0
+        ):
+            raise FeedbackHubError("evidence duration is not allowlisted")
+        if field == "closed" and type(item) is not bool:
+            raise FeedbackHubError("evidence closure is not allowlisted")
         if isinstance(item, dict):
             if len(item) > 40:
                 raise FeedbackHubError("evidence exceeds structural bounds")
             for key, nested in item.items():
                 if not isinstance(key, str) or key not in _EVIDENCE_KEYS:
                     raise FeedbackHubError("evidence field is not allowlisted")
-                check(nested, depth + 1)
+                check(nested, depth + 1, key)
         elif isinstance(item, list):
             if len(item) > 40:
                 raise FeedbackHubError("evidence exceeds structural bounds")
