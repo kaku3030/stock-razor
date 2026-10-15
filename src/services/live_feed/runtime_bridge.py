@@ -120,6 +120,14 @@ class LiveFeedRuntimeBridge:
         try:
             self._adapter.subscribe_streams(unique)
         except Exception:
+            # A batch exception is ambiguous: the provider may have
+            # accepted some streams. Request bounded per-key compensation;
+            # the manager still marks transport UNKNOWN if any step failed.
+            for key in reversed(unique):
+                try:
+                    self._adapter.unsubscribe_stream(key)
+                except Exception:
+                    pass
             for key in unique:
                 self._controller.request_remove_desired(key)
             self._controller.process_pending()
