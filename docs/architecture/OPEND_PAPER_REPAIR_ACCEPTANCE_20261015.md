@@ -90,3 +90,19 @@ minute and complete terminal derived buckets. Paper isolated no-order restart
 probe 38707695607 passed; permanent Paper service qualification still reports
 UNKNOWN. After-close data does not prove active-session polling cadence,
 independent source finality, or automatic Paper readiness.
+
+## TickFlow timeout recovery
+
+AWS audit 38709853178 observed `BLOCKED_TIMEOUT_ERROR` at `S0_15M_FETCH`.
+The worker replaced the whole cache with a blocked envelope, then waited
+300 seconds. This explains the all-frame read failure; the underlying
+network/provider timeout source remains unproven. Windows subsequently
+completed 8/8 reads in 0.31–3.52 seconds each, with six complete research
+intraday grids and historical D1 only.
+
+Transient transport failures now retry whole polling cycles after
+15/30/60/120/240/300 seconds, capped at 300. Successful polling resets the
+streak. Eight reads/cycle maximum, 15-second floor and SDK max_retries=0
+remain; weekends stay at 900 seconds and other errors at 300. Invalid cache
+and all admissions remain blocked throughout recovery; no stale success is
+substituted. This is recovery latency, not proof of provider finality.
