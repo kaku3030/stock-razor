@@ -330,6 +330,21 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
         research_mode="historical_only")
     assert too_late["status"]=="STALE"
 
+def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="g"*40,sequence=2)
+    p=tmp_path/"obs.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=300)
+    result=read_cn_tickflow_research_data("159611.SZ","15m",path=str(p),
+            now_utc=later)
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["max_age_seconds"]==360
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
+
 def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
     q=read_cn_tickflow_research_data("159611.SZ",
             path=str(tmp_path/"fake"),research_mode="production")
