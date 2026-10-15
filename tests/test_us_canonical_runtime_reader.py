@@ -227,6 +227,21 @@ def test_stale_snapshot_is_returned_as_stale_not_laundered(tmp_path):
     assert result["bar_count"] == 2
 
 
+def test_fresh_publication_does_not_launder_old_provider_bar(tmp_path):
+    payload = _snapshot(emitted_at=NOW - timedelta(seconds=2))
+    payload["latest_source_timestamp_utc"] = (NOW - timedelta(minutes=10)).isoformat()
+    payload["latest_received_at_utc"] = (NOW - timedelta(seconds=2)).isoformat()
+    snapshot = _write(tmp_path / "snapshot.json", payload)
+
+    result = read_us_market_bars(
+        "AMD", timeframe="1m", limit=1, path=snapshot, now_utc=NOW
+    )
+
+    assert result["status"] == "STALE"
+    assert result["source_age_seconds"] == 600
+    assert result["publication_age_seconds"] == 2
+
+
 def test_snapshot_safety_contract_violation_blocks_reads(tmp_path):
     snapshot = _write(tmp_path / "snapshot.json", _snapshot(safe=False))
 

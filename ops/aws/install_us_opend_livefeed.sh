@@ -698,6 +698,11 @@ try:
             or bar_closure_evidence_state != last_export_bar_closure
             or delivery_mode_evidence_state != last_export_delivery_mode
             or canonical_export_status != "PASS"
+            # Keep the canonical file's publication sequence moving with the
+            # runtime heartbeat. The reader separately evaluates the newest
+            # provider bar timestamp, so this cannot turn stale bars into
+            # fresh data.
+            or state_due
         )
         if should_export:
             try:
