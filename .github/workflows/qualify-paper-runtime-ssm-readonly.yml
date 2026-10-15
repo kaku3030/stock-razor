@@ -200,7 +200,34 @@ jobs:
           test "${status:-UNKNOWN}" = Success
           output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
           printf '%s\n' "$output" | grep -E '^(PAPER_|SSM_PROBE_|RAW_RUNTIME_)' | tee qualification.txt
-          ! grep -Eq '^PAPER_EXTERNAL_TRADING_ACTIVITY=(YES|true|PASS)$' qualification.txt
+          ! grep -Eq '^PAPER_EXTERNAL_TRADING_ACTIVITY=(YES|true|PASS)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Paper runtime SSM qualification (read only)'
+            echo ''
+            echo '- SSM probe order actions: NONE (the probe sent no order commands)'
+            echo '- External trading activity: NOT_VERIFIED (runtime orders were not inspected)'
+            echo '- SecretString: NOT_READ'
+            echo '- Restart recovery: UNVERIFIED (no restart was performed)'
+            echo '- Core Paper service check: BLOCKED unless exact SHA, active unit, valid/fresh closed-gate heartbeat all pass'\n            echo '- This SSM readback never qualifies schedule execution, external ACK/fills or L2 trading'\n            echo '- PAPER_AUTO_READY: NO'
+            echo '- RADAR_ADMISSION: BLOCKED'
+            echo '- SOURCE_ARBITER_ADMISSION: BLOCKED'
+            echo '- LIVE_TRADE: NO'
+          } >> "$GITHUB_STEP_SUMMARY"
+ qualification.txt
+          # Fail closed: successful SSM transport alone must never attest
+          # a missing Paper service, mismatched SHA or stale heartbeat.
+          for key in PAPER_UNIT_ACTIVE PAPER_RUNTIME_SHA PAPER_HEARTBEAT_SCHEMA PAPER_RUNTIME_GATES_CLOSED PAPER_HEARTBEAT_FRESHNESS; do
+            matches="$(grep -Ec "^${key}=" qualification.txt || true)"
+            if test "$matches" != 1 || ! grep -Fxq "${key}=PASS" qualification.txt; then
+              echo 'PAPER_RUNTIME_QUALIFICATION=BLOCKED'
+              exit 2
+            fi
+          done
+          # Core service readback only: no schedule, fills or L2 are proven.
+          echo 'PAPER_RUNTIME_QUALIFICATION=CORE_READBACK_ONLY'
 
       - name: Emit bounded qualification summary
         if: always()
