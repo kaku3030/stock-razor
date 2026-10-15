@@ -2,6 +2,8 @@
 from datetime import datetime, date, timezone, timedelta
 from decimal import Decimal
 import pytest
+import urllib.parse
+import urllib.request
 
 from scripts.provider_billing_renewal_watch import (
     COSTS, USAGE, _get_json, completion_tokens, cost_usd, evaluate,
@@ -19,6 +21,32 @@ def sample(path, key, start, end):
         return {"data":[{"results":[{"num_model_requests":17,"input_tokens":3900,
                                     "output_tokens":1200}]}],"has_more":False}
     raise AssertionError("unexpected API path")
+
+
+@pytest.mark.parametrize("path", [COSTS, USAGE])
+def test_admin_request_uses_supported_daily_bucket_limit(monkeypatch, path):
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit):
+            return b'{"data":[],"has_more":false}'
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert _get_json(path, "fake-admin-credential", 1, 2) == {
+        "data": [], "has_more": False
+    }
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(requests[0][0].full_url).query)
+    assert query["limit"] == ["31"]
 
 
 def test_openai_mtd_and_approx_not_actual_balance():
