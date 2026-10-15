@@ -229,6 +229,13 @@ jobs:
                   assert _v.get("last_due_grid") in allowed_grid
                   assert _v.get("due_grid_continuity") in allowed_continuity
                   assert _v.get("dominant_quarantine_reason") in allowed_cause
+                  cause_buckets=_v.get("quarantine_cause_buckets")
+                  assert isinstance(cause_buckets,dict)
+                  assert len(cause_buckets)<=8
+                  assert all(name in allowed_cause and name not in ("UNKNOWN","NONE")
+                             and bucket in allowed_bucket
+                             and bucket not in ("UNKNOWN","ZERO")
+                             for name,bucket in cause_buckets.items())
                   assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
                   assert _v.get("gap_violation_rows_bucket") in allowed_bucket
                   assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket
