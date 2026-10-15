@@ -29,6 +29,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "last_due_grid":"UNKNOWN",
         "due_grid_continuity":"UNKNOWN",
         "dominant_quarantine_reason":"UNKNOWN",
+        "quarantine_cause_buckets":{},
         "largest_ohlc_gap_bucket":"UNKNOWN",
         "gap_violation_rows_bucket":"UNKNOWN",
         "hilo_swap_candidate_bucket":"UNKNOWN",
@@ -66,6 +67,12 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             max(sorted(reasons),key=lambda k: reasons[k])
             if reasons else "NONE"
         )
+        # Dominant cause alone hid a second, genuine malformed 15m row
+        # under a newer future/forming label. Reveal only bounded fixed
+        # enum names and count buckets; never provider values or timestamps.
+        out["quarantine_cause_buckets"]={
+            name:bucket(reasons[name]) for name in sorted(reasons)
+        }
     gap_evidence=frame.get("quarantine_ohlc_gap_evidence")
     ordered=("GAP_LT_1BP","GAP_1_TO_10BP","GAP_10_TO_100BP","GAP_GE_100BP")
     swap_key="HILO_SWAP_WOULD_ENCLOSE_BODY"
