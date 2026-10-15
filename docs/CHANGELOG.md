@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Context Manager 使用跨进程写入锁避免事件版本冲突；显式恢复仅修正经校验的连续重复版本，先保留0600原始备份，不改变任何交易门禁。
 - [改进] MCP 部署失败仅导出固定错误分类，用于定位事件日志完整性、序列、依赖或权限问题；原始 SSM 和安装输出仍不公开，失败继续阻断。
 - [修复] OpenD 收盘末根分钟线仅以完整390分钟历史网格作受限补齐，保留历史来源和闭合未验证状态；失败最多30分钟后重试一次。
 - [修复] Paper 现金预留按意图隔离，模拟成交批次先校验身份、限价、资金及持仓再记账，覆盖重启与部分成交回归。

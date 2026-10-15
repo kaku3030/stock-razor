@@ -8,6 +8,7 @@ It never stores credentials and never grants market, paper, or trading access.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -107,6 +108,45 @@ class ContextManagerStore:
             raise ContextManagerError("payload must be an object")
         if type(ttl_seconds) is not int or not 1 <= ttl_seconds <= 30 * 86400:
             raise ContextManagerError("ttl_seconds must be between 1 and 2592000")
+        # GitHub event sync and deployment can be separate SSM processes.
+        # The read/allocate/append/state-publish transaction must share one
+        # cross-process lock, not just protect the final file replacement.
+        with self._writer_lock():
+            return self._record_locked(
+                event_id=event_id, event_type=event_type, source=source,
+                payload=payload, source_ref=source_ref,
+                occurred_at=occurred_at, ttl_seconds=ttl_seconds,
+            )
+
+    @contextmanager
+    def _writer_lock(self):
+        self.events_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = self.events_path.with_name(self.events_path.name + ".lock")
+        with lock_path.open("a+b") as stream:
+            if os.name == "nt":
+                import msvcrt
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"\0")
+                    stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if os.name == "nt":
+                    stream.seek(0)
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+    def _record_locked(
+        self, *, event_id, event_type, source, payload, source_ref,
+        occurred_at, ttl_seconds,
+    ):
         now = self.clock()
         occurred = occurred_at or now
         expires = now + timedelta(seconds=ttl_seconds)
@@ -253,7 +293,63 @@ class ContextManagerStore:
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ContextManagerError) as exc:
             return {"schema_version": SCHEMA_VERSION, "status": "BLOCKED", "reason": "STATE_UNAVAILABLE", "detail": type(exc).__name__, "safety": _gates()}
 
-    def _read_events(self) -> list[dict[str, Any]]:
+    def repair_version_sequence(self, *, expected_sha256: str) -> dict[str, Any]:
+        """Repair duplicate consecutive versions only, retaining every event.
+
+        This is an explicit deployment operation, never a read fallback.
+        A hash-pinned private backup precedes any event-file replacement.
+        Payload integrity, unique identities, and original order are required.
+        """
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise ContextManagerError("expected event digest is invalid")
+        with self._writer_lock():
+            original = self.events_path.read_bytes()
+            if hashlib.sha256(original).hexdigest() != expected_sha256:
+                raise ContextManagerError("event digest changed before repair")
+            events = self._read_events(validate_versions=False)
+            if not events:
+                raise ContextManagerError("empty event log cannot be repaired")
+            identities = [item["event_id"] for item in events]
+            if len(set(identities)) != len(identities):
+                raise ContextManagerError("event identities are ambiguous")
+            previous = 0
+            for item in events:
+                version = item["version"]
+                if type(version) is not int or version < 1 or version not in {previous, previous + 1}:
+                    raise ContextManagerError("event sequence has a gap or regression")
+                previous = version
+            changed = [item["version"] for item in events] != list(range(1, len(events) + 1))
+            if changed:
+                backup = self.events_path.with_name(self.events_path.name + ".before-sequence-repair-" + expected_sha256)
+                try:
+                    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    if hashlib.sha256(backup.read_bytes()).hexdigest() != expected_sha256:
+                        raise ContextManagerError("repair backup integrity mismatch")
+                else:
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(original)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                for version, item in enumerate(events, 1):
+                    item["version"] = version
+                fd, temporary = tempfile.mkstemp(prefix="context-events-", suffix=".tmp", dir=self.events_path.parent)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        for item in events:
+                            stream.write(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary, self.events_path)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
+            self._atomic_write(self._current_from_events(events))
+            return {"status": "REPAIRED" if changed else "STATE_REBUILT",
+                    "event_count": len(events), "original_sha256": expected_sha256,
+                    "backup_created": changed}
+
+    def _read_events(self, *, validate_versions: bool = True) -> list[dict[str, Any]]:
         if not self.events_path.exists():
             return []
         result = []
@@ -272,7 +368,7 @@ class ContextManagerStore:
                 _parse_timestamp(timestamp)
             result.append(item)
         versions = [item.get("version") for item in result]
-        if versions != list(range(1, len(versions) + 1)):
+        if validate_versions and versions != list(range(1, len(versions) + 1)):
             raise ContextManagerError("event log version sequence is invalid")
         return result
 

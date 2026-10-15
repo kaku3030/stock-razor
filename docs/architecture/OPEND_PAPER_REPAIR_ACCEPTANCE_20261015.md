@@ -62,3 +62,31 @@ diagnostics never repair or bypass an invalid event log.
 
 `SOURCE_ARBITER_ADMISSION=BLOCKED`, `RADAR_ADMISSION=BLOCKED`,
 `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO`, `TRADE_EXECUTION=NO`.
+
+## Context event sequence recovery
+
+AWS run 38708985260 identified `CONTEXT_EVENT_SEQUENCE_INVALID` while
+market caches remained readable. A two-process regression reproduced duplicate
+version allocation. Writers now lock the entire read/allocate/append/publish
+transaction using an OS lock shared across processes.
+
+Ordinary deployments and reads never repair events. The owner-only, exact-main
+MCP workflow has a transient manual input `repair_context_event_sequence`
+(default false). The installer hashes the fixed AWS events file and passes
+that digest to the explicit repair CLI. Under the writer lock, it requires
+unchanged bytes, valid payload fingerprints, unique identities and only
+consecutive duplicate/+1 versions. Gaps, regressions or other corruption block
+recovery. It creates a byte-exact 0600 backup before replacing the log, retains
+every event and its payload/provenance/timestamps/order, and only renumbers
+versions before rebuilding state. All gates remain closed. Rebuild is safe to
+retry if state publication failed after a successful log replacement.
+
+Actual market evidence before this repair: Windows SDK 0.1.25 and AWS matched
+144 historical rows / 864 OHLCVA values across two ETFs and four timeframes;
+full-day 5m aggregation matched all 40 native 15m/60m groups. TickFlow deployed
+SHA `6a2983b4d358617c433f1d90e665a4aa345cf4c7` in run 38707231457, and
+OpenD in 38707388835. All nine OpenD symbols have the historical 15:59 ET
+minute and complete terminal derived buckets. Paper isolated no-order restart
+probe 38707695607 passed; permanent Paper service qualification still reports
+UNKNOWN. After-close data does not prove active-session polling cadence,
+independent source finality, or automatic Paper readiness.
