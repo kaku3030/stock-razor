@@ -2,8 +2,8 @@ from datetime import datetime,timezone
 from scripts.run_cn_tickflow_research_worker import _interval
 
 def test_live_cn_session_poll_and_failure_rate_limit():
-    assert _interval(datetime(2026,10,13,2,10,tzinfo=timezone.utc))==60
-    assert _interval(datetime(2026,10,13,5,10,tzinfo=timezone.utc))==60
+    assert _interval(datetime(2026,10,13,2,10,tzinfo=timezone.utc))==15
+    assert _interval(datetime(2026,10,13,5,10,tzinfo=timezone.utc))==15
     assert _interval(datetime(2026,10,13,4,10,tzinfo=timezone.utc))==300
     assert _interval(datetime(2026,10,13,2,10,tzinfo=timezone.utc),failure=True)==300
     assert _interval(datetime(2026,10,18,2,10,tzinfo=timezone.utc))==900

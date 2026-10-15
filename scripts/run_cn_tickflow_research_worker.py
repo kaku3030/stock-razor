@@ -88,7 +88,7 @@ def _interval(now: datetime, failure: bool=False) -> int:
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
     # Read-only REST, 8 bounded Kline requests per cadence, not ticks.
-    return 300 if failure or not session else 60
+    return 300 if failure or not session else 15
 
 def main() -> int:
     sha=os.environ.get("STOCK_RAZOR_REPO_SHA","")
