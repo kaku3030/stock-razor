@@ -530,6 +530,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                                      and _post_close_research_eligible(bar_stamp, now))
                                     or (research_mode=="session_progress"
                                         and timeframe in ("15m","60m")
+                                        and (now.astimezone(CN).hour,
+                                             now.astimezone(CN).minute)<(15,2)
                                         and bar_stamp.astimezone(timezone.utc)
                                             <= now-timedelta(seconds=90))
                                 )
