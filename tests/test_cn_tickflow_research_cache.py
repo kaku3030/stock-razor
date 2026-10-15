@@ -351,9 +351,11 @@ def test_ohlc_gap_evidence_is_bounded_magnitude_not_raw_prices():
     evidence={}
     bars=normalize_bars(raw,"15m",now_utc=now,
          quarantine_counts=quarantined,quarantine_evidence=evidence)
-    assert len(bars)==len(old)
-    assert sum(quarantined.values())==2
-    assert evidence["GAP_LT_1BP"]==1
+    assert len(bars)==len(old)+1
+    assert bars[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert bars[-1]["high"]==1.59999  # exact native float, not repaired
+    assert sum(quarantined.values())==1
+    assert evidence.get("GAP_LT_1BP",0)==0  # near-boundary row is retained
     assert evidence["GAP_GE_100BP"]==1
     assert evidence["HILO_SWAP_WOULD_ENCLOSE_BODY"]==1
     assert all("price" not in k.lower() for k in evidence)
