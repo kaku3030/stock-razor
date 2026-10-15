@@ -123,3 +123,4 @@ def test_single_provider_schedule_and_separate_aws_oidc_identity():
     assert "DEEPSEEK_API_KEY" not in before
     assert "role-to-assume:" not in after
     assert "dry_run" in unified and "inputs.dry_run == false" in before
+    assert "vars.AWS_COST_EXPLORER_ENABLED == 'true'" in before
