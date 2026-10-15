@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [监控] AWS TickFlow 两ETF 5m/15m/60m SSM+MCP 每整点/半点只读审计，Windows 本地独立半小时凭据安全取数；仅公开脱敏状态，不开放交易准入。
 - [修复] 云端到期提醒 Discord/Telegram 请求添加应用身份 User-Agent，Telegram 拒绝仅输出预定义 HTTP 状态码，避免混淆配置失效与网络阻断。
 - [修复] Discord 两路 Webhook 均发生 HTTP 403 时才使用已配置 Telegram 用户聊天凭据发送一次安全费用提醒；两路均失败仍返回红灯，不扩大交易/云端权限。
 - [修复] 费用/续费通知增加已配置的标准 Discord Webhook 单次回退，并在云端保留不含敏感信息的 HTTP 失败状态码供排障。
