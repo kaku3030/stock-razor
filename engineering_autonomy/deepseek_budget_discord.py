@@ -20,6 +20,9 @@ from engineering_autonomy.deepseek_budget import read_status
 def message_for_status(status: str) -> str | None:
     if status == "OK":
         return None
+    if status == "TEST":
+        return ("✅ STOCK RAZOR · Discord 通知通道测试成功。"
+                "DeepSeek API 余额未触发低余额提醒，这是一条人工验收测试消息，无需充值。")
     if status == "LOW":
         return ("⚠️ STOCK RAZOR · DeepSeek API 余额较低（CNY ≤ 10 或 USD ≤ 2）。"
                 "Engineering Autonomy 已阻止新的付费编码任务；请准备充值。")
@@ -72,12 +75,16 @@ def send_discord(status: str, webhook: str, user_id: str = "", opener=None) -> s
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--status-file", type=Path, required=True)
+    parser.add_argument("--status-file", type=Path)
+    parser.add_argument("--test-delivery", action="store_true",
+                        help="send an explicitly labelled test message (manual only)")
     args = parser.parse_args()
     try:
-        status = read_status(args.status_file)
+        if not args.test_delivery and args.status_file is None:
+            raise ValueError("missing status file")
+        status = "TEST" if args.test_delivery else read_status(args.status_file)
         result = send_discord(
-            status, os.getenv("STOCK_RAZOR_DISCORD_WEBHOOK_URL", ""),
+            status, os.getenv("DISCORD_WEBHOOK_URL", ""),
             os.getenv("STOCK_RAZOR_DISCORD_USER_ID", ""),
         )
     except (ValueError, TypeError, KeyError, OSError, urllib.error.URLError,

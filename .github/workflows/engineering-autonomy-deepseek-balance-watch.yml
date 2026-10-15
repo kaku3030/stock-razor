@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '17 */12 * * *'
   workflow_dispatch:
+    inputs:
+      test_discord_delivery:
+        description: "Send one clearly-labelled Discord test message (not a low-balance warning)"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: engineering-autonomy-deepseek-balance-watch
@@ -41,6 +47,15 @@ jobs:
           set -euo pipefail
           python -m engineering_autonomy.deepseek_budget_discord \
             --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Send one explicitly requested Discord delivery test
+        if: github.event_name == 'workflow_dispatch' && inputs.test_discord_delivery == true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget_discord --test-delivery
       - name: Fail closed on unreadable balance
         if: always() && steps.budget.outcome != 'success'
         run: |

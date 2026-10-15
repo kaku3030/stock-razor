@@ -216,3 +216,47 @@ def test_workflow_separates_balance_secrets_and_discord_notification():
     assert "steps.budget.outcome == 'success'" in coding
     assert "schedule:" not in coding
     assert "gh pr merge" not in coding
+
+
+def test_discord_manual_delivery_uses_existing_secret(monkeypatch, capsys):
+    """Manually requested test must never imply low balance or leak URLs."""
+    import sys
+
+    webhook = "https://discord.com/api/webhooks/123456789012345678/abcDEF01234567890123"
+    seen = []
+
+    def fake_send(status, url, user_id):
+        seen.append((status, url, user_id))
+        return "ALERT_SENT"
+
+    monkeypatch.setattr(alerts, "send_discord", fake_send)
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", webhook)
+    monkeypatch.setenv("STOCK_RAZOR_DISCORD_USER_ID", "")
+    monkeypatch.setenv("STOCK_RAZOR_DISCORD_WEBHOOK_URL", "wrong-legacy-value")
+    monkeypatch.setattr(sys, "argv", ["deepseek_budget_discord", "--test-delivery"])
+    assert alerts.main() == 0
+    assert seen == [("TEST", webhook, "")]
+    output = capsys.readouterr().out
+    assert "BUDGET_ALERT=ALERT_SENT" in output
+    assert webhook not in output
+
+    msg = alerts.message_for_status("TEST")
+    assert "测试" in msg
+    assert "无需充值" in msg
+    assert "余额已耗尽" not in msg
+
+
+def test_manual_discord_delivery_remains_opt_in_and_scheduled_balance_only():
+    workflow = Path(".github/workflows/engineering-autonomy-deepseek-balance-watch.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "test_discord_delivery:" in workflow
+    assert "default: false" in workflow
+    assert "github.event_name == 'workflow_dispatch' && inputs.test_discord_delivery == true" in workflow
+    assert workflow.count("python -m engineering_autonomy.deepseek_budget_discord --test-delivery") == 1
+    assert "DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}" in workflow
+    assert "STOCK_RAZOR_DISCORD_WEBHOOK_URL" not in workflow
+    assert "secrets.DEEPSEEK_API_KEY" not in workflow.split(
+        "- name: Send one explicitly requested Discord delivery test", 1
+    )[1]
+    assert "gh pr merge" not in workflow
