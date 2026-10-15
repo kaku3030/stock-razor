@@ -18,7 +18,8 @@ EASTMONEY_FILE=Path("/run/stock-razor-cn-eastmoney/latest-observation.json")
 MCP_PY=Path("/opt/stock-razor-mcp/venv/bin/python")
 WORKER_UNIT="stock-razor-cn-tickflow-research.service"
 MCP_UNIT="stock-razor-mcp.service"
-MAX_FILE_BYTES=150000
+# Must match cn_tickflow_research_cache.MAX_BYTES (writer/read-cache 350 KB).
+MAX_FILE_BYTES=350_000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
 
@@ -26,7 +27,9 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     """Export no bars, prices, raw timestamps or provider credentials."""
     base={
         "last_due_grid":"UNKNOWN",
+        "due_grid_continuity":"UNKNOWN",
         "dominant_quarantine_reason":"UNKNOWN",
+        "quarantine_cause_buckets":{},
         "largest_ohlc_gap_bucket":"UNKNOWN",
         "gap_violation_rows_bucket":"UNKNOWN",
         "hilo_swap_candidate_bucket":"UNKNOWN",
@@ -34,6 +37,8 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "etf_tick_research_shadow_compatible_bucket":"UNKNOWN",
         "quarantined_rows_bucket":"UNKNOWN",
         "sdk_amount_omitted_bucket":"UNKNOWN",
+        "vendor_float_rows_bucket":"UNKNOWN",
+        "same_session_vendor_float_rows_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
     }
     if timeframe not in ("15m","60m") or not isinstance(frame,dict):
@@ -64,6 +69,12 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             max(sorted(reasons),key=lambda k: reasons[k])
             if reasons else "NONE"
         )
+        # Dominant cause alone hid a second, genuine malformed 15m row
+        # under a newer future/forming label. Reveal only bounded fixed
+        # enum names and count buckets; never provider values or timestamps.
+        out["quarantine_cause_buckets"]={
+            name:bucket(reasons[name]) for name in sorted(reasons)
+        }
     gap_evidence=frame.get("quarantine_ohlc_gap_evidence")
     ordered=("GAP_LT_1BP","GAP_1_TO_10BP","GAP_10_TO_100BP","GAP_GE_100BP")
     swap_key="HILO_SWAP_WOULD_ENCLOSE_BODY"
@@ -99,14 +110,30 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             _expected_closed_grid_label, _LABEL_END, CN,
         )
         shnow=now_utc.astimezone(CN)
+        if all(isinstance(row,dict)
+               and row.get("ohlc_validation","STRICT") in (
+                   "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
+               for row in rows):
+            tolerated=[
+                row for row in rows
+                if row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+            ]
+            out["vendor_float_rows_bucket"]=bucket(len(tolerated))
+            prefix=shnow.strftime("%Y-%m-%d")
+            out["same_session_vendor_float_rows_bucket"]=bucket(
+                sum(1 for row in tolerated if isinstance(row.get("label"),str)
+                    and row["label"].startswith(prefix))
+            )
         expected=_expected_closed_grid_label(now_utc,timeframe)
         if expected is None:
             out["last_due_grid"]="NO_SESSION_GRID_DUE"
+            out["due_grid_continuity"]="NO_SESSION_GRID_DUE"
             return out
         rawlabel=rows[-1]["label"]
         last=datetime.strptime(rawlabel,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
         if last.date()!=shnow.date():
             out["last_due_grid"]="NO_SAME_DAY_RETAINED_BAR"
+            out["due_grid_continuity"]="NO_SAME_DAY_RETAINED_BAR"
             return out
         all_end=[]
         for clock in sorted(_LABEL_END[timeframe]):
@@ -115,7 +142,36 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
                                          second=0,microsecond=0))
         if last not in all_end:
             out["last_due_grid"]="LAST_LABEL_OFF_GRID"
+            out["due_grid_continuity"]="INVALID_TODAY_LABEL_GRID"
             return out
+        # Latest due label alone does not prove full intraday continuity.
+        # Missing 09:45 followed by 10:00 used to appear caught-up.
+        # Never export private labels or prices, only bounded fixed enums.
+        # Matching schedule is NOT exchange finality or trade admission.
+        due=frozenset(t for t in all_end if t<=expected)
+        seen=set()
+        invalid=False
+        for item in rows:
+            raw=item.get("label") if isinstance(item,dict) else None
+            if not isinstance(raw,str):
+                invalid=True
+                break
+            stamp=datetime.strptime(raw,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+            if stamp.date()!=shnow.date():
+                continue
+            if stamp not in due or stamp in seen:
+                invalid=True
+                break
+            seen.add(stamp)
+        if invalid:
+            out["due_grid_continuity"]="INVALID_TODAY_LABEL_GRID"
+        else:
+            missing=len(due-seen)
+            out["due_grid_continuity"]=(
+                "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY" if missing==0 else
+                "ONE_DUE_LABEL_MISSING" if missing==1 else
+                "MULTIPLE_DUE_LABELS_MISSING"
+            )
         missed=sum(last<x<=expected for x in all_end)
         out["last_due_grid"]=(
             "MATCHED_DUE_LABEL" if missed==0 else
@@ -149,6 +205,23 @@ def blocked_status(failure_class: object) -> str:
     return "BLOCKED_"+_SAFE_FAILURE_CLASS.get(
         failure_class if isinstance(failure_class,str) else "", "OTHER"
     )
+
+
+
+def safe_failure_stage(stage: object) -> str:
+    """Mirror the worker's bounded per-symbol 15m/60m/5m/1d stage set.
+
+    Supplemental 5m/1d are requested by the deployed worker even though the
+    admission audit only qualifies 15m/60m. Do not silently erase their
+    failed-stage evidence; never allow an arbitrary provider string through.
+    """
+    allowed={
+        f"S{i}_{period}_{action}"
+        for i in range(2)
+        for period in ("15M", "60M", "5M", "1D")
+        for action in ("FETCH", "NORMALIZE")
+    }
+    return stage if isinstance(stage, str) and stage in allowed else "UNKNOWN"
 
 
 def shadow_compare_eastmoney(tickflow: object, reference: object, *,
@@ -591,11 +664,42 @@ def active(service):
     except (OSError, subprocess.TimeoutExpired):
         return False
 
+
+def safe_worker_journal_observation() -> str:
+    """Read only this fixed worker's last 10m sanitized lifecycle markers.
+
+    Raw journal bytes, messages, provider errors and credentials MUST NOT
+    leave the host or enter the sanitized GitHub Actions output.
+    """
+    try:
+        result=subprocess.run([
+            "journalctl", "--unit", WORKER_UNIT, "--since=-10minutes",
+            "--lines=64", "--output=cat", "--no-pager", "--quiet",
+        ], text=True, capture_output=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return "JOURNAL_UNAVAILABLE"
+    if result.returncode != 0:
+        return "JOURNAL_UNAVAILABLE"
+    for line in reversed(result.stdout.splitlines()):
+        value=line.strip()
+        if value=="TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS":
+            return "POLL_RESEARCH_ONLY_PASS"
+        if value.startswith("TICKFLOW_RESEARCH_POLL=BLOCKED:"):
+            # The worker emits only its exception class but the journal
+            # might contain malformed/attacker text: reveal only our enum.
+            return "POLL_BLOCKED"
+        if value.startswith("TICKFLOW_RESEARCH_BOOT=BLOCKED:"):
+            return "BOOT_BLOCKED"
+    return "NO_RECENT_LIFECYCLE_MARKER"
+
+
 def sample():
     result={
         "unit_active":active(WORKER_UNIT),
         "mcp_unit_active":active(MCP_UNIT),
+        "worker_journal_observation":safe_worker_journal_observation(),
         "status":"NOT_VERIFIED",
+        "cache_unavailable_reason":"NOT_APPLICABLE",
         "failure_stage":"UNKNOWN",
         "failure_reason":"UNKNOWN",
         "failure_ohlc_float_gap_bucket":"UNKNOWN",
@@ -614,12 +718,28 @@ def sample():
         "mcp_read_failure_reason":"NOT_VERIFIED",
     }
     try:
-        meta=WORKER_FILE.stat()
+        try:
+            meta=WORKER_FILE.stat()
+        except FileNotFoundError:
+            result["cache_unavailable_reason"]="FILE_MISSING"
+            raise
+        except PermissionError:
+            result["cache_unavailable_reason"]="FILE_PERMISSION_BLOCKED"
+            raise
         result["cache_private"]=stat.S_IMODE(meta.st_mode)==0o600
         if not 0<meta.st_size<=MAX_FILE_BYTES:
+            result["cache_unavailable_reason"]="FILE_SIZE_INVALID"
             raise ValueError("bounded cache bytes violated")
-        data=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        try:
+            data=json.loads(WORKER_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            result["cache_unavailable_reason"]="JSON_INVALID"
+            raise
+        except UnicodeError:
+            result["cache_unavailable_reason"]="DECODE_INVALID"
+            raise
         if not isinstance(data,dict) or data.get("schema")!="stock_razor_cn_tickflow_research_observation_v0_1":
+            result["cache_unavailable_reason"]="SCHEMA_INVALID"
             raise ValueError("schema error")
         repo_sha=data.get("repo_sha")
         expect=(WORKER_REPO/".git").exists()
@@ -658,11 +778,7 @@ def sample():
                     )
         if data.get("status")=="BLOCKED":
             result["status"]=blocked_status(data.get("failure_class"))
-            stage=data.get("failure_stage")
-            allowed={f"S{i}_{period}_{action}"
-                for i in range(2) for period in ("15M","60M")
-                for action in ("FETCH","NORMALIZE")}
-            result["failure_stage"]=stage if isinstance(stage,str) and stage in allowed else "UNKNOWN"
+            result["failure_stage"]=safe_failure_stage(data.get("failure_stage"))
             reason=data.get("failure_reason")
             allowed_reasons={
                 "UNSUPPORTED_PERIOD","CLOCK_MISSING_TZ",
@@ -687,8 +803,10 @@ def sample():
             result["status"]="CACHE_WRITTEN_RESEARCH"
         else:
             result["status"]="INVALID_CACHE"
-    except (OSError,ValueError,TypeError,KeyError,subprocess.TimeoutExpired):
+    except (OSError,ValueError,TypeError,KeyError,UnicodeError,subprocess.TimeoutExpired):
         result["status"]="NO_VALID_CACHE"
+        if result["cache_unavailable_reason"]=="NOT_APPLICABLE":
+            result["cache_unavailable_reason"]="UNCLASSIFIED"
         return result
     if not (result["unit_active"] and result["cache_private"] and result["repo_sha_match"]):
         result["status"]="INCOMPLETE"
@@ -709,6 +827,13 @@ def sample():
                     "has_session_progress":observation.get("expected_grid_progress")=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF",
                     "radar_blocked":observation.get("radar_admission")=="BLOCKED",
                     "finality_unproven":observation.get("bar_finality")=="NOT_VERIFIED",
+                    "ohlc_precision_scope":(
+                        observation.get("ohlc_precision_scope")
+                        if state=="PASS_RESEARCH_ONLY"
+                        and observation.get("ohlc_precision_scope") in (
+                            "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
+                        else "UNKNOWN"
+                    ),
                 }
         result["all_four_readonly_requests_ok"]=all(
             x["state"]=="PASS_RESEARCH_ONLY" and x["rows"]>0

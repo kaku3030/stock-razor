@@ -171,6 +171,39 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
     return pd.DataFrame(records), provenance
 
 
+def _quarantine_unverified_daily_date(
+    frame: pd.DataFrame,
+    provenance: dict,
+    *,
+    observed_at: datetime,
+) -> tuple[pd.DataFrame, dict]:
+    """Exclude today's / future DAILY_DATE labels from D1 indicators.
+
+    Exchange-local midnight is a date label, not evidence that today's
+    Shanghai session has closed. Even at 15:02, do not promote it without
+    independent provider finality. Yesterday's historical rows remain
+    usable for research; no change to any trade admission gate.
+    """
+    today = observed_at.astimezone(ZoneInfo(CN_MARKET_TIMEZONE)).date()
+    stamps = frame["date"]
+    if getattr(stamps.dt, "tz", None) is not None:
+        stamps = stamps.dt.tz_convert(CN_MARKET_TIMEZONE).dt.tz_localize(None)
+    kept = frame.loc[stamps.dt.date < today].copy()
+    excluded = len(frame) - len(kept)
+    if excluded == 0:
+        return frame, provenance
+    if kept.empty:
+        raise CnObservationAnalysisError("1d no prior-session historical bars")
+    updated = dict(provenance)
+    updated["analysis_row_count"] = len(kept)
+    updated["unverified_daily_date_rows_excluded"] = excluded
+    updated["analysis_warnings"] = list(dict.fromkeys([
+        *provenance.get("analysis_warnings", []),
+        "CURRENT_OR_FUTURE_DAILY_DATE_EXCLUDED",
+    ]))
+    return kept, updated
+
+
 def _quarantine_future_intraday_labels(
     frame: pd.DataFrame,
     provenance: dict,
@@ -426,6 +459,9 @@ def evaluate_cn_observation_payload(
             continue
         try:
             daily, daily_prov = _frame(item, "1d")
+            daily, daily_prov = _quarantine_unverified_daily_date(
+                daily, daily_prov, observed_at=emitted_at,
+            )
             hourly, hourly_prov = _frame(item, "60m")
             intraday, intraday_prov = _frame(item, "15m")
             hourly, hourly_prov = _quarantine_future_intraday_labels(
@@ -475,6 +511,11 @@ def evaluate_cn_observation_payload(
                 dict.fromkeys(
                     [
                         *technical.risk_flags,
+                        *(
+                            ["cn_current_or_future_daily_date_unverified"]
+                            if "CURRENT_OR_FUTURE_DAILY_DATE_EXCLUDED" in provenance_warnings
+                            else []
+                        ),
                         *(
                             []
                             if timestamp_semantics_proven

@@ -438,3 +438,66 @@ def test_intraday_boundary_equal_to_observation_clock_is_not_quarantined():
     assert "future_labeled_rows_excluded" not in state["frame_provenance"]["15m"]
     assert state["intraday_currentness_proven"] is False
     assert result["radar_admission"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("observed", [
+    "2026-10-15T01:33:00+00:00",  # 09:33 Shanghai, live D1 still forming
+    "2026-10-15T07:10:00+00:00",  # 15:10 Shanghai, exchange-finality still unproven
+])
+def test_cn_same_day_daily_date_is_quarantined_before_d1_analysis(observed):
+    payload = _payload()
+    payload["emitted_at_utc"] = observed
+    daily = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
+    original_last = daily[-1]["label"]
+    today = dict(daily[-1])
+    today.update(label="2026-10-15", provider_label_raw="20261015", close=999999.9, high=1000000.0)
+    daily.append(today)
+    result = evaluate_cn_observation_payload(payload)
+    assert result["status"] == "PASS"
+    state = result["symbols"]["159611"]
+    quality = state["technical"]["daily"]["quality"]
+    assert quality["status"] == "ok"
+    assert quality["as_of"].startswith(original_last)
+    assert quality["is_partial_bar"] is False  # previous, completed date only
+    assert state["frame_provenance"]["1d"]["latest_label"] == "2026-10-15"
+    assert state["frame_provenance"]["1d"]["analysis_row_count"] == len(daily) - 1
+    assert state["frame_provenance"]["1d"]["unverified_daily_date_rows_excluded"] == 1
+    assert "CURRENT_OR_FUTURE_DAILY_DATE_EXCLUDED" in (
+        state["frame_provenance"]["1d"]["analysis_warnings"]
+    )
+    assert "cn_current_or_future_daily_date_unverified" in state["technical"]["risk_flags"]
+    assert state["signal_permission"] == "record_only"
+    assert state["can_confirm_signal"] is False
+    assert result["radar_admission"] == "BLOCKED"
+    assert "999999" not in str(state["technical"]["daily"])
+
+
+def test_cn_future_daily_date_is_rejected_as_technical_input():
+    payload = _payload()
+    payload["emitted_at_utc"] = "2026-10-15T01:33:00+00:00"
+    daily = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
+    previous_label = daily[-1]["label"]
+    future = dict(daily[-1])
+    future.update(label="2026-10-16", provider_label_raw="20261016", close=888888.8, high=888889.0)
+    daily.append(future)
+    result = evaluate_cn_observation_payload(payload)
+    assert result["status"] == "PASS"
+    state = result["symbols"]["159611"]
+    assert state["technical"]["daily"]["quality"]["as_of"].startswith(previous_label)
+    assert state["frame_provenance"]["1d"]["unverified_daily_date_rows_excluded"] == 1
+    assert "888888" not in str(state["technical"]["daily"])
+
+
+def test_cn_daily_without_any_prior_session_bar_fails_closed():
+    payload = _payload()
+    payload["emitted_at_utc"] = "2026-10-15T01:33:00+00:00"
+    rows = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
+    rows[:] = [{
+        **rows[0], "label": "2026-10-15", "provider_label_raw": "20261015"
+    }]
+    result = evaluate_cn_observation_payload(payload)
+    assert result["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["status"] == "BLOCKED"
+    assert result["symbols"]["159611"]["reasons"] == [
+        "ANALYSIS_ERROR:CnObservationAnalysisError"
+    ]
