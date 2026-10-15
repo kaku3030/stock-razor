@@ -557,3 +557,56 @@ def test_insufficient_buying_power_does_not_write_submitting_intent(tmp_path):
     )
     assert reopened.store.has_ambiguous_submission() is False
     assert "second" not in reopened.records
+
+
+def test_overspend_sim_receipt_is_not_journalled_as_filled(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("over-limit", Decimal("1"), Decimal("150")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "overlimit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="exceed own reservation"):
+        e.submit(intent(qty="1"), context())
+    assert e.ledger.balance().cash == Decimal("1000")
+    assert e.ledger.balance().reserved_cash == Decimal("100")
+    assert e.ledger.positions() == ()
+    assert not any(j.state in (OrderState.ACCEPTED, OrderState.FILLED, OrderState.PARTIAL)
+                   for j in e.journal)
+    # The synthetic adapter *was* called; broker outcome must be reconciled,
+    # never retried without checking the ambiguous journal.
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_oversell_sim_receipt_is_not_journalled_as_filled(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("too-many-shares", Decimal("2"), Decimal("110")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "oversell.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="seed", intent_id="seed", reservation_id=None,
+        symbol="AMD", side="BUY", quantity=Decimal("1"), price=Decimal("100"),
+        at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("110"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="exceed owned quantity"):
+        e.submit(replace(intent(qty="2"), side=Side.SELL), context())
+    assert e.ledger.balance().cash == Decimal("900")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert not any(j.state in (OrderState.ACCEPTED, OrderState.FILLED, OrderState.PARTIAL)
+                   for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
