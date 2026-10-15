@@ -93,7 +93,9 @@ jobs:
             --no-cache-prompts \
             --no-stream \
             --timeout 90 \
-            --model deepseek/deepseek-chat \
+            --model deepseek/deepseek-flash \
+            --model-metadata-file docs/engineering-autonomy/deepseek-flash-model-metadata.json \
+            --edit-format diff \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \
             --no-auto-commits \
