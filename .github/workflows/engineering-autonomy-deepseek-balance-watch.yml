@@ -2,7 +2,7 @@ name: Engineering Autonomy DeepSeek Balance Watch (no model calls)
 
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '17 */12 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   balance-watch:
@@ -32,14 +31,15 @@ jobs:
           set -euo pipefail
           python -m engineering_autonomy.deepseek_budget check \
             --monitor --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
-      - name: Reconcile one GitHub recharge alert (no balance or secret access)
+      - name: Notify DeepSeek recharge state through Discord (no DeepSeek secret)
         if: always()
         env:
-          GH_TOKEN: ${{ github.token }}
+          STOCK_RAZOR_DISCORD_WEBHOOK_URL: ${{ secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL }}
+          STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          python -m engineering_autonomy.deepseek_budget_issue \
+          python -m engineering_autonomy.deepseek_budget_discord \
             --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
       - name: Fail closed on unreadable balance
         if: always() && steps.budget.outcome != 'success'
