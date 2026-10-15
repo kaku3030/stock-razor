@@ -20,10 +20,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  aws-cost:
+    # Dedicated OIDC job: OpenAI and DeepSeek keys are NOT available here.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.dry_run == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      status: ${{ steps.cost.outputs.status || steps.unavailable.outputs.status }}
+      mtd_usd: ${{ steps.cost.outputs.mtd_usd }}
+      estimated: ${{ steps.cost.outputs.estimated }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Assume existing AWS Ops role for Cost Explorer READ ONLY
+        id: oidc
+        uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: provider-billing-${{ github.run_id }}
+          aws-region: us-east-1
+      - name: Query AWS month-to-date Cost Explorer without mutation
+        id: cost
+        if: steps.oidc.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/aws_provider_billing_cost.py
+      - name: Preserve UNKNOWN if AWS OIDC is not authorized
+        id: unavailable
+        if: steps.oidc.outcome != 'success'
+        shell: bash
+        run: echo 'status=NOT_AUTHORIZED_OR_UNAVAILABLE' >> "$GITHUB_OUTPUT"
   watch:
+    needs: aws-cost
+    if: always() && github.ref == 'refs/heads/main' && (needs.aws-cost.result == 'success' || needs.aws-cost.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      AWS_COST_STATUS: ${{ needs.aws-cost.outputs.status }}
+      AWS_COST_MTD_USD: ${{ needs.aws-cost.outputs.mtd_usd }}
+      AWS_COST_ESTIMATED: ${{ needs.aws-cost.outputs.estimated }}
+      AWS_MONTHLY_BUDGET_USD: ${{ vars.AWS_MONTHLY_BUDGET_USD }}
       OPENAI_ADMIN_KEY: ${{ secrets.OPENAI_ADMIN_KEY }}
       OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD }}
       OPENAI_CREDIT_SNAPSHOT_USD: ${{ vars.OPENAI_CREDIT_SNAPSHOT_USD }}
@@ -42,7 +86,7 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 -m py_compile scripts/provider_billing_renewal_watch.py
-      - name: Read-only cost usage and TickFlow renewal alerts
+      - name: Unified provider costs, DeepSeek funds, AWS estimate and TickFlow renewal
         run: |
           if [[ "${{ github.event_name }}" == workflow_dispatch && "${{ inputs.dry_run }}" == true ]]; then
             python3 scripts/provider_billing_renewal_watch.py --dry-run
