@@ -203,7 +203,13 @@ def discord_send(webhook: str, content: str) -> None:
         with urllib.request.urlopen(request, timeout=12) as response:
             if response.status not in (200, 204):
                 raise ValueError("discord_non_success")
-    except (urllib.error.URLError, TimeoutError, urllib.error.HTTPError):
+    except urllib.error.HTTPError as exc:
+        # Never disclose Discord error bodies/URL/tokens. Numeric HTTP status
+        # is the only retained transport diagnostic and comes from our enum.
+        if exc.code in (400, 401, 403, 404, 429):
+            raise ValueError("discord_http_" + str(exc.code)) from None
+        raise ValueError("discord_delivery_failed") from None
+    except (urllib.error.URLError, TimeoutError):
         raise ValueError("discord_delivery_failed") from None
 
 
@@ -229,15 +235,29 @@ def main() -> int:
         if not dispatch:
             print("PROVIDER_BILLING_WATCH=CHECK_OK_NO_ALERT")
             return 0
-        webhook = env.get("DISCORD_RADAR_WEBHOOK_URL") or env.get("DISCORD_WEBHOOK_URL")
-        if not webhook:
+        candidates = []
+        for name in ("DISCORD_RADAR_WEBHOOK_URL", "DISCORD_WEBHOOK_URL"):
+            url = env.get(name)
+            if url and url not in candidates:
+                candidates.append(url)
+        if not candidates:
             print("PROVIDER_BILLING_WATCH=NOTIFICATION_BLOCKED_NO_WEBHOOK")
             return 2
         content = "\n".join(report + (["⚠️ " + msg for msg in alerts] if alerts else []))
-        discord_send(webhook, content)
-        print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
-              "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
-        return 0
+        for index, webhook in enumerate(candidates):
+            try:
+                discord_send(webhook, content)
+            except ValueError as exc:
+                if index < len(candidates) - 1:
+                    continue
+                raise
+            else:
+                if index:
+                    print("PROVIDER_BILLING_WATCH=DISCORD_FALLBACK_DISPATCHED")
+                else:
+                    print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
+                          "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
+                return 0
     except ValueError as exc:
         # Whitelist only locally generated error categories. Never echo
         # arbitrary upstream body, webhook URL or exception messages.
@@ -245,6 +265,11 @@ def main() -> int:
             "invalid_discord_endpoint": "DISCORD_ENDPOINT_INVALID",
             "discord_delivery_failed": "DISCORD_DELIVERY_FAILED",
             "discord_non_success": "DISCORD_DELIVERY_FAILED",
+            "discord_http_400": "DISCORD_HTTP_400",
+            "discord_http_401": "DISCORD_HTTP_401",
+            "discord_http_403": "DISCORD_HTTP_403",
+            "discord_http_404": "DISCORD_HTTP_404",
+            "discord_http_429": "DISCORD_HTTP_429",
             "invalid_date": "CONFIG_DATE_INVALID",
             "invalid_money": "CONFIG_VALUE_INVALID",
             "incomplete_openai_credit_snapshot": "CONFIG_CREDIT_SNAPSHOT_INCOMPLETE",

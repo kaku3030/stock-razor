@@ -119,3 +119,43 @@ def test_no_webhook_or_invalid_renewal_is_fail_closed(monkeypatch,capsys):
     monkeypatch.setattr(__import__("sys"),"argv",["watch","--send-report"])
     assert watch.main()==2
     assert "PROVIDER_BILLING_WATCH=DISCORD_DELIVERY_FAILED" in capsys.readouterr().out
+
+
+def test_discord_backup_is_only_used_after_primary_failure(monkeypatch,capsys):
+    from scripts import provider_billing_renewal_watch as watch
+    calls = []
+    def fake_send(hook, content):
+        calls.append(hook)
+        assert "exact prepaid balance=UNKNOWN" in content
+        if hook.endswith("/primary"):
+            raise ValueError("discord_http_404")
+    monkeypatch.setattr(watch,"discord_send",fake_send)
+    monkeypatch.setattr(watch,"datetime",type("Clock",(),{
+        "now":staticmethod(lambda *_: NOW),
+    }))
+    monkeypatch.setattr(watch,"os",type("Environ",(),{
+        "environ":{
+            "DISCORD_RADAR_WEBHOOK_URL":"https://discord.com/api/webhooks/primary",
+            "DISCORD_WEBHOOK_URL":"https://discord.com/api/webhooks/backup",
+        },
+    }))
+    monkeypatch.setattr(__import__("sys"),"argv",["watch","--send-report"])
+    assert watch.main()==0
+    assert calls==["https://discord.com/api/webhooks/primary",
+                   "https://discord.com/api/webhooks/backup"]
+    assert "DISCORD_FALLBACK_DISPATCHED" in capsys.readouterr().out
+
+
+def test_discord_http_error_never_logs_body_or_webhook(monkeypatch):
+    import io
+    import urllib.error
+    from scripts import provider_billing_renewal_watch as watch
+    def fake_urlopen(*_args,**_kwargs):
+        raise urllib.error.HTTPError(
+            "https://discord.com/api/webhooks/SENSITIVE",
+            404, "SENSITIVE_BODY", None, io.BytesIO(b"SENSITIVE_BODY")
+        )
+    monkeypatch.setattr(watch.urllib.request,"urlopen",fake_urlopen)
+    with pytest.raises(ValueError,match="discord_http_404") as err:
+        watch.discord_send("https://discord.com/api/webhooks/123/secret","hi")
+    assert "SENSITIVE" not in str(err.value)
