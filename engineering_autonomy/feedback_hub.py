@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from math import isfinite
 import sqlite3
 import uuid
 from dataclasses import dataclass
@@ -27,6 +28,27 @@ MAX_EVIDENCE = 12000
 MAX_ATTEMPTS = 3
 DEFAULT_LEASE_SECONDS = 900
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,160}$")
+
+# Explicit admission contract for producer-provided operational metadata.
+# Keys outside this set require review before they can reach durable storage.
+_EVIDENCE_KEYS = frozenset({
+    "sha", "repo_sha", "runtime_sha", "run", "run_id", "ci", "status",
+    "reason", "checks", "sequence", "frame_status", "bar_finality",
+    "source_age_seconds", "latency_ms", "provider_requests",
+    "observed_at_utc", "count", "attempt", "attempts", "evidence_id",
+    "source", "error_code", "quality", "quality_flags", "source_status",
+    "poll_status", "lease_state", "closed", "health", "symbol_count",
+    "missing_bars", "timeframe",
+})
+_SENSITIVE_TEXT = re.compile(
+    r"(?i)(?:authorization|bearer|api[_-]?key|password|passwd|"
+    r"secret|credential|token|private[_-]?key|github_pat_|"
+    r"gh[pousr]_|sk[-_]|AKIA[A-Z0-9]{10,}|ASIA[A-Z0-9]{10,}|"
+    r"-----BEGIN|(?<![0-9])[0-9]{12}(?![0-9]))"
+)
+_SAFE_EVIDENCE_STRING = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/+\-]{0,255}$")
+_MAX_EVIDENCE_DEPTH = 4
+_MAX_EVIDENCE_ELEMENTS = 120
 
 
 class FeedbackHubError(ValueError):
@@ -78,15 +100,59 @@ def _lease_deadline(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _reject_sensitive_text(value: str) -> None:
+    """Reject suspicious free text without logging the submitted value."""
+    if _SENSITIVE_TEXT.search(value):
+        raise FeedbackHubError("sensitive text is not allowed in feedback")
+
+
 def _bounded_text(value: Any, field: str, limit: int = MAX_TEXT) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > limit:
         raise FeedbackHubError(f"{field} must be a non-empty string of at most {limit} characters")
+    _reject_sensitive_text(value)
     return value.strip()
 
 
 def _safe_evidence(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Accept only small, reviewed operational metadata; never raw payloads."""
+    if not isinstance(value, Mapping):
+        raise FeedbackHubError("evidence must be an object")
+    visited = 0
+
+    def check(item: Any, depth: int) -> None:
+        nonlocal visited
+        visited += 1
+        if visited > _MAX_EVIDENCE_ELEMENTS or depth > _MAX_EVIDENCE_DEPTH:
+            raise FeedbackHubError("evidence exceeds structural bounds")
+        if isinstance(item, dict):
+            if len(item) > 40:
+                raise FeedbackHubError("evidence exceeds structural bounds")
+            for key, nested in item.items():
+                if not isinstance(key, str) or key not in _EVIDENCE_KEYS:
+                    raise FeedbackHubError("evidence field is not allowlisted")
+                check(nested, depth + 1)
+        elif isinstance(item, list):
+            if len(item) > 40:
+                raise FeedbackHubError("evidence exceeds structural bounds")
+            for nested in item:
+                check(nested, depth + 1)
+        elif isinstance(item, str):
+            if not _SAFE_EVIDENCE_STRING.fullmatch(item):
+                raise FeedbackHubError("evidence string is not allowlisted")
+            _reject_sensitive_text(item)
+        elif item is None or isinstance(item, bool) or type(item) is int:
+            return
+        elif type(item) is float and isfinite(item):
+            return
+        else:
+            raise FeedbackHubError("evidence must be JSON-compatible")
+
+    check(dict(value), 0)
     try:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        )
         if len(encoded) > MAX_EVIDENCE:
             raise FeedbackHubError("evidence is too large")
         result = json.loads(encoded)
