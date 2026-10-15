@@ -610,3 +610,59 @@ def test_oversell_sim_receipt_is_not_journalled_as_filled(tmp_path):
     assert not any(j.state in (OrderState.ACCEPTED, OrderState.FILLED, OrderState.PARTIAL)
                    for j in e.journal)
     assert e.store.has_ambiguous_submission() is True
+
+
+
+def test_offsetting_prices_cannot_hide_one_buy_fill_above_limit(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (
+            ("invalid-high", Decimal("1"), Decimal("110")),
+            ("offsetting-low", Decimal("1"), Decimal("90")),
+        )}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "buy-limit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    # 110 + 90 equals the original 2 x 100 reservation. Aggregate
+    # cash-only checks would wrongly accept the first above-limit fill.
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
+        e.submit(intent(qty="2"), context())
+    assert e.ledger.balance().cash == Decimal("1000")
+    assert e.ledger.balance().reserved_cash == Decimal("200")
+    assert e.ledger.positions() == ()
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_sell_fill_below_limit_is_blocked_despite_existing_position(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("invalid-sell", Decimal("1"), Decimal("99")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "sell-limit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="seed-buy", intent_id="seed", reservation_id=None,
+        symbol="AMD", side="BUY", quantity=Decimal("1"),
+        price=Decimal("90"), at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("100"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
+        e.submit(replace(intent(qty="1"), side=Side.SELL), context())
+    assert e.ledger.balance().cash == Decimal("910")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
