@@ -572,7 +572,7 @@ def test_overspend_sim_receipt_is_not_journalled_as_filled(tmp_path):
     )
     e.ledger.initialize(Decimal("1000"), NOW)
     e.reconcile()
-    with pytest.raises(ExecutionBlocked, match="exceed own reservation"):
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
         e.submit(intent(qty="1"), context())
     assert e.ledger.balance().cash == Decimal("1000")
     assert e.ledger.balance().reserved_cash == Decimal("100")
