@@ -199,3 +199,12 @@ def test_local_5m_invalid_off_tick_float_does_not_gain_research_pass():
     assert got["invalid_rows"]==1
     assert got["research_progress_status"]=="BLOCKED_UNVERIFIED"
     assert got["research_due_labels_missing"]==1
+
+
+def test_research_exit_flag_is_explicit_opt_in(monkeypatch, capsys):
+    # Without --execute neither special flag nor CLI may make provider calls.
+    monkeypatch.setattr(sys,"argv",["audit","--timeframe","5m","--research-exit"])
+    assert audit.main()==0
+    result=json.loads(capsys.readouterr().out)
+    assert result["provider_requests"]==0
+    assert result["status"]=="NOT_EXECUTED_OPT_IN_REQUIRED"

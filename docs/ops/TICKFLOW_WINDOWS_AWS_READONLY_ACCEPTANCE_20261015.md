@@ -16,6 +16,7 @@ Run explicitly from the local repository:
 ```powershell
 python scripts/audit_tickflow_windows_readonly.py
 python scripts/audit_tickflow_windows_readonly.py --execute --timeframe 5m
+python scripts/audit_tickflow_windows_readonly.py --execute --timeframe 5m --research-exit
 python scripts/audit_tickflow_windows_readonly.py --execute --timeframe 15m
 python scripts/audit_tickflow_windows_readonly.py --execute --timeframe all
 ```
@@ -98,3 +99,9 @@ MCP source identity matches, provider timestamp/currentness and cross-provider
 same-session parity independently reviewed. No live trading/auto Paper:
 `RADAR_ADMISSION=BLOCKED`, `SOURCE_ARBITER_ADMISSION=BLOCKED`,
 `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO`, `TRADE_EXECUTION=NO`.
+
+The explicit `--research-exit` flag only changes CLI **exit status** for a full
+bounded research grid; it never changes `status=BLOCKED_UNVERIFIED` for non-strict
+OHLC, never bypasses invalid/large-gap/missing-grid evidence and never turns the
+research tool into a trading source. Without that flag, strict validation
+continues to fail closed when current-day vendor float rows are present.

@@ -230,6 +230,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true", help="Opt in to <=8 bounded monthly-plan REST reads")
+    parser.add_argument("--research-exit", action="store_true",
+                        help="Success exit only for fully due research labels; strict status stays blocked")
     parser.add_argument("--timeframe", choices=("5m", "15m", "60m", "1d", "all"), default="all")
     args = parser.parse_args()
     if not args.execute:
@@ -277,7 +279,9 @@ def main() -> int:
                     "trading_admission": "BLOCKED", "live_trade": False,
                 })
                 print(json.dumps(record, sort_keys=True), flush=True)
-                failed |= record["status"].startswith("BLOCKED")
+                failed |= (record["status"].startswith("BLOCKED")
+                           and not (args.research_exit and
+                                    record.get("research_progress_status") == "PASS_RESEARCH_ONLY"))
     finally:
         try:
             client.close()
