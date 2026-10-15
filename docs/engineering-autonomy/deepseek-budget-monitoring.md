@@ -26,7 +26,7 @@ into an issue, chat, or source file.
   workflow checks balance every 12 hours and on manual dispatch. No LLM tokens.
 - The repository currently has **GitHub Issues disabled**, so notifications use
   Discord instead. Store your Discord channel's webhook URL in GitHub Actions
-  repository secret `STOCK_RAZOR_DISCORD_WEBHOOK_URL`; do not paste it into code.
+  repository secret `DISCORD_WEBHOOK_URL`; do not paste it into code.
   Optionally set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
   numeric Discord user ID to get a direct mention. Otherwise enable channel
   notifications in Discord to see alerts on your phone.
@@ -61,7 +61,7 @@ into an issue, chat, or source file.
 ## Operator workflow
 
 1. Create a Discord webhook in your STOCK RAZOR alerts channel; set its URL
-   as repository Actions secret `STOCK_RAZOR_DISCORD_WEBHOOK_URL`.
+   as repository Actions secret `DISCORD_WEBHOOK_URL`.
 2. Optional: set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
    numeric Discord user ID so Discord can mention you. Do not share secrets
    in chat.
