@@ -73,6 +73,25 @@ def send_discord(status: str, webhook: str, user_id: str = "", opener=None) -> s
     return "ALERT_SENT"
 
 
+def failure_category(exc: Exception) -> str:
+    """Emit only an allowlisted class/status, never provider error text or URLs."""
+    if isinstance(exc, urllib.error.HTTPError):
+        code = exc.code
+        return f"DISCORD_HTTP_{code}" if type(code) is int and 400 <= code <= 599 else "DISCORD_HTTP_OTHER"
+    if isinstance(exc, (urllib.error.URLError, TimeoutError)):
+        return "NETWORK_OR_TIMEOUT"
+    if isinstance(exc, ValueError):
+        known = {
+            "unsupported webhook": "INVALID_WEBHOOK_HOST",
+            "invalid webhook path": "INVALID_WEBHOOK_PATH",
+            "unexpected webhook components": "INVALID_WEBHOOK_COMPONENTS",
+            "invalid mention id": "INVALID_USER_ID",
+            "Discord did not accept alert": "UNEXPECTED_DISCORD_RESPONSE",
+        }
+        return known.get(str(exc), "INVALID_DATA")
+    return "OTHER_ERROR"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--status-file", type=Path)
@@ -88,8 +107,8 @@ def main() -> int:
             os.getenv("STOCK_RAZOR_DISCORD_USER_ID", ""),
         )
     except (ValueError, TypeError, KeyError, OSError, urllib.error.URLError,
-            TimeoutError, json.JSONDecodeError, UnicodeDecodeError):
-        print("BUDGET_ALERT=FAILED_CLOSED")
+            TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        print("BUDGET_ALERT=FAILED_CLOSED;CATEGORY=" + failure_category(exc))
         return 2
     print("BUDGET_ALERT=" + result)
     return 0 if result in ("HEALTHY_NO_ALERT", "ALERT_SENT") else 2
