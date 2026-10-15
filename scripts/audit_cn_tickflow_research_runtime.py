@@ -27,6 +27,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     """Export no bars, prices, raw timestamps or provider credentials."""
     base={
         "last_due_grid":"UNKNOWN",
+        "due_grid_continuity":"UNKNOWN",
         "dominant_quarantine_reason":"UNKNOWN",
         "largest_ohlc_gap_bucket":"UNKNOWN",
         "gap_violation_rows_bucket":"UNKNOWN",
@@ -103,11 +104,13 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         expected=_expected_closed_grid_label(now_utc,timeframe)
         if expected is None:
             out["last_due_grid"]="NO_SESSION_GRID_DUE"
+            out["due_grid_continuity"]="NO_SESSION_GRID_DUE"
             return out
         rawlabel=rows[-1]["label"]
         last=datetime.strptime(rawlabel,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
         if last.date()!=shnow.date():
             out["last_due_grid"]="NO_SAME_DAY_RETAINED_BAR"
+            out["due_grid_continuity"]="NO_SAME_DAY_RETAINED_BAR"
             return out
         all_end=[]
         for clock in sorted(_LABEL_END[timeframe]):
@@ -116,7 +119,36 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
                                          second=0,microsecond=0))
         if last not in all_end:
             out["last_due_grid"]="LAST_LABEL_OFF_GRID"
+            out["due_grid_continuity"]="INVALID_TODAY_LABEL_GRID"
             return out
+        # Latest due label alone does not prove full intraday continuity.
+        # Missing 09:45 followed by 10:00 used to appear caught-up.
+        # Never export private labels or prices, only bounded fixed enums.
+        # Matching schedule is NOT exchange finality or trade admission.
+        due=frozenset(t for t in all_end if t<=expected)
+        seen=set()
+        invalid=False
+        for item in rows:
+            raw=item.get("label") if isinstance(item,dict) else None
+            if not isinstance(raw,str):
+                invalid=True
+                break
+            stamp=datetime.strptime(raw,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+            if stamp.date()!=shnow.date():
+                continue
+            if stamp not in due or stamp in seen:
+                invalid=True
+                break
+            seen.add(stamp)
+        if invalid:
+            out["due_grid_continuity"]="INVALID_TODAY_LABEL_GRID"
+        else:
+            missing=len(due-seen)
+            out["due_grid_continuity"]=(
+                "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY" if missing==0 else
+                "ONE_DUE_LABEL_MISSING" if missing==1 else
+                "MULTIPLE_DUE_LABELS_MISSING"
+            )
         missed=sum(last<x<=expected for x in all_end)
         out["last_due_grid"]=(
             "MATCHED_DUE_LABEL" if missed==0 else
