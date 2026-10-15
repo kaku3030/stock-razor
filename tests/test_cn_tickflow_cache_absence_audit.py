@@ -157,3 +157,78 @@ def test_private_tickflow_writer_enforces_same_limit_as_audit_and_reader():
     assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
     assert 'len(encoded.encode("utf-8"))>MAX_BYTES' in source
     assert source.index("len(encoded.encode") < source.index("parent.mkdir")
+
+
+def test_cn_15m_morning_first_close_has_90s_grace_and_no_false_live_admission():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    cn = ZoneInfo("Asia/Shanghai")
+    previous = [
+        "2026-10-14 09:45", "2026-10-14 10:00",
+        "2026-10-14 10:15", "2026-10-14 10:30",
+    ]
+    def observe(clock, today):
+        frame = {
+            "rows": [
+                {"label": label, "close": 999999.123}
+                for label in previous + today
+            ],
+            "quarantined_unverified_rows_count": 0,
+            "quarantine_reason_counts": {},
+        }
+        return audit.summarize_private_frame_progress(
+            frame, timeframe="15m",
+            now_utc=datetime(2026, 10, 15, *clock, tzinfo=cn),
+        )
+
+    before_close = observe((9, 44), [])
+    assert before_close["due_grid_continuity"] == "NO_SESSION_GRID_DUE"
+    # The provider's next bar-end label can be forming for another 90s.
+    within_grace = observe((9, 45, 30), [])
+    assert within_grace["due_grid_continuity"] == "NO_SESSION_GRID_DUE"
+    due_without_row = observe((9, 46, 30), [])
+    assert due_without_row["due_grid_continuity"] == "NO_SAME_DAY_RETAINED_BAR"
+    with_first_row = observe((9, 46, 30), ["2026-10-15 09:45"])
+    assert with_first_row["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+    assert "999999" not in str(with_first_row)
+    assert "2026-10-15" not in str(with_first_row)
+
+    # Previous audit checked only the latest label, missing the 09:45 gap.
+    skipped_first = observe((10, 2), ["2026-10-15 10:00"])
+    assert skipped_first["last_due_grid"] == "MATCHED_DUE_LABEL"
+    assert skipped_first["due_grid_continuity"] == "ONE_DUE_LABEL_MISSING"
+    complete = observe((10, 2), ["2026-10-15 09:45", "2026-10-15 10:00"])
+    assert complete["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+
+
+def test_cn_60m_first_close_due_after_90s_and_missing_prior_hour_detected():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    cn = ZoneInfo("Asia/Shanghai")
+    older = [
+        {"label": f"2026-10-14 {clock}"}
+        for clock in ("10:30", "11:30", "14:00", "15:00")
+    ]
+    def check(hour, minute, second, todays):
+        frame = {
+            "rows": older + [{"label": "2026-10-15 " + clock} for clock in todays],
+            "quarantined_unverified_rows_count": 0,
+        }
+        return audit.summarize_private_frame_progress(
+            frame, timeframe="60m",
+            now_utc=datetime(2026,10,15,hour,minute,second,tzinfo=cn),
+        )
+    assert check(10,30,30,[])["due_grid_continuity"] == "NO_SESSION_GRID_DUE"
+    assert check(10,31,30,["10:30"])["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+    assert check(11,32,0,["11:30"])["due_grid_continuity"] == "ONE_DUE_LABEL_MISSING"
+    assert check(11,32,0,["10:30","11:30"])["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+    assert check(11,32,0,["10:30","10:30","11:30"])["due_grid_continuity"] == "INVALID_TODAY_LABEL_GRID"
+
+
+def test_cloud_audit_accepts_only_fixed_due_grid_continuity_enum():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text()
+    assert "allowed_continuity=" in workflow
+    assert 'assert _v.get("due_grid_continuity") in allowed_continuity' in workflow
+    assert "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY" in workflow
+    assert "RADAR_ADMISSION=BLOCKED" in workflow
