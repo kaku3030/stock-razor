@@ -306,3 +306,31 @@ def test_dynamic_cleanup_failure_never_promotes_manager_transport():
     assert ("unsubscribe_failed", first) in a.calls
     assert manager.snapshot().transport_state == "UNKNOWN"
     assert manager.update_candidates([first], quota=quota).status == "BLOCKED"
+
+
+def test_dynamic_ingress_rejection_does_not_leave_ghost_desired_stream():
+    """The first accepted desired key must roll back if the queue fills."""
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    second = SemanticStreamKey("futu", "us", "US.VRTX", "K_1M", "1m")
+    c = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+        control_queue_maxsize=1,
+    )
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+    calls_before = list(a.calls)
+
+    with pytest.raises(RuntimeError, match="desired registry ingress rejected"):
+        r.subscribe_streams([first, second])
+
+    # No provider mutation is allowed before all desired keys are accepted.
+    assert a.calls == calls_before
+    c.process_pending()
+    assert tuple(
+        entry.semantic_stream_key
+        for entry in c.desired_registry_snapshot().entries
+    ) == (KEY,)
+    assert r.snapshot().subscribed == (KEY,)
