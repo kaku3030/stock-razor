@@ -297,3 +297,82 @@ def test_public_workflow_restricts_secondary_quarantine_causes_to_static_enums()
     assert 'cause_buckets=_v.get("quarantine_cause_buckets")' in workflow
     assert "name in allowed_cause" in workflow
     assert "bucket in allowed_bucket" in workflow
+
+
+def test_combined_cloud_audit_and_nonmutating_vendor_float_research_only(tmp_path):
+    """Cross-PR acceptance: float-bearing due bar isn't falsely missing,
+    but source and trade remain blocked and private price never exported."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    import json
+    from data_provider.cn_tickflow_research_cache import (
+        build_observation, atomic_publish, read_cn_tickflow_research_data,
+    )
+
+    china = ZoneInfo("Asia/Shanghai")
+    now = datetime(2026, 10, 15, 2, 2, tzinfo=timezone.utc)  # 10:02 CST
+    clocks = (
+        ("2026-10-14 14:00", "2026-10-14 14:15",
+         "2026-10-14 14:30", "2026-10-14 14:45"),
+        ("2026-10-15 09:45", "2026-10-15 10:00"),
+    )
+    def raw_frame(period: str, symbol: str) -> dict:
+        if period == "15m":
+            labels = [*clocks[0], *clocks[1]]
+        else:
+            labels = [
+                "2026-10-14 10:30", "2026-10-14 11:30",
+                "2026-10-14 14:00", "2026-10-14 15:00",
+            ]
+        count = len(labels)
+        high = [1.7] * count
+        if symbol == "159611.SZ" and period == "15m":
+            high[-2:] = [1.5999999999999994] * 2
+        return {
+            "timestamp": [
+                int(datetime.strptime(label, "%Y-%m-%d %H:%M")
+                    .replace(tzinfo=china).timestamp()) * 1000
+                for label in labels
+            ],
+            "open": [1.5] * count, "high": high,
+            "low": [1.3] * count, "close": [1.6] * count,
+            "volume": [1000] * count, "amount": [1600] * count,
+        }
+
+    class Klines:
+        def get(self, symbol, *, period, count, as_dataframe, adjust):
+            assert symbol in ("159611.SZ", "518880.SH")
+            assert period in ("15m", "60m")
+            assert count in (96, 24) and as_dataframe is False and adjust == "none"
+            return raw_frame(period, symbol)
+    class Client:
+        klines = Klines()
+
+    snap = build_observation(Client(), now_utc=now, repo_sha="f" * 40,
+                             sequence=7)
+    frame = snap["symbols"]["159611.SZ"]["15m"]
+    proof = audit.summarize_private_frame_progress(
+        frame, timeframe="15m", now_utc=now,
+    )
+    assert proof["last_due_grid"] == "MATCHED_DUE_LABEL"
+    assert proof["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+    assert proof["quarantine_cause_buckets"] == {}
+    assert snap["source_arbiter_admission"] == snap["radar_admission"] == "BLOCKED"
+    assert snap["can_confirm_signal"] is False
+    assert all(bar["bar_finality"] == "NOT_VERIFIED" for bar in frame["rows"])
+    assert "1.5999999999999994" not in json.dumps(proof)
+
+    path = tmp_path / "private.json"
+    atomic_publish(str(path), snap)
+    read = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 2, path=str(path), now_utc=now,
+    )
+    assert read["status"] == "PASS_RESEARCH_ONLY"
+    assert read["ohlc_precision_scope"] == "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert read["tolerated_vendor_float_rows"] == 2
+    assert read["currentness"] == "UNPROVEN"
+    assert read["bar_finality"] == "NOT_VERIFIED"
+    assert read["source_arbiter_admission"] == "BLOCKED"
+    assert read["radar_admission"] == "BLOCKED"
+    assert read["live_trade"] is False
+    assert read["can_confirm_signal"] is False
