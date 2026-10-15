@@ -162,3 +162,49 @@ def test_paper_heartbeat_future_mtime_is_not_fresh(tmp_path):
         assert "PAPER_HEARTBEAT_SCHEMA=PASS" in process.stdout
         assert "PAPER_RUNTIME_GATES_CLOSED=PASS" in process.stdout
         assert f"PAPER_HEARTBEAT_FRESHNESS={expected}" in process.stdout
+
+
+def _run_ssm_core_readback_gate(tmp_path, rows):
+    """Execute the same bounded status gate used after the SSM capture."""
+    import subprocess
+    import textwrap
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    marker = "          # Fail closed: SSM transport success is not runtime qualification."
+    assert workflow.count(marker) == 1
+    source = workflow.split(marker, 1)[1].split(
+        "\n      - name: Emit bounded qualification summary", 1,
+    )[0]
+    code = "set -euo pipefail\n" + textwrap.dedent(source)
+    (tmp_path / "qualification.txt").write_text(
+        "\n".join(rows) + "\n", encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", "-c", code], cwd=tmp_path, capture_output=True,
+        text=True, check=False, timeout=5,
+    )
+
+
+def test_paper_runtime_ssm_gate_distinguishes_transport_from_readback(tmp_path):
+    required = (
+        "PAPER_UNIT_ACTIVE", "PAPER_RUNTIME_SHA", "PAPER_HEARTBEAT_SCHEMA",
+        "PAPER_RUNTIME_GATES_CLOSED", "PAPER_HEARTBEAT_FRESHNESS",
+    )
+    good = [f"{key}=PASS" for key in required]
+    verified = _run_ssm_core_readback_gate(tmp_path, good)
+    assert verified.returncode == 0, verified.stderr
+    assert "PAPER_RUNTIME_QUALIFICATION=CORE_READBACK_ONLY" in verified.stdout
+    assert "PAPER_AUTO_READY=YES" not in verified.stdout
+
+    # SSM returned safely, but the deployed runtime is absent or stale.
+    for bad in (
+        ["PAPER_UNIT_ACTIVE=UNKNOWN", *good[1:]],
+        [*good[:2], "PAPER_HEARTBEAT_SCHEMA=UNKNOWN", *good[3:]],
+        [*good[:4], "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN"],
+        good[:-1],
+        [*good, "PAPER_RUNTIME_SHA=UNKNOWN"],
+    ):
+        result = _run_ssm_core_readback_gate(tmp_path, bad)
+        assert result.returncode != 0
+        assert "PAPER_RUNTIME_QUALIFICATION=BLOCKED" in result.stdout
+        assert "CORE_READBACK_ONLY" not in result.stdout
