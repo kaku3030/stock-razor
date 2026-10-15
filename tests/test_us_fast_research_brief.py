@@ -239,3 +239,93 @@ def test_quick_scan_preserves_partial_bar_flags(monkeypatch):
     assert bar["is_complete"] is False
     assert "PARTIAL_BAR" in bar["quality_flags"]
     assert result["can_confirm_signal"] is False
+
+
+def test_one_step_publication_race_rereads_both_sources_without_provider(monkeypatch):
+    first_market = _market()
+    first_market["sequence"] = 4
+    first_radar = _radar()
+    aligned_radar = _radar()
+    aligned_radar["source_sequence"] = 4
+    counters = {"market": 0, "radar": 0, "sleep": 0}
+
+    def read_market(*args, **kwargs):
+        counters["market"] += 1
+        return first_market
+
+    def read_radar(*args, **kwargs):
+        counters["radar"] += 1
+        return first_radar if counters["radar"] == 1 else aligned_radar
+
+    def fast_sleep(seconds):
+        assert seconds == 0.05
+        counters["sleep"] += 1
+
+    monkeypatch.setattr(module, "read_us_market_snapshots", read_market)
+    monkeypatch.setattr(module, "read_us_radar_analysis", read_radar)
+    monkeypatch.setattr(module, "sleep", fast_sleep)
+
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert counters == {"market": 2, "radar": 2, "sleep": 1}
+    assert result["status"] == "ALIGNED_RESEARCH_ONLY"
+    assert result["provenance"]["sequence_recheck_attempts"] == 1
+    assert result["provenance"]["market_sequence"] == 4
+    assert result["provenance"]["radar_source_sequence"] == 4
+    assert result["provider_requests"] == 0
+    assert result["trading_authority"] is False
+
+
+def test_persistent_one_step_skew_stays_blocked_with_bounded_retries(monkeypatch):
+    market = _market()
+    market["sequence"] = 4
+    radar = _radar()
+    counts = _patch(monkeypatch, market=market, radar=radar)
+    sleep_calls = []
+    monkeypatch.setattr(module, "sleep", sleep_calls.append)
+
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert counts == {"market": 3, "radar": 3}
+    assert sleep_calls == [0.05, 0.05]
+    assert result["status"] == "BLOCKED"
+    assert result["symbols"] == {}
+    assert "SOURCE_SEQUENCE_NOT_ALIGNED" in result["reasons"]
+    assert result["provenance"]["sequence_recheck_attempts"] == 2
+    assert result["can_confirm_signal"] is False
+
+
+def test_large_skew_and_invalid_lineage_never_trigger_recheck(monkeypatch):
+    market = _market()
+    market["sequence"] = 5
+    radar = _radar()
+    calls = _patch(monkeypatch, market=market, radar=radar)
+    monkeypatch.setattr(
+        module, "sleep",
+        lambda seconds: (_ for _ in ()).throw(AssertionError("unexpected retry")),
+    )
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert result["status"] == "BLOCKED"
+    assert calls == {"market": 1, "radar": 1}
+
+    # Even a one-step mismatch must never override SHA authenticity.
+    market["sequence"] = 4
+    radar["expected_source_repo_sha"] = "c" * 40
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert result["status"] == "BLOCKED"
+    assert "SOURCE_REPO_SHA_MISMATCH" in result["reasons"]
+    assert calls == {"market": 2, "radar": 2}
+
+
+def test_invalid_radar_poll_does_not_retry_sequence_race(monkeypatch):
+    market = _market()
+    market["sequence"] = 4
+    radar = _radar()
+    radar["poll_status"] = "UNKNOWN"
+    calls = _patch(monkeypatch, market=market, radar=radar)
+    monkeypatch.setattr(
+        module, "sleep",
+        lambda seconds: (_ for _ in ()).throw(AssertionError("unexpected retry")),
+    )
+    result = module.read_us_fast_research_brief(["AMD"], now_utc=NOW)
+    assert calls == {"market": 1, "radar": 1}
+    assert result["status"] == "BLOCKED"
+    assert "RADAR_CURRENT_POLL_NOT_VALID" in result["reasons"]
