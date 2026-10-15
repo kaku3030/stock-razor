@@ -59,7 +59,8 @@ jobs:
         run: echo 'status=NOT_AUTHORIZED_OR_UNAVAILABLE' >> "$GITHUB_OUTPUT"
   watch:
     needs: aws-cost
-    if: always() && github.ref == 'refs/heads/main' && (needs.aws-cost.result == 'success' || needs.aws-cost.result == 'skipped')
+    # Even an AWS OIDC/CE failure must not suppress OpenAI/DeepSeek/TickFlow checks.
+    if: always() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
