@@ -87,3 +87,49 @@ def test_worker_all_requested_failure_stages_are_safely_classified(
 def test_worker_failure_stage_projection_is_enum_only(malicious):
     assert audit.safe_failure_stage(malicious) == "UNKNOWN"
     assert "DO_NOT_ECHO" not in audit.safe_failure_stage(malicious)
+
+
+@pytest.mark.parametrize(("record", "expected"), [
+    ("TICKFLOW_RESEARCH_BOOT=BLOCKED:RuntimeError", "BOOT_BLOCKED"),
+    ("TICKFLOW_RESEARCH_POLL=BLOCKED:RateLimitError", "POLL_BLOCKED"),
+    ("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS", "POLL_RESEARCH_ONLY_PASS"),
+    ("provider_error=API_KEY_SECRET_SHOULD_NEVER_LEAVE", "NO_RECENT_LIFECYCLE_MARKER"),
+])
+def test_worker_journal_evidence_never_exports_raw_log(monkeypatch, record, expected):
+    import subprocess
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="private_api_key=KEEP_PRIVATE\n" + record,
+            stderr="confidential provider stack",
+        )
+
+    monkeypatch.setattr(audit.subprocess, "run", fake_run)
+    state = audit.safe_worker_journal_observation()
+    assert state == expected
+    assert "KEEP_PRIVATE" not in state
+    assert "confidential" not in state
+    assert calls[0][0][0] == "journalctl"
+    assert calls[0][1]["timeout"] == 5
+    assert calls[0][1]["capture_output"] is True
+
+
+def test_worker_journal_unavailable_fails_closed(monkeypatch):
+    import subprocess
+
+    monkeypatch.setattr(
+        audit.subprocess, "run",
+        lambda argv, **kw: subprocess.CompletedProcess(argv, 1, stdout="", stderr="SECRET"),
+    )
+    assert audit.safe_worker_journal_observation() == "JOURNAL_UNAVAILABLE"
+
+
+def test_public_tickflow_workflow_restricts_journal_projection_to_enums():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text()
+    assert '"worker_journal_observation"' in workflow
+    assert 'assert d[when].get("worker_journal_observation") in worker_journal' in workflow
+    assert '"BOOT_BLOCKED","POLL_BLOCKED","POLL_RESEARCH_ONLY_PASS"' in workflow
+    assert "StandardErrorContent" not in workflow
