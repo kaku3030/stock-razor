@@ -133,3 +133,33 @@ def test_only_exception_class_is_projected_to_logs():
 def test_fixed_symbol_and_timeframe_budget_only():
     assert audit.SYMBOLS == ("159611.SZ", "518880.SH")
     assert audit.PERIOD_COUNTS == {"15m": 96, "60m": 24, "1d": 40}
+
+
+def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
+    # Reproduces 2026-10-15 desktop vs AWS discrepancy in principle:
+    # tolerant OHLC accepts a tiny 1e-5 drift that strict cloud rejects.
+    # No raw actual provider values or credentials are used in the fixture.
+    c=compact([
+        "2026-10-14 14:00","2026-10-14 14:15",
+        "2026-10-15 09:45","2026-10-15 10:00",
+    ])
+    c["low"][-1]=1.055000001  # > close=1.055, but by less than 1e-5.
+    out=audit.assess_compact(c,"15m",clock("2026-10-15 10:02:00"))
+    assert out["tiny_vendor_float_drift_rows"]==1
+    assert out["invalid_rows"]==0
+    assert out["due_count"]==2
+    assert out["due_labels_present"]==1
+    assert out["due_labels_missing"]==1
+    assert out["status"]=="BLOCKED_UNVERIFIED"
+    assert out["exchange_bar_finality"]=="NOT_VERIFIED"
+    assert "1.055" not in str(out)
+
+
+def test_no_tiny_drift_in_strict_bar_is_counted_as_success():
+    c=compact([
+        "2026-10-14 14:00","2026-10-14 14:15",
+        "2026-10-15 09:45","2026-10-15 10:00",
+    ])
+    out=audit.assess_compact(c,"15m",clock("2026-10-15 10:02:00"))
+    assert out["status"]=="PASS_RESEARCH_ONLY"
+    assert out["tiny_vendor_float_drift_rows"]==0
