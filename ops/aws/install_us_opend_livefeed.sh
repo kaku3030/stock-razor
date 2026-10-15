@@ -47,7 +47,7 @@ from src.services.live_feed.controller import LiveFeedController
 from src.services.live_feed.canonical_snapshot_export import build_canonical_snapshot_export
 from src.services.live_feed.futu_k1m_closure_pipeline import FutuK1MClosurePipeline
 from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
-from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes
+from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes, postclose_history_retry_due
 from src.services.live_feed.futu_k1m_research_consumer import FutuK1MResearchConsumer
 from src.services.live_feed.futu_k1m_warm_start_runtime import seed_futu_k1m_research_cache
 from src.services.live_feed.futu_us_daily_history import (
@@ -84,7 +84,7 @@ from src.services.live_feed.futu_k1m_closure_qualification import (
     summarize_futu_k1m_closure_qualification,
 )
 from src.services.live_feed.us_intraday_closure import qualify_us_current_session_intraday_closure
-from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes
+from src.services.live_feed.us_postclose_terminal_reconciliation import reconcile_us_postclose_terminal_minutes, postclose_history_retry_due
 from src.services.live_feed.futu_k1m_currentness import (
     classify_futu_us_k1m_currentness,
     futu_us_market_state_to_session,
@@ -297,9 +297,10 @@ daily_history_summary={
     "live_trade":False,
 }
 seq=0
-# One bounded historical RTH tail check per exchange-local day, after 16:30 ET.
-# This never qualifies the realtime bar-closure/trading admission gate.
-postclose_attempted_date=None
+# Maximum two same-day RTH historical attempts after 16:30 ET,
+# with at least 30 minutes between failed attempts; never realtime admission.
+postclose_attempt_count=0
+postclose_last_attempt_at=None
 postclose_reconciliation={
     "session_date":None,
     "status":"NOT_DUE","reason":"WAITING_FOR_POSTCLOSE_FULL_GRID",
@@ -468,8 +469,15 @@ try:
                 "bar_closure_promotion_authorized":False,
                 "radar_admission":"BLOCKED","live_trade":False,
             }
+            postclose_attempt_count=0
+            postclose_last_attempt_at=None
         if (
-            postclose_attempted_date != local_day
+            postclose_history_retry_due(
+                attempts=postclose_attempt_count,
+                last_attempt_at=postclose_last_attempt_at,
+                observed_at=now,
+                prior_status=postclose_reconciliation.get("status"),
+            )
             and (local_now.hour,local_now.minute) >= (16,30)
             and market_state in ("AFTER_HOURS_BEGIN","AFTER_HOURS_END","OVERNIGHT","CLOSED","WAITING_OPEN")
             and any(
@@ -481,7 +489,8 @@ try:
         ):
             # The existing RTH history fetch is already bound to the same
             # OpenD context and explicitly excludes extended-hour candles.
-            postclose_attempted_date=local_day
+            postclose_attempt_count+=1
+            postclose_last_attempt_at=now
             postclose_reconciliation=reconcile_us_postclose_terminal_minutes(
                 CODES,
                 fetch_page=fetch_history_page,
