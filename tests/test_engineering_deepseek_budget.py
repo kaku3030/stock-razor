@@ -143,19 +143,30 @@ def test_missing_or_invalid_analytics_is_unknown_not_fake_zero(tmp_path):
     assert b.summarize_usage(f)["status"] == "UNVERIFIED"
 
 
-def test_paid_execution_requires_provider_side_hard_cny_cap():
-    with pytest.raises(ValueError, match="provider-side hard CNY cost guarantee"):
-        b.require_hard_cost_guarantee(None)
-    b.require_hard_cost_guarantee("provider-enforced:cny:5")
+@pytest.mark.parametrize("claim", [None, "", "provider-enforced:cny:5", "custom-string"])
+def test_paid_execution_blocks_unverified_cost_cap_claim(claim):
+    # The marker is an untrusted repository variable, not provider-side proof.
+    with pytest.raises(ValueError, match="NOT_VERIFIED"):
+        b.require_hard_cost_guarantee(claim)
 
 
-def test_bounded_runner_rejects_paid_start_without_guarantee(tmp_path, monkeypatch):
+@pytest.mark.parametrize("claim", [None, "provider-enforced:cny:5"])
+def test_bounded_runner_never_starts_paid_child_on_unverified_claim(tmp_path, monkeypatch, claim):
     def must_not_start(*_args, **_kwargs):
         raise AssertionError("paid child must not start")
 
     monkeypatch.setattr(b.subprocess, "Popen", must_not_start)
-    with pytest.raises(ValueError, match="provider-side hard CNY cost guarantee"):
-        b.run_bounded(["aider"], tmp_path / "usage.jsonl", None)
+    with pytest.raises(ValueError, match="NOT_VERIFIED"):
+        b.run_bounded(["aider"], tmp_path / "usage.jsonl", claim)
+
+
+def test_cost_cap_preflight_fails_closed_with_spoofed_env(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setenv("DEEPSEEK_HARD_COST_GUARANTEE", "provider-enforced:cny:5")
+    monkeypatch.setattr(sys, "argv", ["deepseek_budget", "cost-cap-check"])
+    assert b.main() == 2
+    assert "PAID_CODING=BLOCKED;REASON=UPSTREAM_SPEND_CAP_NOT_VERIFIED" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("field,value", [
@@ -244,7 +255,9 @@ def test_workflow_separates_balance_secrets_and_discord_notification():
     coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(encoding="utf-8")
     guard = coding.index("Enforce official DeepSeek balance budget")
     coder = coding.index("Run isolated DeepSeek coding agent")
-    assert "DEEPSEEK_HARD_COST_GUARANTEE" in coding
+    assert "Require authenticated provider-side CNY 5 cap proof" in coding
+    assert "deepseek_budget cost-cap-check" in coding
+    assert "DEEPSEEK_HARD_COST_GUARANTEE" not in coding
     assert "engineering_autonomy.deepseek_budget run" in coding
     assert "LITELLM_MAX_RETRIES: '0'" in coding
     assert guard < coder
