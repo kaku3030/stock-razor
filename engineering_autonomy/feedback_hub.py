@@ -59,7 +59,23 @@ def _now() -> datetime:
 
 
 def _timestamp(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    # Fixed precision makes new UTC stamps lexically sortable in SQLite.
+    return value.astimezone(timezone.utc).isoformat(
+        timespec="microseconds",
+    ).replace("+00:00", "Z")
+
+
+def _lease_deadline(value: object) -> datetime | None:
+    """Read old second-only and new fractional UTC leases consistently."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _bounded_text(value: Any, field: str, limit: int = MAX_TEXT) -> str:
@@ -224,7 +240,8 @@ class FeedbackHub:
         try:
             row = self._connection.execute(
                 "SELECT * FROM feedback WHERE status IN ('NEW','CLAIMED','IN_PROGRESS') "
-                "AND (lease_until IS NULL OR lease_until <= ?) ORDER BY priority, created_at LIMIT 1", (now_text,)
+                "AND (lease_until IS NULL OR julianday(lease_until) <= julianday(?)) "
+                "ORDER BY priority, created_at LIMIT 1", (now_text,)
             ).fetchone()
             if row is None:
                 self._connection.execute("COMMIT")
@@ -251,7 +268,8 @@ class FeedbackHub:
         evidence = _safe_evidence(evidence)
         if error is not None:
             error = _bounded_text(error, "error")
-        now = _timestamp(_now())
+        now_dt = _now()
+        now = _timestamp(now_dt)
         self._connection.execute("BEGIN IMMEDIATE")
         try:
             row = self._connection.execute("SELECT * FROM feedback WHERE id=?", (feedback_id,)).fetchone()
@@ -263,7 +281,8 @@ class FeedbackHub:
                 raise FeedbackHubError("feedback claim is no longer active")
             # A worker with an expired lease must re-claim before writing,
             # even when another worker has not taken the item yet.
-            if row["lease_until"] is None or row["lease_until"] <= now:
+            lease_deadline = _lease_deadline(row["lease_until"])
+            if lease_deadline is None or lease_deadline <= now_dt:
                 raise FeedbackHubError("feedback claim lease expired")
             next_status = status
             if status == "FAILED":
