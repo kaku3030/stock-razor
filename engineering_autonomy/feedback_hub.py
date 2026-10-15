@@ -430,8 +430,9 @@ def main() -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", type=Path, required=True)
+    parser.add_argument("--require-existing", action="store_true")
     args = parser.parse_args()
-    hub = FeedbackHub(args.db)
+    hub = FeedbackHub(args.db, require_existing=args.require_existing)
     try:
         print(json.dumps(hub.preflight(), sort_keys=True))
     finally:
