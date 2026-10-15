@@ -196,6 +196,11 @@ def test_corrupt_existing_lease_timestamp_never_grants_writeback(tmp_path):
     {"raw_price": 123.45},
     {"status": "123456789012"},
     {"unreviewed_custom_field": "PASS"},
+    {"status": "raw close 123.45"},
+    {"status": 123.45},
+    {"run": "7"},
+    {"latency_ms": -1},
+    {"closed": "true"},
     {"checks": {"status": {"checks": {"status": {
         "checks": {"status": {"checks": {"status": "TOO_DEEP"}}},
     }}}},
@@ -222,6 +227,7 @@ def test_evidence_allowlist_preserves_safe_nested_operational_facts(tmp_path):
         details="source mismatch", source_ref="cn:probe:1",
         evidence={
             "sha": "abc", "run": 7, "status": "BLOCKED",
+            "closed": False, "latency_ms": 1.23,
             "checks": [{"status": "PASS"}, {"reason": "NO_DATA"}],
         },
     )
