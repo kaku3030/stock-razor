@@ -159,3 +159,37 @@ def test_discord_http_error_never_logs_body_or_webhook(monkeypatch):
     with pytest.raises(ValueError,match="discord_http_404") as err:
         watch.discord_send("https://discord.com/api/webhooks/123/secret","hi")
     assert "SENSITIVE" not in str(err.value)
+
+
+def test_telegram_owner_fallback_after_both_discord_webhooks_fail(monkeypatch,capsys):
+    from scripts import provider_billing_renewal_watch as watch
+    discord_calls=[]
+    telegram_calls=[]
+    def fake_discord(url, content):
+        discord_calls.append(url)
+        raise ValueError("discord_http_403")
+    def fake_telegram(token,chat,content):
+        telegram_calls.append((token,chat))
+        assert "balance=UNKNOWN" in content
+    monkeypatch.setattr(watch,"discord_send",fake_discord)
+    monkeypatch.setattr(watch,"telegram_send",fake_telegram)
+    monkeypatch.setattr(watch,"datetime",type("Clock",(),{
+        "now":staticmethod(lambda *_: NOW),
+    }))
+    monkeypatch.setattr(watch,"os",type("Environ",(),{"environ":{
+        "DISCORD_RADAR_WEBHOOK_URL":"https://discord.com/api/webhooks/primary",
+        "DISCORD_WEBHOOK_URL":"https://discord.com/api/webhooks/backup",
+        "TELEGRAM_BOT_TOKEN":"123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "TELEGRAM_CHAT_ID":"-1001234567890",
+    }}))
+    monkeypatch.setattr(__import__("sys"),"argv",["watch","--send-report"])
+    assert watch.main()==0
+    assert len(discord_calls)==2
+    assert telegram_calls==[("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ","-1001234567890")]
+    assert "TELEGRAM_FALLBACK_DISPATCHED" in capsys.readouterr().out
+
+
+def test_telegram_bad_destination_stays_fail_closed(monkeypatch):
+    from scripts import provider_billing_renewal_watch as watch
+    with pytest.raises(ValueError,match="invalid_telegram_config"):
+        watch.telegram_send("fake-token","anything","safe")

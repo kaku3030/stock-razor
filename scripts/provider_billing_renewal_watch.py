@@ -12,6 +12,7 @@ import argparse
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import json
+import re
 import os
 import urllib.error
 import urllib.parse
@@ -213,6 +214,34 @@ def discord_send(webhook: str, content: str) -> None:
         raise ValueError("discord_delivery_failed") from None
 
 
+def telegram_send(bot_token: str, chat_id: str, content: str) -> None:
+    """One bounded owner-configured Telegram fallback; no credential logging."""
+    if (not re.fullmatch(r"[0-9]{4,15}:[A-Za-z0-9_-]{20,}", bot_token)
+            or not re.fullmatch(r"-?[0-9]{4,25}", chat_id)):
+        raise ValueError("invalid_telegram_config")
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": content[:3400],
+        "disable_web_page_preview": "true",
+    }).encode()
+    request = urllib.request.Request(
+        "https://api.telegram.org/bot" + bot_token + "/sendMessage",
+        data=data, headers={"Content-Type":"application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            data = response.read(5001)
+            if response.status != 200 or len(data)>5000:
+                raise ValueError("telegram_delivery_failed")
+            result = json.loads(data)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise ValueError("telegram_delivery_failed")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
+            ValueError, TypeError, UnicodeError):
+        raise ValueError("telegram_delivery_failed") from None
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true")
@@ -244,13 +273,13 @@ def main() -> int:
             print("PROVIDER_BILLING_WATCH=NOTIFICATION_BLOCKED_NO_WEBHOOK")
             return 2
         content = "\n".join(report + (["⚠️ " + msg for msg in alerts] if alerts else []))
+        last_discord_error = ValueError("discord_delivery_failed")
         for index, webhook in enumerate(candidates):
             try:
                 discord_send(webhook, content)
             except ValueError as exc:
-                if index < len(candidates) - 1:
-                    continue
-                raise
+                last_discord_error = exc
+                continue
             else:
                 if index:
                     print("PROVIDER_BILLING_WATCH=DISCORD_FALLBACK_DISPATCHED")
@@ -258,6 +287,16 @@ def main() -> int:
                     print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
                           "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
                 return 0
+        # Discord HTTP 403 on GitHub's outbound path was observed in real
+        # Actions. Use only a pre-existing, explicitly configured Telegram
+        # owner chat as last resort, never a new destination.
+        telegram_token = env.get("TELEGRAM_BOT_TOKEN")
+        telegram_chat = env.get("TELEGRAM_CHAT_ID")
+        if telegram_token and telegram_chat:
+            telegram_send(telegram_token, telegram_chat, content)
+            print("PROVIDER_BILLING_WATCH=TELEGRAM_FALLBACK_DISPATCHED")
+            return 0
+        raise last_discord_error
     except ValueError as exc:
         # Whitelist only locally generated error categories. Never echo
         # arbitrary upstream body, webhook URL or exception messages.
