@@ -191,7 +191,7 @@ def run_queue(
     # This is deliberately before checkpoint recovery or task execution.  A
     # missing/corrupt feedback station must stop the mainline rather than let
     # it silently proceed with stale priorities.
-    feedback = FeedbackHub(feedback_path)
+    feedback = FeedbackHub(feedback_path, require_existing=True)
     try:
         feedback.preflight()
     except FeedbackHubError:
