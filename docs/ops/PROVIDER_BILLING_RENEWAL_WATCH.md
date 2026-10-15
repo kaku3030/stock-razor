@@ -45,6 +45,17 @@ are only present in the separate unified report job. If AWS Cost Explorer
 denies permission or is disabled, report **UNKNOWN / NOT_AUTHORIZED**; do not
 silently claim cost $0. No IAM or Cost Explorer subscription toggles are made.
 
+**AWS paid-API opt-in (disabled by default):** AWS Cost Explorer
+`GetCostAndUsage` incurs **US$0.01 per request** for the primary billing
+view (AWS official pricing). Querying once a day is approximately US$0.30
+per 30-day month before taxes. This integration does **not** perform that
+request until the owner explicitly sets repository Action variable
+`AWS_COST_EXPLORER_ENABLED=true`. Omitted / false leaves AWS monthly
+usage=UNKNOWN and never assumes $0. Setting this flag is permission to
+incur that small API usage charge; the owner must approve it separately.
+`AWS_MONTHLY_BUDGET_USD` is a **different** variable that controls the
+user-defined spend-alert threshold, not the API opt-in.
+
 ## Configuration
 
 GitHub Actions repository secrets (already available where configured):
@@ -60,6 +71,7 @@ Repository **Variables**:
 
 - `TICKFLOW_RENEWAL_DATE` — YYYY-MM-DD actual next renewal date.
 - `OPENAI_MONTHLY_BUDGET_USD` — alert when 80% of owner-defined spend limit.
+- `AWS_COST_EXPLORER_ENABLED` — optional explicit paid-query opt-in; default false.
 - `AWS_MONTHLY_BUDGET_USD` — optional, same 80% alert. Without it actual
   AWS spend may be shown but the budget *remaining* is UNKNOWN.
 - `OPENAI_CREDIT_SNAPSHOT_USD` and `OPENAI_CREDIT_SNAPSHOT_DATE_UTC` —
