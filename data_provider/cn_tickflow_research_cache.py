@@ -267,8 +267,14 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5"
                 and (not current_shanghai_day or (
-                    _post_close_research_eligible(stamp, now_utc)
-                    and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                    _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                    and (
+                        _post_close_research_eligible(stamp, now_utc)
+                        or (
+                            timeframe in ("15m","60m")
+                            and stamp <= now_utc - timedelta(seconds=90)
+                        )
+                    )
                 )))
             if float_only:
                 # Post-close same-day *historical-only* exception is gated
@@ -523,9 +529,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                             !="WITHIN_1E_MINUS_5"
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                research_mode=="historical_only"
-                                and _post_close_research_eligible(bar_stamp, now)
-                                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                                _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                                and (
+                                    (research_mode=="historical_only"
+                                     and _post_close_research_eligible(bar_stamp, now))
+                                    or (research_mode=="session_progress"
+                                        and timeframe in ("15m","60m")
+                                        and (now.astimezone(CN).hour,
+                                             now.astimezone(CN).minute)<(15,2)
+                                        and bar_stamp.astimezone(timezone.utc)
+                                            <= now-timedelta(seconds=90))
+                                )
                             ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
@@ -534,6 +548,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
+    # Never present non-mutating vendor precision as strict OHLC.
+    tolerated_rows=sum(
+        1 for row in safe if
+        row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    )
     expected=_expected_closed_grid_label(now,timeframe)
     latest=bar_stamp
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
@@ -563,6 +582,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "max_age_seconds":max_age,
             "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
             "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "ohlc_precision_scope":(
+                "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+                else "STRICT"
+            ),
+            "tolerated_vendor_float_rows":tolerated_rows,
             "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
@@ -574,6 +598,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
+        "ohlc_precision_scope":(
+            "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+            else "STRICT"
+        ),
+        "tolerated_vendor_float_rows":tolerated_rows,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
     }
