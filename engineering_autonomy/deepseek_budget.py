@@ -95,7 +95,7 @@ def _write_status(path: Path, status: str, currencies: list[str]) -> None:
     )
 
 
-def check_balance(path: Path) -> int:
+def check_balance(path: Path, *, monitor: bool = False) -> int:
     try:
         status, currencies = fetch_balance(os.environ.get("DEEPSEEK_API_KEY", ""))
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, urllib.error.URLError,
@@ -104,7 +104,7 @@ def check_balance(path: Path) -> int:
     _write_status(path, status, currencies)
     print(f"DEEPSEEK_BUDGET={status};CURRENCIES={','.join(currencies) if currencies else 'NA'}", flush=True)
     # Fail closed for low funds, unavailable balances or read errors. Never call a model.
-    return 0 if status == "OK" else 2
+    return 0 if status == "OK" or (monitor and status in {"LOW", "EMPTY", "UNAVAILABLE"}) else 2
 
 
 def read_status(path: Path) -> str:
@@ -196,12 +196,13 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     balance = sub.add_parser("check")
     balance.add_argument("--status-file", type=Path, required=True)
+    balance.add_argument("--monitor", action="store_true", help="allow a verified low/empty status for alerting")
     usage = sub.add_parser("usage")
     usage.add_argument("--analytics-log", type=Path, required=True)
     usage.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "check":
-        return check_balance(args.status_file)
+        return check_balance(args.status_file, monitor=args.monitor)
     return usage_command(args.analytics_log, args.output)
 
 
