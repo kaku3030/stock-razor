@@ -132,7 +132,7 @@ def test_only_exception_class_is_projected_to_logs():
 
 def test_fixed_symbol_and_timeframe_budget_only():
     assert audit.SYMBOLS == ("159611.SZ", "518880.SH")
-    assert audit.PERIOD_COUNTS == {"15m": 96, "60m": 24, "1d": 40}
+    assert audit.PERIOD_COUNTS == {"5m": 144, "15m": 96, "60m": 24, "1d": 40}
 
 
 def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
@@ -163,3 +163,39 @@ def test_no_tiny_drift_in_strict_bar_is_counted_as_success():
     out=audit.assess_compact(c,"15m",clock("2026-10-15 10:02:00"))
     assert out["status"]=="PASS_RESEARCH_ONLY"
     assert out["tiny_vendor_float_drift_rows"]==0
+
+
+def test_local_5m_full_grid_research_only_float_18_of_24():
+    # Reproduces the real 2026-10-15 physical SDK morning sample (no prices).
+    morning = [clock for clock in audit.END_CLOCKS["5m"] if clock <= "11:30"]
+    assert len(morning) == 24
+    prior = ["2026-10-14 14:45", "2026-10-14 14:50",
+             "2026-10-14 14:55", "2026-10-14 15:00"]
+    today = ["2026-10-15 " + t for t in morning]
+    c = compact(prior + today)
+    for i in range(len(prior),len(prior)+18):
+        c["high"][i] = 1.054999999999
+    status = audit.assess_compact(c,"5m",clock("2026-10-15 11:35"))
+    assert status["status"] == "BLOCKED_UNVERIFIED"  # NOT strict
+    assert status["due_count"] == 24
+    assert status["due_labels_present"] == 6
+    assert status["due_labels_missing"] == 18
+    assert status["research_progress_status"] == "PASS_RESEARCH_ONLY"
+    assert status["research_due_labels_present"] == 24
+    assert status["research_due_labels_missing"] == 0
+    assert status["same_session_float_drift_rows"] == 18
+    assert status["exchange_bar_finality"] == "NOT_VERIFIED"
+
+
+def test_local_5m_invalid_off_tick_float_does_not_gain_research_pass():
+    labels = ["2026-10-14 14:45", "2026-10-14 14:50",
+              "2026-10-14 14:55","2026-10-14 15:00",
+              "2026-10-15 09:35"]
+    c=compact(labels)
+    c["open"][-1]=1.0504  # off 0.001 ETF tick lattice
+    c["high"][-1]=1.054999999999
+    got=audit.assess_compact(c,"5m",clock("2026-10-15 09:37"))
+    assert got["status"]=="BLOCKED_UNVERIFIED"
+    assert got["invalid_rows"]==1
+    assert got["research_progress_status"]=="BLOCKED_UNVERIFIED"
+    assert got["research_due_labels_missing"]==1

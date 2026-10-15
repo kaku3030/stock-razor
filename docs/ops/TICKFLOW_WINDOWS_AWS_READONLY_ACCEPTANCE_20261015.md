@@ -15,19 +15,24 @@ Run explicitly from the local repository:
 
 ```powershell
 python scripts/audit_tickflow_windows_readonly.py
+python scripts/audit_tickflow_windows_readonly.py --execute --timeframe 5m
 python scripts/audit_tickflow_windows_readonly.py --execute --timeframe 15m
 python scripts/audit_tickflow_windows_readonly.py --execute --timeframe all
 ```
 
 Without `--execute`, **zero** provider calls are made. The bounded actual
 read uses exactly `159611.SZ` and `518880.SH`, at most two REST Kline calls
-for each 15m, 60m and 1d timeframe (six total); `as_dataframe=False`,
+for each 5m, 15m, 60m and 1d timeframe (eight total); `as_dataframe=False`,
 `adjust=none`, `max_retries=0`, timeout 8s. It does **not** subscribe to
 WS, place orders, publish canonical data, or write cache/account balances.
 
 The output includes request milliseconds, bounded row counts, duplicate,
 invalid and future/forming row counts, and the number of Shanghai exchange
 session-grid due labels observed **after a 90-second publication grace**.
+The 5m route has TWO independent results: strict valid OHLC coverage and
+non-mutating TickFlow vendor-float research-only coverage (<=1e-5,
+ETF tick-grid valid). The latter never asserts exchange finality or
+source/Radar admission.
 All D1 labels on the current Shanghai date are quarantined from proven
 historical D1, even after 15:00 unless independent finality proof exists.
 Never use this research output as a trade signal.

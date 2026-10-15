@@ -1,7 +1,7 @@
 """Bounded Windows TickFlow K-line qualification; absolutely no trading/writes.
 
 Official TickFlow 0.1.25 REST only; secure user Windows Credential Manager.
-Only fixed ETFs and 15m/60m/1d. Reports enums/counts/latencies, never key,
+Only fixed ETFs and 5m/15m/60m/1d. Reports enums/counts/latencies, never key,
 quotes, raw provider rows, exact OHLC, account info, or exception messages.
 
 Run explicitly: python scripts/audit_tickflow_windows_readonly.py --execute
@@ -17,9 +17,17 @@ import re
 import time
 from zoneinfo import ZoneInfo
 
+from data_provider.cn_tickflow_research_cache import (
+    _vendor_ohlc_float_gap_bucket,
+    _vendor_etf_tick_lattice_shape_valid,
+)
+
 SYMBOLS = ("159611.SZ", "518880.SH")
-PERIOD_COUNTS = {"15m": 96, "60m": 24, "1d": 40}
+PERIOD_COUNTS = {"5m": 144, "15m": 96, "60m": 24, "1d": 40}
 END_CLOCKS = {
+    "5m": tuple(f"{m // 60:02d}:{m % 60:02d}" for m in
+                (*range(9 * 60 + 35, 11 * 60 + 31, 5),
+                 *range(13 * 60 + 5, 15 * 60 + 1, 5))),
     "15m": ("09:45", "10:00", "10:15", "10:30", "10:45", "11:00",
             "11:15", "11:30", "13:15", "13:30", "13:45", "14:00",
             "14:15", "14:30", "14:45", "15:00"),
@@ -81,6 +89,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 
     previous = None
     eligible = set()
+    research_eligible = set()
     future_or_forming = 0
     invalid_ohlc = 0
     tiny_vendor_float_drift_rows = 0
@@ -118,9 +127,19 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 if stamp > cutoff and timeframe != "1d":
                     future_or_forming += 1
                     continue
+                # Match the deployed collector's constrained *research-only*
+                # classification, including the mandatory ETF quote lattice.
+                # Neither native floats nor trading permissions are changed.
+                if (_vendor_ohlc_float_gap_bucket(*nums[:4])
+                        != "WITHIN_1E_MINUS_5"
+                        or not _vendor_etf_tick_lattice_shape_valid(*nums[:4])):
+                    invalid_ohlc += 1
+                    continue
                 tiny_vendor_float_drift_rows += 1
                 if stamp.date() == now_cn.date():
                     same_session_float_drift_rows += 1
+                    if timeframe in ("5m", "15m", "60m"):
+                        research_eligible.add(stamp)
                 continue
             if timeframe == "1d":
                 if stamp.date() >= now_cn.date():
@@ -133,6 +152,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 continue
             if stamp.date() == now_cn.date():
                 eligible.add(stamp)
+                research_eligible.add(stamp)
         except (TypeError, ValueError, KeyError, IndexError, OverflowError, OSError):
             invalid_ohlc += 1
 
@@ -154,6 +174,11 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         }
 
     missing = len(due - eligible)
+    research_missing = len(due - research_eligible)
+    research_progress_status = (
+        "PASS_RESEARCH_ONLY" if not research_missing and not invalid_ohlc
+        and not duplicate_or_reordered else "BLOCKED_UNVERIFIED"
+    )
     status = (
         "PASS_RESEARCH_ONLY"
         if not missing and not invalid_ohlc
@@ -163,7 +188,11 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     return {
         "status": status, "returned_rows": count,
         "due_count": len(due), "due_labels_present": len(due & eligible),
-        "due_labels_missing": missing, "future_or_forming_quarantined": future_or_forming,
+        "due_labels_missing": missing,
+        "research_due_labels_present": len(due & research_eligible),
+        "research_due_labels_missing": research_missing,
+        "research_progress_status": research_progress_status,
+        "future_or_forming_quarantined": future_or_forming,
         "invalid_rows": invalid_ohlc,
         "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
         "same_session_float_drift_rows": same_session_float_drift_rows,
@@ -174,8 +203,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--execute", action="store_true", help="Opt in to <=6 paid REST reads")
-    parser.add_argument("--timeframe", choices=("15m", "60m", "1d", "all"), default="all")
+    parser.add_argument("--execute", action="store_true", help="Opt in to <=8 bounded monthly-plan REST reads")
+    parser.add_argument("--timeframe", choices=("5m", "15m", "60m", "1d", "all"), default="all")
     args = parser.parse_args()
     if not args.execute:
         print(json.dumps({
