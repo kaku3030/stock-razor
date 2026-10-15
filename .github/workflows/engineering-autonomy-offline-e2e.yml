@@ -1,0 +1,41 @@
+name: Engineering Autonomy Offline E2E (no API)
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_engineering_coding_e2e_offline.py"
+      - "engineering_autonomy/coding_gate.py"
+      - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
+      - ".github/workflows/engineering-autonomy-offline-e2e.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tests/test_engineering_coding_e2e_offline.py"
+      - "engineering_autonomy/coding_gate.py"
+      - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
+      - ".github/workflows/engineering-autonomy-offline-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install pinned local test dependency only
+        run: python -m pip install --disable-pip-version-check pytest==8.4.2
+      - name: Prove capture, isolated verify, publication staging and fail-closed guards
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          DEEPSEEK_API_KEY: ""
+        run: python -m pytest --noconftest -q tests/test_engineering_coding_e2e_offline.py
