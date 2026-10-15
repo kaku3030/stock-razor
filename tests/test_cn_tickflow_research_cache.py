@@ -287,7 +287,16 @@ def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_p
 def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
     """Post-close progress reads keep due-grid visibility without finality."""
     current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
-    snap=build_observation(FakeClient(),now_utc=current,
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            if period=="15m":
+                df["high"]=1.5999999999999994
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
             repo_sha="d"*40,sequence=5)
     cache=tmp_path/"cache.json"
     atomic_publish(str(cache),snap)
@@ -479,7 +488,7 @@ def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_resear
     assert hist["live_trade"] is False
     strict=read_cn_tickflow_research_data("159611.SZ","15m",
          limit=1,path=str(p),now_utc=now,research_mode="session_progress")
-    assert strict["ok"] is False and strict["status"]=="INVALID_CACHE"
+    assert strict["ok"] is True and strict["status"]=="PASS_RESEARCH_ONLY"
 
 
 def test_intraday_vendor_float_precision_research_only_remains_unclosed():
