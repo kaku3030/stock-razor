@@ -139,3 +139,27 @@ def test_duplicate_forming_bucket_or_wrong_timeframe_cannot_promote():
     assert report["status"] == "UNKNOWN"
     assert report["timeframes"]["15m"]["current_forming_excluded_count"] == 0
     assert report["timeframes"]["15m"]["invalid_bar_starts"]
+
+
+def test_postclose_historical_terminal_minute_does_not_prove_live_closure():
+    as_of = datetime(2026, 10, 9, 16, 31, tzinfo=ET)
+    start = datetime(2026, 10, 9, 9, 30, tzinfo=ET)
+    bars_15m = [_bar(start + timedelta(minutes=i), 15) for i in range(0, 390, 15)]
+    bars_1h = [
+        _bar(start + timedelta(minutes=i), min(60, 390 - i))
+        for i in range(0, 390, 60)
+    ]
+    bars_15m[-1] = replace(
+        bars_15m[-1], quality_flags=("HISTORICAL_QUERY",),
+    )
+    bars_1h[-1] = replace(
+        bars_1h[-1], quality_flags=("HISTORICAL_QUERY",),
+    )
+    result = qualify_us_current_session_intraday_closure(
+        {"15m": bars_15m, "1h": bars_1h}, as_of=as_of
+    )
+    assert result["status"] == "UNKNOWN"
+    assert result["bar_closure_promotion_authorized"] is False
+    for frame in ("15m", "1h"):
+        assert result["timeframes"][frame]["status"] == "UNKNOWN"
+        assert result["timeframes"][frame]["invalid_bar_starts"]
