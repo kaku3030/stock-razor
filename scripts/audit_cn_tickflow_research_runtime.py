@@ -152,6 +152,23 @@ def blocked_status(failure_class: object) -> str:
     )
 
 
+
+def safe_failure_stage(stage: object) -> str:
+    """Mirror the worker's bounded per-symbol 15m/60m/5m/1d stage set.
+
+    Supplemental 5m/1d are requested by the deployed worker even though the
+    admission audit only qualifies 15m/60m. Do not silently erase their
+    failed-stage evidence; never allow an arbitrary provider string through.
+    """
+    allowed={
+        f"S{i}_{period}_{action}"
+        for i in range(2)
+        for period in ("15M", "60M", "5M", "1D")
+        for action in ("FETCH", "NORMALIZE")
+    }
+    return stage if isinstance(stage, str) and stage in allowed else "UNKNOWN"
+
+
 def shadow_compare_eastmoney(tickflow: object, reference: object, *,
                              now_utc: datetime) -> dict:
     """Private cached-price parity: only categorical counts may leave EC2.
@@ -676,11 +693,7 @@ def sample():
                     )
         if data.get("status")=="BLOCKED":
             result["status"]=blocked_status(data.get("failure_class"))
-            stage=data.get("failure_stage")
-            allowed={f"S{i}_{period}_{action}"
-                for i in range(2) for period in ("15M","60M")
-                for action in ("FETCH","NORMALIZE")}
-            result["failure_stage"]=stage if isinstance(stage,str) and stage in allowed else "UNKNOWN"
+            result["failure_stage"]=safe_failure_stage(data.get("failure_stage"))
             reason=data.get("failure_reason")
             allowed_reasons={
                 "UNSUPPORTED_PERIOD","CLOCK_MISSING_TZ",
