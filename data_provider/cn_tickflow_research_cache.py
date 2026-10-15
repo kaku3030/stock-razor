@@ -539,7 +539,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                                          now.astimezone(CN).minute)<(15,2)
                                     and bar_stamp.astimezone(timezone.utc)
                                         <= now-timedelta(seconds=90))
-                            )))
+                            ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
             safe.append({"label":label,**numerical,"amount_availability":availability,
