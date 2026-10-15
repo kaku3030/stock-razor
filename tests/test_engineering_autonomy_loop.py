@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from engineering_autonomy.feedback_hub import FeedbackHub
 from engineering_autonomy.loop import ALLOWED_COMMANDS, load_queue, load_state, run_queue
 
 
@@ -17,6 +18,10 @@ def queue_file(tmp_path, cost_units=1):
             "cost_units": cost_units,
         }]
     }), encoding="utf-8")
+    # Offline fixtures explicitly provision their persistent store before
+    # invoking run_queue; production must never create it implicitly.
+    feedback = FeedbackHub(tmp_path / "feedback.sqlite3")
+    feedback.close()
     return path
 
 
