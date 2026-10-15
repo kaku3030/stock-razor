@@ -18,6 +18,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from engineering_autonomy.deepseek_budget import fetch_balance
+
 OPENAI_API = "https://api.openai.com/v1"
 COSTS = "/organization/costs"
 USAGE = "/organization/usage/completions"
@@ -131,7 +133,8 @@ def _usd(v: Decimal) -> str:
     return str(v.quantize(Decimal("0.01")))
 
 
-def evaluate(now: datetime, *, env: dict[str, str], fetch=_get_json) -> tuple[list[str], list[str]]:
+def evaluate(now: datetime, *, env: dict[str, str], fetch=_get_json,
+             deepseek_fetch=fetch_balance) -> tuple[list[str], list[str]]:
     """Return (safe summary lines, alert lines). No trading/secret side effects."""
     if now.tzinfo is None:
         raise ValueError("timezone_required")
@@ -190,7 +193,57 @@ def evaluate(now: datetime, *, env: dict[str, str], fetch=_get_json) -> tuple[li
         reminder = renewal_alert(renewal, today)
         if reminder:
             alerts.append(reminder)
-    report.append("OpenD cost/expiry watch=EXCLUDED (user says free)")
+    # Official DeepSeek wallet balance is authoritative; API generation is NOT used.
+    deepseek_key = env.get("DEEPSEEK_API_KEY", "")
+    if deepseek_key:
+        try:
+            ds_status, ds_currencies = deepseek_fetch(deepseek_key)
+            if ds_status not in {"OK", "LOW", "EMPTY", "UNAVAILABLE"}:
+                raise ValueError("unrecognized_wallet_status")
+            report.append("DeepSeek official wallet=" + ds_status
+                          + "; currencies=" + ",".join(ds_currencies)
+                          + "; Aider token counts=PER_RUN_ARTIFACT_ONLY")
+            if ds_status in {"LOW", "EMPTY", "UNAVAILABLE"}:
+                alerts.append("DeepSeek official wallet " + ds_status
+                              + " — check/recharge developer console; paid coding blocked")
+        except (ValueError, TypeError, KeyError, OSError, urllib.error.URLError,
+                TimeoutError, UnicodeError):
+            report.append("DeepSeek official wallet=UNKNOWN (API check unavailable)")
+            if today.weekday() == 0:
+                alerts.append("DeepSeek wallet check unavailable; cannot assert zero balance")
+    else:
+        report.append("DeepSeek official wallet=UNKNOWN (DEEPSEEK_API_KEY not configured)")
+        if today.weekday() == 0:
+            alerts.append("Configure DEEPSEEK_API_KEY for read-only official balance monitoring")
+
+    # AWS Cost Explorer returns metered costs, NOT wallet cash or credit remaining.
+    aws_status = env.get("AWS_COST_STATUS", "UNKNOWN")
+    aws_budget = optional_money(env.get("AWS_MONTHLY_BUDGET_USD"))
+    if aws_status == "OK":
+        aws_amount = optional_money(env.get("AWS_COST_MTD_USD"))
+        if aws_amount is None or env.get("AWS_COST_ESTIMATED") not in {"true", "false"}:
+            raise ValueError("incomplete_aws_cost_evidence")
+        qualifier = "ESTIMATED" if env["AWS_COST_ESTIMATED"] == "true" else "PROVISIONAL"
+        report.append("AWS Cost Explorer MTD unblended spend $" + _usd(aws_amount)
+                      + " (" + qualifier + ", not exact invoice / wallet / credits)")
+        if aws_budget is not None:
+            report.append("AWS owner-defined monthly budget $"
+                          + _usd(aws_budget) + "; allowance remaining $"
+                          + _usd(max(Decimal("0"), aws_budget - aws_amount))
+                          + " (not actual prepaid credit)")
+            if aws_budget == 0 or aws_amount >= aws_budget * Decimal("0.8"):
+                alerts.append("AWS Cost Explorer MTD spend >=80% of owner-defined budget")
+        elif today.weekday() == 0:
+            alerts.append("Set AWS_MONTHLY_BUDGET_USD to enable AWS 80% cost alerts")
+    else:
+        report.append("AWS Cost Explorer=UNKNOWN (" +
+                      ("read-only access not authorized/available"
+                       if aws_status == "NOT_AUTHORIZED_OR_UNAVAILABLE" else
+                       "no verified Cost Explorer evidence") + ")")
+        if today.weekday() == 0:
+            alerts.append("AWS billing cost UNKNOWN — review CE GetCostAndUsage permissions")
+    report.append("AWS prepaid credit/remaining actual balance=UNKNOWN (not Cost Explorer data)")
+    report.append("OpenD cost/expiry watch=EXCLUDED (user reports free service)")
     return report, alerts
 
 

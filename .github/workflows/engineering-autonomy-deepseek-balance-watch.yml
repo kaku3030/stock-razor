@@ -1,8 +1,6 @@
-name: Engineering Autonomy DeepSeek Balance Watch (no model calls)
+name: Engineering Autonomy DeepSeek Balance DIAGNOSTIC (manual only)
 
 on:
-  schedule:
-    - cron: '17 */12 * * *'
   workflow_dispatch:
     inputs:
       test_discord_delivery:

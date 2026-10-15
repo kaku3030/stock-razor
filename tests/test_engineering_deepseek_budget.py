@@ -192,7 +192,9 @@ def test_discord_reminder_handles_healthy_unknown_and_missing_channel():
 def test_workflow_separates_balance_secrets_and_discord_notification():
     path = Path(".github/workflows/engineering-autonomy-deepseek-balance-watch.yml")
     watch = path.read_text(encoding="utf-8")
-    assert "cron: '17 */12 * * *'" in watch
+    assert "schedule:" not in watch
+    unified = Path(".github/workflows/provider-billing-renewal-watch.yml").read_text(encoding="utf-8")
+    assert "cron: '20 1 * * *'" in unified
     assert "issues: write" not in watch
     assert "contents: read" in watch
     assert "persist-credentials: false" in watch

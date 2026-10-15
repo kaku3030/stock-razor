@@ -1,23 +1,93 @@
-# STOCK RAZOR Provider Billing & Renewal Watch
+# STOCK RAZOR — Unified Provider Billing & Renewal Watch
 
-**Status:** Cloud GitHub scheduled watcher / read-only / no trading. No dependency on Windows staying awake.
+**Owner: Engineering Autonomy / Billing Monitoring**. This is the single
+cloud-run provider cost and renewal notification entrypoint. The main/trading
+windows should not create parallel billing schedulers. No user PC is needed.
 
-## Coverage and exact meanings
+## One location / one cadence
 
-- **OpenAI API**: official Admin organization Costs and Completions Usage **GET** endpoints; UTC month-to-date USD spend, request count, input/output tokens. Requires a separate **organization Admin API key** as GitHub Actions repository secret `OPENAI_ADMIN_KEY`. A normal OpenAI project API key is not sufficient for these endpoints. No chat prompt/completion is sent, so this watcher makes no paid AI-generation requests.
-- **Actual OpenAI prepaid remaining credit:** **UNKNOWN** — Costs API reports charges, not the authoritative current prepaid balance. It cannot reveal automatic credit additions, refunds, timing/expirations. Do not label budget remainder as actual account balance. If the owner explicitly sets BOTH `OPENAI_CREDIT_SNAPSHOT_USD` and `OPENAI_CREDIT_SNAPSHOT_DATE_UTC` (UTC midnight snapshot), monitor reports **PREPAID ESTIMATE** = owner-provided snapshot - since-snapshot Costs, never authoritative. Reset both inputs after each top-up. The real balance is at the OpenAI API billing dashboard. A configured monthly budget `OPENAI_MONTHLY_BUDGET_USD` is also the owner's limit for alerts, not a billable credit balance.
-- **TickFlow Expert:** monthly plan with **date** warning only. Set GitHub Actions variable `TICKFLOW_RENEWAL_DATE` as **next renewal / coverage deadline YYYY-MM-DD**. Alerts at 30, 14, 7, 3, 1, 0 days and overdue (on first and weekly overdue day). The program **never guesses one month after purchase**, never assumes a renewal succeeded, never reads an API balance or triggers any payment.
-- **OpenD:** explicitly excluded (no paid subscription to track).
-- **DeepSeek:** outside this V0.1 request; its separate balance/usage guard is not changed.
+- GitHub Actions: `.github/workflows/provider-billing-renewal-watch.yml`
+- Automatic check once daily at **01:20 UTC / 10:20 JST**. Explicit
+  `workflow_dispatch` offers offline dry-run (default) and real read-only
+  `dry_run=false` report.
+- On Mondays the owner receives an informational **unified report**. Threshold
+  warnings can send on any day.
+- Preferred existing channel: `DISCORD_RADAR_WEBHOOK_URL`, then
+  `DISCORD_WEBHOOK_URL`, then existing `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_CHAT_ID` as fallback. GitHub Actions outbound Discord **HTTP 403**
+  was independently observed; a configured secret does not prove delivery.
+  Telegram may be the only working channel until the network/provider issue is
+  resolved. This code does not create or reveal any webhook/token.
+- Do **not** publish raw account balances or AWS billing data in a publicly
+  accessible GitHub Action log or commit. Unified financial detail is sent only
+  to owner-configured private alert channels.
 
-## Live cloud setup
+## Provider coverage / evidence quality
 
-The workflow is `.github/workflows/provider-billing-renewal-watch.yml`: GitHub scheduler daily at **01:20 UTC / 10:20 JST**; each Monday sends a usage/renewal summary, and any day sends threshold warnings. Uses existing GitHub Actions secret `DISCORD_RADAR_WEBHOOK_URL` to send to the user's Discord alert channel. Two existing Discord Actions secrets are tried once each; GitHub Actions' outbound Discord delivery previously returned sanitized HTTP 403. If both fail, the script tries only the already-configured `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` GitHub Actions secrets as a last-resort owner notification path. The fallback never reveals credentials, destination IDs or provider response bodies. A passing CI job / workflow is required to confirm actual phone delivery; absent tokens or failed Telegram transport keeps the workflow red. No new Discord destination or stored plaintext webhook. Explicit manual dispatch has `dry_run=true` as the safe default. No spend auto-recharge, no trading, no extra paid vendor polling. Outside of the configured Admin key and date, OpenAI spend/tokens and TickFlow expiry **remain UNKNOWN** and a weekly configuration warning is emitted.
+| Service | Evidence | What is NOT known |
+|---|---|---|
+| OpenAI API | Official org Admin Costs/Usage **GET**: UTC month-to-date spend, requests, input/output tokens. Requires `OPENAI_ADMIN_KEY`. | Actual prepaid balance. The Costs API is not a wallet balance endpoint. |
+| DeepSeek / Engineering Autonomy | Official **GET /user/balance** reports `OK/LOW/EMPTY/UNAVAILABLE`, using the same `DEEPSEEK_API_KEY` as Coding V1.1. Every request is read-only and uses **no generation tokens**. Aider's input/output tokens and rate-based USD estimates remain a **separate per-run** artifact in Coding V1.1, not 30-day authoritative provider billing. | The unified wallet checker does not provide full historical usage/tokens or an actual billed-total ledger. The DeepSeek developer console shows these separately. |
+| AWS | Dedicated OIDC AWS job queries **Cost Explorer month-to-date UnblendedCost** in USD, reports provisional/estimated status; optional user-defined monthly budget alerts when spend reaches 80%. | Actual credits, Free Tier balance, remaining prepaid funds, finalized invoice. These cannot be inferred from Cost Explorer unblended spend. |
+| TickFlow Expert | `TICKFLOW_RENEWAL_DATE`: 30/14/7/3/1/0 days before renewal and overdue; monthly subscription, no API wallet. | No date means **UNKNOWN**, not a guessed next month. |
+| OpenD | Confirmed as free **in the user's current configuration**; no balance or paid expiry monitoring. | Cloud availability/connectivity is tracked by the separate OpenD market-data acceptance workflows. |
 
-Secrets and variables must be added to GitHub repository **Settings → Secrets and variables → Actions**; do not paste API keys into chats, .env, PR comments or public code. The schedule cannot be assumed operating until the PR is merged, daily cron has triggered and a real Discord delivery run has passed.
+DeepSeek default prepayment alerts: CNY <=10 / USD <=2 across wallets (one usable
+currency is sufficient; a zero USD bucket with CNY credit is not "empty").
+Its **paid coding safety gate** remains in Coding V1.1 and blocks on
+LOW/EMPTY/UNAVAILABLE/UNKNOWN. The unified monitor does not run Aider.
+A 503 or unreadable wallet = UNKNOWN, never "zero balance".
 
-## Safety and operations
+AWS requires the existing GitHub OIDC `StockRazorGitHubOpsRole` and
+`ce:GetCostAndUsage` access, with no new long-lived AWS keys. Only the
+**isolated AWS cost job** receives OIDC write permission; OpenAI/DeepSeek keys
+are only present in the separate unified report job. If AWS Cost Explorer
+denies permission or is disabled, report **UNKNOWN / NOT_AUTHORIZED**; do not
+silently claim cost $0. No IAM or Cost Explorer subscription toggles are made.
 
-Cloud Actions uses `contents: read`, no AWS access, broker access, orders, or account mutation. Vendor error HTTP bodies and provider keys are not printed; limited fixed codes only. Notification HTTP errors cause nonzero workflow failure. No watchdog may declare source/currentness/Radar admission; they remain BLOCKED independently.
+**AWS paid-API opt-in (disabled by default):** AWS Cost Explorer
+`GetCostAndUsage` incurs **US$0.01 per request** for the primary billing
+view (AWS official pricing). Querying once a day is approximately US$0.30
+per 30-day month before taxes. This integration does **not** perform that
+request until the owner explicitly sets repository Action variable
+`AWS_COST_EXPLORER_ENABLED=true`. Omitted / false leaves AWS monthly
+usage=UNKNOWN and never assumes $0. Setting this flag is permission to
+incur that small API usage charge; the owner must approve it separately.
+`AWS_MONTHLY_BUDGET_USD` is a **different** variable that controls the
+user-defined spend-alert threshold, not the API opt-in.
 
-Run offline: `python scripts/provider_billing_renewal_watch.py --dry-run` and `python -m pytest -q tests/test_provider_billing_renewal_watch.py`.
+## Configuration
+
+GitHub Actions repository secrets (already available where configured):
+
+- `DEEPSEEK_API_KEY` — balance GET and the independent manual Coding V1.1.
+- `OPENAI_ADMIN_KEY` — required for org Costs and Usage; normal project
+  `OPENAI_API_KEY` is **not** sufficient. No admin secret = UNKNOWN.
+- `DISCORD_RADAR_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`,
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — existing notification
+  fallbacks, never include values in PRs or messages.
+
+Repository **Variables**:
+
+- `TICKFLOW_RENEWAL_DATE` — YYYY-MM-DD actual next renewal date.
+- `OPENAI_MONTHLY_BUDGET_USD` — alert when 80% of owner-defined spend limit.
+- `AWS_COST_EXPLORER_ENABLED` — optional explicit paid-query opt-in; default false.
+- `AWS_MONTHLY_BUDGET_USD` — optional, same 80% alert. Without it actual
+  AWS spend may be shown but the budget *remaining* is UNKNOWN.
+- `OPENAI_CREDIT_SNAPSHOT_USD` and `OPENAI_CREDIT_SNAPSHOT_DATE_UTC` —
+  optional owner-entered **estimate**, never authoritative balance.
+
+No auto-recharge, AWS configuration change, new IAM grants, API generation,
+Aider scheduling, deployment, or trading. `RADAR_ADMISSION=BLOCKED` /
+`LIVE_TRADE=NO` remain unaffected.
+
+## Testing and exception paths
+
+- Cloud tests: `python -m pytest -q tests/test_provider_billing_renewal_watch.py tests/test_unified_provider_billing_watch.py`.
+- Provider dry-run: `python scripts/provider_billing_renewal_watch.py --dry-run`
+  makes **no network/API calls** and does not send any notifications.
+- `engineering-autonomy-deepseek-balance-watch.yml` is retained as an
+  **explicitly manual diagnostic only** (no separate 12-hour schedule).
+- Every financial amount is sourced from the vendor API or an explicitly
+  user-entered budget. No fabricated balance, renewal date, exchange rate,
+  service fee, or currency conversion.

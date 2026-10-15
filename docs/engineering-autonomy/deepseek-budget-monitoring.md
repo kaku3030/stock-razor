@@ -20,24 +20,24 @@ into an issue, chat, or source file.
   The raw JSON response, precise balance, token, and Authorization header
   are never written to GitHub logs, issues, cache or artifacts.
 
-## Recharge alerts (Discord, not ChatGPT tasks)
+## Unified recharge alerts (not ChatGPT tasks)
 
-- The separate **Engineering Autonomy DeepSeek Balance Watch (no model calls)**
-  workflow checks balance every 12 hours and on manual dispatch. No LLM tokens.
-- The repository currently has **GitHub Issues disabled**, so notifications use
-  Discord instead. Store your Discord channel's webhook URL in GitHub Actions
-  repository secret `DISCORD_WEBHOOK_URL`; do not paste it into code.
-  Optionally set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
-  numeric Discord user ID to get a direct mention. Otherwise enable channel
-  notifications in Discord to see alerts on your phone.
-- Only categorical LOW / EMPTY / UNAVAILABLE / UNKNOWN status is sent.
-  `UNKNOWN` **does not** mean zero balance and sends a distinct monitor-error
-  warning. The DeepSeek key and exact wallet amounts never leave the balance
-  checker. If the webhook is unconfigured, the alert step fails visibly,
-  not a false claim that a notification was delivered.
-- While low, the watcher reminds you at most twice per day (every 12 hours).
-  No auto-refills or secret/IAM changes. It is a monitor-only schedule, **not**
-  an autonomous coding or trading schedule.
+The single scheduled cost/expiry report is
+`.github/workflows/provider-billing-renewal-watch.yml`, every day at
+**10:20 JST**. It combines **DeepSeek** official funds, **AWS** estimated
+Cost Explorer spend, **OpenAI** usage, **TickFlow** renewal date and
+**OpenD** (free configuration). The DeepSeek-specific Balance Watch workflow
+is now **manual-diagnostic only** and must not run another 12-hour schedule.
+
+The shared provider watch uses pre-existing owner-configured
+`DISCORD_RADAR_WEBHOOK_URL` / `DISCORD_WEBHOOK_URL` and Telegram fallback
+secrets. GitHub cloud runners previously received Discord HTTP 403, so real
+delivery must be checked, and a configured webhook is not delivery proof.
+
+If DeepSeek is LOW/EMPTY/UNAVAILABLE, the unified monitor alerts and Coding
+V1.1 separately blocks further paid generation. On API 503/timeout it reports
+UNKNOWN and does not call it zero or automatically recharge. The official
+wallet amount, key, and raw response never enter public Actions logs.
 
 ## Tokens and spending
 
@@ -60,24 +60,20 @@ into an issue, chat, or source file.
 
 ## Operator workflow
 
-1. Create a Discord webhook in your STOCK RAZOR alerts channel; set its URL
-   as repository Actions secret `DISCORD_WEBHOOK_URL`.
-2. Optional: set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
-   numeric Discord user ID so Discord can mention you. Do not share secrets
-   in chat.
-3. Find `Actions → Engineering Autonomy DeepSeek Balance Watch (no model calls)`
-   to run a manual **GET-only** balance check, or let the 12-hour check run.
-4. On a Discord LOW/EMPTY/UNAVAILABLE alert, inspect or top up the DeepSeek
-   developer console. No payment is triggered automatically.
-5. To verify the Discord webhook **without pretending balance is low**, run
-   `Actions → Engineering Autonomy DeepSeek Balance Watch (no model calls)`
-   manually on `main` with input `test_discord_delivery=true`. This performs
-   the usual no-token official balance GET and sends **one** clearly-labelled
-   delivery test message; scheduled runs never send test messages.
-6. After a confirmed Coding V1.1 attempt, inspect its `generate` job summary
-   or `autonomy-deepseek-usage` sanitized artifact for request/token counters.
-   The native provider probe and the coding workflow remain independently
-   manually confirmed; low/unknown balance still fails closed.
+1. Open `Actions → STOCK RAZOR Provider Billing & Renewal Watch`. Its
+   scheduled 10:20 JST run is the **single central monitor**.
+2. A manual run defaults to `dry_run=true` (no provider calls, no message).
+   A user-confirmed `dry_run=false` queries read-only sources and sends a
+   sanitized report through the existing notification fallback chain.
+3. If the DeepSeek wallet is LOW/EMPTY, top up via the DeepSeek developer
+   console. The next daily check confirms whether funds recovered.
+4. In Coding V1.1, see the `generate` step summary and
+   `autonomy-deepseek-usage` sanitized artifact for **per-run** Aider token
+   counts and estimated cost (30-day retention). The unified billing watcher
+   cannot assert complete historical DeepSeek token spend.
+5. The dedicated DeepSeek Balance diagnostic workflow remains available
+   manually (including a clearly labelled Discord-only test), but is not an
+   extra recurring billing schedule.
 
 Safety: no auto-run of the Coding V1.1 workflow, no AI PR auto-merge, no
 deployment/IAM change, and no live trading permissions.
