@@ -450,7 +450,7 @@ def test_cn_same_day_daily_date_is_quarantined_before_d1_analysis(observed):
     daily = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
     original_last = daily[-1]["label"]
     today = dict(daily[-1])
-    today.update(label="2026-10-15", provider_label_raw="20261015", close=999999.9)
+    today.update(label="2026-10-15", provider_label_raw="20261015", close=999999.9, high=1000000.0)
     daily.append(today)
     result = evaluate_cn_observation_payload(payload)
     assert result["status"] == "PASS"
@@ -478,7 +478,7 @@ def test_cn_future_daily_date_is_rejected_as_technical_input():
     daily = payload["symbols"]["159611"]["timeframes"]["1d"]["rows"]
     previous_label = daily[-1]["label"]
     future = dict(daily[-1])
-    future.update(label="2026-10-16", provider_label_raw="20261016", close=888888.8)
+    future.update(label="2026-10-16", provider_label_raw="20261016", close=888888.8, high=888889.0)
     daily.append(future)
     result = evaluate_cn_observation_payload(payload)
     assert result["status"] == "PASS"
