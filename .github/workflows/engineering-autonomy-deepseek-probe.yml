@@ -1,0 +1,40 @@
+name: Engineering Autonomy DeepSeek Provider Probe (one-shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "I authorize exactly one low-token DeepSeek-flash API probe (no coding)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engineering-autonomy-deepseek-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.ref == 'refs/heads/main' && inputs.confirm == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Single direct DeepSeek-flash HTTP request (no Aider or LiteLLM)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # At most one tiny completion; no retries, raw payload logs or token echo.
+          timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe
