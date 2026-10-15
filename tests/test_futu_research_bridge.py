@@ -127,3 +127,45 @@ def test_bridge_requires_timezone_aware_received_at():
             _closed_minute(),
             received_at=datetime(2026, 10, 5, 14, 52, 2),
         )
+
+
+@pytest.mark.parametrize("end_label", [
+    "2026-10-05 09:30:00", # premarket cannot enter regular cache
+    "2026-10-05 16:01:00", # afterhours cannot enter regular cache
+    "2026-01-05 08:00:00", # winter premarket with DST-aware binding
+    "2026-01-05 20:00:00", # winter late session
+])
+def test_extended_hour_minute_is_never_mislabeled_regular(end_label):
+    from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
+
+    minute = FormingMinuteBar(
+        symbol="US.AMD",
+        start=datetime.strptime(end_label, "%Y-%m-%d %H:%M:%S"),
+        open=100, high=101, low=99, close=100, volume=5,
+        turnover=500, is_closed=True,
+    )
+    with pytest.raises(ValueError, match="US_RTH_END_LABEL_REQUIRED"):
+        closed_futu_minute_to_bar(
+            minute,
+            received_at=datetime(2026, 10, 5, 21, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.parametrize("end_label", [
+    "2026-10-05 09:31:00", "2026-10-05 16:00:00",
+])
+def test_rth_first_and_last_interval_end_labels_remain_valid(end_label):
+    from src.services.live_feed.futu_k1m_forming_accumulator import FormingMinuteBar
+
+    minute = FormingMinuteBar(
+        symbol="US.AMD",
+        start=datetime.strptime(end_label, "%Y-%m-%d %H:%M:%S"),
+        open=100, high=101, low=99, close=100, volume=5,
+        turnover=500, is_closed=True,
+    )
+    bar = closed_futu_minute_to_bar(
+        minute,
+        received_at=datetime(2026, 10, 5, 21, tzinfo=timezone.utc),
+    )
+    assert bar.session == "regular"
+    assert bar.is_closed is True
