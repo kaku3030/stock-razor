@@ -53,6 +53,12 @@ The 5-symbol/1-call legacy pilot in
 strict separate pilot. The new capacity plan addresses future scaling
 without weakening its existing billing guard.
 
+## Bounded AWS observer cadence candidate
+
+The current isolated worker performs eight bounded single-symbol Kline requests per successful cycle (two ETFs × 5m/15m/60m/D1). A 15-second in-session cadence caps this worker at 32 requests/minute. If a Windows 8-request half-hour audit happens in the same minute, the known combined burst is at most 40 requests/minute, below the provisional 90 single-symbol-minute requests/minute planning target derived from the screenshot. The advertised plan values and available account quota remain unverified; manual clients and any additional SDK calls are outside this bound.
+
+This cadence change retains zero SDK retries and 300-second failure/out-of-session backoff. It is a code/CI candidate only: no AWS deployment, account quota reservation, or production entitlement is implied. A shared AWS+Windows rate limiter is still required before broadening polling or symbol coverage.
+
 ## Implementation backlog
 
 1. Use confirmed package capability efficiently: 15m and 60m complete

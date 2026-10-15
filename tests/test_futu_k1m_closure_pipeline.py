@@ -286,3 +286,34 @@ def test_closed_queue_limit_must_be_positive():
         assert "max_pending_closed" in str(exc)
     else:
         raise AssertionError("non-positive closed queue limit must fail")
+
+
+def test_premarket_and_afterhours_are_ignored_not_counted_as_bad_rth_bars():
+    pipeline = FutuK1MClosurePipeline()
+
+    # Provider premarket prints are valid observations but unqualified for
+    # this RTH-only K1M research cache.
+    assert pipeline.consume_event(event(row("2026-10-05 08:00:00"))).status == "FORMING"
+    ignored = pipeline.consume_event(event(row("2026-10-05 08:01:00")))
+    assert ignored.status == "IGNORED"
+    assert ignored.reason == "EXTENDED_SESSION_NOT_RTH_QUALIFIED"
+    assert pipeline.drain_closed() == ()
+
+    # First regular bar is only accepted after a later end-label.
+    assert pipeline.consume_event(event(row("2026-10-05 09:31:00"))).status == "IGNORED"
+    assert pipeline.consume_event(event(row("2026-10-05 09:32:00"))).status == "CLOSED_QUEUED"
+    morning_bars = pipeline.drain_closed()
+    assert len(morning_bars) == 1
+    assert morning_bars[0].session == "regular"
+
+    assert pipeline.consume_event(event(row("2026-10-05 16:00:00"))).status == "CLOSED_QUEUED"
+    assert pipeline.consume_event(event(row("2026-10-05 16:01:00"))).status == "CLOSED_QUEUED"
+    last_regular_bar = pipeline.drain_closed()[-1]
+    assert last_regular_bar.bar_start == datetime(2026, 10, 5, 19, 59, tzinfo=timezone.utc)
+    assert last_regular_bar.bar_end == datetime(2026, 10, 5, 20, 0, tzinfo=timezone.utc)
+
+    ignored = pipeline.consume_event(event(row("2026-10-05 16:02:00")))
+    assert ignored.status == "IGNORED"
+    assert ignored.reason == "EXTENDED_SESSION_NOT_RTH_QUALIFIED"
+    assert pipeline.diagnostics()["blocked_count"] == 0
+    assert pipeline.drain_closed() == ()

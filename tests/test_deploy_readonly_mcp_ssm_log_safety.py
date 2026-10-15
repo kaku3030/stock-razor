@@ -3,6 +3,8 @@
 from pathlib import Path
 
 import yaml
+import pytest
+import subprocess
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/deploy-readonly-mcp.yml"
@@ -60,3 +62,52 @@ def test_mcp_deploy_is_owner_only_and_auto_triggers_on_bounded_main_runtime_chan
     assert "aws ssm send-command" in text
     assert "git rev-parse HEAD" in text
     assert "trade:write" not in text
+
+
+@pytest.mark.parametrize("error,expected", [
+    ("ContextManagerError: event log version sequence is invalid", "CONTEXT_EVENT_SEQUENCE_INVALID"),
+    ("ContextManagerError: event log integrity check failed", "CONTEXT_EVENT_INTEGRITY_INVALID"),
+    ("ContextManagerError: event log fields are invalid", "CONTEXT_EVENT_SCHEMA_INVALID"),
+    ("ModuleNotFoundError: private-module", "PYTHON_DEPENDENCY_MISSING"),
+    ("PermissionError: private-path", "FILE_PERMISSION_BLOCKED"),
+    ("unknown provider error", "UNCLASSIFIED"),
+])
+def test_remote_install_failure_publishes_only_fixed_diagnosis(tmp_path, error, expected):
+    document = yaml.safe_load(WORKFLOW.read_text())
+    script = next(s["run"] for s in document["jobs"]["deploy"]["steps"] if s.get("id") == "deploy")
+    block = script.split("diagnosis=UNCLASSIFIED", 1)[1].split("echo 'READONLY_MCP_INSTALL=BLOCKED'", 1)[0]
+    # Reproduce the one unquoted-heredoc expansion before execution on EC2.
+    block = ("diagnosis=UNCLASSIFIED" + block).replace("\\$", "$")
+    (tmp_path / "install.err").write_text("private-host secret-value\n" + error)
+    result = subprocess.run(["bash", "-eu", "-c", 'stage="$1"\n' + block, "probe", str(tmp_path)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert result.stdout.strip() == "READONLY_MCP_INSTALL_FAILURE=" + expected
+    assert "secret-value" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("remote,expected", [
+    ("private-host secret-value\nREADONLY_MCP_INSTALL_FAILURE=CONTEXT_EVENT_SEQUENCE_INVALID\n", "CONTEXT_EVENT_SEQUENCE_INVALID"),
+    ("READONLY_MCP_INSTALL_FAILURE=private-host secret-value\n", "UNCLASSIFIED"),
+])
+def test_runner_failure_output_rejects_non_allowlisted_remote_content(remote, expected):
+    script = _wait_script().split('if [ "$status" != "Success" ]; then', 1)[1].split("exit 1", 1)[0]
+    prelude = 'aws(){ printf "%s" "$REMOTE_CONTENT"; }; export -f aws\nCOMMAND_ID=fixture\nTARGET_INSTANCE_ID=fixture\n'
+    import os
+    result = subprocess.run(["bash", "-eu", "-c", prelude + script], env={**os.environ, "REMOTE_CONTENT": remote}, capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert "READONLY_MCP_INSTALL_FAILURE=" + expected in result.stdout
+    assert "secret-value" not in result.stdout + result.stderr
+
+
+def test_context_sequence_repair_requires_explicit_manual_input_and_safe_evidence():
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    triggers = document.get("on", document.get(True, {}))
+    option = triggers["workflow_dispatch"]["inputs"]["repair_context_event_sequence"]
+    assert option["type"] == "boolean" and option["default"] is False
+    dispatch = next(s for s in document["jobs"]["deploy"]["steps"] if s.get("id") == "deploy")
+    assert "github.event_name == 'workflow_dispatch'" in dispatch["env"]["REPAIR_CONTEXT_EVENT_SEQUENCE"]
+    assert "CONTEXT_EVENT_SEQUENCE_REPAIR=PASS" in _wait_script()
+    installer = (WORKFLOW.parents[2] / "ops/aws/install_readonly_mcp.sh").read_text()
+    assert '${REPAIR_CONTEXT_EVENT_SEQUENCE:-false}' in installer
+    assert '--execute --expected-events-sha256 "$expected_events_sha256"' in installer
+    assert installer.index("repair_context_event_sequence.py") < installer.index("systemctl restart")

@@ -88,7 +88,27 @@ def _interval(now: datetime, failure: bool=False) -> int:
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
     # Read-only REST, 8 bounded Kline requests per cadence, not ticks.
-    return 300 if failure or not session else 60
+    return 300 if failure or not session else 15
+
+def _network_retry_interval(now: datetime, error: Exception | None, failures: int) -> int:
+    """Bounded polling recovery, never hidden SDK retries or auth retries.
+
+    Eight calls maximum per cycle and >=15s between cycles retain the
+    single-worker ceiling of 32 requests/minute. Repeated network failures
+    back off to the original 300s; weekends retain 900s.
+    """
+    conservative = _interval(now, failure=True)
+    # SDK versions may wrap transport errors in their own exception classes.
+    # Match fixed names only; do not inspect or log their private messages.
+    transient = type(error).__name__ in {
+        "TimeoutError", "ConnectTimeout", "ReadTimeout", "WriteTimeout",
+        "PoolTimeout", "ConnectionError", "ConnectError", "ReadError",
+        "RemoteProtocolError",
+    }
+    if not transient or conservative == 900:
+        return conservative
+    return min(300, 15 * (2 ** min(max(failures - 1, 0), 5)))
+
 
 def main() -> int:
     sha=os.environ.get("STOCK_RAZOR_REPO_SHA","")
@@ -114,11 +134,13 @@ def main() -> int:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)
         return 3
     sequence=0
+    network_failures=0
     try:
         while running:
             sequence+=1
             now=datetime.now(timezone.utc)
             failed=False
+            failure=None
             try:
                 with open(os.devnull,"w",encoding="utf-8") as null:
                     with redirect_stdout(null), redirect_stderr(null):
@@ -128,6 +150,7 @@ def main() -> int:
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
                 failed=True
+                failure=exc
                 # Invalid/late feed must replace an older apparently fresh file.
                 atomic_publish(status_path,{
                     "schema":"stock_razor_cn_tickflow_research_observation_v0_1",
@@ -157,7 +180,9 @@ def main() -> int:
                     "can_confirm_signal":False,"canonical_write_authorized":False,
                 })
                 print("TICKFLOW_RESEARCH_POLL=BLOCKED:"+type(exc).__name__,flush=True)
-            pause=_interval(datetime.now(timezone.utc),failure=failed)
+            network_failures = network_failures + 1 if failed else 0
+            pause=(_network_retry_interval(datetime.now(timezone.utc), failure, network_failures)
+                   if failed else _interval(datetime.now(timezone.utc)))
             # Interruptible shutdown, no runaway provider retry loop.
             for _ in range(pause):
                 if not running: break

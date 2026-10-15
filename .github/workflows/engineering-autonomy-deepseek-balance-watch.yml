@@ -1,0 +1,61 @@
+name: Engineering Autonomy DeepSeek Balance DIAGNOSTIC (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_discord_delivery:
+        description: "Send one clearly-labelled Discord test message (not a low-balance warning)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: engineering-autonomy-deepseek-balance-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  balance-watch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check official DeepSeek balance (one GET; no tokens)
+        id: budget
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --monitor --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Notify DeepSeek recharge state through Discord (no DeepSeek secret)
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget_discord \
+            --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Send one explicitly requested Discord delivery test
+        if: github.event_name == 'workflow_dispatch' && inputs.test_discord_delivery == true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget_discord --test-delivery
+      - name: Fail closed on unreadable balance
+        if: always() && steps.budget.outcome != 'success'
+        run: |
+          echo 'BLOCKED: Could not confirm DeepSeek balance status' >&2
+          exit 1

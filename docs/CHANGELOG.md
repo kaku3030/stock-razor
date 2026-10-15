@@ -20,6 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] TickFlow 暂时性网络超时按15至300秒有界退避恢复，成功后重置；鉴权、限流及数据错误仍保留300秒退避，周末900秒，失败缓存不冒充有效行情。
+- [修复] Context Manager 使用跨进程写入锁避免事件版本冲突；显式恢复仅修正经校验的连续重复版本，先保留0600原始备份，不改变任何交易门禁。
+- [改进] MCP 部署失败仅导出固定错误分类，用于定位事件日志完整性、序列、依赖或权限问题；原始 SSM 和安装输出仍不公开，失败继续阻断。
+- [修复] OpenD 收盘末根分钟线仅以完整390分钟历史网格作受限补齐，保留历史来源和闭合未验证状态；失败最多30分钟后重试一次。
+- [修复] Paper 现金预留按意图隔离，模拟成交批次先校验身份、限价、资金及持仓再记账，覆盖重启与部分成交回归。
+- [改进] Paper 半小时调度审计须具备48个独立配置时段，仅报告配置状态，实际调度执行仍需运行证据。
+- [性能] TickFlow AWS研究Worker盘中最小轮询间隔降至15秒；按每周期8次K线请求计算，单Worker上限约32次/分钟，失败与非交易时段退避保持不变，账号共享额度仍待核验。
+- [修复] OpenD 聚合K线仅在全部源分钟成交额完整且推导VWAP位于该K线价格区间内时发布VWAP；越界或部分成交额均降级并阻断信号。
+- [改进] TickFlow 历史缓存拒收增加固定枚举诊断；AWS 审计仅导出白名单原因，不暴露行情值且维持 fail-closed。
+- [监控] AWS TickFlow 两ETF 5m/15m/60m SSM+MCP 每整点/半点只读审计，Windows 本地独立半小时凭据安全取数；仅公开脱敏状态，不开放交易准入。
+- [修复] 云端到期提醒 Discord/Telegram 请求添加应用身份 User-Agent，Telegram 拒绝仅输出预定义 HTTP 状态码，避免混淆配置失效与网络阻断。
+- [修复] Discord 两路 Webhook 均发生 HTTP 403 时才使用已配置 Telegram 用户聊天凭据发送一次安全费用提醒；两路均失败仍返回红灯，不扩大交易/云端权限。
+- [修复] 费用/续费通知增加已配置的标准 Discord Webhook 单次回退，并在云端保留不含敏感信息的 HTTP 失败状态码供排障。
+- [修复] 云端供应商费用提醒发送失败时仅输出离散错误分类，不泄露 Webhook/API 错误正文，保留通知失败时的 CI 红灯。
+- [新功能] 云端 OpenAI API 成本/token 使用量及 TickFlow 月费到期安全提醒（只读 Admin API、Discord、余额非真实值明确标注）；OpenD 免费不监控。
+- [研究数据] TickFlow 5m 盘中微小 OHLC vendor float（<=1e-5，ETF tick-grid 一致）仅保留原值用于受限研究；5m 全部到期K线逐一校验，缺口和大误差仍拒绝，交易门禁不变。
+- [修复] TickFlow盘中MCP读取不再因最新到期时间戳存在而掩盖同日中间缺失K线；读取前完整检查受限缓存，即使 limit=1 也拒绝未验证的历史污染，仍保持研究数据与交易门禁隔离。
+- [改进] 现有 ChatGPT A股 MCP 明确新增 `TICKFLOW:PROGRESS:<ETF>` 只读盘中到期网格研究入口（5m/15m/60m），不依赖新增连接工具；严格与历史研究、默认腾讯/东方财富、交易所最终闭合及交易权限隔离。
 - [性能] TickFlow云端新增 `TICKFLOW:FULL` 一次MCP调用返回两ETF各5m/15m/60m/D1历史研究数据，统一源版本对齐，任何周期失效均整组拒绝，无交易权限晋级。
 - [改进] TickFlow 云端隔离研究缓存补齐受限5m（48根/完整交易日）及1d日期K线，保持两ETF白名单、无下单权限、未知闭合、日线仅历史研究；原有15m/60m调用兼容不变。
 - [测试] 增加 AWS OpenD 原生已订阅 K线深度与速度的有界只读验收（至2000请求，最多65次），并严格区分 native、Radar缓存、ChatGPT MCP 与报告生成耗时。

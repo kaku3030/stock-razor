@@ -266,9 +266,16 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5"
+                # Lattice validity is REQUIRED for both historical and
+                # same-day vendor-float exceptions; a tiny body gap alone
+                # does not qualify an off-tick historical OHLC value.
+                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                 and (not current_shanghai_day or (
                     _post_close_research_eligible(stamp, now_utc)
-                    and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                    or (
+                        timeframe in ("5m","15m","60m")
+                        and stamp <= now_utc - timedelta(seconds=90)
+                    )
                 )))
             if float_only:
                 # Post-close same-day *historical-only* exception is gated
@@ -394,6 +401,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
     }
 
 def atomic_publish(path: str, payload: dict) -> None:
+    # Never publish a JSON blob that the strict reader and AWS auditor will
+    # reject as oversized. Validate before opening or replacing any file.
+    encoded=json.dumps(payload,allow_nan=False,separators=(",",":"))
+    if len(encoded.encode("utf-8"))>MAX_BYTES:
+        raise ValueError("private research cache exceeds bounded bytes")
     parent=Path(path).parent
     parent.mkdir(parents=True,exist_ok=True)
     temporary=None
@@ -404,7 +416,7 @@ def atomic_publish(path: str, payload: dict) -> None:
         else:
             os.chmod(temporary,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as f:
-            json.dump(payload,f,allow_nan=False,separators=(",",":"))
+            f.write(encoded)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary,path)
@@ -426,11 +438,15 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "research_only":True, "bar_finality":"NOT_VERIFIED",
         "currentness":"UNPROVEN", "source_arbiter_admission":"BLOCKED",
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
-        "canonical_write_authorized":False, "provider_requests":0,
+        "canonical_write_authorized":False, "provider_requests":0,"cache_rejection_reason":"NONE",
         "research_mode":research_mode if research_mode in
             ("session_progress","historical_only") else "INVALID",
         "exchange_bar_finality":"NOT_VERIFIED",
     }
+    def invalid_cache(reason: str) -> dict:
+        # Fixed enum only: never expose raw cache values, labels or exceptions.
+        return {**base,"status":"INVALID_CACHE",
+                "cache_rejection_reason":reason}
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
@@ -441,17 +457,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         with open(path,"rb") as f:
             data=f.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES:
-            return {**base,"status":"INVALID_CACHE"}
+            return invalid_cache("CACHE_SIZE_EXCEEDED")
         obj=json.loads(data)
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
     if not isinstance(obj,dict) or obj.get("schema")!=SCHEMA or obj.get("provider")!=_SOURCE or obj.get("status")!="PASS_RESEARCH_ONLY":
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_ENVELOPE_INVALID")
     if not (obj.get("research_only") is True and obj.get("radar_admission")=="BLOCKED" and obj.get("source_arbiter_admission")=="BLOCKED" and obj.get("live_trade") is False and obj.get("canonical_write_authorized") is False and obj.get("can_confirm_signal") is False):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_SAFETY_FLAGS_INVALID")
     sha=obj.get("repo_sha")
     if not isinstance(sha,str) or not re.fullmatch("[0-9a-f]{40}",sha):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_REPO_SHA_INVALID")
     try:
         now=now_utc or datetime.now(timezone.utc)
         observed=datetime.fromisoformat(obj["observed_at_utc"])
@@ -459,7 +475,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             raise ValueError
         age=(now-observed).total_seconds()
     except (ValueError,TypeError,KeyError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_OBSERVED_AT_INVALID")
     # Strict live-session provenance never inherits the slower off-hours
     # refresh schedule. Historical-only read gets a 6m bounded tolerance
     # after close (collector polls every 300s), or 18m on weekends (900s).
@@ -469,35 +485,47 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     max_age=(historical_max_age if research_mode=="historical_only"
              else MAX_AGE_SECONDS)
     if age < -5 or age > max_age:
-        return {**base,"status":"STALE","age_seconds":round(age,2),
+        return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
+    reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
         raw=obj["symbols"][symbol][timeframe]
         rows=raw["rows"]
+        reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
+        reject_reason="FRAME_METADATA_INVALID"
         if raw.get("closure")!="NOT_VERIFIED" or raw.get("currentness")!="UNPROVEN":
             raise ValueError
         safe=[]
         previous=None
-        for item in rows[-limit:]:
+        # Validate the entire bounded cache, not only the requested tail. A
+        # limit=1 client must not conceal earlier gaps or poisoned records.
+        for item in rows:
+            reject_reason="BAR_RECORD_INVALID"
             if not isinstance(item,dict) or item.get("bar_finality")!="NOT_VERIFIED" or item.get("is_partial_bar") is not True:
                 raise ValueError
             label=item.get("label")
+            reject_reason="BAR_LABEL_INVALID"
             if not isinstance(label,str):
                 raise ValueError
+            reject_reason="BAR_TIMESTAMP_INVALID"
             bar_stamp=datetime.strptime(label,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+            reject_reason="BAR_TIME_GRID_OR_FUTURE_INVALID"
             if bar_stamp.strftime("%H:%M") not in _LABEL_END[timeframe] or bar_stamp.astimezone(timezone.utc)>now:
                 raise ValueError
+            reject_reason="BAR_ORDER_INVALID"
             if previous is not None and bar_stamp<=previous:
                 raise ValueError
             previous=bar_stamp
+            reject_reason="BAR_NUMERIC_VALUE_INVALID"
             numerical={}
             for key in ("open","high","low","close","volume"):
                 val=item.get(key)
                 if type(val) not in (int,float) or not isfinite(val):
                     raise ValueError
                 numerical[key]=val
+            reject_reason="BAR_AMOUNT_INVALID"
             availability=item.get("amount_availability")
             amount=item.get("amount")
             if availability=="SDK_OMITTED" and amount is None:
@@ -506,6 +534,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 numerical["amount"]=amount
             else:
                 raise ValueError
+            reject_reason="BAR_OHLC_INVALID"
             op,hi,lo,cl=(numerical[k] for k in ("open","high","low","close"))
             shape_gap=(hi<max(op,cl,lo) or lo>min(op,cl,hi))
             tolerance=item.get("ohlc_validation","STRICT")
@@ -516,11 +545,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                             !="WITHIN_1E_MINUS_5"
+                        or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                research_mode=="historical_only"
-                                and _post_close_research_eligible(bar_stamp, now)
-                                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                                (research_mode=="historical_only"
+                                 and _post_close_research_eligible(bar_stamp, now))
+                                or (research_mode=="session_progress"
+                                    and timeframe in ("5m","15m","60m")
+                                    and (now.astimezone(CN).hour,
+                                         now.astimezone(CN).minute)<(15,2)
+                                    and bar_stamp.astimezone(timezone.utc)
+                                        <= now-timedelta(seconds=90))
                             ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
@@ -528,23 +563,47 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "is_partial_bar":True,"bar_finality":"NOT_VERIFIED",
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache(reject_reason)
+    # Rows are bounded by the collector contract (<=144); retain the whole
+    # verified label grid for session continuity, then trim public output.
+    validated_labels = {item["label"] for item in safe}
+    safe = safe[-limit:]
+    # Never present non-mutating vendor precision as strict OHLC.
+    tolerated_rows=sum(
+        1 for row in safe if
+        row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    )
     expected=_expected_closed_grid_label(now,timeframe)
     latest=bar_stamp
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
+        # Reaching the last scheduled boundary is NOT sufficient: a source
+        # can omit 10:00 while reporting 10:15. Check every due current-day
+        # boundary (including morning when reading in the afternoon).
+        due_labels = {
+            expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                             second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+            for clock in _LABEL_END[timeframe]
+            if expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                                second=0, microsecond=0) <= expected
+        }
+        missing_due_grid = not due_labels.issubset(validated_labels)
+        if research_mode=="session_progress" and (
+                latest < expected or missing_due_grid):
+            # A freshly rewritten cache with a new last bar but earlier
+            # missing due labels cannot be declared continuous research.
+            return {
+                **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                "source_age_seconds":round(age,2),
+                "expected_grid_progress":"NOT_OBSERVED",
+                "due_grid_continuity":"INCOMPLETE",
+                "bar_finality":"NOT_VERIFIED",
+                "rows":[],
+            }
         if latest < expected:
-            if research_mode=="session_progress":
-                # Do not allow a stale/partial session to pass currentness
-                # merely because the poller rewrites the cache.
-                return {
-                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                    "source_age_seconds":round(age,2),
-                    "expected_grid_progress":"NOT_OBSERVED",
-                    "bar_finality":"NOT_VERIFIED",
-                    "rows":[],
-                }
             progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        elif missing_due_grid:
+            progress="DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
         else:
             progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
@@ -558,6 +617,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "max_age_seconds":max_age,
             "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
             "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "ohlc_precision_scope":(
+                "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+                else "STRICT"
+            ),
+            "tolerated_vendor_float_rows":tolerated_rows,
             "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
@@ -569,6 +633,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
+        "ohlc_precision_scope":(
+            "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+            else "STRICT"
+        ),
+        "tolerated_vendor_float_rows":tolerated_rows,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
     }
