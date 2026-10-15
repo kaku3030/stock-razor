@@ -666,3 +666,52 @@ def test_sell_fill_below_limit_is_blocked_despite_existing_position(tmp_path):
     assert e.ledger.balance().reserved_cash == Decimal("0")
     assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
     assert e.store.has_ambiguous_submission() is True
+
+
+def test_seeded_ledger_fill_id_collision_blocks_before_false_journal_fill(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("existing-seed-fill", Decimal("1"), Decimal("100")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "duplicate-seed.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="existing-seed-fill", intent_id="preexisting-offline",
+        reservation_id=None, symbol="AMD", side="BUY",
+        quantity=Decimal("1"), price=Decimal("90"), at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("100"), NOW)
+    e.reconcile()
+    assert e.ledger.has_fill_receipt("existing-seed-fill") is True
+    before = e.ledger.balance()
+    with pytest.raises(ExecutionBlocked, match="already exists in paper ledger"):
+        e.submit(intent(qty="1"), context())
+    # The adapter was invoked once, but the journal may not claim ACCEPTED
+    # or FILLED while its separate durable ledger already owns the fill ID.
+    assert capability.adapter.calls == [("place", "i-1")]
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert e.ledger.balance().cash == before.cash
+    assert e.ledger.balance().reserved_cash == Decimal("100")
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_ledger_fill_identity_probe_never_mutates_balance(tmp_path):
+    capability = create_paper_adapter()
+    e = ExecutionEngine(
+        capability, RiskGuard(RiskLimits(
+            frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+            Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+        )), ExecutionStore(tmp_path / "lookup.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    original = e.ledger.balance()
+    assert e.ledger.has_fill_receipt("absent") is False
+    assert e.ledger.balance() == original
+    with pytest.raises(ValueError):
+        e.ledger.has_fill_receipt("")
