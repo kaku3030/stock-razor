@@ -199,7 +199,10 @@ def discord_send(webhook: str, content: str) -> None:
         raise ValueError("invalid_discord_endpoint")
     data = json.dumps({"content": content[:1900], "allowed_mentions": {"parse": []}}).encode()
     request = urllib.request.Request(webhook, data=data,
-                    headers={"Content-Type": "application/json"}, method="POST")
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "StockRazor-ProviderWatch/1.0",
+                    }, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=12) as response:
             if response.status not in (200, 204):
@@ -226,8 +229,10 @@ def telegram_send(bot_token: str, chat_id: str, content: str) -> None:
     }).encode()
     request = urllib.request.Request(
         "https://api.telegram.org/bot" + bot_token + "/sendMessage",
-        data=data, headers={"Content-Type":"application/x-www-form-urlencoded"},
-        method="POST",
+        data=data, headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "StockRazor-ProviderWatch/1.0",
+        }, method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=12) as response:
@@ -237,8 +242,13 @@ def telegram_send(bot_token: str, chat_id: str, content: str) -> None:
             result = json.loads(data)
             if not isinstance(result, dict) or result.get("ok") is not True:
                 raise ValueError("telegram_delivery_failed")
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
-            ValueError, TypeError, UnicodeError):
+    except urllib.error.HTTPError as exc:
+        # Only the status code is retained; never upstream response bodies.
+        if exc.code in (400, 401, 403, 404, 429):
+            raise ValueError("telegram_http_" + str(exc.code)) from None
+        raise ValueError("telegram_delivery_failed") from None
+    except (urllib.error.URLError, TimeoutError, ValueError,
+            TypeError, UnicodeError):
         raise ValueError("telegram_delivery_failed") from None
 
 
@@ -310,6 +320,11 @@ def main() -> int:
             "discord_http_404": "DISCORD_HTTP_404",
             "discord_http_429": "DISCORD_HTTP_429",
             "telegram_delivery_failed": "TELEGRAM_DELIVERY_FAILED",
+            "telegram_http_400": "TELEGRAM_HTTP_400",
+            "telegram_http_401": "TELEGRAM_HTTP_401",
+            "telegram_http_403": "TELEGRAM_HTTP_403",
+            "telegram_http_404": "TELEGRAM_HTTP_404",
+            "telegram_http_429": "TELEGRAM_HTTP_429",
             "invalid_telegram_config": "TELEGRAM_CONFIG_INVALID",
             "invalid_date": "CONFIG_DATE_INVALID",
             "invalid_money": "CONFIG_VALUE_INVALID",

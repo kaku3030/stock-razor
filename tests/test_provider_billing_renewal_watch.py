@@ -193,3 +193,21 @@ def test_telegram_bad_destination_stays_fail_closed(monkeypatch):
     from scripts import provider_billing_renewal_watch as watch
     with pytest.raises(ValueError,match="invalid_telegram_config"):
         watch.telegram_send("fake-token","anything","safe")
+
+
+def test_standard_user_agent_and_telegram_http_no_error_body_leak(monkeypatch):
+    import io
+    import urllib.error
+    from scripts import provider_billing_renewal_watch as watch
+    headers = []
+    def fake_urlopen(request, **kwargs):
+        headers.append(dict(request.header_items()))
+        raise urllib.error.HTTPError(
+            "https://api.telegram.org/botSENSITIVE_TOKEN/sendMessage",
+            403, "SENSITIVE_ERROR", None, io.BytesIO(b"SENSITIVE_ERROR"),
+        )
+    monkeypatch.setattr(watch.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(ValueError, match="telegram_http_403") as err:
+        watch.telegram_send("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", "-1001234567890", "hello")
+    assert "SENSITIVE" not in str(err.value)
+    assert headers[0]["User-agent"] == "StockRazor-ProviderWatch/1.0"
