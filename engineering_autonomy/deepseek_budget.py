@@ -7,19 +7,35 @@ prompts, response text, Aider raw analytics or precise account balances.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import json
 import math
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
 BALANCE_ENDPOINT = "https://api.deepseek.com/user/balance"
 LIMIT_BYTES = 16_384
 MAX_USAGE_BYTES = 2_000_000
+HARD_COST_GUARANTEE = "provider-enforced:cny:5"
+
+
+@dataclass(frozen=True)
+class ExecutionLimits:
+    max_cost_cny: Decimal = Decimal("5")
+    max_runtime_seconds: int = 240
+    max_requests: int = 2
+    max_input_tokens: int = 20_000
+    max_output_tokens: int = 4_000
+
+
+LIMITS = ExecutionLimits()
 # These are alert thresholds, not provider pricing and not currency conversions.
 LOW_BALANCE = {"CNY": Decimal("10"), "USD": Decimal("2")}
 STATUSES = frozenset({"OK", "LOW", "EMPTY", "UNAVAILABLE", "UNKNOWN"})
@@ -166,6 +182,79 @@ def summarize_usage(path: Path) -> dict[str, object]:
         return {"status": "UNVERIFIED", "requests": 0}
 
 
+def require_hard_cost_guarantee(value: str | None) -> None:
+    """Fail closed until an authenticated upstream CNY 5 cap can be verified.
+
+    A repository variable is controlled by the caller; even an exact match to
+    HARD_COST_GUARANTEE is only a claim. Neither the DeepSeek balance endpoint
+    nor the current workflow verifies a per-run provider-enforced spending cap.
+    Do not start a paid child based on a spoofable string.
+    """
+    raise ValueError("provider-side CNY 5 hard cost cap is NOT_VERIFIED; paid execution disabled")
+
+
+def validate_execution_usage(path: Path) -> dict[str, object]:
+    result = summarize_usage(path)
+    if result.get("status") != "OBSERVED":
+        raise ValueError("usage evidence is unavailable or malformed")
+    if result["requests"] > LIMITS.max_requests:
+        raise ValueError("request limit exceeded")
+    if result["input_tokens"] > LIMITS.max_input_tokens:
+        raise ValueError("input token limit exceeded")
+    if result["output_tokens"] > LIMITS.max_output_tokens:
+        raise ValueError("output token limit exceeded")
+    if result.get("estimated_cost_usd") is None:
+        raise ValueError("provider usage cost evidence is incomplete")
+    return result
+
+
+def run_bounded(command: list[str], analytics_log: Path, guarantee: str | None) -> int:
+    require_hard_cost_guarantee(guarantee)
+    if command[:1] == ["--"]:
+        command = command[1:]
+    if not command:
+        raise ValueError("bounded command is required")
+    started = time.monotonic()
+    process = subprocess.Popen(command)
+    reason = None
+    while process.poll() is None:
+        if time.monotonic() - started >= LIMITS.max_runtime_seconds:
+            reason = "runtime limit exceeded"
+            process.terminate()
+            break
+        if analytics_log.exists():
+            usage = summarize_usage(analytics_log)
+            if usage.get("status") == "UNVERIFIED":
+                reason = "usage evidence became unverified"
+                process.terminate()
+                break
+            if usage.get("status") == "OBSERVED":
+                try:
+                    validate_execution_usage(analytics_log)
+                except ValueError as exc:
+                    reason = str(exc)
+                    process.terminate()
+                    break
+        time.sleep(0.2)
+    if process.poll() is None:
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    if reason:
+        print(f"BLOCKED: {reason}", file=sys.stderr)
+        return 2
+    if process.returncode:
+        return process.returncode
+    try:
+        validate_execution_usage(analytics_log)
+    except ValueError as exc:
+        print(f"BLOCKED: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def usage_command(path: Path, output: Path) -> int:
     result = summarize_usage(path)
     result["schema"] = 1
@@ -202,9 +291,26 @@ def main() -> int:
     usage = sub.add_parser("usage")
     usage.add_argument("--analytics-log", type=Path, required=True)
     usage.add_argument("--output", type=Path, required=True)
+    sub.add_parser("cost-cap-check", help="fail closed until a provider-side cap is authenticated")
+    bounded = sub.add_parser("run")
+    bounded.add_argument("--analytics-log", type=Path, required=True)
+    bounded.add_argument("command_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command == "check":
         return check_balance(args.status_file, monitor=args.monitor)
+    if args.command == "cost-cap-check":
+        try:
+            require_hard_cost_guarantee(os.environ.get("DEEPSEEK_HARD_COST_GUARANTEE"))
+        except ValueError:
+            print("PAID_CODING=BLOCKED;REASON=UPSTREAM_SPEND_CAP_NOT_VERIFIED", flush=True)
+            return 2
+        return 0
+    if args.command == "run":
+        return run_bounded(
+            args.command_args,
+            args.analytics_log,
+            os.environ.get("DEEPSEEK_HARD_COST_GUARANTEE"),
+        )
     return usage_command(args.analytics_log, args.output)
 
 

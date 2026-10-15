@@ -25,7 +25,7 @@ def test_completion_structural_validation():
     b"", b"{}", b'{"id":"x","choices":[]}',
     b'{"id":"x","choices":[{"message":{"content":""}}]}',
     b"invalid json", b"x" * 65537,
-])
+], ids=["empty", "empty-object", "empty-choices", "empty-content", "invalid-json", "oversize"])
 def test_probe_malformed_response_rejected(body):
     with pytest.raises(ValueError):
         validate_completion(body)
@@ -55,19 +55,17 @@ def test_probe_workflow_is_manual_confirmed_and_secret_safe():
     assert "aider" not in workflow.lower().split("run: |")[-1]
 
 
-def test_coding_pilot_health_gate_precedes_aider_install():
-    """Fail closed before any Aider install/run on provider HTTP 503/outage."""
+def test_coding_pilot_cap_preflight_precedes_aider_install():
+    """No extra paid probe; fail before installing Aider without an upstream cap."""
     path = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml")
     coding = path.read_text(encoding="utf-8")
-    gate = "Block coding if DeepSeek provider API is unhealthy"
+    gate = "Require authenticated provider-side CNY 5 cap proof"
     install = "Install pinned Aider coding CLI"
     agent = "Run isolated DeepSeek coding agent"
-    assert gate in coding
     assert coding.index("Create trusted prompt and require DeepSeek secret") < coding.index(gate)
     assert coding.index(gate) < coding.index(install) < coding.index(agent)
-    # Same reviewed direct probe module, one request, no retries.
-    assert coding.count("python -m engineering_autonomy.deepseek_probe") == 1
-    assert "timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe" in coding
+    assert "python -m engineering_autonomy.deepseek_budget cost-cap-check" in coding
+    assert "python -m engineering_autonomy.deepseek_probe" not in coding
     assert "secrets.DEEPSEEK_API_KEY" in coding
     assert "GITHUB_TOKEN: ''" in coding
     assert "GH_TOKEN: ''" in coding

@@ -143,14 +143,18 @@ def test_deepseek_provider_response_is_bounded():
     workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
         encoding="utf-8"
     )
-    # Bounded whole-process duration, even when Aider/LiteLLM keep retrying.
-    assert "timeout --signal=TERM --kill-after=10s 240s aider" in workflow
+    # Never accept a repo variable as a provider spending-cap attestation.
+    assert "python -m engineering_autonomy.deepseek_budget cost-cap-check" in workflow
+    assert "python -m engineering_autonomy.deepseek_budget run" in workflow
+    assert "DEEPSEEK_HARD_COST_GUARANTEE" not in workflow
+    assert "LITELLM_MAX_RETRIES: '0'" in workflow
     assert "--timeout 90" in workflow
     assert "--no-stream" in workflow
     assert "--no-cache-prompts" in workflow
     assert "timeout-minutes: 8" in workflow
-    assert 'if [ "$rc" -eq 124 ]; then' in workflow
-    assert "DeepSeek/Aider exceeded 240-second overall limit" in workflow
+    from engineering_autonomy.deepseek_budget import LIMITS
+    assert LIMITS.max_runtime_seconds == 240
+    # Analytics cannot enforce an in-flight request cap; the paid gate is closed.
     # The fail-closed capture and no-write-token generation job are unchanged.
     assert "python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch" in workflow
     assert "GITHUB_TOKEN: ''" in workflow
