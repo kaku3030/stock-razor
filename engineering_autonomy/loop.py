@@ -184,10 +184,14 @@ def run_queue(
         raise ValueError("budget_units is outside bounds")
     if type(max_runtime_seconds) is not int or not 1 <= max_runtime_seconds <= MAX_RUNTIME_SECONDS:
         raise ValueError("max_runtime_seconds is outside bounds")
+    # The feedback station must be an explicitly supplied persistent path.
+    # Never fall back to a local queue-directory database.
+    if feedback_path is None:
+        raise FeedbackHubError("persistent feedback_path is required")
     # This is deliberately before checkpoint recovery or task execution.  A
     # missing/corrupt feedback station must stop the mainline rather than let
     # it silently proceed with stale priorities.
-    feedback = FeedbackHub(feedback_path or queue_path.with_name("feedback.sqlite3"))
+    feedback = FeedbackHub(feedback_path)
     try:
         feedback.preflight()
     except FeedbackHubError:
