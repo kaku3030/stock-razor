@@ -5,6 +5,10 @@ on:
     paths:
       - "tests/test_engineering_coding_e2e_offline.py"
       - "engineering_autonomy/coding_gate.py"
+      - "engineering_autonomy/deepseek_budget.py"
+      - "engineering_autonomy/deepseek_budget_issue.py"
+      - "tests/test_engineering_deepseek_budget.py"
+      - ".github/workflows/engineering-autonomy-deepseek-balance-watch.yml"
       - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
       - ".github/workflows/engineering-autonomy-offline-e2e.yml"
   push:
@@ -12,6 +16,10 @@ on:
     paths:
       - "tests/test_engineering_coding_e2e_offline.py"
       - "engineering_autonomy/coding_gate.py"
+      - "engineering_autonomy/deepseek_budget.py"
+      - "engineering_autonomy/deepseek_budget_issue.py"
+      - "tests/test_engineering_deepseek_budget.py"
+      - ".github/workflows/engineering-autonomy-deepseek-balance-watch.yml"
       - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
       - ".github/workflows/engineering-autonomy-offline-e2e.yml"
 
