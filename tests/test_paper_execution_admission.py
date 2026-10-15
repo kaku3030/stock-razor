@@ -206,7 +206,7 @@ def test_admitted_intent_flows_through_shadow_then_paper_execution(tmp_path):
     fills = {
         candidate.intent_id: (
             ("fill-1", Decimal("4"), Decimal("100")),
-            ("fill-2", Decimal("6"), Decimal("100.1")),
+            ("fill-2", Decimal("6"), Decimal("99.9")),
         )
     }
     path = tmp_path / "execution.sqlite"
