@@ -41,13 +41,20 @@ wallet amount, key, and raw response never enter public Actions logs.
 
 ## Tokens and spending
 
-Coding V1.1 is now hard-bounded at **CNY 5**, **240 seconds**, **2 completion
-requests**, **20,000 input tokens**, and **4,000 output tokens**. The runner
-must receive the exact operator-controlled value
-`provider-enforced:cny:5` in `DEEPSEEK_HARD_COST_GUARANTEE`; missing or different
-values block the paid child before it starts. This is deliberately stricter
-than an Aider estimate: without an independently verified provider-side CNY
-cap, a paid run is not permitted.
+Coding V1.1 proposes a **CNY 5** per-run budget, **240 seconds**, **2 completion
+requests**, **20,000 input tokens**, and **4,000 output tokens**. The spending
+limit is **not yet proven enforceable**: the official balance GET is not
+provider-side per-run capping evidence. A repository variable equal to
+`provider-enforced:cny:5` can be spoofed and is **never accepted** as proof.
+The workflow now fails closed at `cost-cap-check` **before installing Aider**
+until an authenticated, enforceable upstream spend-cap mechanism is implemented
+and independently validated in a separate reviewed PR.
+
+The analytics watchdog detects accumulated requests/tokens *after* the
+provider has handled a request. Polling does **not** bound a single in-flight
+completion's tokens or actual charge; per-request output limits and trustworthy
+pre-request budget enforcement still require implementation and tests. No
+current V1.1 run is authorized to consume model tokens under this gate.
 
 - Coding V1.1 supplies `--analytics-log` and `--no-analytics` together:
   Aider writes a **local-only** ephemeral analytics log, with no analytics
