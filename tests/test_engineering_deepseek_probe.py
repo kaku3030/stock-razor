@@ -25,7 +25,7 @@ def test_completion_structural_validation():
     b"", b"{}", b'{"id":"x","choices":[]}',
     b'{"id":"x","choices":[{"message":{"content":""}}]}',
     b"invalid json", b"x" * 65537,
-])
+], ids=["empty", "empty-object", "empty-choices", "empty-content", "invalid-json", "oversize"])
 def test_probe_malformed_response_rejected(body):
     with pytest.raises(ValueError):
         validate_completion(body)
