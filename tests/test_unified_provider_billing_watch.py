@@ -112,12 +112,12 @@ def test_single_provider_schedule_and_separate_aws_oidc_identity():
     assert "cron: '20 1 * * *'" in unified
     assert "schedule:" not in standalone
     assert "workflow_dispatch:" in standalone
-    assert "DEEPSEEK_API_KEY: \${{ secrets.DEEPSEEK_API_KEY }}" in unified
-    assert "AWS_MONTHLY_BUDGET_USD: \${{ vars.AWS_MONTHLY_BUDGET_USD }}" in unified
+    assert "DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}" in unified
+    assert "AWS_MONTHLY_BUDGET_USD: ${{ vars.AWS_MONTHLY_BUDGET_USD }}" in unified
     assert "aws-cost:" in unified and "id-token: write" in unified
     assert "python3 scripts/aws_provider_billing_cost.py" in unified
     assert "aws-actions/configure-aws-credentials@v4" in unified
-    assert "status: \${{ steps.cost.outputs.status || steps.unavailable.outputs.status }}" in unified
+    assert "status: ${{ steps.cost.outputs.status || steps.unavailable.outputs.status }}" in unified
     before, after = unified.split("  watch:", 1)
     assert "OPENAI_ADMIN_KEY" not in before
     assert "DEEPSEEK_API_KEY" not in before
