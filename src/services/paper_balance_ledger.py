@@ -296,6 +296,21 @@ class PaperBalanceLedger:
             raise LedgerUnknown("reservation event ledger is inconsistent")
         return remainder
 
+    def has_fill_receipt(self, fill_id: str) -> bool:
+        """Read-only duplicate guard before independent journal transitions.
+
+        A fill can pre-exist in the ledger from explicit offline
+        position seeding but not yet appear in the execution journal.
+        An adapter reuse of that identity must be rejected *before*
+        ACCEPTED/FILLED is recorded, never rediscovered after posting.
+        """
+        if not isinstance(fill_id, str) or not fill_id.strip():
+            raise ValueError("valid fill ID required")
+        return bool(self.connection.execute(
+            "SELECT 1 FROM paper_ledger_events WHERE event_id=? AND kind='FILL'",
+            (f"fill:{fill_id}",),
+        ).fetchone())
+
     def _event_exists(self, event_id: str) -> bool:
         return bool(self.connection.execute("SELECT 1 FROM paper_ledger_events WHERE event_id=?", (event_id,)).fetchone())
 
