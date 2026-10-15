@@ -67,6 +67,9 @@ class LiveFeedRuntimeBridge:
             # attempted keys for bounded cleanup before invoking the adapter.
             self._subscribed.extend(unique)
             self._adapter.subscribe_streams(unique)
+            # Drain immediate provider callbacks as on the original startup
+            # path; each event follows the already committed desired keys.
+            self._controller.process_pending()
         except Exception:
             try:
                 if adapter_start_attempted:
