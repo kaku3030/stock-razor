@@ -60,6 +60,8 @@ jobs:
         if: steps.gate.outputs.eligible == 'true'
         id: probe
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
