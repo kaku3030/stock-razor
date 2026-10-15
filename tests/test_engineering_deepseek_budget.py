@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from engineering_autonomy import deepseek_budget as b
-from engineering_autonomy import deepseek_budget_issue as alerts
+from engineering_autonomy import deepseek_budget_discord as alerts
 
 
 def balance(cny="110.00", usd=None, available=True):
@@ -143,48 +143,64 @@ def test_missing_or_invalid_analytics_is_unknown_not_fake_zero(tmp_path):
     assert b.summarize_usage(f)["status"] == "UNVERIFIED"
 
 
-def test_alert_create_dedupe_update_recovery_and_unknown(monkeypatch):
-    calls = []
-    open_issues = []
+def test_discord_alert_payload_only_categorical_not_balance_or_secret():
+    url = "https://discord.com/api/webhooks/123456789012345678/abcDEF01234567890123"
+    seen = []
 
-    def fake_gh(*args):
-        calls.append(args)
-        if args[0:2] == ("issue", "list"):
-            return json.dumps(open_issues)
-        if args[0:2] == ("issue", "create"):
-            body = args[args.index("--body") + 1]
-            open_issues.append({"number": 77, "title": b.ISSUE_TITLE, "body": body})
-            return "url"
-        if args[0:2] == ("issue", "edit"):
-            open_issues[0]["body"] = args[args.index("--body") + 1]
-        if args[0:2] == ("issue", "close"):
-            open_issues.clear()
-        return "ok"
+    class FakeResponse:
+        status = 204
 
-    monkeypatch.setattr(alerts, "gh", fake_gh)
-    repo = "kaku3030/stock-razor"
-    assert alerts.reconcile_status("LOW", repo, "kaku3030") == "ALERT_CREATED"
-    assert alerts.reconcile_status("LOW", repo, "kaku3030") == "ALERT_ALREADY_OPEN"
-    assert len([x for x in calls if x[:2] == ("issue", "create")]) == 1
-    assert alerts.reconcile_status("EMPTY", repo, "kaku3030") == "ALERT_UPDATED"
-    assert len([x for x in calls if x[:2] == ("issue", "comment")]) == 1
-    count = len(calls)
-    assert alerts.reconcile_status("UNKNOWN", repo, "kaku3030") == "UNKNOWN_NO_BALANCE_CLAIM"
-    assert len(calls) == count
-    assert alerts.reconcile_status("OK", repo, "kaku3030") == "RECOVERED_CLOSED"
-    assert not open_issues
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    def fake_open(req, timeout):
+        assert req.get_method() == "POST"
+        assert timeout == 12
+        seen.append(req.data.decode("utf-8"))
+        return FakeResponse()
+
+    assert alerts.send_discord("LOW", url, opener=fake_open) == "ALERT_SENT"
+    assert alerts.send_discord(
+        "EMPTY", url, "987654321012345678", opener=fake_open
+    ) == "ALERT_SENT"
+    first, second = (json.loads(x) for x in seen)
+    assert first["allowed_mentions"] == {"parse": []}
+    assert second["allowed_mentions"] == {
+        "parse": [], "users": ["987654321012345678"]
+    }
+    assert "<@987654321012345678>" in second["content"]
+    assert "充值" in second["content"]
+    for payload in seen:
+        assert "DEEPSEEK_API_KEY" not in payload
+        assert "total_balance" not in payload
+        assert url not in payload
 
 
-def test_workflow_separates_balance_secrets_and_github_issue_authorization():
+def test_discord_reminder_handles_healthy_unknown_and_missing_channel():
+    assert alerts.send_discord("OK", "") == "HEALTHY_NO_ALERT"
+    assert alerts.send_discord("LOW", "") == "CHANNEL_NOT_CONFIGURED"
+    assert "不代表余额为零" in alerts.message_for_status("UNKNOWN")
+    with pytest.raises(ValueError):
+        alerts.send_discord(
+            "LOW", "https://evil.example/api/webhooks/123456789012345678/abcDEF01234567890123"
+        )
+
+
+def test_workflow_separates_balance_secrets_and_discord_notification():
     path = Path(".github/workflows/engineering-autonomy-deepseek-balance-watch.yml")
     watch = path.read_text(encoding="utf-8")
-    assert "cron: '17 */6 * * *'" in watch
-    assert "issues: write" in watch
+    assert "cron: '17 */12 * * *'" in watch
+    assert "issues: write" not in watch
+    assert "contents: read" in watch
     assert "persist-credentials: false" in watch
     assert watch.count("python -m engineering_autonomy.deepseek_budget check") == 1
-    assert "python -m engineering_autonomy.deepseek_budget_issue" in watch
-    notify = watch.split("- name: Reconcile one GitHub recharge alert", 1)[1]
+    assert "python -m engineering_autonomy.deepseek_budget_discord" in watch
+    notify = watch.split("- name: Notify DeepSeek recharge state through Discord", 1)[1]
     assert "secrets.DEEPSEEK_API_KEY" not in notify
+    assert "secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL" in notify
     assert "gh pr merge" not in watch and "aider " not in watch
     coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text()
     guard = coding.index("Enforce official DeepSeek balance budget")
