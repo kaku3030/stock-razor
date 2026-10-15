@@ -1,4 +1,6 @@
 import pytest
+from datetime import datetime, timezone
+from engineering_autonomy import feedback_hub as hub_module
 
 from engineering_autonomy.feedback_hub import FeedbackHub, FeedbackHubError
 
@@ -129,4 +131,56 @@ def test_writeback_rejects_expired_claim_even_without_new_owner(tmp_path):
     assert hub.writeback(
         feedback_id=item.id, worker_id="main:new", status="DONE", evidence={},
     ).status == "DONE"
+    hub.close()
+
+
+def test_legacy_second_precision_lease_expires_within_same_second(tmp_path, monkeypatch):
+    # Previously lexical "09:20:00Z" > "09:20:00.500000Z" incorrectly
+    # treated a lease that expired 500ms ago as live.
+    frozen = datetime(2026, 10, 16, 9, 20, 0, 500000, tzinfo=timezone.utc)
+    monkeypatch.setattr(hub_module, "_now", lambda: frozen)
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    item = hub.submit(
+        source="CN_RADAR", priority="P0", title="legacy lease",
+        details="seconds precision", evidence={}, source_ref="cn:lease:legacy",
+    )
+    assert hub.claim(worker_id="old-owner") is not None
+    hub._connection.execute(
+        "UPDATE feedback SET lease_until=? WHERE id=?",
+        ("2026-10-16T09:20:00Z", item.id),
+    )
+    audit_before = hub.audit(item.id)
+    with pytest.raises(FeedbackHubError, match="lease expired"):
+        hub.writeback(
+            feedback_id=item.id, worker_id="old-owner", status="DONE",
+            evidence={},
+        )
+    assert hub.audit(item.id) == audit_before
+    fresh = hub.claim(worker_id="new-owner")
+    assert fresh is not None and fresh.id == item.id
+    assert fresh.attempts == 2
+    assert hub.writeback(
+        feedback_id=item.id, worker_id="new-owner",
+        status="DONE", evidence={},
+    ).status == "DONE"
+    hub.close()
+
+
+def test_corrupt_existing_lease_timestamp_never_grants_writeback(tmp_path):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    item = hub.submit(
+        source="US_WINDOW", priority="P1", title="invalid lease",
+        details="bad timestamp", evidence={}, source_ref="us:lease:invalid",
+    )
+    assert hub.claim(worker_id="old-owner") is not None
+    hub._connection.execute(
+        "UPDATE feedback SET lease_until=? WHERE id=?",
+        ("not-a-valid-time", item.id),
+    )
+    with pytest.raises(FeedbackHubError, match="lease expired"):
+        hub.writeback(
+            feedback_id=item.id, worker_id="old-owner",
+            status="DONE", evidence={},
+        )
+    assert hub.claim(worker_id="different-owner") is None
     hub.close()
