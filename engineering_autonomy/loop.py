@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Any
 
+from engineering_autonomy.feedback_hub import FeedbackHub, FeedbackHubError
+
 SCHEMA_VERSION = 1
 ALLOWED_COMMANDS = {
     "quality-check": (
@@ -176,11 +178,22 @@ def run_queue(
     max_runtime_seconds: int = MAX_RUNTIME_SECONDS,
     executor: Callable[[Task], int] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    feedback_path: Path | None = None,
 ) -> dict[str, Any]:
     if type(budget_units) is not int or not 1 <= budget_units <= MAX_COST_UNITS:
         raise ValueError("budget_units is outside bounds")
     if type(max_runtime_seconds) is not int or not 1 <= max_runtime_seconds <= MAX_RUNTIME_SECONDS:
         raise ValueError("max_runtime_seconds is outside bounds")
+    # This is deliberately before checkpoint recovery or task execution.  A
+    # missing/corrupt feedback station must stop the mainline rather than let
+    # it silently proceed with stale priorities.
+    feedback = FeedbackHub(feedback_path or queue_path.with_name("feedback.sqlite3"))
+    try:
+        feedback.preflight()
+    except FeedbackHubError:
+        feedback.close()
+        raise
+    feedback.close()
     queue = load_queue(queue_path)
     state = load_state(state_path, queue)
     if state["status"] in {"PASS", "BLOCKED"}:
@@ -237,8 +250,10 @@ def main() -> int:
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--budget-units", type=int, default=MAX_COST_UNITS)
     parser.add_argument("--max-runtime-seconds", type=int, default=MAX_RUNTIME_SECONDS)
+    parser.add_argument("--feedback-db", type=Path, required=True)
     args = parser.parse_args()
-    state = run_queue(args.queue, args.state, args.budget_units, args.max_runtime_seconds)
+    state = run_queue(args.queue, args.state, args.budget_units, args.max_runtime_seconds,
+                      feedback_path=args.feedback_db)
     print(json.dumps(state, sort_keys=True))
     return 0 if state["status"] == "PASS" else 2
 
