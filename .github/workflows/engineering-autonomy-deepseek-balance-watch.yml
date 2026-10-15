@@ -34,7 +34,7 @@ jobs:
       - name: Notify DeepSeek recharge state through Discord (no DeepSeek secret)
         if: always()
         env:
-          STOCK_RAZOR_DISCORD_WEBHOOK_URL: ${{ secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
         shell: bash
         run: |
