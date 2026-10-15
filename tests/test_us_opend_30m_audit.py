@@ -1,3 +1,4 @@
+from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -40,3 +41,13 @@ def test_missing_quality_layers_stay_not_verified():
     assert result["quality"]["dynamic_subscription"] == "NOT_VERIFIED"
     assert result["signals"]["status"] == "NOT_VERIFIED"
     assert result["radar_admission"] == "BLOCKED"
+
+
+def test_probe_step_has_explicit_github_token():
+    """A prior step's GH_TOKEN cannot authenticate this later gh api call."""
+    path = Path(__file__).resolve().parents[1] / ".github/workflows/audit-us-opend-30m-readonly.yml"
+    workflow = path.read_text(encoding="utf-8")
+    probe = workflow.split("      - name: Run bounded existing-export probe over SSM\n", 1)[1]
+    probe = probe.split("      - name: Write back sanitized evidence\n", 1)[0]
+    assert "GH_TOKEN: ${{ github.token }}" in probe
+    assert "gh api" in probe
