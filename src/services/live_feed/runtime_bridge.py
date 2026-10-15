@@ -71,6 +71,57 @@ class LiveFeedRuntimeBridge:
         self._controller.process_pending()
         return self.snapshot()
 
+    def subscribe_streams(self, streams: Sequence[SemanticStreamKey]) -> None:
+        """Add streams through the existing controller and provider owner.
+
+        This is the mutation seam used by the instance-scoped subscription
+        manager. Desired keys are registered before provider subscription so
+        an immediate push is not rejected as undesired. If provider mutation
+        fails, the desired registry is rolled back and the exception remains
+        visible to the manager as an unknown transport outcome.
+        """
+        if not self._started:
+            raise RuntimeError("live feed runtime is not started")
+        unique = tuple(key for key in dict.fromkeys(streams) if key not in self._subscribed)
+        if not unique:
+            return
+        queued: list[SemanticStreamKey] = []
+        for key in unique:
+            accepted = self._controller.request_add_desired(key)
+            if not accepted.accepted:
+                for prior in queued:
+                    self._controller.request_remove_desired(prior)
+                self._controller.process_pending()
+                raise RuntimeError("desired registry ingress rejected")
+            queued.append(key)
+        self._controller.process_pending()
+        try:
+            self._adapter.subscribe_streams(unique)
+        except Exception:
+            for key in unique:
+                self._controller.request_remove_desired(key)
+            self._controller.process_pending()
+            raise
+        self._subscribed.extend(unique)
+
+    def subscribe_stream(self, key: SemanticStreamKey) -> None:
+        self.subscribe_streams((key,))
+
+    def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
+        """Remove one stream after provider ACK; baseline policy stays external."""
+        if not self._started:
+            raise RuntimeError("live feed runtime is not started")
+        if key not in self._subscribed:
+            return
+        self._adapter.unsubscribe_stream(key)
+        accepted = self._controller.request_remove_desired(key)
+        if not accepted.accepted:
+            # Keep local ownership so stop() still attempts cleanup. The
+            # provider may have unsubscribed, but controller state is unknown.
+            raise RuntimeError("desired registry ingress rejected after provider unsubscribe")
+        self._controller.process_pending()
+        self._subscribed.remove(key)
+
     def stop(self) -> LiveFeedRuntimeSnapshot:
         if not self._started:
             return self.snapshot()
