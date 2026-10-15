@@ -66,3 +66,24 @@ def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
     # Auditor used to impose a smaller 150 KB limit and falsely report
     # NO_VALID_CACHE for a legitimate 150-350 KB private snapshot.
     assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
+
+
+@pytest.mark.parametrize("symbol_index", [0, 1])
+@pytest.mark.parametrize("period", ["15M", "60M", "5M", "1D"])
+@pytest.mark.parametrize("action", ["FETCH", "NORMALIZE"])
+def test_worker_all_requested_failure_stages_are_safely_classified(
+    symbol_index, period, action,
+):
+    # AWS worker include_supplemental=True requests all four timeframes;
+    # 5m/1d outages must not disappear into UNKNOWN in the public audit.
+    stage = f"S{symbol_index}_{period}_{action}"
+    assert audit.safe_failure_stage(stage) == stage
+
+
+@pytest.mark.parametrize("malicious", [
+    None, 0, True, {}, "S0_1M_FETCH", "S2_5M_FETCH",
+    "S0_5M_FETCH\\nAPI_KEY=DO_NOT_ECHO", "S1_1D_NORMALIZE_SECRET",
+])
+def test_worker_failure_stage_projection_is_enum_only(malicious):
+    assert audit.safe_failure_stage(malicious) == "UNKNOWN"
+    assert "DO_NOT_ECHO" not in audit.safe_failure_stage(malicious)
