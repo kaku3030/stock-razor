@@ -1,0 +1,48 @@
+name: Engineering Autonomy DeepSeek Balance Watch (no model calls)
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: engineering-autonomy-deepseek-balance-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  balance-watch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check official DeepSeek balance (one GET; no tokens)
+        id: budget
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --monitor --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Reconcile one GitHub recharge alert (no balance or secret access)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget_issue \
+            --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Fail closed on unreadable balance
+        if: always() && steps.budget.outcome != 'success'
+        run: |
+          echo 'BLOCKED: Could not confirm DeepSeek balance status' >&2
+          exit 1
