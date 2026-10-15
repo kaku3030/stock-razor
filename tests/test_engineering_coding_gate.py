@@ -8,6 +8,7 @@ from engineering_autonomy.coding_gate import (
     TASK_ID,
     validate_patch,
     validate_task,
+    verify_worktree,
 )
 
 
@@ -96,3 +97,43 @@ def test_aider_history_files_outside_checkout_and_capture_still_fail_closed():
     assert "python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch" in workflow
     assert "git clean" not in workflow
     assert "git restore" not in workflow
+
+
+def test_porcelain_unstaged_edit_preserves_significant_leading_space(monkeypatch):
+    """Aider's one allowed unstaged edit must pass strict capture."""
+    expected_status = f" M {ALLOWED_PATH}".encode() + bytes([0])
+    observed_commands = []
+
+    def fake_git(command, **kwargs):
+        observed_commands.append(command)
+        if command[:2] == ["git", "status"]:
+            return expected_status
+        if command[:2] == ["git", "diff"]:
+            return make_patch()
+        raise AssertionError(f"Unexpected subprocess: {command}")
+
+    monkeypatch.setattr("engineering_autonomy.coding_gate.subprocess.check_output", fake_git)
+    assert verify_worktree() == make_patch()
+    assert observed_commands[0] == [
+        "git", "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    ]
+
+
+@pytest.mark.parametrize("status", [
+    b"",
+    b" M tests/test_engineering_autonomy.py\n",
+    b"M  tests/test_engineering_autonomy.py\0",
+    b"MM tests/test_engineering_autonomy.py\0",
+    b"?? .aider-chat.history.md\0",
+    b" M tests/test_engineering_autonomy.py\0?? .aider-chat.history.md\0",
+])
+def test_porcelain_unreviewed_changes_still_fail_closed(monkeypatch, status):
+    """Staged, extra, missing and malformed entries cannot pass capture."""
+    def fake_git(command, **kwargs):
+        if command[:2] == ["git", "status"]:
+            return status
+        raise AssertionError("Unexpected diff execution after a rejected status")
+
+    monkeypatch.setattr("engineering_autonomy.coding_gate.subprocess.check_output", fake_git)
+    with pytest.raises(ValueError, match="not one allowed modified test file"):
+        verify_worktree()

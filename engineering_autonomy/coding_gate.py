@@ -23,10 +23,6 @@ OBJECTIVE = (
 )
 
 
-def run(*args: str) -> str:
-    return subprocess.check_output(args, text=True).strip()
-
-
 def validate_task(path: Path = TASKS) -> None:
     tasks = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(tasks, dict) or set(tasks) != {"version", "tasks"} or tasks["version"] != 1:
@@ -50,8 +46,12 @@ def prompt() -> str:
 
 def verify_worktree() -> bytes:
     """Reject every non-allowlisted edit, including untracked content."""
-    status = run("git", "status", "--porcelain=v1", "--untracked-files=all")
-    if status.splitlines() != [f" M {ALLOWED_PATH}"]:
+    # The leading space in Git's ' M' porcelain status is significant.
+    # Compare exact NUL-terminated bytes; stripping whitespace breaks valid edits.
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"]
+    )
+    if status != f" M {ALLOWED_PATH}\0".encode("utf-8"):
         raise ValueError("Worktree changes are not one allowed modified test file")
     patch = subprocess.check_output(["git", "diff", "--binary", "--", ALLOWED_PATH])
     validate_patch(patch)
