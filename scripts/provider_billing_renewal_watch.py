@@ -309,6 +309,8 @@ def main() -> int:
             "discord_http_403": "DISCORD_HTTP_403",
             "discord_http_404": "DISCORD_HTTP_404",
             "discord_http_429": "DISCORD_HTTP_429",
+            "telegram_delivery_failed": "TELEGRAM_DELIVERY_FAILED",
+            "invalid_telegram_config": "TELEGRAM_CONFIG_INVALID",
             "invalid_date": "CONFIG_DATE_INVALID",
             "invalid_money": "CONFIG_VALUE_INVALID",
             "incomplete_openai_credit_snapshot": "CONFIG_CREDIT_SNAPSHOT_INCOMPLETE",
