@@ -91,9 +91,9 @@ jobs:
       - name: Unified provider costs, DeepSeek funds, AWS estimate and TickFlow renewal
         run: |
           if [[ "${{ github.event_name }}" == workflow_dispatch && "${{ inputs.dry_run }}" == true ]]; then
-            python3 scripts/provider_billing_renewal_watch.py --dry-run
+            python3 -m scripts.provider_billing_renewal_watch --dry-run
           elif [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
-            python3 scripts/provider_billing_renewal_watch.py --send-report
+            python3 -m scripts.provider_billing_renewal_watch --send-report
           else
-            python3 scripts/provider_billing_renewal_watch.py
+            python3 -m scripts.provider_billing_renewal_watch
           fi

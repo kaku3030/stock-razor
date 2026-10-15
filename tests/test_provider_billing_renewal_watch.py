@@ -211,3 +211,26 @@ def test_standard_user_agent_and_telegram_http_no_error_body_leak(monkeypatch):
         watch.telegram_send("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ", "-1001234567890", "hello")
     assert "SENSITIVE" not in str(err.value)
     assert headers[0]["User-agent"] == "StockRazor-ProviderWatch/1.0"
+
+
+def test_cloud_workflow_uses_module_entrypoint_for_repo_root_imports():
+    """The cloud runner must not load the script as an isolated sys.path entry."""
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/provider-billing-renewal-watch.yml").read_text(
+        encoding="utf-8"
+    )
+    assert workflow.count("python3 -m scripts.provider_billing_renewal_watch") == 3
+    assert "python3 scripts/provider_billing_renewal_watch.py" not in workflow
+
+    # Executed in a child process so a missing repo-root package import cannot
+    # be disguised by pytest's own sys.path.
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.provider_billing_renewal_watch", "--dry-run"],
+        cwd=root, text=True, capture_output=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0
+    assert "PROVIDER_BILLING_WATCH=DRY_RUN_PASS" in result.stdout
