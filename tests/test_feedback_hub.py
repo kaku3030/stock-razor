@@ -238,7 +238,9 @@ def test_evidence_allowlist_preserves_safe_nested_operational_facts(tmp_path):
         evidence={"ci": "run/7", "status": "PASS"},
     )
     assert result.status == "DONE"
-    assert len(hub.audit(item.id)) == 2
+    assert [record["event_type"] for record in hub.audit(item.id)] == [
+        "SUBMITTED", "CLAIMED", "DONE",
+    ]
     hub.close()
 
 
