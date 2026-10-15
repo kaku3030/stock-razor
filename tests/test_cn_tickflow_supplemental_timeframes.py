@@ -114,7 +114,7 @@ def test_intraday_5m_native_tick_precision_retained_without_trade_promotion(tmp_
     Only non-mutating ETF tick-lattice-compatible elapsed labels qualify for
     *research*. No vendor repair, exchange finality, currentness or trading.
     """
-    now=datetime(2026,10,15,2,35,tzinfo=timezone.utc) # 11:35 Shanghai
+    now=datetime(2026,10,15,3,35,tzinfo=timezone.utc) # 11:35 Shanghai
     due=sorted(t for t in _minutes("5m","2026-10-15")
                if t.strftime("%H:%M") <= "11:30")
     assert len(due)==24
@@ -183,7 +183,7 @@ def test_intraday_5m_native_tick_precision_retained_without_trade_promotion(tmp_
 
 def test_intraday_5m_non_lattice_or_large_gap_does_not_gain_tolerance():
     from data_provider.cn_tickflow_research_cache import normalize_bars
-    now=datetime(2026,10,15,2,35,tzinfo=timezone.utc)
+    now=datetime(2026,10,15,3,35,tzinfo=timezone.utc)
     a=KlineGetter().get("159611.SZ",period="5m",count=144,
                        adjust="none",as_dataframe=False)
     source=_minutes("5m","2026-10-14")+[
