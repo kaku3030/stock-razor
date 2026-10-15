@@ -8,6 +8,7 @@ import pytest
 from src.services.live_feed.futu_k1m_history import normalize_futu_k1m_history_rows
 from src.services.live_feed.us_postclose_terminal_reconciliation import (
     reconcile_us_postclose_terminal_minutes,
+    postclose_history_retry_due,
 )
 
 NY = ZoneInfo("America/New_York")
@@ -191,7 +192,9 @@ def test_installer_wires_one_shot_historical_reconciliation_without_promotion():
     from pathlib import Path
     script = (Path(__file__).resolve().parents[1] / "ops/aws/install_us_opend_livefeed.sh").read_text()
     assert "reconcile_us_postclose_terminal_minutes" in script
-    assert "postclose_attempted_date" in script
+    assert "postclose_attempt_count" in script
+    assert "postclose_last_attempt_at" in script
+    assert "postclose_history_retry_due(" in script
     assert '"postclose_reconciliation":postclose_reconciliation' in script
     assert "or postclose_seeded_this_pass > 0" in script
 
@@ -210,3 +213,33 @@ def test_existing_incomplete_terminal_is_not_accepted_or_replaced():
     assert report["seeded_count"] == 0
     assert cache.ingestions == 0
     assert calls == []
+
+
+def test_postclose_history_retry_is_at_most_twice_after_30m_with_real_failure():
+    call = lambda **kwargs: postclose_history_retry_due(observed_at=AT, **kwargs)
+    assert call(attempts=0, last_attempt_at=None, prior_status="NOT_DUE")
+    # Original one-shot failed provider call must not retry in a hot 5s loop.
+    failed_at = AT - timedelta(minutes=29)
+    assert not call(attempts=1, last_attempt_at=failed_at, prior_status="BLOCKED")
+    exactly_30m = AT - timedelta(minutes=30)
+    assert call(attempts=1, last_attempt_at=exactly_30m, prior_status="BLOCKED")
+    assert call(attempts=1, last_attempt_at=exactly_30m, prior_status="PARTIAL_HISTORICAL_ONLY")
+    # Full success or already present must never query a second time.
+    assert not call(attempts=1, last_attempt_at=exactly_30m, prior_status="PASS_HISTORICAL_ONLY")
+    assert not call(attempts=1, last_attempt_at=exactly_30m, prior_status="ALREADY_PRESENT")
+    assert not call(attempts=2, last_attempt_at=exactly_30m, prior_status="BLOCKED")
+
+
+def test_postclose_retry_rejects_missing_clock_or_old_session_state():
+    call = lambda **kwargs: postclose_history_retry_due(observed_at=AT, **kwargs)
+    assert not call(attempts=0, last_attempt_at=AT, prior_status="NOT_DUE")
+    assert not call(attempts=-1, last_attempt_at=None, prior_status="NOT_DUE")
+    assert not call(attempts=True, last_attempt_at=None, prior_status="NOT_DUE")
+    assert not call(attempts=1, last_attempt_at=None, prior_status="BLOCKED")
+    assert not call(attempts=1, last_attempt_at=AT + timedelta(seconds=1), prior_status="BLOCKED")
+    assert not call(attempts=1, last_attempt_at=AT - timedelta(days=2), prior_status="BLOCKED")
+    assert not call(attempts=1, last_attempt_at=AT.replace(tzinfo=None), prior_status="BLOCKED")
+    assert not postclose_history_retry_due(
+        attempts=1, last_attempt_at=AT - timedelta(minutes=30),
+        observed_at=AT.replace(tzinfo=None), prior_status="BLOCKED",
+    )
