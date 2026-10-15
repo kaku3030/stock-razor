@@ -43,6 +43,8 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == workflow_dispatch && "${{ inputs.dry_run }}" == true ]]; then
             python3 scripts/provider_billing_renewal_watch.py --dry-run
-          else
+          elif [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
             python3 scripts/provider_billing_renewal_watch.py --send-report
+          else
+            python3 scripts/provider_billing_renewal_watch.py
           fi
