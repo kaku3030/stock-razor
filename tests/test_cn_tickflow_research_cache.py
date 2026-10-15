@@ -324,7 +324,7 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
         path=str(p),now_utc=later,research_mode="historical_only")
     assert strict["status"]=="STALE"
     assert hist["status"]=="PASS_HISTORICAL_ONLY"
-    assert hist["max_age_seconds"]==360
+    assert hist["max_age_seconds"]==1080
     too_late=read_cn_tickflow_research_data("159611.SZ",
         path=str(p),now_utc=current+timedelta(seconds=1090),
         research_mode="historical_only")

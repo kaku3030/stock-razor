@@ -641,6 +641,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "expected_grid_progress":progress,
         "last_bar_end_label_age_seconds":round(max(0,label_age),2),
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
+        "max_age_seconds":max_age,
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
         "ohlc_precision_scope":(
