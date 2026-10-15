@@ -357,6 +357,8 @@ def test_combined_cloud_audit_and_nonmutating_vendor_float_research_only(tmp_pat
     assert proof["last_due_grid"] == "MATCHED_DUE_LABEL"
     assert proof["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
     assert proof["quarantine_cause_buckets"] == {}
+    assert proof["vendor_float_rows_bucket"] == "TWO_TO_FOUR"
+    assert proof["same_session_vendor_float_rows_bucket"] == "TWO_TO_FOUR"
     assert snap["source_arbiter_admission"] == snap["radar_admission"] == "BLOCKED"
     assert snap["can_confirm_signal"] is False
     assert all(bar["bar_finality"] == "NOT_VERIFIED" for bar in frame["rows"])
@@ -376,3 +378,33 @@ def test_combined_cloud_audit_and_nonmutating_vendor_float_research_only(tmp_pat
     assert read["radar_admission"] == "BLOCKED"
     assert read["live_trade"] is False
     assert read["can_confirm_signal"] is False
+
+
+def test_cloud_precision_projection_enums_are_static_and_price_free():
+    root=Path(__file__).resolve().parents[1]
+    workflow=(root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text()
+    assert 'assert _v.get("vendor_float_rows_bucket") in allowed_bucket' in workflow
+    assert 'assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket' in workflow
+    assert 'v.get("ohlc_precision_scope") in (' in workflow
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    china=ZoneInfo("Asia/Shanghai")
+    frame={
+        "rows":[
+            {"label":f"2026-10-14 {clock}", "ohlc_validation":"STRICT"}
+            for clock in ("14:00","14:15","14:30","14:45")
+        ]+[{
+            "label":"2026-10-15 09:45",
+            "ohlc_validation":"SUSPICIOUS_PRICE=12345_DO_NOT_LEAK",
+        }],
+        "quarantined_unverified_rows_count":0,
+        "quarantine_reason_counts":{},
+    }
+    got=audit.summarize_private_frame_progress(
+        frame,timeframe="15m",
+        now_utc=datetime(2026,10,15,9,47,tzinfo=china),
+    )
+    assert got["vendor_float_rows_bucket"]=="UNKNOWN"
+    assert got["same_session_vendor_float_rows_bucket"]=="UNKNOWN"
+    assert "12345_DO_NOT_LEAK" not in repr(got)
