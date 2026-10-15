@@ -24,10 +24,11 @@ permissions:
 
 jobs:
   audit:
-    # Only admitted jobs serialize. Untrusted public PR comments must not
-    # cancel queued owner audits before the job-level if gate evaluates.
+    # Share deployment's lock to avoid a 65-second two-snapshot audit
+    # straddling a paid worker restart/cache replacement. Only admitted
+    # jobs enter this group: untrusted PR comments remain job-if skipped.
     concurrency:
-      group: cn-tickflow-readonly-audit-${{ github.ref }}
+      group: cn-tickflow-research-worker
       cancel-in-progress: false
     if: >-
       github.ref == 'refs/heads/main' && (
@@ -167,7 +168,7 @@ jobs:
                   assert obj[term] in count_buckets
           assert type(d.get("limited_research_usable")) is bool
           assert type(d.get("historical_research_usable")) is bool
-          keys=("status","failure_stage","failure_reason","failure_ohlc_float_gap_bucket","unit_active","mcp_unit_active","cache_private",
+          keys=("status","cache_unavailable_reason","worker_journal_observation","failure_stage","failure_reason","failure_ohlc_float_gap_bucket","unit_active","mcp_unit_active","cache_private",
                 "repo_sha_match","sequence","cache_age_seconds","mcp_read_failure_reason",
                 "mcp_cache_consumer","mcp_historical_consumer",
                 "all_four_readonly_requests_ok","all_four_historical_requests_ok")
@@ -175,6 +176,10 @@ jobs:
           allowed_grid=("UNKNOWN","NO_SESSION_GRID_DUE","NO_SAME_DAY_RETAINED_BAR",
                         "LAST_LABEL_OFF_GRID","MATCHED_DUE_LABEL",
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
+          allowed_continuity=("UNKNOWN","NO_SESSION_GRID_DUE",
+                              "NO_SAME_DAY_RETAINED_BAR","INVALID_TODAY_LABEL_GRID",
+                              "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY",
+                              "ONE_DUE_LABEL_MISSING","MULTIPLE_DUE_LABELS_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
           allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
           parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
@@ -196,7 +201,14 @@ jobs:
           historical_states=("PASS_HISTORICAL_ONLY","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST")
           reasons=("NOT_VERIFIED","NOT_APPLICABLE","METHOD_RETURN_BLOCKED",
                    "IMPORT_OR_RUNTIME_FAILURE","SERVICE_PATH_MISSING")
+          cache_absence=("NOT_APPLICABLE","FILE_MISSING","FILE_PERMISSION_BLOCKED",
+                         "FILE_SIZE_INVALID","JSON_INVALID","DECODE_INVALID",
+                         "SCHEMA_INVALID","UNCLASSIFIED")
+          worker_journal=("JOURNAL_UNAVAILABLE","NO_RECENT_LIFECYCLE_MARKER",
+                          "BOOT_BLOCKED","POLL_BLOCKED","POLL_RESEARCH_ONLY_PASS")
           for when in ("before","after"):
+              assert d[when].get("cache_unavailable_reason") in cache_absence
+              assert d[when].get("worker_journal_observation") in worker_journal
               assert d[when].get("failure_ohlc_float_gap_bucket") in (
                   "UNKNOWN","WITHIN_1E_MINUS_5","OVER_1E_MINUS_5"
               )
@@ -215,7 +227,15 @@ jobs:
               for _v in frame_map.values():
                   assert isinstance(_v,dict)
                   assert _v.get("last_due_grid") in allowed_grid
+                  assert _v.get("due_grid_continuity") in allowed_continuity
                   assert _v.get("dominant_quarantine_reason") in allowed_cause
+                  cause_buckets=_v.get("quarantine_cause_buckets")
+                  assert isinstance(cause_buckets,dict)
+                  assert len(cause_buckets)<=8
+                  assert all(name in allowed_cause and name not in ("UNKNOWN","NONE")
+                             and bucket in allowed_bucket
+                             and bucket not in ("UNKNOWN","ZERO")
+                             for name,bucket in cause_buckets.items())
                   assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
                   assert _v.get("gap_violation_rows_bucket") in allowed_bucket
                   assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket

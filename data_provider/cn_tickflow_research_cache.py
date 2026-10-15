@@ -394,6 +394,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
     }
 
 def atomic_publish(path: str, payload: dict) -> None:
+    # Never publish a JSON blob that the strict reader and AWS auditor will
+    # reject as oversized. Validate before opening or replacing any file.
+    encoded=json.dumps(payload,allow_nan=False,separators=(",",":"))
+    if len(encoded.encode("utf-8"))>MAX_BYTES:
+        raise ValueError("private research cache exceeds bounded bytes")
     parent=Path(path).parent
     parent.mkdir(parents=True,exist_ok=True)
     temporary=None
@@ -404,7 +409,7 @@ def atomic_publish(path: str, payload: dict) -> None:
         else:
             os.chmod(temporary,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as f:
-            json.dump(payload,f,allow_nan=False,separators=(",",":"))
+            f.write(encoded)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary,path)
