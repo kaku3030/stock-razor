@@ -17,7 +17,7 @@ class Adapter(MarketDataAdapter):
 def b(i):
     bar_start=START+timedelta(minutes=i)
     time_key=bar_start+timedelta(minutes=1)
-    m=FormingMinuteBar("US.AMD",time_key,100+i,101+i,99+i,100.5+i,10,1000,True)
+    m=FormingMinuteBar("US.AMD",time_key,100+i,101+i,99+i,100.5+i,10,(100+i)*10,True)
     return closed_futu_minute_to_bar(m,received_at=time_key+timedelta(seconds=5))
 
 def test_complete_15m_preserves_proven_timestamp_health():

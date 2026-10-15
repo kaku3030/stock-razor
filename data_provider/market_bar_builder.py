@@ -135,7 +135,26 @@ def aggregate_bars(
 
         volume = sum(item.volume for item in ordered)
         amounts = [item.amount for item in ordered]
-        amount = sum(value for value in amounts if value is not None) if any(value is not None for value in amounts) else None
+        # Missing any source-minute turnover makes the aggregate amount
+        # and derived VWAP unavailable; never divide partial cash by full size.
+        partial_turnover = any(value is None for value in amounts) and any(
+            value is not None for value in amounts
+        )
+        if partial_turnover:
+            flags.append("PARTIAL_TURNOVER")
+        amount = sum(amounts) if all(value is not None for value in amounts) else None
+        high = max(item.high for item in ordered)
+        low = min(item.low for item in ordered)
+        derived_vwap = amount / volume if amount is not None and volume > 0 else None
+        if derived_vwap is not None and not (
+            low - max(1e-6, abs(low) * 1e-6)
+            <= derived_vwap
+            <= high + max(1e-6, abs(high) * 1e-6)
+        ):
+            # Preserve native turnover as evidence but never publish an
+            # economically impossible per-bar VWAP (observed in US.QQQ).
+            flags.append("VWAP_OUTSIDE_BAR_RANGE")
+            derived_vwap = None
         # Historical and delayed facts retain their original availability
         # classification: aggregating a complete grid does not create realtime
         # currentness or entitlement evidence.
@@ -158,12 +177,12 @@ def aggregate_bars(
                 bar_start=bucket_start,
                 bar_end=bucket_end,
                 open=ordered[0].open,
-                high=max(item.high for item in ordered),
-                low=min(item.low for item in ordered),
+                high=high,
+                low=low,
                 close=ordered[-1].close,
                 volume=volume,
                 amount=amount,
-                vwap=(amount / volume) if amount is not None and volume > 0 else None,
+                vwap=derived_vwap,
                 provider=provider,
                 feed=feed,
                 session=session,
