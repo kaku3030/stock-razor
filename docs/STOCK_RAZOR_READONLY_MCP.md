@@ -189,6 +189,25 @@ The independent AWS loopback smoke workflow
 MCP HTTP protocol and original tool, using four bounded historical calls; it
 never reports provider prices or secrets to public Actions logs.
 
+### Explicit intraday TickFlow progress through the same connected tool
+
+After an owner-reviewed MCP SHA deployment, use
+`get_cn_market_data(symbol="TICKFLOW:PROGRESS:159611.SZ", timeframe="15m", limit=4)`
+(or `518880.SH`, `5m` / `60m`) for the cache reader's bounded
+`session_progress` path, which checks whether the latest Shanghai due-grid
+label has arrived. Unlike the historical-only prefix, a missing due label
+returns `BAR_LABEL_BEHIND_SESSION` instead of describing old bars as
+current. The cloud cache is read only; **no extra paid-provider I/O** occurs.
+
+`PASS_RESEARCH_ONLY` is **not** an exchange-closed candle or actionable
+market signal. Vendor-float research rows retain explicit
+`ohlc_validation=VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY`; both
+`bar_finality` and `currentness` stay unverified. No automatic
+fallback to Tencent/Eastmoney and no source/Radar/Paper/trade admission.
+The original `TICKFLOW:<symbol>` remains historical-only; ordinary
+symbols stay on their explicit legacy provider route. `1d` is
+deliberately invalid for `session_progress`.
+
 ### Fast four-frame cloud TickFlow research read
 
 The already-connected ChatGPT `get_cn_market_data` tool also accepts
