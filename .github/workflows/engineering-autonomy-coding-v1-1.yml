@@ -69,6 +69,13 @@ jobs:
             exit 1
           fi
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
+      - name: Require authenticated provider-side CNY 5 cap proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No trusted provider hard-cap attestation is wired yet; blocks paid
+          # execution even if an operator sets a claim-like repository variable.
+          python -m engineering_autonomy.deepseek_budget cost-cap-check
       - name: Enforce official DeepSeek balance budget before any paid completion
         id: budget
         env:
@@ -83,15 +90,15 @@ jobs:
       - name: Run isolated DeepSeek coding agent (bounded, non-streaming)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_HARD_COST_GUARANTEE: ${{ vars.DEEPSEEK_HARD_COST_GUARANTEE }}
           LITELLM_MAX_RETRIES: '0'
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
         shell: bash
         run: |
           set -euo pipefail
-          # The wrapper blocks unless a provider-side CNY 5 cap is explicitly verified,
-          # and kills the child on 240s, 2 requests, 20k input or 4k output.
+          # The wrapper blocks on unverified upstream cost controls.
+          # Its analytics watchdog only detects spent tokens after each request;
+          # it cannot guarantee a per-request token budget on its own.
           python -m engineering_autonomy.deepseek_budget run \
             --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" -- \
             aider \
