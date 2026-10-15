@@ -84,6 +84,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     future_or_forming = 0
     invalid_ohlc = 0
     tiny_vendor_float_drift_rows = 0
+    same_session_float_drift_rows = 0
     duplicate_or_reordered = 0
     same_day_daily_quarantined = 0
     latest_prior_daily_seen = False
@@ -114,7 +115,12 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 or nums[2] > min(nums[0], nums[1], nums[3])
             )
             if strict_gap:
+                if stamp > cutoff and timeframe != "1d":
+                    future_or_forming += 1
+                    continue
                 tiny_vendor_float_drift_rows += 1
+                if stamp.date() == now_cn.date():
+                    same_session_float_drift_rows += 1
                 continue
             if timeframe == "1d":
                 if stamp.date() >= now_cn.date():
@@ -142,6 +148,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
             "same_day_daily_quarantined": same_day_daily_quarantined,
             "invalid_rows": invalid_ohlc,
             "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
+            "same_session_float_drift_rows": same_session_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
             "current_day_d1_finality": "NOT_VERIFIED",
         }
@@ -150,7 +157,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     status = (
         "PASS_RESEARCH_ONLY"
         if not missing and not invalid_ohlc
-        and not tiny_vendor_float_drift_rows and not duplicate_or_reordered
+        and not same_session_float_drift_rows and not duplicate_or_reordered
         else "BLOCKED_UNVERIFIED"
     )
     return {
@@ -159,6 +166,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         "due_labels_missing": missing, "future_or_forming_quarantined": future_or_forming,
         "invalid_rows": invalid_ohlc,
         "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
+        "same_session_float_drift_rows": same_session_float_drift_rows,
         "reordered_or_duplicate_rows": duplicate_or_reordered,
         "exchange_bar_finality": "NOT_VERIFIED",
     }
