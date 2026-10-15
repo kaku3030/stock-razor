@@ -312,7 +312,7 @@ def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
     assert result["live_trade"] is False
 
 def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
-    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    current=datetime(2026,10,11,7,16,tzinfo=timezone.utc)
     snap=build_observation(FakeClient(),now_utc=current,
             repo_sha="c"*40,sequence=1)
     p=tmp_path/"cache.json"
@@ -324,11 +324,33 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
         path=str(p),now_utc=later,research_mode="historical_only")
     assert strict["status"]=="STALE"
     assert hist["status"]=="PASS_HISTORICAL_ONLY"
-    assert hist["max_age_seconds"]==360
+    assert hist["max_age_seconds"]==1080
     too_late=read_cn_tickflow_research_data("159611.SZ",
-        path=str(p),now_utc=current+timedelta(seconds=370),
+        path=str(p),now_utc=current+timedelta(seconds=1090),
         research_mode="historical_only")
     assert too_late["status"]=="STALE"
+
+def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
+            repo_sha="a"*40,sequence=2)
+    p=tmp_path/"obs.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=300)
+    result=read_cn_tickflow_research_data("159611.SZ","15m",path=str(p),
+            now_utc=later)
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["max_age_seconds"]==360
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
 
 def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
     q=read_cn_tickflow_research_data("159611.SZ",
