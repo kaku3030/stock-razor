@@ -257,6 +257,14 @@ class FeedbackHub:
             row = self._connection.execute("SELECT * FROM feedback WHERE id=?", (feedback_id,)).fetchone()
             if row is None or row["claimed_by"] != worker_id:
                 raise FeedbackHubError("feedback claim is missing or owned by another worker")
+            # Ownership alone is not write authority: DONE/BLOCKED/NEW are
+            # terminal or unclaimed states, even if claimed_by was retained.
+            if row["status"] not in {"CLAIMED", "IN_PROGRESS"}:
+                raise FeedbackHubError("feedback claim is no longer active")
+            # A worker with an expired lease must re-claim before writing,
+            # even when another worker has not taken the item yet.
+            if row["lease_until"] is None or row["lease_until"] <= now:
+                raise FeedbackHubError("feedback claim lease expired")
             next_status = status
             if status == "FAILED":
                 next_status = "NEW" if row["attempts"] < row["max_attempts"] else "BLOCKED"
