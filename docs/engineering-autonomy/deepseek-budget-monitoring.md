@@ -69,7 +69,12 @@ into an issue, chat, or source file.
    to run a manual **GET-only** balance check, or let the 12-hour check run.
 4. On a Discord LOW/EMPTY/UNAVAILABLE alert, inspect or top up the DeepSeek
    developer console. No payment is triggered automatically.
-5. After a confirmed Coding V1.1 attempt, inspect its `generate` job summary
+5. To verify the Discord webhook **without pretending balance is low**, run
+   `Actions → Engineering Autonomy DeepSeek Balance Watch (no model calls)`
+   manually on `main` with input `test_discord_delivery=true`. This performs
+   the usual no-token official balance GET and sends **one** clearly-labelled
+   delivery test message; scheduled runs never send test messages.
+6. After a confirmed Coding V1.1 attempt, inspect its `generate` job summary
    or `autonomy-deepseek-usage` sanitized artifact for request/token counters.
    The native provider probe and the coding workflow remain independently
    manually confirmed; low/unknown balance still fails closed.
