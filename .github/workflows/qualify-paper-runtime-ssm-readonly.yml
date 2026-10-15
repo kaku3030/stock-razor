@@ -157,13 +157,26 @@ jobs:
                           values[key] = value.strip().strip("\"'")
               raw_times = values.get("SCHEDULE_TIMES") or values.get("SCHEDULE_TIME")
               times = [item.strip() for item in (raw_times or "").split(",") if item.strip()]
-              valid = bool(times) and all(
-                  re.fullmatch(r"(?:[01][0-9]|2[0-3]):(?:00|30)", item)
-                  for item in times
+              expected = {
+                  f"{hour:02d}:{minute:02d}"
+                  for hour in range(24) for minute in (0, 30)
+              }
+              # One HH:00 (or even HH:00 + HH:30 in one hour) does NOT
+              # prove whole-day 00/30 scheduling. Inspect fixed config
+              # only; actual trigger execution remains independently unproven.
+              valid = (
+                  len(times) == 48
+                  and set(times) == expected
+                  and all(
+                      re.fullmatch(r"(?:[01][0-9]|2[0-3]):(?:00|30)", item)
+                      for item in times
+                  )
               )
-          except (OSError, UnicodeError):
+          except (OSError, UnicodeError, ValueError, TypeError):
               valid = False
-          print("PAPER_HALF_HOUR_SCHEDULE " + ("PASS" if valid else "UNKNOWN"))
+          print("PAPER_HALF_HOUR_SCHEDULE " + (
+              "CONFIGURED_48_SLOTS_ONLY" if valid else "UNKNOWN"
+          ))
           PY
           else
             emit PAPER_HALF_HOUR_SCHEDULE UNKNOWN
