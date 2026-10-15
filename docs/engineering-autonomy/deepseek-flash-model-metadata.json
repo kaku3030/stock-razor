@@ -1,0 +1,11 @@
+{
+  "deepseek/deepseek-flash": {
+    "litellm_provider": "deepseek",
+    "mode": "chat",
+    "max_tokens": 8192,
+    "max_input_tokens": 131072,
+    "max_output_tokens": 8192,
+    "supports_system_messages": true,
+    "supports_function_calling": true
+  }
+}
