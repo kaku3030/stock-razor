@@ -82,7 +82,27 @@ def test_untrusted_comments_cannot_consume_workflow_concurrency():
     workflow = (root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
     assert "\nconcurrency:\n" not in workflow
     assert "jobs:\n  audit:\n" in workflow
-    assert "    concurrency:\n      group: cn-tickflow-readonly-audit-" in workflow
+    assert "    concurrency:\n      group: cn-tickflow-research-worker" in workflow
     assert workflow.index("jobs:\n  audit:\n") < workflow.index("    concurrency:\n") < workflow.index("    if: >-")
     assert workflow.count("cancel-in-progress: false") == 1
     assert "github.event.issue.number == 658" in workflow
+
+
+def test_paid_worker_deploy_and_two_snapshot_audit_share_non_cancelling_lock():
+    root = Path(__file__).resolve().parents[1]
+    audit = (root / ".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
+    deploy = (root / ".github/workflows/deploy-cn-tickflow-research.yml").read_text(encoding="utf-8")
+    group = "group: cn-tickflow-research-worker"
+    assert audit.count(group) == 1
+    assert deploy.count(group) == 1
+    assert "    concurrency:" in audit  # job-level: untrusted comments never lock
+    assert "jobs:\n  audit:\n" in audit
+    assert audit.index("    concurrency:") < audit.index("    if: >-")
+    assert "concurrency:\n  group: cn-tickflow-research-worker" in deploy
+    assert "cancel-in-progress: false" in audit
+    assert "cancel-in-progress: false" in deploy
+    # A GitHub concurrency group allows only one running audit/deploy.
+    # It is NOT a provider-health, closure or realtime data assertion.
+    assert "Verify two isolated AWS snapshots 65 seconds apart" in audit
+    assert "RADAR_ADMISSION: BLOCKED" not in audit  # gate checked via audited output
+    assert "approve_paid_tickflow_ingestion" in deploy
