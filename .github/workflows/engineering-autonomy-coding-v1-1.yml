@@ -50,7 +50,7 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.pending == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 8
     permissions:
       contents: read
     steps:
@@ -71,7 +71,7 @@ jobs:
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
       - name: Install pinned Aider coding CLI
         run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
-      - name: Run isolated DeepSeek coding agent
+      - name: Run isolated DeepSeek coding agent (bounded, non-streaming)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ''
@@ -79,7 +79,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aider \
+          # Avoid 25m silent waits and indefinite LiteLLM retry loops.
+          # Aider API timeout is per request; GNU timeout bounds the whole process.
+          set +e
+          timeout --signal=TERM --kill-after=10s 240s aider \
             --file tests/test_engineering_autonomy.py \
             --read .gitignore \
             --no-gitignore \
@@ -87,11 +90,24 @@ jobs:
             --chat-history-file "$RUNNER_TEMP/autonomy-aider-chat.history.md" \
             --map-tokens 0 \
             --no-analytics \
+            --no-cache-prompts \
+            --no-stream \
+            --timeout 90 \
             --model deepseek/deepseek-chat \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \
             --no-auto-commits \
             --no-check-update
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "BLOCKED: DeepSeek/Aider exceeded 240-second overall limit" >&2
+            exit 124
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "BLOCKED: bounded DeepSeek/Aider exited nonzero" >&2
+            exit "$rc"
+          fi
       - name: Diagnose changed worktree paths only (no file contents)
         shell: bash
         run: |
