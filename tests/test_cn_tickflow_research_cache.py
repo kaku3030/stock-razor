@@ -386,9 +386,14 @@ def test_today_ohlc_tick_lattice_shadow_can_identify_rounding_only():
     evidence={}
     out=normalize_bars(raw,"15m",now_utc=now,
          quarantine_counts=reasons,quarantine_evidence=evidence)
-    assert len(out)==6 # never actually amend nor admit the two bad rows
-    assert evidence["ETF_TICK_LATTICE_NEAR"]==2
-    assert evidence["ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY"]==1
+    # The tiny tick-lattice-compatible vendor float row is retained
+    # unchanged for blocked RESEARCH ONLY. The genuinely invalid second
+    # row stays quarantined, and must not be auto-repaired.
+    assert len(out)==7
+    assert out[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert out[-1]["high"]==1.59999999
+    assert evidence["ETF_TICK_LATTICE_NEAR"]==1
+    assert evidence.get("ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY",0)==0
     assert evidence.get("ETF_TICK_LATTICE_FAR",0)==0
 
 def test_today_ohlc_off_tick_grid_never_counted_as_repairable():
