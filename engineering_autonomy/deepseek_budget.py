@@ -291,12 +291,20 @@ def main() -> int:
     usage = sub.add_parser("usage")
     usage.add_argument("--analytics-log", type=Path, required=True)
     usage.add_argument("--output", type=Path, required=True)
+    sub.add_parser("cost-cap-check", help="fail closed until a provider-side cap is authenticated")
     bounded = sub.add_parser("run")
     bounded.add_argument("--analytics-log", type=Path, required=True)
     bounded.add_argument("command_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command == "check":
         return check_balance(args.status_file, monitor=args.monitor)
+    if args.command == "cost-cap-check":
+        try:
+            require_hard_cost_guarantee(os.environ.get("DEEPSEEK_HARD_COST_GUARANTEE"))
+        except ValueError:
+            print("PAID_CODING=BLOCKED;REASON=UPSTREAM_SPEND_CAP_NOT_VERIFIED", flush=True)
+            return 2
+        return 0
     if args.command == "run":
         return run_bounded(
             args.command_args,
