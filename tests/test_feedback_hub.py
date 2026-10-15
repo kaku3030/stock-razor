@@ -97,7 +97,7 @@ def test_writeback_rejects_terminal_or_requeued_item(tmp_path, first_status):
     with pytest.raises(FeedbackHubError, match="no longer active"):
         hub.writeback(
             feedback_id=item.id, worker_id="main:one", status="IN_PROGRESS",
-            evidence={"unexpected": True},
+            evidence={"status": "UNKNOWN"},
         )
     assert hub.audit(item.id) == audit_before
     current = hub._connection.execute(
@@ -183,4 +183,80 @@ def test_corrupt_existing_lease_timestamp_never_grants_writeback(tmp_path):
             status="DONE", evidence={},
         )
     assert hub.claim(worker_id="different-owner") is None
+    hub.close()
+
+
+@pytest.mark.parametrize("bad_evidence", (
+    {"api_key": "not-a-real-key"},
+    {"checks": {"authorization": "Bearer fake"}},
+    {"checks": [{"status": "PASS"}, {"password": "fake"}]},
+    {"status": "Authorization: Bearer not-a-real-token"},
+    {"status": "AKIAFAKEFAKEFAKEFAKE"},
+    {"account_id": "123456789012"},
+    {"raw_price": 123.45},
+    {"status": "123456789012"},
+    {"unreviewed_custom_field": "PASS"},
+    {"checks": {"status": {"checks": {"status": {
+        "checks": {"status": {"checks": {"status": "TOO_DEEP"}}},
+    }}}},
+))
+def test_submit_rejects_sensitive_or_unreviewed_evidence_without_audit(
+    tmp_path, bad_evidence,
+):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    with pytest.raises(FeedbackHubError):
+        hub.submit(
+            source="US_WINDOW", priority="P0", title="safe title",
+            details="safe details", source_ref="us:safe:1",
+            evidence=bad_evidence,
+        )
+    assert hub.preflight()["open"] == 0
+    assert hub._connection.execute("SELECT COUNT(*) FROM audit").fetchone()[0] == 0
+    hub.close()
+
+
+def test_evidence_allowlist_preserves_safe_nested_operational_facts(tmp_path):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    item = hub.submit(
+        source="CN_RADAR", priority="P0", title="data provenance",
+        details="source mismatch", source_ref="cn:probe:1",
+        evidence={
+            "sha": "abc", "run": 7, "status": "BLOCKED",
+            "checks": [{"status": "PASS"}, {"reason": "NO_DATA"}],
+        },
+    )
+    assert item.evidence["checks"][1]["reason"] == "NO_DATA"
+    assert hub.claim(worker_id="main:1") is not None
+    result = hub.writeback(
+        feedback_id=item.id, worker_id="main:1", status="DONE",
+        evidence={"ci": "run/7", "status": "PASS"},
+    )
+    assert result.status == "DONE"
+    assert len(hub.audit(item.id)) == 2
+    hub.close()
+
+
+@pytest.mark.parametrize("text_field", ("title", "details", "error"))
+def test_sensitive_free_text_never_reaches_feedback_store(tmp_path, text_field):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    params = {
+        "source": "US_RADAR", "priority": "P1", "title": "safe",
+        "details": "safe", "source_ref": "us:run:3", "evidence": {},
+    }
+    suspect = "Authorization: Bearer not-a-real-token"
+    if text_field != "error":
+        params[text_field] = suspect
+        with pytest.raises(FeedbackHubError):
+            hub.submit(**params)
+        assert hub.preflight()["open"] == 0
+    else:
+        item = hub.submit(**params)
+        assert hub.claim(worker_id="main:2") is not None
+        audits = hub.audit(item.id)
+        with pytest.raises(FeedbackHubError):
+            hub.writeback(
+                feedback_id=item.id, worker_id="main:2",
+                status="FAILED", evidence={}, error=suspect,
+            )
+        assert hub.audit(item.id) == audits
     hub.close()
