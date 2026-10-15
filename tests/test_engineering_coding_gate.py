@@ -79,7 +79,7 @@ def test_workflow_uses_deepseek_aider_without_codex_or_openai_secret():
     assert 'secrets.DEEPSEEK_API_KEY' in workflow
     assert 'aider-chat==0.86.2' in workflow
     assert '--file tests/test_engineering_autonomy.py' in workflow
-    assert '--model deepseek/deepseek-chat' in workflow
+    assert '--model deepseek/deepseek-flash' in workflow
     assert 'openai/codex-action' not in workflow
     assert 'secrets.OPENAI_API_KEY' not in workflow
 
@@ -158,3 +158,15 @@ def test_deepseek_provider_response_is_bounded():
     assert "--no-auto-commits" in workflow
     assert "workflow_dispatch:" in workflow
     assert "schedule:" not in workflow
+
+def test_deepseek_flash_alias_is_supported_not_retired():
+    """deepseek-chat was officially discontinued on 2026-07-24."""
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(encoding="utf-8")
+    assert "--model deepseek/deepseek-flash" in workflow
+    assert "--model deepseek/deepseek-chat" not in workflow
+    assert "--model-metadata-file docs/engineering-autonomy/deepseek-flash-model-metadata.json" in workflow
+    assert "--edit-format diff" in workflow
+    metadata = json.loads(Path("docs/engineering-autonomy/deepseek-flash-model-metadata.json").read_text(encoding="utf-8"))
+    assert list(metadata) == ["deepseek/deepseek-flash"]
+    assert metadata["deepseek/deepseek-flash"]["litellm_provider"] == "deepseek"
+    assert metadata["deepseek/deepseek-flash"]["mode"] == "chat"
