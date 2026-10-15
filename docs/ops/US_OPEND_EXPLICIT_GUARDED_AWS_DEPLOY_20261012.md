@@ -48,7 +48,7 @@ admission, or broker fill evidence. Those remain separate gates.
    `main`. Enter that exact SHA as `expected_main_sha` and explicitly
    select `approve_restart=true`. Never paste account secrets or IDs.
 3. Verify workflow success, deployed runtime SHA via independent read-only
-   `Probe US Cloud Exact Main` (manual, once), one existing quote-context
+   **Probe US Cloud Exact Main** (manual, once), one existing quote-context
    owner, snapshot age/closure data, and that all four admission gates stay
    BLOCKED/NO.
 4. If preflight, install, restart or verification fails, do **not**
@@ -57,6 +57,40 @@ admission, or broker fill evidence. Those remain separate gates.
    This PR does not pretend to guarantee transactional rollback.
 5. Use a separate approved deployment for any provider subscription change;
    this workflow does not authorize TickFlow paid requests or Paper orders.
+
+## Runtime configuration and readback (verified 2026-10-15)
+
+The deployed observer owns one existing OpenD quote context and a fixed
+nine-symbol K_1M stream: AMD, NVDA, TSLA, AAPL, QQQ, GLDM, LITE, AAOI,
+and CIEN. Candidate subscription previews are observation-only; they do not
+call subscribe/unsubscribe. The worker checks US market state every 5 seconds
+and quote-right evidence every 60 seconds. Quote-right freshness is useful
+permission evidence, but it does not prove a fresh bar or closed candle.
+
+The daily-history file is fetched through the same OpenD context at worker
+startup. The deployment verifier's D1 PASS proves that startup fetch and
+file passed its acceptance checks. The current worker does not refresh that
+file on later session dates unless it restarts. The D1 file is separate from
+the ChatGPT bars endpoint.
+
+For routine read-only checks:
+- Call `get_livefeed_health` first. Check heartbeat age, runtime/source SHA,
+  canonical snapshot age, callback evidence, quote-right age, and bar-closure
+  status separately. HEALTHY describes the worker heartbeat; it does not
+  mean the market snapshot is fresh.
+- Call `get_market_bars` only for the exposed intraday periods `1m`, `5m`,
+  `15m`, or `1h`. The current ChatGPT endpoint does not expose the separate
+  D1 history file; a request for D1/`1d` is unsupported on this endpoint.
+- Treat the independent post-close last-minute reconciliation as its own
+  intraday check. It does not establish daily-history freshness or D1 finality.
+- Do not use a successful deployment, fresh heartbeat, quote-right permission,
+  or historical D1 file as evidence of exchange finality or trading readiness.
+
+Read-only cloud observation at 2026-10-15 18:56 JST: worker heartbeat was
+HEALTHY on runtime SHA `6a2983b4d358617c433f1d90e665a4aa345cf4c7`, but the
+canonical snapshot was STALE by about 75 minutes, bar closure was UNPROVEN,
+and post-close reconciliation was NOT_DUE. This is the intended fail-closed
+distinction between process health and current market data.
 
 ## Explicit non-admissions
 
@@ -67,3 +101,4 @@ PAPER_AUTO_READY=NO
 RADAR_ADMISSION=BLOCKED
 SOURCE_ARBITER_ADMISSION=BLOCKED
 LIVE_TRADE=NO
+TRADE_EXECUTION=NO

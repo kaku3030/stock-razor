@@ -283,8 +283,36 @@ def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_p
     assert hist["provider_requests"]==0
     assert len(hist["rows"])>0
 
+
+def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
+    """Post-close progress reads keep due-grid visibility without finality."""
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            if period=="15m":
+                df["high"]=1.5999999999999994
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
+            repo_sha="d"*40,sequence=5)
+    cache=tmp_path/"cache.json"
+    atomic_publish(str(cache),snap)
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current,
+        research_mode="session_progress")
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["expected_grid_progress"]=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert result["bar_finality"]=="NOT_VERIFIED"
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
+    assert result["live_trade"] is False
+
 def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
-    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    current=datetime(2026,10,11,7,16,tzinfo=timezone.utc)
     snap=build_observation(FakeClient(),now_utc=current,
             repo_sha="c"*40,sequence=1)
     p=tmp_path/"cache.json"
@@ -296,11 +324,33 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
         path=str(p),now_utc=later,research_mode="historical_only")
     assert strict["status"]=="STALE"
     assert hist["status"]=="PASS_HISTORICAL_ONLY"
-    assert hist["max_age_seconds"]==360
+    assert hist["max_age_seconds"]==1080
     too_late=read_cn_tickflow_research_data("159611.SZ",
-        path=str(p),now_utc=current+timedelta(seconds=370),
+        path=str(p),now_utc=current+timedelta(seconds=1090),
         research_mode="historical_only")
     assert too_late["status"]=="STALE"
+
+def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
+            repo_sha="a"*40,sequence=2)
+    p=tmp_path/"obs.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=300)
+    result=read_cn_tickflow_research_data("159611.SZ","15m",path=str(p),
+            now_utc=later)
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["max_age_seconds"]==360
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
 
 def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
     q=read_cn_tickflow_research_data("159611.SZ",
@@ -460,7 +510,7 @@ def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_resear
     assert hist["live_trade"] is False
     strict=read_cn_tickflow_research_data("159611.SZ","15m",
          limit=1,path=str(p),now_utc=now,research_mode="session_progress")
-    assert strict["ok"] is False and strict["status"]=="INVALID_CACHE"
+    assert strict["ok"] is True and strict["status"]=="PASS_RESEARCH_ONLY"
 
 
 def test_intraday_vendor_float_precision_research_only_remains_unclosed():

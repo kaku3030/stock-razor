@@ -482,8 +482,13 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     # A 6m old snapshot is NOT represented as fresh/current live data.
     sh_now=now.astimezone(CN)
     historical_max_age=1080 if sh_now.weekday()>=5 else 360
+    post_close_progress = (
+        research_mode == "session_progress"
+        and sh_now.weekday() < 5
+        and (sh_now.hour, sh_now.minute) >= (15, 2)
+    )
     max_age=(historical_max_age if research_mode=="historical_only"
-             else MAX_AGE_SECONDS)
+             or post_close_progress else MAX_AGE_SECONDS)
     if age < -5 or age > max_age:
         return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
@@ -548,7 +553,12 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                (research_mode=="historical_only"
+                                # After the Shanghai close, session_progress
+                                # remains a read-only due-grid view. It may
+                                # accept the same bounded post-close vendor
+                                # float evidence as historical_only, while
+                                # keeping finality/currentness unproven.
+                                ((research_mode in ("historical_only", "session_progress"))
                                  and _post_close_research_eligible(bar_stamp, now))
                                 or (research_mode=="session_progress"
                                     and timeframe in ("5m","15m","60m")
@@ -631,6 +641,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "expected_grid_progress":progress,
         "last_bar_end_label_age_seconds":round(max(0,label_age),2),
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
+        "max_age_seconds":max_age,
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
         "ohlc_precision_scope":(
