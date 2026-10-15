@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] OpenD聚合K线成交额/成交量推导的VWAP若超出该K线价格区间，则隔离错误VWAP并阻断信号；分钟换手额缺失不再按完整成交量生成虚假VWAP。
 - [性能] TickFlow云端新增 `TICKFLOW:FULL` 一次MCP调用返回两ETF各5m/15m/60m/D1历史研究数据，统一源版本对齐，任何周期失效均整组拒绝，无交易权限晋级。
 - [改进] TickFlow 云端隔离研究缓存补齐受限5m（48根/完整交易日）及1d日期K线，保持两ETF白名单、无下单权限、未知闭合、日线仅历史研究；原有15m/60m调用兼容不变。
 - [测试] 增加 AWS OpenD 原生已订阅 K线深度与速度的有界只读验收（至2000请求，最多65次），并严格区分 native、Radar缓存、ChatGPT MCP 与报告生成耗时。
