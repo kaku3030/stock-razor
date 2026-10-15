@@ -12,6 +12,7 @@ import argparse
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import json
+import re
 import os
 import urllib.error
 import urllib.parse
@@ -198,13 +199,57 @@ def discord_send(webhook: str, content: str) -> None:
         raise ValueError("invalid_discord_endpoint")
     data = json.dumps({"content": content[:1900], "allowed_mentions": {"parse": []}}).encode()
     request = urllib.request.Request(webhook, data=data,
-                    headers={"Content-Type": "application/json"}, method="POST")
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "StockRazor-ProviderWatch/1.0",
+                    }, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=12) as response:
             if response.status not in (200, 204):
                 raise ValueError("discord_non_success")
-    except (urllib.error.URLError, TimeoutError, urllib.error.HTTPError):
+    except urllib.error.HTTPError as exc:
+        # Never disclose Discord error bodies/URL/tokens. Numeric HTTP status
+        # is the only retained transport diagnostic and comes from our enum.
+        if exc.code in (400, 401, 403, 404, 429):
+            raise ValueError("discord_http_" + str(exc.code)) from None
         raise ValueError("discord_delivery_failed") from None
+    except (urllib.error.URLError, TimeoutError):
+        raise ValueError("discord_delivery_failed") from None
+
+
+def telegram_send(bot_token: str, chat_id: str, content: str) -> None:
+    """One bounded owner-configured Telegram fallback; no credential logging."""
+    if (not re.fullmatch(r"[0-9]{4,15}:[A-Za-z0-9_-]{20,}", bot_token)
+            or not re.fullmatch(r"-?[0-9]{4,25}", chat_id)):
+        raise ValueError("invalid_telegram_config")
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": content[:3400],
+        "disable_web_page_preview": "true",
+    }).encode()
+    request = urllib.request.Request(
+        "https://api.telegram.org/bot" + bot_token + "/sendMessage",
+        data=data, headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "StockRazor-ProviderWatch/1.0",
+        }, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            data = response.read(5001)
+            if response.status != 200 or len(data)>5000:
+                raise ValueError("telegram_delivery_failed")
+            result = json.loads(data)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise ValueError("telegram_delivery_failed")
+    except urllib.error.HTTPError as exc:
+        # Only the status code is retained; never upstream response bodies.
+        if exc.code in (400, 401, 403, 404, 429):
+            raise ValueError("telegram_http_" + str(exc.code)) from None
+        raise ValueError("telegram_delivery_failed") from None
+    except (urllib.error.URLError, TimeoutError, ValueError,
+            TypeError, UnicodeError):
+        raise ValueError("telegram_delivery_failed") from None
 
 
 def main() -> int:
@@ -229,17 +274,63 @@ def main() -> int:
         if not dispatch:
             print("PROVIDER_BILLING_WATCH=CHECK_OK_NO_ALERT")
             return 0
-        webhook = env.get("DISCORD_RADAR_WEBHOOK_URL") or env.get("DISCORD_WEBHOOK_URL")
-        if not webhook:
+        candidates = []
+        for name in ("DISCORD_RADAR_WEBHOOK_URL", "DISCORD_WEBHOOK_URL"):
+            url = env.get(name)
+            if url and url not in candidates:
+                candidates.append(url)
+        if not candidates:
             print("PROVIDER_BILLING_WATCH=NOTIFICATION_BLOCKED_NO_WEBHOOK")
             return 2
         content = "\n".join(report + (["⚠️ " + msg for msg in alerts] if alerts else []))
-        discord_send(webhook, content)
-        print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
-              "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
-        return 0
-    except ValueError:
-        print("PROVIDER_BILLING_WATCH=CONFIG_OR_DELIVERY_BLOCKED")
+        last_discord_error = ValueError("discord_delivery_failed")
+        for index, webhook in enumerate(candidates):
+            try:
+                discord_send(webhook, content)
+            except ValueError as exc:
+                last_discord_error = exc
+                continue
+            else:
+                if index:
+                    print("PROVIDER_BILLING_WATCH=DISCORD_FALLBACK_DISPATCHED")
+                else:
+                    print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
+                          "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
+                return 0
+        # Discord HTTP 403 on GitHub's outbound path was observed in real
+        # Actions. Use only a pre-existing, explicitly configured Telegram
+        # owner chat as last resort, never a new destination.
+        telegram_token = env.get("TELEGRAM_BOT_TOKEN")
+        telegram_chat = env.get("TELEGRAM_CHAT_ID")
+        if telegram_token and telegram_chat:
+            telegram_send(telegram_token, telegram_chat, content)
+            print("PROVIDER_BILLING_WATCH=TELEGRAM_FALLBACK_DISPATCHED")
+            return 0
+        raise last_discord_error
+    except ValueError as exc:
+        # Whitelist only locally generated error categories. Never echo
+        # arbitrary upstream body, webhook URL or exception messages.
+        error_code = {
+            "invalid_discord_endpoint": "DISCORD_ENDPOINT_INVALID",
+            "discord_delivery_failed": "DISCORD_DELIVERY_FAILED",
+            "discord_non_success": "DISCORD_DELIVERY_FAILED",
+            "discord_http_400": "DISCORD_HTTP_400",
+            "discord_http_401": "DISCORD_HTTP_401",
+            "discord_http_403": "DISCORD_HTTP_403",
+            "discord_http_404": "DISCORD_HTTP_404",
+            "discord_http_429": "DISCORD_HTTP_429",
+            "telegram_delivery_failed": "TELEGRAM_DELIVERY_FAILED",
+            "telegram_http_400": "TELEGRAM_HTTP_400",
+            "telegram_http_401": "TELEGRAM_HTTP_401",
+            "telegram_http_403": "TELEGRAM_HTTP_403",
+            "telegram_http_404": "TELEGRAM_HTTP_404",
+            "telegram_http_429": "TELEGRAM_HTTP_429",
+            "invalid_telegram_config": "TELEGRAM_CONFIG_INVALID",
+            "invalid_date": "CONFIG_DATE_INVALID",
+            "invalid_money": "CONFIG_VALUE_INVALID",
+            "incomplete_openai_credit_snapshot": "CONFIG_CREDIT_SNAPSHOT_INCOMPLETE",
+        }.get(str(exc), "CONFIG_OR_DELIVERY_BLOCKED")
+        print("PROVIDER_BILLING_WATCH=" + error_code)
         return 2
 
 
