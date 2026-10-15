@@ -283,6 +283,25 @@ def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_p
     assert hist["provider_requests"]==0
     assert len(hist["rows"])>0
 
+
+def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
+    """Post-close progress reads keep due-grid visibility without finality."""
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    snap=build_observation(FakeClient(),now_utc=current,
+            repo_sha="d"*40,sequence=5)
+    cache=tmp_path/"cache.json"
+    atomic_publish(str(cache),snap)
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current,
+        research_mode="session_progress")
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["expected_grid_progress"]=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert result["bar_finality"]=="NOT_VERIFIED"
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
+    assert result["live_trade"] is False
+
 def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
     current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
     snap=build_observation(FakeClient(),now_utc=current,
