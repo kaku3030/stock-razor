@@ -287,6 +287,11 @@ class ExecutionEngine:
         for fill_id,quantity,price in fills:
             quantity=_decimal(quantity,"fill quantity"); price=_decimal(price,"fill price")
             if not fill_id or fill_id in seen or self.store.fill_exists(fill_id) or price<=0 or quantity<=0 or total+quantity>intent.qty: raise ExecutionBlocked("invalid or duplicate paper fill")
+            if ledger_known and self.ledger.has_fill_receipt(fill_id):
+                # Offline seeding or replay can have legitimate ledger fills
+                # absent from the order journal. Never record a false FILLED
+                # journal before discovering this independent collision.
+                raise ExecutionBlocked("fill identity already exists in paper ledger; reconciliation required")
             # Each LIMIT execution must honor the side-specific limit, not
             # merely average out an invalid price with a favorable fill.
             # Reject the entire synthetic batch before journal ACCEPTED.
