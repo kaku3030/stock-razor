@@ -20,24 +20,24 @@ into an issue, chat, or source file.
   The raw JSON response, precise balance, token, and Authorization header
   are never written to GitHub logs, issues, cache or artifacts.
 
-## Recharge alerts
+## Recharge alerts (Discord, not ChatGPT tasks)
 
 - The separate **Engineering Autonomy DeepSeek Balance Watch (no model calls)**
-  workflow checks balance every six hours and can also run on manual dispatch.
-- It may **only** read DeepSeek balance and open, update or close a **single
-  de-duplicated GitHub Issue** titled
-  `STOCK RAZOR: DeepSeek API recharge required`. It assigns the repo owner
-  for GitHub notification; on recovery it closes the alert. Issue text carries
-  only LOW / EMPTY / UNAVAILABLE status, not the exact amount.
-- `UNKNOWN` (API 503, timeout, malformed response, missing key, etc.) **does
-  not pretend the balance is zero** and does not generate a "recharge" claim.
-  The monitoring job fails visibly instead.
-- **Enable GitHub notifications for assigned Issues in the app** if you want
-  phone push alerts. GitHub issue delivery depends on your GitHub notification
-  settings; it is not a ChatGPT-native push.
-- Schedule is **monitor-only**. It cannot trigger Aider, merge any PR, deploy,
-  start Radar/Paper or make a trade. It is separate from the disabled
-  long-running engineering/coding schedulers.
+  workflow checks balance every 12 hours and on manual dispatch. No LLM tokens.
+- The repository currently has **GitHub Issues disabled**, so notifications use
+  Discord instead. Store your Discord channel's webhook URL in GitHub Actions
+  repository secret `STOCK_RAZOR_DISCORD_WEBHOOK_URL`; do not paste it into code.
+  Optionally set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
+  numeric Discord user ID to get a direct mention. Otherwise enable channel
+  notifications in Discord to see alerts on your phone.
+- Only categorical LOW / EMPTY / UNAVAILABLE / UNKNOWN status is sent.
+  `UNKNOWN` **does not** mean zero balance and sends a distinct monitor-error
+  warning. The DeepSeek key and exact wallet amounts never leave the balance
+  checker. If the webhook is unconfigured, the alert step fails visibly,
+  not a false claim that a notification was delivered.
+- While low, the watcher reminds you at most twice per day (every 12 hours).
+  No auto-refills or secret/IAM changes. It is a monitor-only schedule, **not**
+  an autonomous coding or trading schedule.
 
 ## Tokens and spending
 
@@ -60,15 +60,19 @@ into an issue, chat, or source file.
 
 ## Operator workflow
 
-1. Find `Actions → Engineering Autonomy DeepSeek Balance Watch (no model calls)`
-   to run an optional *read-only* balance check, or let the six-hour check run.
-2. If the assigned recharge Issue opens, top up the **DeepSeek API account**
-   through the official developer console. No automatic charges or refills.
-3. When the account is healthy, the monitoring Issue is closed on the next
-   check. A healthy balance does **not** mean the DeepSeek API model is
-   available; the separate V1.1 native provider health probe remains required.
-4. To inspect usage of a confirmed Coding V1.1 attempt, view its `generate`
-   job step summary or `autonomy-deepseek-usage` sanitized artifact.
+1. Create a Discord webhook in your STOCK RAZOR alerts channel; set its URL
+   as repository Actions secret `STOCK_RAZOR_DISCORD_WEBHOOK_URL`.
+2. Optional: set repository variable `STOCK_RAZOR_DISCORD_USER_ID` to your
+   numeric Discord user ID so Discord can mention you. Do not share secrets
+   in chat.
+3. Find `Actions → Engineering Autonomy DeepSeek Balance Watch (no model calls)`
+   to run a manual **GET-only** balance check, or let the 12-hour check run.
+4. On a Discord LOW/EMPTY/UNAVAILABLE alert, inspect or top up the DeepSeek
+   developer console. No payment is triggered automatically.
+5. After a confirmed Coding V1.1 attempt, inspect its `generate` job summary
+   or `autonomy-deepseek-usage` sanitized artifact for request/token counters.
+   The native provider probe and the coding workflow remain independently
+   manually confirmed; low/unknown balance still fails closed.
 
 Safety: no auto-run of the Coding V1.1 workflow, no AI PR auto-merge, no
 deployment/IAM change, and no live trading permissions.
