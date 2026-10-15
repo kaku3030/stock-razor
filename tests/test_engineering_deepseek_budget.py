@@ -200,7 +200,9 @@ def test_workflow_separates_balance_secrets_and_discord_notification():
     assert "python -m engineering_autonomy.deepseek_budget_discord" in watch
     notify = watch.split("- name: Notify DeepSeek recharge state through Discord", 1)[1]
     assert "secrets.DEEPSEEK_API_KEY" not in notify
-    assert "secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL" in notify
+    assert "secrets.DISCORD_WEBHOOK_URL" in notify
+    assert "secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL" not in notify
+    assert "secrets.DISCORD_RADAR_WEBHOOK_URL" not in notify
     assert "gh pr merge" not in watch and "aider " not in watch
     coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text()
     guard = coding.index("Enforce official DeepSeek balance budget")
