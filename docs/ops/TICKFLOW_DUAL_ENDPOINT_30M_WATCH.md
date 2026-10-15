@@ -1,0 +1,18 @@
+# STOCK RAZOR | TickFlow two-end half-hour read-only watch
+As of 2026-10-15. **Research only. No order, trade, broker, automatic admission or source switch.**
+
+## Two independently observed endpoints
+
+**AWS Tokyo:** `Audit TickFlow AWS Research Feed and MCP (Read Only)` GitHub Actions workflow `.github/workflows/audit-cn-tickflow-live-research.yml`, with protected-main-only GitHub AWS OIDC + fixed private SSM target. UTC cron `0,30 2-7 * * 1-5` nominal 10:00, 10:30, …, 15:30 Shanghai on weekdays. It reads already-collected private cache and read-only MCP **twice, 65 seconds apart**; sequence change and bounded age; records current-day all-due-grid, 5m/15m/60m for 159611.SZ and 518880.SH plus provider identity and sanitized independent historical price comparisons. AWS public Actions logs only fixed-enum/bucket sanitized status; OHLC or account credentials are never logged. Missing Klines fail admission; 5m vendor-float acceptance is research only, not strict exchange finality.
+
+**Desktop:** Windows Task Scheduler task `STOCK_RAZOR_TickFlow_Desktop_30m_ReadOnly` installed for the owner, runs every 30 minutes from 00:00 local time **only while user is signed in, device awake/online**. Wrapper `%LOCALAPPDATA%\StockRazor\TickFlowHalfHour\half_hour_check.ps1` checks Shanghai weekday market window before making calls. Fixed approved two ETFs × 5m/15m/60m/D1 (max eight monthly-plan bounded reads per eligible run), SDK `0.1.25`, Windows Credential Manager key; no secret leaves the user account. Sanitized local JSONL `%LOCALAPPDATA%\StockRazor\TickFlowHalfHour\audit-sanitized.jsonl`; max ~1MB rotation. Strict OHLC and research-only vendor-float statuses **separate**, no provider prices in logs. Device off means **no local measurement**, and cloud must explicitly label desktop `OFFLINE_OR_NOT_OBSERVED` rather than falsely claiming both endpoints checked.
+
+## Evaluation/alerts/limitations
+- Two identical ETF+timeframe sets, poll timestamps recorded independently. Compare completed due-label counts, contiguous Shanghai 5m/15m/60m grids, normalized strict/tolerant OHLC buckets, observed source SHA and sequence. No assumption of exchange finality, broker permission or availability at exactly cron minute.
+- Existing GitHub Actions failure email/status is an audit-execution alert; it is **not a guarantee** of mobile notification. A green GH run means the AWS audit ran successfully, **not** that TickFlow real-time admission passed. Both-end correlation remains manual until explicit authorized secure local summary uploader is built; do not expose desktop logs publicly or add GitHub write permissions.
+- Weekday **exchange holidays** are not verified by this monitor; closed-market windows fail closed. No holiday false PASS. Periods outside the above schedule are `NOT_OBSERVED`; historical-only samples are not live evidence.
+- Max 12 AWS audits × roughly 65s each per weekday. Windows runs ~12 times in that time window (some skipped due to lunch windows). Cloud cache probes **do not** produce new paid TickFlow reads; Windows uses bounded existing monthly plan only.
+- `SOURCE_ARBITER_ADMISSION=BLOCKED`, `RADAR_ADMISSION=BLOCKED`, `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO`, `TRADE_EXECUTION=NO`.
+
+## Verification
+Check GitHub scheduled runs and inspect `CN_TICKFLOW_AWS_RESEARCH_SANITIZED=` line from `Verify two isolated AWS snapshots 65 seconds apart`. On Windows run `Get-ScheduledTask -TaskName STOCK_RAZOR_TickFlow_Desktop_30m_ReadOnly` and `Get-ScheduledTaskInfo`; check latest local JSONL or explicitly run `Start-ScheduledTask`. AWS/desktop observations need aligned China session clock to compare; do not silently substitute Tencent normal Radar for TickFlow.
