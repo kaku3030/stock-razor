@@ -37,6 +37,8 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "etf_tick_research_shadow_compatible_bucket":"UNKNOWN",
         "quarantined_rows_bucket":"UNKNOWN",
         "sdk_amount_omitted_bucket":"UNKNOWN",
+        "vendor_float_rows_bucket":"UNKNOWN",
+        "same_session_vendor_float_rows_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
     }
     if timeframe not in ("15m","60m") or not isinstance(frame,dict):
@@ -108,6 +110,20 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             _expected_closed_grid_label, _LABEL_END, CN,
         )
         shnow=now_utc.astimezone(CN)
+        if all(isinstance(row,dict)
+               and row.get("ohlc_validation","STRICT") in (
+                   "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
+               for row in rows):
+            tolerated=[
+                row for row in rows
+                if row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+            ]
+            out["vendor_float_rows_bucket"]=bucket(len(tolerated))
+            prefix=shnow.strftime("%Y-%m-%d")
+            out["same_session_vendor_float_rows_bucket"]=bucket(
+                sum(1 for row in tolerated if isinstance(row.get("label"),str)
+                    and row["label"].startswith(prefix))
+            )
         expected=_expected_closed_grid_label(now_utc,timeframe)
         if expected is None:
             out["last_due_grid"]="NO_SESSION_GRID_DUE"
@@ -811,6 +827,13 @@ def sample():
                     "has_session_progress":observation.get("expected_grid_progress")=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF",
                     "radar_blocked":observation.get("radar_admission")=="BLOCKED",
                     "finality_unproven":observation.get("bar_finality")=="NOT_VERIFIED",
+                    "ohlc_precision_scope":(
+                        observation.get("ohlc_precision_scope")
+                        if state=="PASS_RESEARCH_ONLY"
+                        and observation.get("ohlc_precision_scope") in (
+                            "STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
+                        else "UNKNOWN"
+                    ),
                 }
         result["all_four_readonly_requests_ok"]=all(
             x["state"]=="PASS_RESEARCH_ONLY" and x["rows"]>0
