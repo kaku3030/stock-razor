@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] OpenD 收盘末根分钟线仅以完整390分钟历史网格作受限补齐，保留历史来源和闭合未验证状态；失败最多30分钟后重试一次。
+- [修复] Paper 现金预留按意图隔离，模拟成交批次先校验身份、限价、资金及持仓再记账，覆盖重启与部分成交回归。
+- [改进] Paper 半小时调度审计须具备48个独立配置时段，仅报告配置状态，实际调度执行仍需运行证据。
 - [性能] TickFlow AWS研究Worker盘中最小轮询间隔降至15秒；按每周期8次K线请求计算，单Worker上限约32次/分钟，失败与非交易时段退避保持不变，账号共享额度仍待核验。
 - [修复] OpenD 聚合K线仅在全部源分钟成交额完整且推导VWAP位于该K线价格区间内时发布VWAP；越界或部分成交额均降级并阻断信号。
 - [改进] TickFlow 历史缓存拒收增加固定枚举诊断；AWS 审计仅导出白名单原因，不暴露行情值且维持 fail-closed。

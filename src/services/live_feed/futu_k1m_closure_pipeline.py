@@ -9,7 +9,7 @@ from data_provider.market_data_adapter import Bar
 
 from .controller import AppliedDataEvidence
 from .futu_k1m_forming_accumulator import FutuK1MFormingAccumulator
-from .futu_research_bridge import closed_futu_minute_to_bar
+from .futu_research_bridge import closed_futu_minute_to_bar, is_futu_us_rth_interval_end
 
 
 @dataclass(frozen=True)
@@ -87,6 +87,15 @@ class FutuK1MClosurePipeline:
                 if closed is None:
                     return FutuK1MClosurePipelineResult(
                         status="FORMING", symbol=symbol
+                    )
+                if not is_futu_us_rth_interval_end(closed.start):
+                    # Out-of-session provider K1M is recognized but not
+                    # normalized into the regular-session research cache.
+                    # Avoid treating expected extended-hour pushes as an
+                    # error or artificially inflating closure failures.
+                    return FutuK1MClosurePipelineResult(
+                        status="IGNORED", symbol=symbol,
+                        reason="EXTENDED_SESSION_NOT_RTH_QUALIFIED",
                     )
                 bar = closed_futu_minute_to_bar(
                     closed, received_at=event.observed_at_utc
