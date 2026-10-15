@@ -181,3 +181,38 @@ def test_start_partial_provider_batch_rolls_back_owner_and_registry():
     c.process_pending()
     assert c.desired_registry_snapshot().entries == ()
     assert r.snapshot().subscribed == ()
+
+def test_initial_subscribe_observes_committed_desired_registry():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    original = a.subscribe_streams
+
+    def inspect_registry(keys):
+        assert KEY in {
+            entry.semantic_stream_key
+            for entry in c.desired_registry_snapshot().entries
+        }
+        original(keys)
+
+    a.subscribe_streams = inspect_registry
+    r.start([KEY])
+    assert r.snapshot().subscribed == (KEY,)
+
+
+def test_start_rejected_ingress_rolls_back_partial_desired_registry():
+    second = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+        control_queue_maxsize=1,
+    )
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    with pytest.raises(RuntimeError, match="desired registry ingress rejected"):
+        r.start([KEY, second])
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
+    assert ("stop",) in a.calls
+    assert not any(call[0] == "subscribe_many" for call in a.calls)
