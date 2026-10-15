@@ -98,7 +98,7 @@ def test_mcp_deploy_installer_has_bound_sha_before_restart_and_no_raw_logs():
     assert "'$INSTALL_SHA' \\" in flow or "'$INSTALL_SHA' \"" in flow
     assert "sha256sum -c - >/dev/null" in flow
     assert flow.index("sha256sum -c - >/dev/null") < flow.index(
-        'REPO_REF=\'$REPO_REF\' bash'
+        "REPO_REF='$REPO_REF' REPAIR_CONTEXT_EVENT_SEQUENCE='$REPAIR_CONTEXT_EVENT_SEQUENCE' bash"
     )
     assert "--proto '=https' --tlsv1.2" in flow
     assert 'install.out" 2> "\\$stage/install.err' in flow

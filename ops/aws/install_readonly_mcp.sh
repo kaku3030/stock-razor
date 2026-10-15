@@ -68,6 +68,21 @@ for result in (
 print("READONLY_MCP_IMPORT_SMOKE=PASS")
 PY
 
+# Explicit metadata recovery only; ordinary deployments never rewrite events.
+case "${REPAIR_CONTEXT_EVENT_SEQUENCE:-false}" in
+  false) ;;
+  true)
+    events=/var/lib/stock-razor/context-manager/events.jsonl
+    expected_events_sha256="$(sha256sum "$events" | awk '{print $1}')"
+    PYTHONPATH="$INSTALL_ROOT/repo" \
+      STOCK_RAZOR_CONTEXT_STATE_PATH=/var/lib/stock-razor/context-manager/current.json \
+      STOCK_RAZOR_CONTEXT_EVENTS_PATH="$events" \
+      "$INSTALL_ROOT/venv/bin/python" "$INSTALL_ROOT/repo/scripts/repair_context_event_sequence.py" \
+        --execute --expected-events-sha256 "$expected_events_sha256"
+    ;;
+  *) echo 'CONTEXT_EVENT_SEQUENCE_REPAIR=BLOCKED' >&2; exit 2 ;;
+esac
+
 cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
 [Unit]
 Description=STOCK RAZOR canonical read-only MCP

@@ -6,6 +6,104 @@ import pytest
 from src.services.context_manager import ContextManagerError, ContextManagerStore
 
 
+def _overlapping_context_writer(root, barrier, worker):
+    import time
+    from pathlib import Path
+
+    class SlowReadStore(ContextManagerStore):
+        def _read_events(self):
+            events = super()._read_events()
+            time.sleep(0.05)
+            return events
+
+    store = SlowReadStore(Path(root) / "current.json")
+    barrier.wait(timeout=10)
+    for i in range(3):
+        store.record(event_id=f"worker:{worker}:{i}", event_type="ci_success",
+                     source="ci", payload={"worker": worker, "index": i})
+
+
+def test_overlapping_processes_serialize_version_allocation_and_state(tmp_path):
+    import multiprocessing
+
+    context = multiprocessing.get_context("spawn")
+    barrier = context.Barrier(2)
+    processes = [context.Process(target=_overlapping_context_writer,
+                 args=(str(tmp_path), barrier, i)) for i in range(2)]
+    try:
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(timeout=20)
+        assert [process.exitcode for process in processes] == [0, 0]
+        events = [json.loads(row) for row in (tmp_path / "events.jsonl").read_text().splitlines()]
+        assert [row["version"] for row in events] == list(range(1, 7))
+        assert len({row["event_id"] for row in events}) == 6
+        current = ContextManagerStore(tmp_path / "current.json").read()
+        assert current["status"] == "ACTIVE"
+        assert current["safety"]["live_trade"] is False
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+
+
+def test_explicit_sequence_repair_preserves_all_evidence_and_private_backup(tmp_path):
+    import hashlib
+
+    store = ContextManagerStore(tmp_path / "current.json", clock=_clock)
+    for i in range(2):
+        store.record(event_id=f"ci:{i}", event_type="ci_failure", source="ci", payload={"i": i})
+    events = store._read_events()
+    events[1]["version"] = 1
+    original = "".join(json.dumps(item) + "\n" for item in events).encode()
+    store.events_path.write_bytes(original)
+    digest = hashlib.sha256(original).hexdigest()
+    assert store.read()["status"] == "BLOCKED"
+    result = store.repair_version_sequence(expected_sha256=digest)
+    assert result["status"] == "REPAIRED" and result["event_count"] == 2
+    backup = next(tmp_path.glob("events.jsonl.before-sequence-repair-*"))
+    assert backup.read_bytes() == original
+    import os
+    if os.name != "nt":
+        assert backup.stat().st_mode & 0o777 == 0o600
+    repaired = store._read_events()
+    assert [e["version"] for e in repaired] == [1, 2]
+    assert [{k: v for k, v in e.items() if k != "version"} for e in repaired] == [
+        {k: v for k, v in e.items() if k != "version"} for e in events]
+    current = store.read()
+    assert current["domains"]["ci"]["status"] == "BLOCKED"
+    assert current["safety"]["live_trade"] is False
+    assert current["domains"]["ci"]["acceptance"] == "UNVERIFIED"
+    store.record(event_id="next", event_type="ci_success", source="ci", payload={})
+    assert store._read_events()[-1]["version"] == 3
+
+
+@pytest.mark.parametrize("damage", ["digest", "payload", "gap", "duplicate_id"])
+def test_sequence_repair_refuses_other_damage_without_touching_log(tmp_path, damage):
+    import hashlib
+
+    store = ContextManagerStore(tmp_path / "current.json", clock=_clock)
+    for i in range(2):
+        store.record(event_id=f"ci:{i}", event_type="ci_success", source="ci", payload={"i": i})
+    events = store._read_events()
+    events[1]["version"] = 1
+    if damage == "payload":
+        events[1]["payload"]["i"] = 99
+    elif damage == "gap":
+        events[1]["version"] = 3
+    elif damage == "duplicate_id":
+        events[1]["event_id"] = events[0]["event_id"]
+    original = "".join(json.dumps(e) + "\n" for e in events).encode()
+    store.events_path.write_bytes(original)
+    digest = "0" * 64 if damage == "digest" else hashlib.sha256(original).hexdigest()
+    with pytest.raises(ContextManagerError):
+        store.repair_version_sequence(expected_sha256=digest)
+    assert store.events_path.read_bytes() == original
+    assert not list(tmp_path.glob("events.jsonl.before-sequence-repair-*"))
+
+
 def _clock():
     return datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 
@@ -75,3 +173,16 @@ def test_recovery_snapshot_keeps_each_domain_with_provenance_and_ttl(tmp_path):
     assert domains["ci"]["status"] == "BLOCKED"
     assert domains["deploy"]["status"] == "UNKNOWN"
     assert domains["ci"]["ttl"]["expired"] is False
+
+
+def test_sequence_repair_retry_rebuilds_state_without_new_backup(tmp_path):
+    import hashlib
+    store = ContextManagerStore(tmp_path / "current.json", clock=_clock)
+    store.record(event_id="valid", event_type="ci_failed", source="ci", payload={})
+    original = store.events_path.read_bytes()
+    store.state_path.write_text("broken")
+    result = store.repair_version_sequence(expected_sha256=hashlib.sha256(original).hexdigest())
+    assert result["status"] == "STATE_REBUILT" and not result["backup_created"]
+    assert store.events_path.read_bytes() == original
+    assert not list(tmp_path.glob("events.jsonl.before-sequence-repair-*"))
+    assert store.read()["domains"]["ci"]["status"] == "BLOCKED"

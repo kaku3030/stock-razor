@@ -97,3 +97,17 @@ def test_runner_failure_output_rejects_non_allowlisted_remote_content(remote, ex
     assert result.returncode == 0
     assert "READONLY_MCP_INSTALL_FAILURE=" + expected in result.stdout
     assert "secret-value" not in result.stdout + result.stderr
+
+
+def test_context_sequence_repair_requires_explicit_manual_input_and_safe_evidence():
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    triggers = document.get("on", document.get(True, {}))
+    option = triggers["workflow_dispatch"]["inputs"]["repair_context_event_sequence"]
+    assert option["type"] == "boolean" and option["default"] is False
+    dispatch = next(s for s in document["jobs"]["deploy"]["steps"] if s.get("id") == "deploy")
+    assert "github.event_name == 'workflow_dispatch'" in dispatch["env"]["REPAIR_CONTEXT_EVENT_SEQUENCE"]
+    assert "CONTEXT_EVENT_SEQUENCE_REPAIR=PASS" in _wait_script()
+    installer = (WORKFLOW.parents[2] / "ops/aws/install_readonly_mcp.sh").read_text()
+    assert '${REPAIR_CONTEXT_EVENT_SEQUENCE:-false}' in installer
+    assert '--execute --expected-events-sha256 "$expected_events_sha256"' in installer
+    assert installer.index("repair_context_event_sequence.py") < installer.index("systemctl restart")
