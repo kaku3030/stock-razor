@@ -440,3 +440,278 @@ def test_remaining_risk_matrix_rejects_before_any_adapter_mutation():
         with pytest.raises(ExecutionBlocked):
             e.submit(candidate, candidate_context)
         assert adapter.calls == []
+
+
+def test_ledger_order_cancel_returns_only_unfilled_cash(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("partial", Decimal("1"), Decimal("100")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "cancel.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent(qty="5"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("400")
+    e.cancel("i-1", NOW)
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert e.ledger.balance().cash == Decimal("900")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+
+
+def test_ledger_full_buy_releases_unused_limit_price_difference(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("fill", Decimal("2"), Decimal("99")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "full.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    record = e.submit(intent(qty="2"), context())
+    assert record.state is OrderState.FILLED
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert e.ledger.balance().cash == Decimal("802")
+
+
+def test_ledger_backed_replace_refuses_external_mutation_without_cash_transfer(tmp_path):
+    capability = create_paper_adapter()
+    adapter = capability.adapter
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "replace.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent(qty="2"), context())
+    cash = e.ledger.balance()
+    with pytest.raises(ExecutionBlocked, match="ledger-backed replace"):
+        e.replace("i-1", intent("i-2", qty="1"), context())
+    assert e.ledger.balance() == cash
+    assert adapter.calls == [("place", "i-1")]
+    assert e.records["i-1"].state is OrderState.ACCEPTED
+
+
+def test_ledger_sell_does_not_reserve_cash_for_position_disposal(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("sell-fill", Decimal("1"), Decimal("110")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "sell.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="seed-buy", intent_id="seed", reservation_id=None,
+        symbol="AMD", side="BUY", quantity=Decimal("2"),
+        price=Decimal("100"), at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("110"), NOW)
+    e.reconcile()
+    sell_intent = replace(intent(qty="1"), side=Side.SELL)
+    record = e.submit(sell_intent, context())
+    assert record.state is OrderState.FILLED
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert e.ledger.balance().cash == Decimal("910")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+
+
+
+def test_insufficient_buying_power_does_not_write_submitting_intent(tmp_path):
+    file_path = tmp_path / "cash-block.sqlite"
+    capability = create_paper_adapter()
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(capability, RiskGuard(limits), ExecutionStore(file_path))
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    e.submit(intent("first", qty="9"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("900")
+    # Earlier reconciliation can say cash=1000; independent reservations
+    # must still reject second intent before recording a SUBMITTING state.
+    with pytest.raises(Exception, match="insufficient available cash"):
+        e.submit(intent("second", qty="2"), context())
+    assert e.ledger.balance().reserved_cash == Decimal("900")
+    assert "second" not in e.records
+    assert all(entry.intent_id != "second" for entry in e.journal)
+    assert e.store.has_ambiguous_submission() is False
+    assert capability.adapter.calls == [("place", "first")]
+    reopened = ExecutionEngine(
+        create_paper_adapter(), RiskGuard(limits), ExecutionStore(file_path),
+    )
+    assert reopened.store.has_ambiguous_submission() is False
+    assert "second" not in reopened.records
+
+
+def test_overspend_sim_receipt_is_not_journalled_as_filled(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("over-limit", Decimal("1"), Decimal("150")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "overlimit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
+        e.submit(intent(qty="1"), context())
+    assert e.ledger.balance().cash == Decimal("1000")
+    assert e.ledger.balance().reserved_cash == Decimal("100")
+    assert e.ledger.positions() == ()
+    assert not any(j.state in (OrderState.ACCEPTED, OrderState.FILLED, OrderState.PARTIAL)
+                   for j in e.journal)
+    # The synthetic adapter *was* called; broker outcome must be reconciled,
+    # never retried without checking the ambiguous journal.
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_oversell_sim_receipt_is_not_journalled_as_filled(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("too-many-shares", Decimal("2"), Decimal("110")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "oversell.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="seed", intent_id="seed", reservation_id=None,
+        symbol="AMD", side="BUY", quantity=Decimal("1"), price=Decimal("100"),
+        at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("110"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="exceed owned quantity"):
+        e.submit(replace(intent(qty="2"), side=Side.SELL), context())
+    assert e.ledger.balance().cash == Decimal("900")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert not any(j.state in (OrderState.ACCEPTED, OrderState.FILLED, OrderState.PARTIAL)
+                   for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
+
+
+
+def test_offsetting_prices_cannot_hide_one_buy_fill_above_limit(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (
+            ("invalid-high", Decimal("1"), Decimal("110")),
+            ("offsetting-low", Decimal("1"), Decimal("90")),
+        )}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "buy-limit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.reconcile()
+    # 110 + 90 equals the original 2 x 100 reservation. Aggregate
+    # cash-only checks would wrongly accept the first above-limit fill.
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
+        e.submit(intent(qty="2"), context())
+    assert e.ledger.balance().cash == Decimal("1000")
+    assert e.ledger.balance().reserved_cash == Decimal("200")
+    assert e.ledger.positions() == ()
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_sell_fill_below_limit_is_blocked_despite_existing_position(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("invalid-sell", Decimal("1"), Decimal("99")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "sell-limit.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="seed-buy", intent_id="seed", reservation_id=None,
+        symbol="AMD", side="BUY", quantity=Decimal("1"),
+        price=Decimal("90"), at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("100"), NOW)
+    e.reconcile()
+    with pytest.raises(ExecutionBlocked, match="side-specific limit"):
+        e.submit(replace(intent(qty="1"), side=Side.SELL), context())
+    assert e.ledger.balance().cash == Decimal("910")
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert e.ledger.balance().reserved_cash == Decimal("0")
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_seeded_ledger_fill_id_collision_blocks_before_false_journal_fill(tmp_path):
+    capability = create_paper_adapter(
+        fills={"i-1": (("existing-seed-fill", Decimal("1"), Decimal("100")),)}
+    )
+    limits = RiskLimits(
+        frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+        Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+    )
+    e = ExecutionEngine(
+        capability, RiskGuard(limits), ExecutionStore(tmp_path / "duplicate-seed.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    e.ledger.record_fill(
+        fill_id="existing-seed-fill", intent_id="preexisting-offline",
+        reservation_id=None, symbol="AMD", side="BUY",
+        quantity=Decimal("1"), price=Decimal("90"), at=NOW,
+    )
+    e.ledger.mark("AMD", Decimal("100"), NOW)
+    e.reconcile()
+    assert e.ledger.has_fill_receipt("existing-seed-fill") is True
+    before = e.ledger.balance()
+    with pytest.raises(ExecutionBlocked, match="already exists in paper ledger"):
+        e.submit(intent(qty="1"), context())
+    # The adapter was invoked once, but the journal may not claim ACCEPTED
+    # or FILLED while its separate durable ledger already owns the fill ID.
+    assert capability.adapter.calls == [("place", "i-1")]
+    assert not any(j.kind in ("ACCEPTED", "PARTIAL", "FILLED") for j in e.journal)
+    assert e.ledger.positions()[0].qty == Decimal("1")
+    assert e.ledger.balance().cash == before.cash
+    assert e.ledger.balance().reserved_cash == Decimal("100")
+    assert e.store.has_ambiguous_submission() is True
+
+
+def test_ledger_fill_identity_probe_never_mutates_balance(tmp_path):
+    capability = create_paper_adapter()
+    e = ExecutionEngine(
+        capability, RiskGuard(RiskLimits(
+            frozenset({"AMD"}), Decimal("5000"), Decimal("100"),
+            Decimal("10000"), Decimal("20000"), Decimal("0.01"), 10, 60, 60,
+        )), ExecutionStore(tmp_path / "lookup.sqlite"),
+    )
+    e.ledger.initialize(Decimal("1000"), NOW)
+    original = e.ledger.balance()
+    assert e.ledger.has_fill_receipt("absent") is False
+    assert e.ledger.balance() == original
+    with pytest.raises(ValueError):
+        e.ledger.has_fill_receipt("")
