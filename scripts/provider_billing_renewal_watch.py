@@ -229,17 +229,36 @@ def main() -> int:
         if not dispatch:
             print("PROVIDER_BILLING_WATCH=CHECK_OK_NO_ALERT")
             return 0
-        webhook = env.get("DISCORD_RADAR_WEBHOOK_URL") or env.get("DISCORD_WEBHOOK_URL")
-        if not webhook:
+        candidates = tuple(dict.fromkeys(x for x in
+            (env.get("DISCORD_RADAR_WEBHOOK_URL"),env.get("DISCORD_WEBHOOK_URL")) if x))
+        if not candidates:
             print("PROVIDER_BILLING_WATCH=NOTIFICATION_BLOCKED_NO_WEBHOOK")
             return 2
         content = "\n".join(report + (["⚠️ " + msg for msg in alerts] if alerts else []))
-        discord_send(webhook, content)
-        print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
-              "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
-        return 0
-    except ValueError:
-        print("PROVIDER_BILLING_WATCH=CONFIG_OR_DELIVERY_BLOCKED")
+        for index, webhook in enumerate(candidates):
+            try:
+                discord_send(webhook, content)
+            except ValueError as exc:
+                # Only local fixed-code messages. Never log actual webhook,
+                # response body, token, or provider supplied error text.
+                reason = exc.args[0] if exc.args else "unclassified"
+                if reason not in ("invalid_discord_endpoint", "discord_non_success",
+                                  "discord_delivery_failed"):
+                    reason = "unclassified"
+                print("PROVIDER_BILLING_WATCH=WEBHOOK_REJECTED_" + str(index+1)
+                      + "_" + reason.upper())
+                continue
+            print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
+                  "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
+            return 0
+        print("PROVIDER_BILLING_WATCH=ALL_WEBHOOKS_FAILED")
+        return 2
+    except ValueError as exc:
+        reason = exc.args[0] if exc.args else "unclassified"
+        if reason not in ("invalid_date", "invalid_money",
+                          "incomplete_openai_credit_snapshot"):
+            reason = "unclassified"
+        print("PROVIDER_BILLING_WATCH=CONFIG_BLOCKED_" + str(reason).upper())
         return 2
 
 
