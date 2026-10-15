@@ -208,8 +208,12 @@ def test_quick_scan_blocks_misaligned_and_stale_without_exposing_research(monkey
     radar = _radar()
     radar["source_sequence"] = 2
     calls = _patch(monkeypatch, radar=radar)
+    monkeypatch.setattr(module, "sleep", lambda _seconds: None)
     result = module.read_us_quick_scan(["AMD"], now_utc=NOW)
-    assert calls == {"market": 1, "radar": 1}
+    # One-step skew allows at most two *local* read pairs. An unchanged
+    # mismatch must never become a research signal or invoke a provider.
+    assert calls == {"market": 3, "radar": 3}
+    assert result["provider_requests"] == 0
     assert result["ok"] is False
     assert result["symbols"] == {}
     assert "SOURCE_SEQUENCE_NOT_ALIGNED" in result["reasons"]
