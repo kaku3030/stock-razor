@@ -216,3 +216,39 @@ def test_start_rejected_ingress_rolls_back_partial_desired_registry():
     assert r.snapshot().subscribed == ()
     assert ("stop",) in a.calls
     assert not any(call[0] == "subscribe_many" for call in a.calls)
+
+def test_initial_adapter_start_sees_desired_registry_before_callback():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    original = a.start
+
+    def immediate_start():
+        assert KEY in {
+            entry.semantic_stream_key
+            for entry in c.desired_registry_snapshot().entries
+        }
+        original()
+
+    a.start = immediate_start
+    r.start([KEY])
+    assert r.snapshot().subscribed == (KEY,)
+
+
+def test_partial_adapter_start_failure_rolls_back_desired_registry():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+
+    def partially_start():
+        a.calls.append(("start_partial",))
+        raise RuntimeError("adapter startup failure")
+
+    a.start = partially_start
+    with pytest.raises(RuntimeError, match="adapter startup failure"):
+        r.start([KEY])
+
+    assert ("stop",) in a.calls
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
+    assert not any(call[0] == "subscribe_many" for call in a.calls)
