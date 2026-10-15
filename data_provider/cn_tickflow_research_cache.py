@@ -492,7 +492,9 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             raise ValueError
         safe=[]
         previous=None
-        for item in rows[-limit:]:
+        # Validate the entire bounded cache, not only the requested tail. A
+        # limit=1 client must not conceal earlier gaps or poisoned records.
+        for item in rows:
             if not isinstance(item,dict) or item.get("bar_finality")!="NOT_VERIFIED" or item.get("is_partial_bar") is not True:
                 raise ValueError
             label=item.get("label")
@@ -547,6 +549,10 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
+    # Rows are bounded by the collector contract (<=144); retain the whole
+    # verified label grid for session continuity, then trim public output.
+    validated_labels = {item["label"] for item in safe}
+    safe = safe[-limit:]
     # Never present non-mutating vendor precision as strict OHLC.
     tolerated_rows=sum(
         1 for row in safe if
@@ -556,18 +562,33 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     latest=bar_stamp
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
+        # Reaching the last scheduled boundary is NOT sufficient: a source
+        # can omit 10:00 while reporting 10:15. Check every due current-day
+        # boundary (including morning when reading in the afternoon).
+        due_labels = {
+            expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                             second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+            for clock in _LABEL_END[timeframe]
+            if expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                                second=0, microsecond=0) <= expected
+        }
+        missing_due_grid = not due_labels.issubset(validated_labels)
+        if research_mode=="session_progress" and (
+                latest < expected or missing_due_grid):
+            # A freshly rewritten cache with a new last bar but earlier
+            # missing due labels cannot be declared continuous research.
+            return {
+                **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                "source_age_seconds":round(age,2),
+                "expected_grid_progress":"NOT_OBSERVED",
+                "due_grid_continuity":"INCOMPLETE",
+                "bar_finality":"NOT_VERIFIED",
+                "rows":[],
+            }
         if latest < expected:
-            if research_mode=="session_progress":
-                # Do not allow a stale/partial session to pass currentness
-                # merely because the poller rewrites the cache.
-                return {
-                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                    "source_age_seconds":round(age,2),
-                    "expected_grid_progress":"NOT_OBSERVED",
-                    "bar_finality":"NOT_VERIFIED",
-                    "rows":[],
-                }
             progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        elif missing_due_grid:
+            progress="DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
         else:
             progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()

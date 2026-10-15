@@ -194,10 +194,13 @@ never reports provider prices or secrets to public Actions logs.
 After an owner-reviewed MCP SHA deployment, use
 `get_cn_market_data(symbol="TICKFLOW:PROGRESS:159611.SZ", timeframe="15m", limit=4)`
 (or `518880.SH`, `5m` / `60m`) for the cache reader's bounded
-`session_progress` path, which checks whether the latest Shanghai due-grid
-label has arrived. Unlike the historical-only prefix, a missing due label
-returns `BAR_LABEL_BEHIND_SESSION` instead of describing old bars as
-current. The cloud cache is read only; **no extra paid-provider I/O** occurs.
+`session_progress` path, which checks the complete sequence of Shanghai due-grid labels through
+the latest due boundary, independently of the requested `limit`. A missing
+intermediate or final due label returns `BAR_LABEL_BEHIND_SESSION`, never
+`PASS_RESEARCH_ONLY`. Historical-only may instead return
+`DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY`; this is not complete
+current-session evidence. The cloud cache is read only; **no extra
+paid-provider I/O** occurs.
 
 `PASS_RESEARCH_ONLY` is **not** an exchange-closed candle or actionable
 market signal. Vendor-float research rows retain explicit

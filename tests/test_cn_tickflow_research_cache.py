@@ -575,3 +575,59 @@ def test_vendor_precision_intraday_waits_90_seconds_and_never_excuses_true_shape
                         now_utc=datetime(2026,10,15,2,2,tzinfo=timezone.utc))
     assert all(item["label"]!="2026-10-15 10:00" for item in rows)
     assert all(item["bar_finality"]=="NOT_VERIFIED" for item in rows)
+
+
+def test_session_progress_rejects_middle_due_gap_even_when_last_bar_present(tmp_path):
+    """Real 159611 scenario: a skipped 10:00 must block at 10:17, even limit=1."""
+    now = datetime(2026, 10, 15, 2, 17, tzinfo=timezone.utc)  # 10:17 Shanghai
+    snap = build_observation(FakeClient(), now_utc=now, repo_sha="e"*40, sequence=7)
+    today_rows = snap["symbols"]["159611.SZ"]["15m"]["rows"]
+    template = dict(today_rows[-1])
+    today_rows.extend([
+        {**template, "label": "2026-10-15 09:45"},
+        {**template, "label": "2026-10-15 10:15"},
+    ])
+    cache = tmp_path / "gap.json"
+    atomic_publish(str(cache), snap)
+    blocked = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="session_progress",
+    )
+    assert blocked["ok"] is False
+    assert blocked["status"] == "BAR_LABEL_BEHIND_SESSION"
+    assert blocked["due_grid_continuity"] == "INCOMPLETE"
+    assert blocked["rows"] == []
+    assert blocked["radar_admission"] == "BLOCKED"
+    historical = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="historical_only",
+    )
+    assert historical["ok"] is True
+    assert historical["status"] == "PASS_HISTORICAL_ONLY"
+    assert historical["expected_grid_progress"] == (
+        "DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
+    )
+    today_rows.insert(-1, {**template, "label": "2026-10-15 10:00"})
+    atomic_publish(str(cache), snap)
+    complete = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="session_progress",
+    )
+    assert complete["ok"] is True
+    assert complete["status"] == "PASS_RESEARCH_ONLY"
+    assert complete["expected_grid_progress"] == "DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert complete["bar_finality"] == "NOT_VERIFIED"
+    assert complete["radar_admission"] == "BLOCKED"
+
+
+def test_research_reader_small_limit_does_not_hide_poisoned_earlier_row(tmp_path):
+    snap = build_observation(FakeClient(), now_utc=NOW, repo_sha="e"*40, sequence=7)
+    snap["symbols"]["159611.SZ"]["15m"]["rows"][0]["high"] = -1
+    cache = tmp_path / "poisoned.json"
+    atomic_publish(str(cache), snap)
+    observed = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert observed["status"] == "INVALID_CACHE"
+    assert observed["ok"] is False

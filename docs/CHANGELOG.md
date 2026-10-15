@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] TickFlow盘中MCP读取不再因最新到期时间戳存在而掩盖同日中间缺失K线；读取前完整检查受限缓存，即使 limit=1 也拒绝未验证的历史污染，仍保持研究数据与交易门禁隔离。
 - [改进] 现有 ChatGPT A股 MCP 明确新增 `TICKFLOW:PROGRESS:<ETF>` 只读盘中到期网格研究入口（5m/15m/60m），不依赖新增连接工具；严格与历史研究、默认腾讯/东方财富、交易所最终闭合及交易权限隔离。
 - [性能] TickFlow云端新增 `TICKFLOW:FULL` 一次MCP调用返回两ETF各5m/15m/60m/D1历史研究数据，统一源版本对齐，任何周期失效均整组拒绝，无交易权限晋级。
 - [改进] TickFlow 云端隔离研究缓存补齐受限5m（48根/完整交易日）及1d日期K线，保持两ETF白名单、无下单权限、未知闭合、日线仅历史研究；原有15m/60m调用兼容不变。
