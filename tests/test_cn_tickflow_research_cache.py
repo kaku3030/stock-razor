@@ -312,12 +312,12 @@ def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
     assert result["live_trade"] is False
 
 def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
-    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    current=datetime(2026,10,11,7,16,tzinfo=timezone.utc)
     snap=build_observation(FakeClient(),now_utc=current,
             repo_sha="c"*40,sequence=1)
     p=tmp_path/"cache.json"
     atomic_publish(str(p),snap)
-    later=current+timedelta(seconds=370)
+    later=current+timedelta(seconds=320)
     strict=read_cn_tickflow_research_data("159611.SZ",
         path=str(p),now_utc=later)
     hist=read_cn_tickflow_research_data("159611.SZ",
@@ -326,7 +326,7 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
     assert hist["status"]=="PASS_HISTORICAL_ONLY"
     assert hist["max_age_seconds"]==360
     too_late=read_cn_tickflow_research_data("159611.SZ",
-        path=str(p),now_utc=current+timedelta(seconds=370),
+        path=str(p),now_utc=current+timedelta(seconds=1090),
         research_mode="historical_only")
     assert too_late["status"]=="STALE"
 
@@ -340,7 +340,7 @@ def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
     class CurrentDayClient:
         klines=CurrentDayKlines()
     snap=build_observation(CurrentDayClient(),now_utc=current,
-            repo_sha="g"*40,sequence=2)
+            repo_sha="a"*40,sequence=2)
     p=tmp_path/"obs.json"
     atomic_publish(str(p),snap)
     later=current+timedelta(seconds=300)
