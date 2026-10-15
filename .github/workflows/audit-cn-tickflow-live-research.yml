@@ -243,6 +243,8 @@ jobs:
                   assert _v.get("etf_tick_research_shadow_compatible_bucket") in allowed_bucket
                   assert _v.get("quarantined_rows_bucket") in allowed_bucket
                   assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket
+                  assert _v.get("vendor_float_rows_bucket") in allowed_bucket
+                  assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket
                   assert _v.get("retained_bar_count_bucket") in allowed_rows
               period_map=d[when].get("per_period_observation")
               assert isinstance(period_map,dict)
@@ -250,6 +252,8 @@ jobs:
               assert all(isinstance(v,dict) and v.get("state") in states
                          and type(v.get("radar_blocked")) is bool
                          and type(v.get("finality_unproven")) is bool
+                         and v.get("ohlc_precision_scope") in (
+                             "UNKNOWN","STRICT","VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
                          for v in period_map.values())
               hist_map=d[when].get("historical_period_observation")
               assert isinstance(hist_map,dict)
