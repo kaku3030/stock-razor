@@ -254,3 +254,55 @@ def test_partial_adapter_start_failure_rolls_back_desired_registry():
     assert c.desired_registry_snapshot().entries == ()
     assert r.snapshot().subscribed == ()
     assert not any(call[0] == "subscribe_many" for call in a.calls)
+
+def test_dynamic_partial_subscribe_exception_attempts_compensating_unsubscribe():
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    second = SemanticStreamKey("futu", "us", "US.VRTX", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+
+    def partial_failure(keys):
+        assert tuple(keys) == (first, second)
+        raise RuntimeError("provider may have partially subscribed")
+
+    a.subscribe_streams = partial_failure
+    manager = OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    observed = datetime.now(timezone.utc)
+    quota = OpenDSubscriptionQuota(1, 20, observed, True)
+    outcome = manager.update_candidates([first, second], quota=quota)
+
+    assert outcome.status == "UNKNOWN"
+    assert outcome.reason == "TRANSPORT_MUTATION_OUTCOME_UNKNOWN"
+    assert ("unsubscribe", first) in a.calls
+    assert ("unsubscribe", second) in a.calls
+    assert r.snapshot().subscribed == (KEY,)
+    assert {x.semantic_stream_key for x in c.desired_registry_snapshot().entries} == {KEY}
+
+
+def test_dynamic_cleanup_failure_never_promotes_manager_transport():
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+
+    def fail(_keys):
+        raise RuntimeError("partial subscribe failure")
+
+    def fail_cleanup(key):
+        a.calls.append(("unsubscribe_failed", key))
+        raise RuntimeError("compensation failed")
+
+    a.subscribe_streams = fail
+    a.unsubscribe_stream = fail_cleanup
+    manager = OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    quota = OpenDSubscriptionQuota(
+        1, 20, datetime.now(timezone.utc), True,
+    )
+    outcome = manager.update_candidates([first], quota=quota)
+    assert outcome.status == "UNKNOWN"
+    assert ("unsubscribe_failed", first) in a.calls
+    assert manager.snapshot().transport_state == "UNKNOWN"
+    assert manager.update_candidates([first], quota=quota).status == "BLOCKED"
