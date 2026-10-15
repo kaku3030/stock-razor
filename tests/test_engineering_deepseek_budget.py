@@ -133,6 +133,19 @@ def test_aider_raw_analytics_whitelisted_into_token_counters(tmp_path, monkeypat
     assert json.loads(output.read_text())["run_id"] == "12345"
 
 
+def test_unpriced_nonzero_usage_keeps_tokens_but_cost_unknown(tmp_path):
+    f = tmp_path / "aider-unpriced.jsonl"
+    f.write_text(json.dumps({"event": "message_send", "properties": {
+        "prompt_tokens": 8842, "completion_tokens": 4727,
+        "total_tokens": 13569, "cost": 0}}))
+    result = b.summarize_usage(f)
+    assert result == {
+        "status": "OBSERVED", "requests": 1, "input_tokens": 8842,
+        "output_tokens": 4727, "total_tokens": 13569,
+        "estimated_cost_usd": None,
+    }
+
+
 def test_missing_or_invalid_analytics_is_unknown_not_fake_zero(tmp_path):
     assert b.summarize_usage(tmp_path / "missing.jsonl") == {
         "status": "NO_DATA", "requests": 0,
