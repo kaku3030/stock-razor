@@ -201,9 +201,9 @@ def test_corrupt_existing_lease_timestamp_never_grants_writeback(tmp_path):
     {"run": "7"},
     {"latency_ms": -1},
     {"closed": "true"},
-    {"checks": {"status": {"checks": {"status": {
-        "checks": {"status": {"checks": {"status": "TOO_DEEP"}}},
-    }}}},
+    {"checks": [{"checks": [{"checks": [{"checks": [
+        {"status": "TOO_DEEP"},
+    ]}]}]}]},
 ))
 def test_submit_rejects_sensitive_or_unreviewed_evidence_without_audit(
     tmp_path, bad_evidence,
