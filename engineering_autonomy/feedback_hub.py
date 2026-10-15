@@ -195,17 +195,48 @@ def make_dedupe_key(source: str, source_ref: str, title: str) -> str:
 class FeedbackHub:
     """SQLite-backed queue with atomic claims and auditable transitions."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, require_existing: bool = False):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if require_existing and not self.path.is_file():
+            raise FeedbackHubError("existing feedback hub is required")
+        if not require_existing:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            self._connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+            if require_existing:
+                # Read-only SQLite URI rejects an absent database and never
+                # initializes a phantom preflight store on a fresh CI runner.
+                uri = self.path.resolve().as_uri() + "?mode=ro"
+                self._connection = sqlite3.connect(
+                    uri, uri=True, timeout=10, isolation_level=None,
+                )
+            else:
+                self._connection = sqlite3.connect(
+                    self.path, timeout=10, isolation_level=None,
+                )
             self._connection.row_factory = sqlite3.Row
-            self._connection.execute("PRAGMA journal_mode=WAL")
             self._connection.execute("PRAGMA foreign_keys=ON")
-            self._initialize()
+            if require_existing:
+                self._verify_existing()
+            else:
+                self._connection.execute("PRAGMA journal_mode=WAL")
+                self._initialize()
         except (sqlite3.Error, OSError) as exc:
             raise FeedbackHubError("feedback hub unavailable") from exc
+
+    def _verify_existing(self) -> None:
+        """Inspect an established Hub without creating or migrating tables."""
+        row = self._connection.execute(
+            "SELECT value FROM metadata WHERE key='schema_version'"
+        ).fetchone()
+        if row is None or row[0] != str(SCHEMA_VERSION):
+            raise FeedbackHubError("existing feedback hub schema is invalid")
+        for table in ("feedback", "audit"):
+            found = self._connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            if found is None:
+                raise FeedbackHubError("existing feedback hub schema is invalid")
 
     def close(self) -> None:
         self._connection.close()
@@ -399,8 +430,9 @@ def main() -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", type=Path, required=True)
+    parser.add_argument("--require-existing", action="store_true")
     args = parser.parse_args()
-    hub = FeedbackHub(args.db)
+    hub = FeedbackHub(args.db, require_existing=args.require_existing)
     try:
         print(json.dumps(hub.preflight(), sort_keys=True))
     finally:
