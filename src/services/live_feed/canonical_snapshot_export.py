@@ -81,6 +81,24 @@ def _snapshot_payload(snapshot: MarketDataSnapshot) -> dict:
     }
 
 
+def _latest_bar_timestamp(snapshots: Mapping[str, MarketDataSnapshot], field: str) -> str | None:
+    values = []
+    for snapshot in snapshots.values():
+        for bars in (
+            snapshot.minute_bars,
+            snapshot.bars_5m,
+            snapshot.bars_15m,
+            snapshot.bars_1h,
+        ):
+            for bar in bars:
+                value = getattr(bar, field, None)
+                if value is not None:
+                    values.append(value)
+    if not values:
+        return None
+    return _iso(max(values))
+
+
 def build_canonical_snapshot_export(
     snapshots: Mapping[str, MarketDataSnapshot],
     *,
@@ -121,6 +139,12 @@ def build_canonical_snapshot_export(
         "repo_sha": sha,
         "sequence": sequence,
         "emitted_at_utc": _iso(emitted_at_utc),
+        # Publication time describes when this immutable export was written.
+        # These fields describe the newest actual provider evidence inside it;
+        # readers must use them for data freshness so a heartbeat refresh can
+        # never launder an old bar into a fresh market snapshot.
+        "latest_source_timestamp_utc": _latest_bar_timestamp(snapshots, "source_timestamp"),
+        "latest_received_at_utc": _latest_bar_timestamp(snapshots, "received_at"),
         "market_state_us": str(market_state_us or "UNKNOWN"),
         "cache_session_us": str(cache_session_us or "unknown"),
         "delivery_mode": normalized_delivery_mode,

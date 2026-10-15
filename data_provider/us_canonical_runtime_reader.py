@@ -180,24 +180,40 @@ def _snapshot_source(
             source_path=source_path,
         )
     now = _now(now_utc)
-    age = _age_seconds(payload.get("emitted_at_utc"), now_utc=now)
-    if age is None or age < -5:
+    publication_age = _age_seconds(payload.get("emitted_at_utc"), now_utc=now)
+    if publication_age is None or publication_age < -5:
         return None, _fail(
             "INVALID",
             error="INVALID_EMITTED_AT",
             source_path=source_path,
         )
-    source_status = "PASS" if age <= max_age_seconds else "STALE"
+    # The file can be rewritten by a heartbeat while the newest bar remains
+    # old. Prefer provider evidence when present and retain the old publication
+    # timestamp fallback for pre-migration snapshots.
+    data_age = _age_seconds(
+        payload.get("latest_source_timestamp_utc") or payload.get("emitted_at_utc"),
+        now_utc=now,
+    )
+    if data_age is None or data_age < -5:
+        return None, _fail(
+            "INVALID",
+            error="INVALID_LATEST_SOURCE_TIMESTAMP",
+            source_path=source_path,
+        )
+    source_status = "PASS" if data_age <= max_age_seconds else "STALE"
     meta = {
         "ok": True,
         "status": source_status,
         "source_path": source_path,
-        "source_age_seconds": age,
+        "source_age_seconds": data_age,
+        "publication_age_seconds": publication_age,
         "source_cache_hit": cache_hit,
         "repo_sha": payload.get("repo_sha"),
         "runtime_instance_id": payload.get("runtime_instance_id"),
         "sequence": payload.get("sequence"),
         "emitted_at_utc": payload.get("emitted_at_utc"),
+        "latest_source_timestamp_utc": payload.get("latest_source_timestamp_utc"),
+        "latest_received_at_utc": payload.get("latest_received_at_utc"),
         "market_state_us": payload.get("market_state_us"),
         "cache_session_us": payload.get("cache_session_us"),
         "delivery_mode": payload.get("delivery_mode"),

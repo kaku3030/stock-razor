@@ -71,6 +71,8 @@ def test_export_preserves_canonical_timeframes_health_and_safety():
     assert payload["schema"] == SCHEMA
     assert payload["delivery_mode"] == "UNKNOWN"
     assert payload["bar_closure"] == "UNPROVEN"
+    assert payload["latest_source_timestamp_utc"] is not None
+    assert payload["latest_received_at_utc"] is not None
     assert payload["radar_admission"] == "BLOCKED"
     assert payload["live_trade"] is False
     symbol = payload["symbols"]["US.AMD"]
@@ -93,6 +95,8 @@ def test_empty_snapshot_is_exportable_without_inventing_bars():
     symbol = payload["symbols"]["US.AMD"]
     assert all(symbol["timeframes"][tf] == [] for tf in ("1m", "5m", "15m", "1h"))
     assert symbol["health"]["signal_permission"] == "blocked"
+    assert payload["latest_source_timestamp_utc"] is None
+    assert payload["latest_received_at_utc"] is None
 
 
 def test_export_rejects_bad_identity_and_symbol_mapping():
