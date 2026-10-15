@@ -12,11 +12,13 @@ on:
   # Owner-only, immutable code, research-only AWS SSM inspection.
   issue_comment:
     types: [created]
-  # Read-only cloud audit, UTC cron. Best effort; scheduling is NOT bar finality.
-  # 02:20 UTC = 10:20 Asia/Shanghai; 06:20 UTC = 14:20 Asia/Shanghai.
+  # Read-only AWS SSM cloud snapshots every xx:00/xx:30 during CN
+  # market observation span: 10:00–15:30 Shanghai time on weekdays,
+  # including the midday pause and 15:30 last-bar publication crosscheck.
+  # GitHub scheduled starts are BEST EFFORT (may be delayed/skipped).
+  # No additional TickFlow paid SDK requests; existing collector cache only.
   schedule:
-    - cron: '20 2 * * 1-5'
-    - cron: '20 6 * * 1-5'
+    - cron: '0,30 2-7 * * 1-5'
 
 permissions:
   id-token: write
@@ -173,6 +175,7 @@ jobs:
                 "mcp_cache_consumer","mcp_historical_consumer",
                 "all_four_readonly_requests_ok","all_four_historical_requests_ok")
           periods=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
+          supplemental=("159611_SZ_5m","518880_SH_5m")
           allowed_grid=("UNKNOWN","NO_SESSION_GRID_DUE","NO_SAME_DAY_RETAINED_BAR",
                         "LAST_LABEL_OFF_GRID","MATCHED_DUE_LABEL",
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
@@ -181,7 +184,7 @@ jobs:
                               "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY",
                               "ONE_DUE_LABEL_MISSING","MULTIPLE_DUE_LABELS_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
-          allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96")
+          allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144")
           parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
                          "STALE_REFERENCE","INVALID_TICKFLOW_ROWS",
                          "UNQUALIFIED_REFERENCE_GRID","NO_OVERLAP",
@@ -223,7 +226,7 @@ jobs:
                   assert _v.get("lineage") in parity_lineage
               frame_map=d[when].get("source_frame_progress")
               assert isinstance(frame_map,dict)
-              assert set(frame_map).issubset(periods)
+              assert set(frame_map).issubset((*periods,*supplemental))
               for _v in frame_map.values():
                   assert isinstance(_v,dict)
                   assert _v.get("last_due_grid") in allowed_grid
@@ -246,6 +249,17 @@ jobs:
                   assert _v.get("vendor_float_rows_bucket") in allowed_bucket
                   assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket
                   assert _v.get("retained_bar_count_bucket") in allowed_rows
+              supp=d[when].get("supplemental_5m_reader")
+              assert isinstance(supp,dict) and set(supp).issubset(("159611_SZ","518880_SH"))
+              for observed in supp.values():
+                  assert isinstance(observed,dict)
+                  assert observed.get("state") in states
+                  assert type(observed.get("radar_blocked")) is bool
+                  assert observed.get("radar_blocked") is True
+                  assert type(observed.get("finality_unproven")) is bool
+                  assert observed.get("finality_unproven") is True
+                  assert type(observed.get("rows")) is int
+                  assert 0<=observed.get("rows")<=2
               period_map=d[when].get("per_period_observation")
               assert isinstance(period_map,dict)
               assert set(period_map).issubset(periods)
@@ -269,12 +283,14 @@ jobs:
           public={"schema":d["schema"],
                   "before":{**{k:d["before"].get(k) for k in keys},
                             "independent_price_shadow":{p:d["before"]["independent_price_shadow"].get(p,{}) for p in periods},
-                            "source_frame_progress":{p:d["before"]["source_frame_progress"].get(p,{}) for p in periods},
+                            "source_frame_progress":{p:d["before"]["source_frame_progress"].get(p,{}) for p in (*periods,*supplemental)},
+                            "supplemental_5m_reader":{p:d["before"]["supplemental_5m_reader"].get(p,{}) for p in ("159611_SZ","518880_SH")},
                             "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                             "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "after":{**{k:d["after"].get(k) for k in keys},
                            "independent_price_shadow":{p:d["after"]["independent_price_shadow"].get(p,{}) for p in periods},
-                           "source_frame_progress":{p:d["after"]["source_frame_progress"].get(p,{}) for p in periods},
+                           "source_frame_progress":{p:d["after"]["source_frame_progress"].get(p,{}) for p in (*periods,*supplemental)},
+                           "supplemental_5m_reader":{p:d["after"]["supplemental_5m_reader"].get(p,{}) for p in ("159611_SZ","518880_SH")},
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                            "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods}},
                   "sequence_advanced":d["sequence_advanced"],

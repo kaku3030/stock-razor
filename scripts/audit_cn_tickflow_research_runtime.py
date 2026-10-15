@@ -41,18 +41,19 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "same_session_vendor_float_rows_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
     }
-    if timeframe not in ("15m","60m") or not isinstance(frame,dict):
+    if timeframe not in ("5m","15m","60m") or not isinstance(frame,dict):
         return base
     rows=frame.get("rows")
     quarantined=frame.get("quarantined_unverified_rows_count")
-    if (not isinstance(rows,list) or not 4<=len(rows)<=96
-            or type(quarantined) is not int or not 0<=quarantined<=96):
+    row_cap=144 if timeframe=="5m" else 96
+    if (not isinstance(rows,list) or not 4<=len(rows)<=row_cap
+            or type(quarantined) is not int or not 0<=quarantined<=row_cap):
         return base
     def bucket(n:int) -> str:
         return "ZERO" if n==0 else "ONE" if n==1 else "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS"
     out={**base,"quarantined_rows_bucket":bucket(quarantined),
          "retained_bar_count_bucket":("FOUR_TO_24" if len(rows)<=24
-                                      else "25_TO_96")}
+                                      else "25_TO_96" if len(rows)<=96 else "97_TO_144")}
     reasons=frame.get("quarantine_reason_counts")
     allowed_reason=frozenset((
         "TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",
@@ -62,7 +63,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
     ))
     if (isinstance(reasons,dict) and len(reasons)<=len(allowed_reason)
         and all(isinstance(k,str) and k in allowed_reason
-                and type(v) is int and 0<v<=96
+                and type(v) is int and 0<v<=row_cap
                 for k,v in reasons.items())
         and sum(reasons.values())==quarantined):
         out["dominant_quarantine_reason"]=(
@@ -82,7 +83,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
                   "ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY")
     if (isinstance(gap_evidence,dict) and len(gap_evidence)<=8
             and all(k in (*ordered,swap_key,*lattice_keys)
-                    and type(v) is int and 0<v<=96
+                    and type(v) is int and 0<v<=row_cap
                     for k,v in gap_evidence.items())):
         gap_total=sum(gap_evidence.get(k,0) for k in ordered)
         swap=gap_evidence.get(swap_key,0)
@@ -707,6 +708,7 @@ def sample():
         "repo_sha_match":False,
         "cache_age_seconds":None,
         "source_frame_progress":{},
+        "supplemental_5m_reader":{},
         "independent_price_shadow":{},
         "sequence":None,
         "all_four_readonly_requests_ok":False,
@@ -766,7 +768,7 @@ def sample():
             )
             # Sanitize private, price-bearing cache *before* result leaves EC2.
             for symbol in ("159611.SZ","518880.SH"):
-                for period in ("15m","60m"):
+                for period in ("5m","15m","60m"):
                     try:
                         frame=data["symbols"][symbol][period]
                     except (KeyError,TypeError):
@@ -835,6 +837,21 @@ def sample():
                         else "UNKNOWN"
                     ),
                 }
+        # Supplementary 5m read uses only the already-written private cache.
+        # It never feeds legacy four 15m/60m acceptance predicates.
+        for symbol in ("159611.SZ","518880.SH"):
+            obs=read_cn_tickflow_research_data(
+                symbol,"5m",limit=2,research_mode="session_progress")
+            state=obs.get("status")
+            if state not in WHITELIST:
+                state="INVALID_CACHE"
+            result["supplemental_5m_reader"][symbol.replace(".","_")]={
+                "state":state,
+                "finality_unproven":obs.get("bar_finality")=="NOT_VERIFIED",
+                "radar_blocked":obs.get("radar_admission")=="BLOCKED",
+                "rows":len(obs.get("rows",[]))
+                    if state=="PASS_RESEARCH_ONLY" else 0,
+            }
         result["all_four_readonly_requests_ok"]=all(
             x["state"]=="PASS_RESEARCH_ONLY" and x["rows"]>0
             and x["radar_blocked"] and x["finality_unproven"]
