@@ -1,0 +1,112 @@
+name: US OpenD 30m Read-Only Quality Audit
+
+on:
+  schedule:
+    - cron: '0,30 * * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: us-opend-30m-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.repository_owner == 'kaku3030' &&
+      vars.US_OPEND_30M_AUDIT_ENABLED == 'true' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+      FEEDBACK_HUB_PATH: ${{ vars.FEEDBACK_HUB_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install calendar dependency
+        run: python -m pip install --disable-pip-version-check 'exchange-calendars>=4.13.0'
+      - name: Feedback Hub preflight and ET slot gate
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$FEEDBACK_HUB_PATH" || { echo 'FEEDBACK_HUB_BLOCKED=PATH_MISSING' >&2; exit 2; }
+          test -f "$FEEDBACK_HUB_PATH" || { echo 'FEEDBACK_HUB_BLOCKED=NON_PERSISTENT_OR_MISSING_FILE' >&2; exit 2; }
+          python scripts/us_opend_30m_audit.py prepare --db "$FEEDBACK_HUB_PATH" --output "$GITHUB_OUTPUT"
+          if [ "$(grep '^eligible=' "$GITHUB_OUTPUT" | cut -d= -f2)" != true ]; then
+            echo 'US_OPEND_30M_AUDIT=NOT_DUE'
+            exit 0
+          fi
+      - name: Configure read-only AWS OIDC
+        if: steps.gate.outputs.eligible == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: us-opend-30m-readonly-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Run bounded existing-export probe over SSM
+        if: steps.gate.outputs.eligible == 'true'
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          probe_hash="$(sha256sum scripts/probe_us_cloud_exact.py | cut -d' ' -f1)"
+          packed="$(gzip -n -9 -c scripts/probe_us_cloud_exact.py | base64 -w0)"
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          printf '%s' '$packed' | base64 -d | gzip -d > "\$stage/probe.py"
+          printf '%s  %s\\n' '$probe_hash' "\$stage/probe.py" | sha256sum -c - >/dev/null
+          python3 "\$stage/probe.py" --expected-sha '$GITHUB_SHA' --duration-seconds 30 --symbols 'US.AAPL,US.NVDA,US.QQQ,US.GLDM,US.AMD,US.TSLA,US.LITE,US.AAOI,US.CIEN' --ssm-summary-only
+          REMOTE
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 120 --query 'Command.CommandId' --output text)"
+          for _ in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text > probe.json; break ;;
+              Failed|TimedOut|Cancelled|Cancelling) exit 1 ;;
+            esac
+            sleep 2
+          done
+          test -s probe.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.us_opend_30m_audit import summarize_probe
+          raw = json.loads(Path('probe.json').read_text())
+          Path('audit-summary.json').write_text(json.dumps(summarize_probe(raw), sort_keys=True))
+          PY
+          cat audit-summary.json
+      - name: Write back sanitized evidence
+        if: always() && steps.gate.outputs.eligible == 'true'
+        shell: bash
+        env:
+          AUDIT_STATUS: ${{ steps.probe.outcome == 'success' && 'DONE' || 'FAILED' }}
+          FEEDBACK_ID: ${{ steps.gate.outputs.feedback_id }}
+          WORKER_ID: ${{ steps.gate.outputs.worker_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.us_opend_30m_audit import writeback
+          evidence = json.loads(Path('audit-summary.json').read_text()) if Path('audit-summary.json').is_file() else {'status': 'NOT_VERIFIED'}
+          result = writeback(Path(os.environ['FEEDBACK_HUB_PATH']), os.environ['FEEDBACK_ID'], os.environ['WORKER_ID'], os.environ['AUDIT_STATUS'], evidence, None if os.environ['AUDIT_STATUS'] == 'DONE' else 'read-only probe failed')
+          print(json.dumps(result, sort_keys=True))
+          PY
