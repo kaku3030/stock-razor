@@ -156,3 +156,28 @@ def test_existing_opend_subscription_manager_can_reconcile_through_bridge():
     removed_result=manager.update_candidates([])
     assert removed_result.status == "APPLIED"
     assert r.snapshot().subscribed == (KEY,)
+
+def test_start_partial_provider_batch_rolls_back_owner_and_registry():
+    """A failed initial batch may already have subscribed its first stream."""
+    second = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+
+    def partially_subscribe(keys):
+        assert tuple(keys) == (KEY, second)
+        a.calls.append(("subscribe_many_partial", tuple(keys)))
+        raise RuntimeError("partial provider subscription")
+
+    a.subscribe_streams = partially_subscribe
+    with pytest.raises(RuntimeError, match="partial provider subscription"):
+        r.start([KEY, second])
+
+    # The bridge must attempt bounded cleanup for every potentially
+    # subscribed stream, even when the provider gives no partial ACK list.
+    assert ("unsubscribe", KEY) in a.calls
+    assert ("unsubscribe", second) in a.calls
+    assert ("stop",) in a.calls
+    c.process_pending()
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
