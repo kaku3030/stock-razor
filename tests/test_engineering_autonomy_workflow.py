@@ -1,0 +1,25 @@
+from pathlib import Path
+
+
+WORKFLOW = Path(".github/workflows/engineering-autonomy-v1.yml").read_text(
+    encoding="utf-8"
+)
+
+
+def test_legacy_autonomy_workflow_is_manual_and_never_auto_merges():
+    assert "workflow_dispatch:" in WORKFLOW
+    assert "inputs:" in WORKFLOW
+    assert "inputs.confirm == true" in WORKFLOW
+    assert "default: false" in WORKFLOW
+    assert "schedule:" not in WORKFLOW
+    assert "gh pr merge" not in WORKFLOW
+    assert "--auto" not in WORKFLOW
+
+
+def test_legacy_autonomy_publisher_uses_short_lived_app_token_and_dedupes_branch():
+    assert "actions/create-github-app-token@v2" in WORKFLOW
+    assert "permission-contents: write" in WORKFLOW
+    assert "permission-pull-requests: write" in WORKFLOW
+    assert "steps.publish.outputs.token" in WORKFLOW
+    assert "a PR already exists for this run branch" in WORKFLOW
+    assert 'git push --set-upstream origin "autonomy/run-${RUN_ID}"' in WORKFLOW
