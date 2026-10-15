@@ -22,6 +22,7 @@ jobs:
   bounded-run:
     name: bounded-run
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.ref == 'refs/heads/main' && inputs.confirm == true && vars.ENGINEERING_AUTONOMY_ENABLED == 'true'
     steps:
       - name: Checkout exact main
@@ -49,13 +50,26 @@ jobs:
             --run-id "$RUN_ID" \
             --base-sha "$BASE_SHA"
 
-      - name: Commit sanitized record
+      - name: Commit only this run's sanitized audit record
         env:
           RUN_ID: ${{ github.run_id }}
+        shell: bash
         run: |
+          set -euo pipefail
+          RECORD="docs/engineering-autonomy/runs/${RUN_ID}.json"
+          # A single new run JSON must be the entire worktree delta.
+          # Reject any extra tracked/untracked files, rather than staging a directory.
+          test "$(git status --porcelain=v1 --untracked-files=all)" = "?? ${RECORD}" || {
+            echo 'BLOCKED: unexpected audit worktree modifications' >&2
+            exit 1
+          }
           git config user.name 'stock-razor-engineering-autonomy'
           git config user.email '322462903+kaku3030@users.noreply.github.com'
-          git add docs/engineering-autonomy/runs
+          git add -- "${RECORD}"
+          test "$(git diff --cached --name-only)" = "${RECORD}" || {
+            echo 'BLOCKED: unexpected staged audit paths' >&2
+            exit 1
+          }
           git diff --cached --check
           git commit -m "chore: record engineering autonomy run ${RUN_ID}"
 
