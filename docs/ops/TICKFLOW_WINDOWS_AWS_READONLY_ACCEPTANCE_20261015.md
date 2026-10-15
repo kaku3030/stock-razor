@@ -32,6 +32,38 @@ All D1 labels on the current Shanghai date are quarantined from proven
 historical D1, even after 15:00 unless independent finality proof exists.
 Never use this research output as a trade signal.
 
+## 2026-10-15 10:18 CST exact-code root cause isolated
+
+Additional physical Windows probe executed the **exact cloud protected-main**
+`data_provider/cn_tickflow_research_cache.normalize_bars` source blob
+`d11076c4989277413a366f308e1bd4c7274246f3` without changing its
+normalization rules, on the official `TickFlow==0.1.25` compact response
+(`15m`, `count=96`, `adjust=none`, zero SDK retries).
+
+For `159611.SZ`, 96 SDK rows produced only **94 retained**: one
+`TODAY_FUTURE_LABEL` and one `TODAY_LOW_ABOVE_BODY`. The one malformed
+row lies at the **second** due 15m ordinal (10:00 CST); a bounded vendor
+precision diagnostic classified it `GAP_LT_1BP`,
+`ETF_TICK_LATTICE_NEAR`, and
+`ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY`.
+There were **no credentials or OHLC prices** in diagnostics.
+`518880.SH` had 95 retained from 96, with only one forming future label.
+
+**Root cause clarified:** the earlier desktop PASS was obtained with a
+`<=0.00001` OHLC *tolerance*, while the cloud intraday gate rejects
+non-strict OHLC even for a tiny positive low-vs-close drift. This can
+fully reproduce the reported 159611 `BAR_LABEL_BEHIND_SESSION` on
+Windows using the cloud's exact normalizer; a regional data discrepancy is
+therefore **not established**. A different AWS vendor response is still
+possible, but is no longer required to explain the symptom.
+
+The Windows audit now distinguishes a returned grid label from a **strictly
+valid OHLC** grid label, marking the tiny precision anomaly as a missing
+strict qualified due boundary, not an apparently perfect PASS. Do not
+automatically round/fix provider price fields, suppress strict research
+guards, promote Radar, or claim source finality. Await independently
+approved vendor precision policy and cloud/auditor rollout.
+
 ## Cloud evidence and discrepancy
 
 Use the *existing* protected-main, owner-only read-only workflow
