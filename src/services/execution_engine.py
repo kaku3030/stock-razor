@@ -288,6 +288,31 @@ class ExecutionEngine:
             quantity=_decimal(quantity,"fill quantity"); price=_decimal(price,"fill price")
             if not fill_id or fill_id in seen or self.store.fill_exists(fill_id) or price<=0 or quantity<=0 or total+quantity>intent.qty: raise ExecutionBlocked("invalid or duplicate paper fill")
             seen.add(fill_id); total+=quantity; validated.append((fill_id,quantity,price))
+        # Check the entire returned batch against the already reserved
+        # cash / owned position BEFORE appending even the first FILLED or
+        # PARTIAL journal event. An over-limit synthetic receipt must leave
+        # the submission pending reconciliation, never claim a durable fill
+        # while the independent ledger rejects it.
+        if ledger_known and validated:
+            if cash_reserved:
+                total_cost = sum(
+                    (quantity * price for _, quantity, price in validated),
+                    Decimal("0"),
+                )
+                if total_cost > intent.qty * intent.limit_price:
+                    raise ExecutionBlocked(
+                        "paper buy receipts exceed own reservation; reconciliation required"
+                    )
+            elif intent.side is Side.SELL:
+                owned_qty = next(
+                    (position.qty for position in self.ledger.positions()
+                     if position.symbol == intent.symbol.upper()),
+                    Decimal("0"),
+                )
+                if total > owned_qty:
+                    raise ExecutionBlocked(
+                        "paper sell receipts exceed owned quantity; reconciliation required"
+                    )
         record.broker_order_id=broker_order_id; self._transition(record,OrderState.ACCEPTED,context.now,broker_order_id=broker_order_id)
         for fill_id,quantity,price in validated:
             record.fill_ids.append(fill_id); record.filled_qty+=quantity; self._transition(record,OrderState.FILLED if record.filled_qty==intent.qty else OrderState.PARTIAL,context.now,fill_id=fill_id,quantity=quantity,price=price,broker_order_id=broker_order_id)
