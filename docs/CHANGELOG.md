@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 增加默认关闭、按 America/New_York 与 XNYS 日历判定的美股 OpenD 每 30 分钟只读质量验收工作流。
 - [修复] OpenD canonical 快照区分发布心跳与最新行情源时间戳；运行时可持续推进只读快照序列，同时 MCP 仍按真实 K 线源时间判定新鲜度，避免缓存停滞或心跳刷新掩盖旧数据。
 - [修复] TickFlow 暂时性网络超时按15至300秒有界退避恢复，成功后重置；鉴权、限流及数据错误仍保留300秒退避，周末900秒，失败缓存不冒充有效行情。
 - [修复] Context Manager 使用跨进程写入锁避免事件版本冲突；显式恢复仅修正经校验的连续重复版本，先保留0600原始备份，不改变任何交易门禁。
