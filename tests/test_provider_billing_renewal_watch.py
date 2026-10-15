@@ -88,3 +88,18 @@ def test_dry_run_no_vendor_calls_or_secrets():
     report,alerts=evaluate(NOW,env={"TICKFLOW_RENEWAL_DATE":"2026-10-15"})
     assert not any("fake-admin-credential" in line for line in report)
     assert any("TickFlow" in a for a in alerts)
+
+
+def test_explicit_manual_report_does_not_require_provider_key():
+    """Manual send-report is opt-in; missing Admin key never invokes Costs API."""
+    report, alerts = evaluate(NOW, env={}, fetch=lambda *_:
+                              (_ for _ in ()).throw(AssertionError("no admin")))
+    assert any("exact prepaid balance=UNKNOWN" in s for s in report)
+    assert not alerts
+
+
+def test_error_classification_does_not_serialize_provider_body():
+    from scripts.provider_billing_renewal_watch import _get_json
+    # Protected internal routine must reject arbitrarily chosen exfil domains.
+    with pytest.raises(ValueError, match="invalid_endpoint_or_key"):
+        _get_json("https://untrusted.example/", "dummy", 1, 2)

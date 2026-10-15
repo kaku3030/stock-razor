@@ -210,6 +210,7 @@ def discord_send(webhook: str, content: str) -> None:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--send-report", action="store_true", help="Send a sanitized one-off manual channel test")
     args = p.parse_args()
     env = dict(os.environ)
     now = datetime.now(timezone.utc)
@@ -224,7 +225,7 @@ def main() -> int:
             return 0
         report, alerts = evaluate(now, env=env)
         # Weekly informational summary; alerts are sent on any day.
-        dispatch = bool(alerts) or now.weekday() == 0
+        dispatch = bool(alerts) or now.weekday() == 0 or args.send_report
         if not dispatch:
             print("PROVIDER_BILLING_WATCH=CHECK_OK_NO_ALERT")
             return 0
