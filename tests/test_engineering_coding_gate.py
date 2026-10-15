@@ -121,11 +121,11 @@ def test_porcelain_unstaged_edit_preserves_significant_leading_space(monkeypatch
 
 @pytest.mark.parametrize("status", [
     b"",
-    b" M tests/test_engineering_autonomy.py\\n",
-    b"M  tests/test_engineering_autonomy.py\\0",
-    b"MM tests/test_engineering_autonomy.py\\0",
-    b"?? .aider-chat.history.md\\0",
-    b" M tests/test_engineering_autonomy.py\\0?? .aider-chat.history.md\\0",
+    b" M tests/test_engineering_autonomy.py\n",
+    b"M  tests/test_engineering_autonomy.py\0",
+    b"MM tests/test_engineering_autonomy.py\0",
+    b"?? .aider-chat.history.md\0",
+    b" M tests/test_engineering_autonomy.py\0?? .aider-chat.history.md\0",
 ])
 def test_porcelain_unreviewed_changes_still_fail_closed(monkeypatch, status):
     """Staged, extra, missing and malformed entries cannot pass capture."""
