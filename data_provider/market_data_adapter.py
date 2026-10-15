@@ -129,8 +129,9 @@ def evaluate_health(
         "MISSING_TIMESTAMP",
         "DUPLICATE_TIMESTAMP",
         "NON_MONOTONIC_TIMESTAMP",
+        "VWAP_OUTSIDE_BAR_RANGE",
     }
-    degraded_flags = {"MISSING_BAR", "MISSING_SOURCE_TIMESTAMP", "PARTIAL_BAR", "STALE"}
+    degraded_flags = {"MISSING_BAR", "MISSING_SOURCE_TIMESTAMP", "PARTIAL_BAR", "STALE", "PARTIAL_TURNOVER"}
     score = round(
         freshness * 25
         + completeness * 20

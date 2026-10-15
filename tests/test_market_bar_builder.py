@@ -162,3 +162,50 @@ def test_us_15m_and_1h_require_closed_complete_source_grid() -> None:
     assert len(fifteen) == 4
     assert len(hourly) == 1
     assert all(bar.is_closed and bar.is_complete for bar in [*fifteen, *hourly])
+
+
+def test_opend_turnover_volume_mismatch_cannot_publish_impossible_vwap() -> None:
+    """QQQ-style bar with turnover/volume above its high blocks VWAP signals."""
+    from dataclasses import replace
+
+    start = datetime(2026, 10, 14, 15, 15, tzinfo=US)
+    minute_bars = [
+        replace(
+            us_minute_bar(start + timedelta(minutes=i)),
+            symbol="US.QQQ",
+            open=728.5, high=729.4, low=727.0, close=728.27,
+            volume=10, amount=7340.0,
+        )
+        for i in range(15)
+    ]
+    bar = aggregate_bars(minute_bars, "15m", as_of=start + timedelta(minutes=15))[0]
+    assert bar.is_closed and bar.is_complete
+    assert bar.volume == 150 and bar.amount == 15 * 7340.0
+    assert bar.high == 729.4
+    assert bar.vwap is None
+    assert "VWAP_OUTSIDE_BAR_RANGE" in bar.quality_flags
+    assert bar.health.signal_permission is SignalPermission.BLOCKED
+
+
+def test_partial_turnover_cannot_divide_by_full_bar_volume() -> None:
+    """No partial numerator may be divided by full aggregate volume."""
+    from dataclasses import replace
+
+    start = datetime(2026, 10, 14, 9, 30, tzinfo=US)
+    minute_bars = [us_minute_bar(start + timedelta(minutes=i)) for i in range(5)]
+    minute_bars[2] = replace(minute_bars[2], amount=None)
+    bar = aggregate_bars(minute_bars, "5m", as_of=start + timedelta(minutes=5))[0]
+    assert bar.amount is None
+    assert bar.vwap is None
+    assert "PARTIAL_TURNOVER" in bar.quality_flags
+    assert bar.health.signal_permission is not SignalPermission.NORMAL
+
+
+def test_valid_opend_turnover_keeps_vwap_in_ohlc_range() -> None:
+    start = datetime(2026, 10, 14, 9, 30, tzinfo=US)
+    minute_bars = [us_minute_bar(start + timedelta(minutes=i)) for i in range(5)]
+    bar = aggregate_bars(minute_bars, "5m", as_of=start + timedelta(minutes=5))[0]
+    assert bar.vwap == 100.0
+    assert "VWAP_OUTSIDE_BAR_RANGE" not in bar.quality_flags
+    assert "PARTIAL_TURNOVER" not in bar.quality_flags
+    assert bar.health.signal_permission is SignalPermission.NORMAL
