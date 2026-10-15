@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] TickFlow AWS 只读双快照审计补充5m分钟K线连续性和两 ETF 缓存状态枚举；不暴露价格、不晋级 Radar 准入。
 - [新功能] 云端 OpenAI API 成本/token 使用量及 TickFlow 月费到期安全提醒（只读 Admin API、Discord、余额非真实值明确标注）；OpenD 免费不监控。
 - [研究数据] TickFlow 5m 盘中微小 OHLC vendor float（<=1e-5，ETF tick-grid 一致）仅保留原值用于受限研究；5m 全部到期K线逐一校验，缺口和大误差仍拒绝，交易门禁不变。
 - [修复] TickFlow盘中MCP读取不再因最新到期时间戳存在而掩盖同日中间缺失K线；读取前完整检查受限缓存，即使 limit=1 也拒绝未验证的历史污染，仍保持研究数据与交易门禁隔离。
