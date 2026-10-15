@@ -548,7 +548,12 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                (research_mode=="historical_only"
+                                # After the Shanghai close, session_progress
+                                # remains a read-only due-grid view. It may
+                                # accept the same bounded post-close vendor
+                                # float evidence as historical_only, while
+                                # keeping finality/currentness unproven.
+                                ((research_mode in ("historical_only", "session_progress"))
                                  and _post_close_research_eligible(bar_stamp, now))
                                 or (research_mode=="session_progress"
                                     and timeframe in ("5m","15m","60m")
