@@ -22,7 +22,8 @@ concurrency:
 jobs:
   aws-cost:
     # Dedicated OIDC job: OpenAI and DeepSeek keys are NOT available here.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.dry_run == false)
+    # Cost Explorer API is billed ($0.01/request). Require separate explicit owner opt-in.
+    if: vars.AWS_COST_EXPLORER_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.dry_run == false)
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:
