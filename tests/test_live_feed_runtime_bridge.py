@@ -6,6 +6,10 @@ import pytest
 from data_provider.live_feed_types import ProviderEvent, ProviderEventKind, SemanticStreamKey
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.opend_subscription_manager import (
+    OpenDSubscriptionManager,
+    OpenDSubscriptionQuota,
+)
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 
 
@@ -96,3 +100,59 @@ def test_bridge_batches_provider_subscription_for_multiple_streams():
     assert ("subscribe_many", (KEY, second)) in a.calls
     assert not any(call[0] == "subscribe" for call in a.calls)
     assert snap.subscribed == (KEY, second)
+
+
+def test_bridge_dynamically_adds_and_removes_stream_through_existing_owner():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+
+    r.subscribe_streams([added, added])
+    assert r.snapshot().subscribed == (KEY, added)
+    assert c.desired_registry_snapshot().entries[-1].semantic_stream_key == added
+    assert ("subscribe_many", (added,)) in a.calls
+
+    r.unsubscribe_stream(added)
+    assert r.snapshot().subscribed == (KEY,)
+    assert added not in {
+        item.semantic_stream_key
+        for item in c.desired_registry_snapshot().entries
+    }
+    assert ("unsubscribe", added) in a.calls
+
+
+def test_dynamic_provider_subscribe_failure_rolls_back_desired_registry():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+
+    def fail(_keys):
+        raise RuntimeError("provider rejected")
+    a.subscribe_streams = fail
+    with pytest.raises(RuntimeError, match="provider rejected"):
+        r.subscribe_stream(added)
+    assert r.snapshot().subscribed == (KEY,)
+    assert added not in {
+        item.semantic_stream_key
+        for item in c.desired_registry_snapshot().entries
+    }
+
+
+def test_existing_opend_subscription_manager_can_reconcile_through_bridge():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+    manager=OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    quota=OpenDSubscriptionQuota(
+        total_used=1,
+        remaining=20,
+        observed_at_utc=datetime.now(timezone.utc),
+        verified=True,
+    )
+
+    added_result=manager.update_candidates([added], quota=quota)
+    assert added_result.status == "APPLIED"
+    assert r.snapshot().subscribed == (KEY, added)
+    removed_result=manager.update_candidates([])
+    assert removed_result.status == "APPLIED"
+    assert r.snapshot().subscribed == (KEY,)
