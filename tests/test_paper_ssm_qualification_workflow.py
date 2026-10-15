@@ -123,3 +123,42 @@ def test_full_config_grid_does_not_claim_service_trigger_execution(tmp_path):
     assert outcome == "PAPER_HALF_HOUR_SCHEDULE CONFIGURED_48_SLOTS_ONLY"
     assert "PASS" not in outcome
     assert "not-for-output" not in outcome
+
+def test_paper_heartbeat_future_mtime_is_not_fresh(tmp_path):
+    """A future-dated heartbeat must never be treated as fresh by the SSM probe."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import textwrap
+    import time
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    marker = '/usr/bin/python3 - "$status_path" <<\'PY\''
+    assert workflow.count(marker) == 1
+    snippet = workflow.split(marker, 1)[1].split("\n          PY", 1)[0]
+    code = textwrap.dedent(snippet)
+    heartbeat = tmp_path / "latest-heartbeat.json"
+    heartbeat.write_text(json.dumps({
+        "live_trade": False,
+        "trade_execution": False,
+        "paper_auto_ready": False,
+        "radar_admission": "BLOCKED",
+        "source_arbiter_admission": "BLOCKED",
+    }), encoding="utf-8")
+    now = time.time()
+    for age_seconds, expected in (
+        (30, "PASS"),
+        (-3600, "UNKNOWN"),
+        (1200, "UNKNOWN"),
+    ):
+        stamped = now - age_seconds
+        os.utime(heartbeat, (stamped, stamped))
+        process = subprocess.run(
+            [sys.executable, "-c", code, str(heartbeat)],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        assert process.returncode == 0, process.stderr
+        assert "PAPER_HEARTBEAT_SCHEMA=PASS" in process.stdout
+        assert "PAPER_RUNTIME_GATES_CLOSED=PASS" in process.stdout
+        assert f"PAPER_HEARTBEAT_FRESHNESS={expected}" in process.stdout
