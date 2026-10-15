@@ -183,9 +183,14 @@ def summarize_usage(path: Path) -> dict[str, object]:
 
 
 def require_hard_cost_guarantee(value: str | None) -> None:
-    """Paid execution requires an externally verified provider-side CNY cap."""
-    if value != HARD_COST_GUARANTEE:
-        raise ValueError("provider-side hard CNY cost guarantee is not verified")
+    """Fail closed until an authenticated upstream CNY 5 cap can be verified.
+
+    A repository variable is controlled by the caller; even an exact match to
+    HARD_COST_GUARANTEE is only a claim. Neither the DeepSeek balance endpoint
+    nor the current workflow verifies a per-run provider-enforced spending cap.
+    Do not start a paid child based on a spoofable string.
+    """
+    raise ValueError("provider-side CNY 5 hard cost cap is NOT_VERIFIED; paid execution disabled")
 
 
 def validate_execution_usage(path: Path) -> dict[str, object]:
