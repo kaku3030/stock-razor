@@ -50,27 +50,30 @@ class LiveFeedRuntimeBridge:
         if not unique:
             raise ValueError("at least one stream is required")
         self._adapter.register_event_sink(self._submit_event)
-        self._adapter.start()
         registered: list[SemanticStreamKey] = []
+        adapter_start_attempted = False
         try:
             for key in unique:
                 accepted = self._controller.request_add_desired(key)
                 if not accepted.accepted:
                     raise RuntimeError("desired registry ingress rejected")
                 registered.append(key)
-            # The writer must register desired keys before a provider is
-            # allowed to synchronously push the first subscribed event.
+            # Desired keys must be committed before start(), because the
+            # provider may emit data synchronously from its start callback.
             self._controller.process_pending()
-            # A failed provider batch can have partially succeeded. Own all
+            adapter_start_attempted = True
+            self._adapter.start()
+            # A failed subscribe batch can be partially applied. Own all
             # attempted keys for bounded cleanup before invoking the adapter.
             self._subscribed.extend(unique)
             self._adapter.subscribe_streams(unique)
         except Exception:
             try:
-                self._cleanup()
+                if adapter_start_attempted:
+                    self._cleanup()
             finally:
-                # An unsuccessful start must not leave ghost desired streams
-                # that could accept delayed provider pushes.
+                # A failed start must not leave ghost desired streams that
+                # could accept delayed provider pushes on the next attempt.
                 self._controller.process_pending()
                 for key in registered:
                     removed = self._controller.request_remove_desired(key)
