@@ -4,7 +4,7 @@
 
 The stock-razor repository owner can request an **existing bounded AWS research audit** without a personal computer. Post the exact command `/stock-razor tickflow-audit read-only` as a **new GitHub PR conversation comment on merged PR #658**. The action uses GitHub Actions and AWS Tokyo SSM under the existing GitHub Ops role; no additional IAM scope, keys or provider-worker subscription is created.
 
-This is complementary to existing two weekday UTC cron audits and manual `workflow_dispatch`. Cron runs can be delayed or skipped; neither cron nor on-demand probes guarantee exchange-bar closure or real-time qualification.
+This is complementary to the existing weekday half-hour UTC cron `0,30 2-7 * * 1-5` (10:00–15:30 China Standard Time, 11:00–16:30 JST) and manual `workflow_dispatch`. Cron runs can be delayed or skipped; neither cron nor on-demand probes guarantee exchange-bar closure or real-time qualification.
 
 ## Fail-closed authorization
 
