@@ -130,7 +130,8 @@ jobs:
               assert payload.get("source_arbiter_admission") == "BLOCKED"
               print("PAPER_HEARTBEAT_SCHEMA=PASS")
               print("PAPER_RUNTIME_GATES_CLOSED=PASS")
-              print("PAPER_HEARTBEAT_FRESHNESS=PASS" if time.time() - os.stat(path).st_mtime <= 900 else "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
+              age_seconds = time.time() - os.stat(path).st_mtime
+              print("PAPER_HEARTBEAT_FRESHNESS=PASS" if 0 <= age_seconds <= 900 else "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
           except Exception:
               print("PAPER_HEARTBEAT_SCHEMA=UNKNOWN")
               print("PAPER_RUNTIME_GATES_CLOSED=UNKNOWN")
