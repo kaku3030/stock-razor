@@ -66,3 +66,60 @@ def test_workflow_withholds_raw_runtime_output_and_checks_exact_main():
     assert "EXPECTED_RUNTIME_SHA_PLACEHOLDER" in text
     assert "RAW_RUNTIME_OUTPUT_WITHHELD YES" in text
     assert "SecretString: NOT_READ" in text
+
+
+
+def _run_embedded_schedule_probe(tmp_path, raw_env: str) -> str:
+    """Exercise the exact SSM embedded config parser without AWS or secrets."""
+    import subprocess
+    import sys
+    import textwrap
+
+    text = WORKFLOW.read_text(encoding="utf-8")
+    marker = '/usr/bin/python3 - "$working/.env" <<\'PY\''
+    assert text.count(marker) == 1
+    snippet = text.split(marker, 1)[1].split("\n          PY", 1)[0]
+    code = textwrap.dedent(snippet)
+    config = tmp_path / "fake.env"
+    config.write_text(raw_env, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(config)],
+        capture_output=True, text=True, timeout=5, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_halfhour_ssm_probe_requires_all_48_distinct_slots(tmp_path):
+    grid = ",".join(
+        f"{hour:02d}:{minute:02d}"
+        for hour in range(24) for minute in (0, 30)
+    )
+    good = _run_embedded_schedule_probe(tmp_path, "SCHEDULE_TIMES=" + grid + "\n")
+    assert good == "PAPER_HALF_HOUR_SCHEDULE CONFIGURED_48_SLOTS_ONLY"
+
+    # Existing code incorrectly claimed PASS for one 09:00 or just 09:00/09:30.
+    for raw in (
+        "SCHEDULE_TIME=09:00\n",
+        "SCHEDULE_TIMES=09:00,09:30\n",
+        "SCHEDULE_TIMES=" + grid.replace("23:30", "23:00") + "\n",
+        "SCHEDULE_TIMES=" + grid.replace("23:30", "") + "\n",
+        "SCHEDULE_TIMES=09:01,09:30\n",
+    ):
+        assert _run_embedded_schedule_probe(tmp_path, raw) == (
+            "PAPER_HALF_HOUR_SCHEDULE UNKNOWN"
+        )
+
+
+def test_full_config_grid_does_not_claim_service_trigger_execution(tmp_path):
+    all_slots = ",".join(
+        f"{hour:02d}:{minute:02d}"
+        for hour in range(24) for minute in (0, 30)
+    )
+    outcome = _run_embedded_schedule_probe(
+        tmp_path, "OTHER_SECRET_SHOULD_NOT_LEAK=not-for-output\n"
+        + "SCHEDULE_TIMES=" + all_slots + "\n"
+    )
+    assert outcome == "PAPER_HALF_HOUR_SCHEDULE CONFIGURED_48_SLOTS_ONLY"
+    assert "PASS" not in outcome
+    assert "not-for-output" not in outcome
