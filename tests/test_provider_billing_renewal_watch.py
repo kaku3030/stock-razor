@@ -103,3 +103,19 @@ def test_error_classification_does_not_serialize_provider_body():
     # Protected internal routine must reject arbitrarily chosen exfil domains.
     with pytest.raises(ValueError, match="invalid_endpoint_or_key"):
         _get_json("https://untrusted.example/", "dummy", 1, 2)
+
+
+def test_no_webhook_or_invalid_renewal_is_fail_closed(monkeypatch,capsys):
+    from scripts import provider_billing_renewal_watch as watch
+    monkeypatch.setattr(watch,"discord_send",lambda *a: (_ for _ in ()).throw(
+        ValueError("discord_delivery_failed")))
+    monkeypatch.setattr(watch,"datetime",type("Clock",(),{
+        "now":staticmethod(lambda *_: NOW),
+    }))
+    monkeypatch.setattr(watch,"os",type("Environ",(),{
+        "environ":{"DISCORD_RADAR_WEBHOOK_URL":"https://discord.com/api/webhooks/redacted"}
+    }))
+    monkeypatch.setattr(watch,"argparse",__import__("argparse"))
+    monkeypatch.setattr(__import__("sys"),"argv",["watch","--send-report"])
+    assert watch.main()==2
+    assert "PROVIDER_BILLING_WATCH=DISCORD_DELIVERY_FAILED" in capsys.readouterr().out

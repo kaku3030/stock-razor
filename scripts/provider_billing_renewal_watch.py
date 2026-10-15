@@ -238,8 +238,18 @@ def main() -> int:
         print("PROVIDER_BILLING_WATCH=ALERT_DISPATCHED" if alerts else
               "PROVIDER_BILLING_WATCH=WEEKLY_REPORT_DISPATCHED")
         return 0
-    except ValueError:
-        print("PROVIDER_BILLING_WATCH=CONFIG_OR_DELIVERY_BLOCKED")
+    except ValueError as exc:
+        # Whitelist only locally generated error categories. Never echo
+        # arbitrary upstream body, webhook URL or exception messages.
+        error_code = {
+            "invalid_discord_endpoint": "DISCORD_ENDPOINT_INVALID",
+            "discord_delivery_failed": "DISCORD_DELIVERY_FAILED",
+            "discord_non_success": "DISCORD_DELIVERY_FAILED",
+            "invalid_date": "CONFIG_DATE_INVALID",
+            "invalid_money": "CONFIG_VALUE_INVALID",
+            "incomplete_openai_credit_snapshot": "CONFIG_CREDIT_SNAPSHOT_INCOMPLETE",
+        }.get(str(exc), "CONFIG_OR_DELIVERY_BLOCKED")
+        print("PROVIDER_BILLING_WATCH=" + error_code)
         return 2
 
 
