@@ -609,10 +609,40 @@ def active(service):
     except (OSError, subprocess.TimeoutExpired):
         return False
 
+
+def safe_worker_journal_observation() -> str:
+    """Read only this fixed worker's last 10m sanitized lifecycle markers.
+
+    Raw journal bytes, messages, provider errors and credentials MUST NOT
+    leave the host or enter the sanitized GitHub Actions output.
+    """
+    try:
+        result=subprocess.run([
+            "journalctl", "--unit", WORKER_UNIT, "--since=-10minutes",
+            "--lines=64", "--output=cat", "--no-pager", "--quiet",
+        ], text=True, capture_output=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return "JOURNAL_UNAVAILABLE"
+    if result.returncode != 0:
+        return "JOURNAL_UNAVAILABLE"
+    for line in reversed(result.stdout.splitlines()):
+        value=line.strip()
+        if value=="TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS":
+            return "POLL_RESEARCH_ONLY_PASS"
+        if value.startswith("TICKFLOW_RESEARCH_POLL=BLOCKED:"):
+            # The worker emits only its exception class but the journal
+            # might contain malformed/attacker text: reveal only our enum.
+            return "POLL_BLOCKED"
+        if value.startswith("TICKFLOW_RESEARCH_BOOT=BLOCKED:"):
+            return "BOOT_BLOCKED"
+    return "NO_RECENT_LIFECYCLE_MARKER"
+
+
 def sample():
     result={
         "unit_active":active(WORKER_UNIT),
         "mcp_unit_active":active(MCP_UNIT),
+        "worker_journal_observation":safe_worker_journal_observation(),
         "status":"NOT_VERIFIED",
         "cache_unavailable_reason":"NOT_APPLICABLE",
         "failure_stage":"UNKNOWN",
