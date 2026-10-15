@@ -111,9 +111,7 @@ class LiveFeedRuntimeBridge:
         for key in unique:
             accepted = self._controller.request_add_desired(key)
             if not accepted.accepted:
-                for prior in queued:
-                    self._controller.request_remove_desired(prior)
-                self._controller.process_pending()
+                self._rollback_desired(queued)
                 raise RuntimeError("desired registry ingress rejected")
             queued.append(key)
         self._controller.process_pending()
@@ -128,11 +126,22 @@ class LiveFeedRuntimeBridge:
                     self._adapter.unsubscribe_stream(key)
                 except Exception:
                     pass
-            for key in unique:
-                self._controller.request_remove_desired(key)
-            self._controller.process_pending()
+            self._rollback_desired(unique)
             raise
         self._subscribed.extend(unique)
+
+    def _rollback_desired(self, keys: Sequence[SemanticStreamKey]) -> None:
+        """Undo bounded desired mutations without overflowing the owner queue."""
+        # A full queue first has to be drained; otherwise even the rollback
+        # command may be rejected, leaving an unowned desired stream behind.
+        self._controller.process_pending()
+        for key in keys:
+            result = self._controller.request_remove_desired(key)
+            if not result.accepted:
+                raise RuntimeError("desired registry rollback rejected")
+            # Process each removal before enqueuing the next; this also
+            # supports a deliberately bounded one-command control queue.
+            self._controller.process_pending()
 
     def subscribe_stream(self, key: SemanticStreamKey) -> None:
         self.subscribe_streams((key,))
