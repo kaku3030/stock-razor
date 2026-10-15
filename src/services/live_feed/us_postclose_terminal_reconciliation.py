@@ -1,4 +1,4 @@
-"""One-shot, fail-closed OpenD US RTH terminal-minute historical reconciliation.
+"""Bounded, fail-closed OpenD US RTH terminal-minute historical reconciliation.
 
 The live push accumulator requires a later provider end label to close the
 15:59 ET time_key. A 16:00 label may never arrive in the live stream;
@@ -20,6 +20,43 @@ POSTCLOSE_MARKET_STATES = frozenset({
     "AFTER_HOURS_BEGIN", "AFTER_HOURS_END", "OVERNIGHT", "CLOSED", "WAITING_OPEN",
 })
 MAX_SYMBOLS = 20
+
+
+def postclose_history_retry_due(
+    *,
+    attempts: int,
+    last_attempt_at: datetime | None,
+    observed_at: datetime,
+    prior_status: str,
+) -> bool:
+    """Maximum two same-session historical attempts, at least 30m apart.
+
+    This policy never queries a provider and never promotes historical
+    evidence to realtime. Its caller independently enforces the NY-local
+    16:30 time, today's RTH source key and permitted market state.
+    """
+    if (
+        type(attempts) is not int
+        or not 0 <= attempts < 2
+        or not isinstance(observed_at, datetime)
+        or observed_at.tzinfo is None
+        or observed_at.utcoffset() is None
+    ):
+        return False
+    if attempts == 0:
+        return last_attempt_at is None
+    if prior_status not in {"BLOCKED", "PARTIAL_HISTORICAL_ONLY"}:
+        return False
+    if (
+        not isinstance(last_attempt_at, datetime)
+        or last_attempt_at.tzinfo is None
+        or last_attempt_at.utcoffset() is None
+    ):
+        return False
+    # Refuse clock regressions, immediate burst retries, and a stale
+    # previous-session attempt. Upstream also resets state at local midnight.
+    elapsed = (observed_at - last_attempt_at).total_seconds()
+    return 1800 <= elapsed <= 24 * 60 * 60
 
 
 class ResearchMinuteCache(Protocol):
