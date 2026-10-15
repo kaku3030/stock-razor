@@ -1,3 +1,5 @@
+import pytest
+
 from engineering_autonomy.feedback_hub import FeedbackHub, FeedbackHubError
 
 
@@ -75,3 +77,56 @@ def test_claim_does_not_duplicate_across_workers(tmp_path):
         claimed = list(pool.map(worker, ["worker-a", "worker-b"]))
     assert claimed.count(item.id) == 1
     assert claimed.count(None) == 1
+
+
+@pytest.mark.parametrize("first_status", ("DONE", "BLOCKED", "FAILED"))
+def test_writeback_rejects_terminal_or_requeued_item(tmp_path, first_status):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    item = hub.submit(
+        source="US_RADAR", priority="P0", title="terminal", details="guard state",
+        evidence={}, source_ref=f"us:terminal:{first_status.lower()}",
+    )
+    assert hub.claim(worker_id="main:one") is not None
+    result = hub.writeback(
+        feedback_id=item.id, worker_id="main:one", status=first_status,
+        evidence={}, error="safe error" if first_status == "FAILED" else None,
+    )
+    audit_before = hub.audit(item.id)
+    with pytest.raises(FeedbackHubError, match="no longer active"):
+        hub.writeback(
+            feedback_id=item.id, worker_id="main:one", status="IN_PROGRESS",
+            evidence={"unexpected": True},
+        )
+    assert hub.audit(item.id) == audit_before
+    current = hub._connection.execute(
+        "SELECT status FROM feedback WHERE id=?", (item.id,),
+    ).fetchone()
+    assert current["status"] == result.status
+    hub.close()
+
+
+def test_writeback_rejects_expired_claim_even_without_new_owner(tmp_path):
+    hub = FeedbackHub(tmp_path / "feedback.sqlite3")
+    item = hub.submit(
+        source="CN_WINDOW", priority="P1", title="expired", details="lease check",
+        evidence={}, source_ref="cn:expired:lease",
+    )
+    assert hub.claim(worker_id="main:leased") is not None
+    hub._connection.execute(
+        "UPDATE feedback SET lease_until=? WHERE id=?",
+        ("2000-01-01T00:00:00Z", item.id),
+    )
+    audit_before = hub.audit(item.id)
+    with pytest.raises(FeedbackHubError, match="lease expired"):
+        hub.writeback(
+            feedback_id=item.id, worker_id="main:leased",
+            status="DONE", evidence={"ci": "fake"},
+        )
+    assert hub.audit(item.id) == audit_before
+    reclaimed = hub.claim(worker_id="main:new")
+    assert reclaimed is not None
+    assert reclaimed.attempts == 2
+    assert hub.writeback(
+        feedback_id=item.id, worker_id="main:new", status="DONE", evidence={},
+    ).status == "DONE"
+    hub.close()
