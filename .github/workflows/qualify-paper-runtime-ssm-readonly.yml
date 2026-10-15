@@ -109,7 +109,7 @@ jobs:
           working="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
           restart_policy="$(systemctl show "$unit" -p Restart --value 2>/dev/null || true)"
           test -n "$working" && test "$working" != - && emit PAPER_WORKING_DIRECTORY PRESENT || emit PAPER_WORKING_DIRECTORY UNKNOWN
-          if test -d "$working/.git" && test "$(git -C "$working" rev-parse HEAD 2>/dev/null || true)" = "$expected_sha"; then
+          if test -d "$working" && test "$(git -C "$working" rev-parse --is-inside-work-tree 2>/dev/null || true)" = true && test "$(git -C "$working" rev-parse HEAD 2>/dev/null || true)" = "$expected_sha"; then
             emit PAPER_RUNTIME_SHA PASS
           else
             emit PAPER_RUNTIME_SHA UNKNOWN
