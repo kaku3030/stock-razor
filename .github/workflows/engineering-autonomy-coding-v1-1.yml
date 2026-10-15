@@ -78,32 +78,23 @@ jobs:
           set -euo pipefail
           python -m engineering_autonomy.deepseek_budget check \
             --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
-      - name: Block coding if DeepSeek provider API is unhealthy (one low-token request)
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          GITHUB_TOKEN: ''
-          GH_TOKEN: ''
-        shell: bash
-        run: |
-          set -euo pipefail
-          # This test-only, manually confirmed run spends at most one tiny probe request
-          # before installing Aider. HTTP 503, missing auth, billing or malformed
-          # responses fail closed, preventing a further slow or expensive attempt.
-          timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe
       - name: Install pinned Aider coding CLI
         run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
       - name: Run isolated DeepSeek coding agent (bounded, non-streaming)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_HARD_COST_GUARANTEE: ${{ vars.DEEPSEEK_HARD_COST_GUARANTEE }}
+          LITELLM_MAX_RETRIES: '0'
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
         shell: bash
         run: |
           set -euo pipefail
-          # Avoid 25m silent waits and indefinite LiteLLM retry loops.
-          # Aider API timeout is per request; GNU timeout bounds the whole process.
-          set +e
-          timeout --signal=TERM --kill-after=10s 240s aider \
+          # The wrapper blocks unless a provider-side CNY 5 cap is explicitly verified,
+          # and kills the child on 240s, 2 requests, 20k input or 4k output.
+          python -m engineering_autonomy.deepseek_budget run \
+            --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" -- \
+            aider \
             --file tests/test_engineering_autonomy.py \
             --read .gitignore \
             --no-gitignore \
@@ -122,16 +113,6 @@ jobs:
             --yes-always \
             --no-auto-commits \
             --no-check-update
-          rc=$?
-          set -e
-          if [ "$rc" -eq 124 ]; then
-            echo "BLOCKED: DeepSeek/Aider exceeded 240-second overall limit" >&2
-            exit 124
-          fi
-          if [ "$rc" -ne 0 ]; then
-            echo "BLOCKED: bounded DeepSeek/Aider exited nonzero" >&2
-            exit "$rc"
-          fi
       - name: Summarize Aider token usage without publishing raw analytics
         if: always()
         shell: bash

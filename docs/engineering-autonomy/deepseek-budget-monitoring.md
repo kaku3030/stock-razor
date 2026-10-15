@@ -10,7 +10,7 @@ into an issue, chat, or source file.
 - Uses exactly one authenticated **GET**, no chat-completion requests and no generation tokens.
 - Supported currencies: CNY and USD; no automatic FX conversion.
 - A healthy balance is required before the **manually confirmed** Engineering
-  Autonomy Coding V1.1 can run its paid native provider probe or Aider agent.
+  Autonomy Coding V1.1 can run its paid Aider agent.
 - Defaults: **LOW at ≤ CNY 10 or ≤ USD 2** (when the usable balance falls below
   threshold across all present currencies); **EMPTY at 0**; **UNAVAILABLE**
   if DeepSeek reports `is_available: false`. Low, empty, unavailable and
@@ -40,6 +40,14 @@ UNKNOWN and does not call it zero or automatically recharge. The official
 wallet amount, key, and raw response never enter public Actions logs.
 
 ## Tokens and spending
+
+Coding V1.1 is now hard-bounded at **CNY 5**, **240 seconds**, **2 completion
+requests**, **20,000 input tokens**, and **4,000 output tokens**. The runner
+must receive the exact operator-controlled value
+`provider-enforced:cny:5` in `DEEPSEEK_HARD_COST_GUARANTEE`; missing or different
+values block the paid child before it starts. This is deliberately stricter
+than an Aider estimate: without an independently verified provider-side CNY
+cap, a paid run is not permitted.
 
 - Coding V1.1 supplies `--analytics-log` and `--no-analytics` together:
   Aider writes a **local-only** ephemeral analytics log, with no analytics

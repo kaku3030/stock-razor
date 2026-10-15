@@ -143,6 +143,41 @@ def test_missing_or_invalid_analytics_is_unknown_not_fake_zero(tmp_path):
     assert b.summarize_usage(f)["status"] == "UNVERIFIED"
 
 
+def test_paid_execution_requires_provider_side_hard_cny_cap():
+    with pytest.raises(ValueError, match="provider-side hard CNY cost guarantee"):
+        b.require_hard_cost_guarantee(None)
+    b.require_hard_cost_guarantee("provider-enforced:cny:5")
+
+
+def test_bounded_runner_rejects_paid_start_without_guarantee(tmp_path, monkeypatch):
+    def must_not_start(*_args, **_kwargs):
+        raise AssertionError("paid child must not start")
+
+    monkeypatch.setattr(b.subprocess, "Popen", must_not_start)
+    with pytest.raises(ValueError, match="provider-side hard CNY cost guarantee"):
+        b.run_bounded(["aider"], tmp_path / "usage.jsonl", None)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("requests", 3), ("input_tokens", 20_001), ("output_tokens", 4_001),
+])
+def test_execution_usage_fails_closed_at_hard_limits(tmp_path, field, value):
+    f = tmp_path / "aider.jsonl"
+    props = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost": 0.001}
+    events = []
+    for _ in range(value if field == "requests" else 1):
+        events.append({"event": "message_send", "properties": dict(props)})
+    if field == "input_tokens":
+        events[0]["properties"]["prompt_tokens"] = value
+        events[0]["properties"]["total_tokens"] = value + 1
+    if field == "output_tokens":
+        events[0]["properties"]["completion_tokens"] = value
+        events[0]["properties"]["total_tokens"] = value + 1
+    f.write_text("\n".join(json.dumps(x) for x in events) + "\n")
+    with pytest.raises(ValueError, match="limit exceeded"):
+        b.validate_execution_usage(f)
+
+
 def test_discord_alert_payload_only_categorical_not_balance_or_secret():
     url = "https://discord.com/api/webhooks/123456789012345678/abcDEF01234567890123"
     seen = []
@@ -206,11 +241,13 @@ def test_workflow_separates_balance_secrets_and_discord_notification():
     assert "secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL" not in notify
     assert "secrets.DISCORD_RADAR_WEBHOOK_URL" not in notify
     assert "gh pr merge" not in watch and "aider " not in watch
-    coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text()
+    coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(encoding="utf-8")
     guard = coding.index("Enforce official DeepSeek balance budget")
-    api_probe = coding.index("Block coding if DeepSeek provider API is unhealthy")
     coder = coding.index("Run isolated DeepSeek coding agent")
-    assert guard < api_probe < coder
+    assert "DEEPSEEK_HARD_COST_GUARANTEE" in coding
+    assert "engineering_autonomy.deepseek_budget run" in coding
+    assert "LITELLM_MAX_RETRIES: '0'" in coding
+    assert guard < coder
     assert '--analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl"' in coding
     assert "--no-analytics" in coding
     assert "Retain sanitized token counters only" in coding
