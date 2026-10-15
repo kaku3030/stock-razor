@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 云端 OpenAI API 成本/token 使用量及 TickFlow 月费到期安全提醒（只读 Admin API、Discord、余额非真实值明确标注）；OpenD 免费不监控。
 - [研究数据] TickFlow 5m 盘中微小 OHLC vendor float（<=1e-5，ETF tick-grid 一致）仅保留原值用于受限研究；5m 全部到期K线逐一校验，缺口和大误差仍拒绝，交易门禁不变。
 - [修复] TickFlow盘中MCP读取不再因最新到期时间戳存在而掩盖同日中间缺失K线；读取前完整检查受限缓存，即使 limit=1 也拒绝未验证的历史污染，仍保持研究数据与交易门禁隔离。
 - [改进] 现有 ChatGPT A股 MCP 明确新增 `TICKFLOW:PROGRESS:<ETF>` 只读盘中到期网格研究入口（5m/15m/60m），不依赖新增连接工具；严格与历史研究、默认腾讯/东方财富、交易所最终闭合及交易权限隔离。

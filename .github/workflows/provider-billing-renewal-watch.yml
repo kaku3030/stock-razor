@@ -1,0 +1,50 @@
+name: STOCK RAZOR Provider Billing & Renewal Watch (Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'True: offline demonstration; false: query configured read-only APIs and send via Discord'
+        type: boolean
+        default: true
+        required: true
+  schedule:
+    # 01:20 UTC = 10:20 JST daily. Cloud runner, not the user's Windows PC.
+    - cron: '20 1 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-razor-provider-billing-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      OPENAI_ADMIN_KEY: ${{ secrets.OPENAI_ADMIN_KEY }}
+      OPENAI_MONTHLY_BUDGET_USD: ${{ vars.OPENAI_MONTHLY_BUDGET_USD }}
+      OPENAI_CREDIT_SNAPSHOT_USD: ${{ vars.OPENAI_CREDIT_SNAPSHOT_USD }}
+      OPENAI_CREDIT_SNAPSHOT_DATE_UTC: ${{ vars.OPENAI_CREDIT_SNAPSHOT_DATE_UTC }}
+      TICKFLOW_RENEWAL_DATE: ${{ vars.TICKFLOW_RENEWAL_DATE }}
+      DISCORD_RADAR_WEBHOOK_URL: ${{ secrets.DISCORD_RADAR_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify pinned checkout and read-only monitor
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/provider_billing_renewal_watch.py
+      - name: Read-only cost usage and TickFlow renewal alerts
+        run: |
+          if [[ "${{ github.event_name }}" == workflow_dispatch && "${{ inputs.dry_run }}" == true ]]; then
+            python3 scripts/provider_billing_renewal_watch.py --dry-run
+          elif [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
+            python3 scripts/provider_billing_renewal_watch.py --send-report
+          else
+            python3 scripts/provider_billing_renewal_watch.py
+          fi
