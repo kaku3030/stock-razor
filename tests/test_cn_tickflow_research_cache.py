@@ -456,7 +456,7 @@ def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_resear
     assert strict["ok"] is False and strict["status"]=="INVALID_CACHE"
 
 
-def test_intraday_current_vendor_float_stays_quarantined_and_unclosed():
+def test_intraday_vendor_float_precision_research_only_remains_unclosed():
     now=datetime(2026,10,14,5,37,tzinfo=timezone.utc)  # Shanghai 13:37
     prior=frame("15m","2026-10-13").iloc[:8].copy()
     current=frame("15m","2026-10-14").iloc[8:10].copy()
@@ -466,9 +466,14 @@ def test_intraday_current_vendor_float_stays_quarantined_and_unclosed():
          ("timestamp","open","high","low","close","volume","amount")}
     reasons={}
     got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
-    assert len(got)==len(prior)
-    assert reasons.get("TODAY_HIGH_BELOW_BODY")==2
+    assert len(got)==len(prior)+2
+    assert reasons=={}
     assert all(item["bar_finality"]=="NOT_VERIFIED" for item in got)
+    assert all(item["is_partial_bar"] is True for item in got)
+    assert all(item["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+               for item in got[-2:])
+    # No raw OHLC rewriting: same native floats stay research-only.
+    assert all(item["high"]==1.5999999999999994 for item in got[-2:])
 
 
 def test_postclose_large_gap_and_non_tick_lattice_stay_quarantined():
@@ -487,3 +492,79 @@ def test_postclose_large_gap_and_non_tick_lattice_stay_quarantined():
     got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
     assert len(got)==len(old)
     assert reasons["TODAY_HIGH_BELOW_BODY"]==2
+
+
+def test_tiny_vendor_intraday_precision_exception_never_grants_trade_or_finality(tmp_path):
+    # Reproduce only the 2026-10-15 159611 10:00 vendor float-shape
+    # category on synthesized data, not any actual provider price.
+    now=datetime(2026,10,15,2,2,tzinfo=timezone.utc)  # Shanghai 10:02
+    prior=frame("15m","2026-10-14").iloc[:8].copy()
+    today=frame("15m","2026-10-15").iloc[:2].copy()
+    today["high"]=1.5999999999999994  # native vendor float, <1e-5 above-body gap
+    mixed=pd.concat([prior,today],ignore_index=True)
+    raw={k:mixed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+
+    rows=normalize_bars(raw,"15m",now_utc=now)
+    assert len(rows)==len(mixed)
+    assert [row["label"][-5:] for row in rows[-2:]]==["09:45","10:00"]
+    assert all(row["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+               for row in rows[-2:])
+    assert all(row["high"]==1.5999999999999994 for row in rows[-2:])
+    assert all(row["bar_finality"]=="NOT_VERIFIED"
+               and row["is_partial_bar"] is True for row in rows)
+
+    class Klines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            if symbol=="159611.SZ" and period=="15m":
+                return raw
+            df=frame(period,"2026-10-14")
+            return {k:df[k].tolist() for k in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class Client:
+        klines=Klines()
+    snap=build_observation(Client(),now_utc=now,repo_sha="a"*40,sequence=17)
+    path=tmp_path/"research-precision.json"
+    atomic_publish(str(path),snap)
+    accepted=read_cn_tickflow_research_data(
+        "159611.SZ","15m",limit=2,path=str(path),now_utc=now,
+        research_mode="session_progress",
+    )
+    assert accepted["status"]=="PASS_RESEARCH_ONLY"
+    assert accepted["ok"] is True
+    assert accepted["ohlc_precision_scope"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert accepted["tolerated_vendor_float_rows"]==2
+    assert accepted["bar_finality"]=="NOT_VERIFIED"
+    assert accepted["exchange_bar_finality"]=="NOT_VERIFIED"
+    assert accepted["currentness"]=="UNPROVEN"
+    assert accepted["can_confirm_signal"] is False
+    assert accepted["radar_admission"]=="BLOCKED"
+    assert accepted["source_arbiter_admission"]=="BLOCKED"
+    assert accepted["live_trade"] is False
+    assert accepted["canonical_write_authorized"] is False
+
+
+def test_vendor_precision_intraday_waits_90_seconds_and_never_excuses_true_shape_error():
+    prior=frame("15m","2026-10-14").iloc[:8].copy()
+    current=frame("15m","2026-10-15").iloc[:2].copy()
+    current["high"]=1.5999999999999994
+    merged=pd.concat([prior,current],ignore_index=True)
+    raw={k:merged[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    # At 10:00:30 the 10:00 bar is still within publish grace.
+    near=datetime(2026,10,15,2,0,30,tzinfo=timezone.utc)
+    reasons={}
+    rows=normalize_bars(raw,"15m",now_utc=near,quarantine_counts=reasons)
+    assert [item["label"] for item in rows if item["label"].startswith("2026-10-15")]==[
+        "2026-10-15 09:45"
+    ]
+    assert reasons.get("TODAY_HIGH_BELOW_BODY")==1
+
+    current.loc[current.index[1],"high"]=1.598  # genuine invalid 0.002 CNY gap
+    changed=pd.concat([prior,current],ignore_index=True)
+    raw={k:changed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    rows=normalize_bars(raw,"15m",
+                        now_utc=datetime(2026,10,15,2,2,tzinfo=timezone.utc))
+    assert all(item["label"]!="2026-10-15 10:00" for item in rows)
+    assert all(item["bar_finality"]=="NOT_VERIFIED" for item in rows)
