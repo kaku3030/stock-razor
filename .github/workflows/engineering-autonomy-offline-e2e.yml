@@ -39,3 +39,9 @@ jobs:
           GH_TOKEN: ""
           DEEPSEEK_API_KEY: ""
         run: python -m pytest --noconftest -q tests/test_engineering_coding_e2e_offline.py
+      - name: Prove secretless V1.1 Verify focused tests with pytest-only dependencies
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          DEEPSEEK_API_KEY: ""
+        run: python -m pytest --noconftest -q tests/test_engineering_autonomy.py tests/test_engineering_coding_gate.py

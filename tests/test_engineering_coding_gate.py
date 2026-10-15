@@ -170,3 +170,28 @@ def test_deepseek_flash_alias_is_supported_not_retired():
     assert list(metadata) == ["deepseek/deepseek-flash"]
     assert metadata["deepseek/deepseek-flash"]["litellm_provider"] == "deepseek"
     assert metadata["deepseek/deepseek-flash"]["mode"] == "chat"
+
+
+def test_secretless_verify_isolated_from_global_application_conftest():
+    """The V1.1 Verify job installs only pytest; no global test fixtures may load."""
+    workflow = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(
+        encoding="utf-8"
+    )
+    verify = workflow.split("\n  verify:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    exact = (
+        "python -m pytest --noconftest -q "
+        "tests/test_engineering_autonomy.py tests/test_engineering_coding_gate.py"
+    )
+    assert "Install isolated test dependency" in verify
+    assert "python -m pip install pytest==8.4.2" in verify
+    assert exact in verify
+    assert "secrets.DEEPSEEK_API_KEY" not in verify
+    assert "secrets.ENGINEERING_AUTONOMY_APP_PRIVATE_KEY" not in verify
+
+    # Keep this cloud check aligned with the genuine secretless Verify command.
+    offline = Path(".github/workflows/engineering-autonomy-offline-e2e.yml").read_text(
+        encoding="utf-8"
+    )
+    assert exact in offline
+    assert "pytest==8.4.2" in offline
+    assert 'DEEPSEEK_API_KEY: ""' in offline
