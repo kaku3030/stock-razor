@@ -143,7 +143,7 @@ def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
         "2026-10-14 14:00","2026-10-14 14:15",
         "2026-10-15 09:45","2026-10-15 10:00",
     ])
-    c["low"][-1]=1.055000001  # > close=1.055, but by less than 1e-5.
+    c["low"][-1]=1.050000001  # just above open=1.05 by less than 1e-5.
     out=audit.assess_compact(c,"15m",clock("2026-10-15 10:02:00"))
     assert out["tiny_vendor_float_drift_rows"]==1
     assert out["invalid_rows"]==0
