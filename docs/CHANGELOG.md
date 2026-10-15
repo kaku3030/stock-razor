@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [性能] TickFlow AWS研究Worker盘中最小轮询间隔降至15秒；按每周期8次K线请求计算，单Worker上限约32次/分钟，失败与非交易时段退避保持不变，账号共享额度仍待核验。
 - [改进] TickFlow 历史缓存拒收增加固定枚举诊断；AWS 审计仅导出白名单原因，不暴露行情值且维持 fail-closed。
 - [监控] AWS TickFlow 两ETF 5m/15m/60m SSM+MCP 每整点/半点只读审计，Windows 本地独立半小时凭据安全取数；仅公开脱敏状态，不开放交易准入。
 - [修复] 云端到期提醒 Discord/Telegram 请求添加应用身份 User-Agent，Telegram 拒绝仅输出预定义 HTTP 状态码，避免混淆配置失效与网络阻断。
