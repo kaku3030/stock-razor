@@ -23,3 +23,12 @@ def test_legacy_autonomy_publisher_uses_short_lived_app_token_and_dedupes_branch
     assert "steps.publish.outputs.token" in WORKFLOW
     assert "a PR already exists for this run branch" in WORKFLOW
     assert 'git push --set-upstream origin "autonomy/run-${RUN_ID}"' in WORKFLOW
+
+
+def test_legacy_autonomy_workflow_checks_out_trigger_sha_without_persisting_credentials():
+    checkout = WORKFLOW.split("- name: Checkout exact main", 1)[1].split(
+        "- name: Setup Python", 1
+    )[0]
+    assert "ref: ${{ github.sha }}" in checkout
+    assert "ref: main" not in checkout
+    assert "persist-credentials: false" in checkout
