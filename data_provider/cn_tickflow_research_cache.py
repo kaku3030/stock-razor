@@ -273,7 +273,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and (not current_shanghai_day or (
                     _post_close_research_eligible(stamp, now_utc)
                     or (
-                        timeframe in ("15m","60m")
+                        timeframe in ("5m","15m","60m")
                         and stamp <= now_utc - timedelta(seconds=90)
                     )
                 )))
@@ -536,7 +536,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                                 (research_mode=="historical_only"
                                  and _post_close_research_eligible(bar_stamp, now))
                                 or (research_mode=="session_progress"
-                                    and timeframe in ("15m","60m")
+                                    and timeframe in ("5m","15m","60m")
                                     and (now.astimezone(CN).hour,
                                          now.astimezone(CN).minute)<(15,2)
                                     and bar_stamp.astimezone(timezone.utc)
