@@ -56,7 +56,7 @@ jobs:
             echo 'BLOCKED: FEEDBACK_HUB_PATH must point to the persistent cloud Feedback Hub.' >&2
             exit 1
           }
-          python -m engineering_autonomy.feedback_hub --db "$FEEDBACK_HUB_PATH"
+          python -m engineering_autonomy.feedback_hub --db "$FEEDBACK_HUB_PATH" --require-existing
       - name: Restore only the requested checkpoint
         id: resume-cache
         if: ${{ inputs.resume_run_id != '' }}
