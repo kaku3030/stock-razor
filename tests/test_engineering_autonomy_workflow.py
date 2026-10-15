@@ -32,3 +32,18 @@ def test_legacy_autonomy_workflow_checks_out_trigger_sha_without_persisting_cred
     assert "ref: ${{ github.sha }}" in checkout
     assert "ref: main" not in checkout
     assert "persist-credentials: false" in checkout
+
+
+def test_legacy_autonomy_audit_job_is_time_bounded():
+    assert "timeout-minutes: 10" in WORKFLOW
+    assert "concurrency:" in WORKFLOW
+    assert "cancel-in-progress: false" in WORKFLOW
+
+
+def test_legacy_autonomy_stages_only_one_run_json():
+    assert 'RECORD="docs/engineering-autonomy/runs/${RUN_ID}.json"' in WORKFLOW
+    assert 'test "$(git status --porcelain=v1 --untracked-files=all)" = "?? ${RECORD}"' in WORKFLOW
+    assert 'git add -- "${RECORD}"' in WORKFLOW
+    assert 'test "$(git diff --cached --name-only)" = "${RECORD}"' in WORKFLOW
+    assert "git add docs/engineering-autonomy/runs" not in WORKFLOW
+    assert "git diff --cached --check" in WORKFLOW
