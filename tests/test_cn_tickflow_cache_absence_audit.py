@@ -232,3 +232,68 @@ def test_cloud_audit_accepts_only_fixed_due_grid_continuity_enum():
     assert 'assert _v.get("due_grid_continuity") in allowed_continuity' in workflow
     assert "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY" in workflow
     assert "RADAR_ADMISSION=BLOCKED" in workflow
+
+
+def test_cloud_audit_preserves_secondary_ohlc_rejection_without_exposing_prices():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    cn = ZoneInfo("Asia/Shanghai")
+    frame = {
+        "rows": [
+            {"label": "2026-10-14 14:00", "close": 998899.123},
+            {"label": "2026-10-14 14:15", "close": 998899.123},
+            {"label": "2026-10-14 14:30", "close": 998899.123},
+            {"label": "2026-10-15 09:45", "close": 998899.123},
+        ],
+        "quarantined_unverified_rows_count": 3,
+        "quarantine_reason_counts": {
+            "TODAY_FUTURE_LABEL": 2,
+            "TODAY_HIGH_BELOW_BODY": 1,
+        },
+        "quarantine_ohlc_gap_evidence": {},
+    }
+    evidence = audit.summarize_private_frame_progress(
+        frame, timeframe="15m",
+        now_utc=datetime(2026,10,15,10,2,tzinfo=cn),
+    )
+    assert evidence["last_due_grid"] == "ONE_DUE_BOUNDARY_MISSING"
+    assert evidence["dominant_quarantine_reason"] == "TODAY_FUTURE_LABEL"
+    assert evidence["quarantine_cause_buckets"] == {
+        "TODAY_FUTURE_LABEL": "TWO_TO_FOUR",
+        "TODAY_HIGH_BELOW_BODY": "ONE",
+    }
+    assert "998899" not in repr(evidence)
+    assert "2026-10-15" not in repr(evidence)
+
+
+def test_cloud_audit_rejects_malicious_quarantine_cause_without_leaking():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    cn=ZoneInfo("Asia/Shanghai")
+    frame={
+        "rows": [
+            {"label": f"2026-10-14 {clock}"}
+            for clock in ("14:00","14:15","14:30","14:45")
+        ],
+        "quarantined_unverified_rows_count": 1,
+        "quarantine_reason_counts": {
+            "TODAY_HIGH_BELOW_BODY\\nsecret=DO_NOT_EXPOSE": 1,
+        },
+    }
+    evidence=audit.summarize_private_frame_progress(
+        frame,timeframe="15m",
+        now_utc=datetime(2026,10,15,10,2,tzinfo=cn),
+    )
+    assert evidence["quarantine_cause_buckets"] == {}
+    assert evidence["dominant_quarantine_reason"] == "UNKNOWN"
+    assert "DO_NOT_EXPOSE" not in repr(evidence)
+
+
+def test_public_workflow_restricts_secondary_quarantine_causes_to_static_enums():
+    workflow=(Path(__file__).resolve().parents[1] /
+              ".github/workflows/audit-cn-tickflow-live-research.yml").read_text()
+    assert 'cause_buckets=_v.get("quarantine_cause_buckets")' in workflow
+    assert "name in allowed_cause" in workflow
+    assert "bucket in allowed_bucket" in workflow
