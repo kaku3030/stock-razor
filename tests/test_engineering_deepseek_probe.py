@@ -53,3 +53,25 @@ def test_probe_workflow_is_manual_confirmed_and_secret_safe():
     assert "gh pr merge" not in workflow
     assert "curl -v" not in workflow
     assert "aider" not in workflow.lower().split("run: |")[-1]
+
+
+def test_coding_pilot_health_gate_precedes_aider_install():
+    """Fail closed before any Aider install/run on provider HTTP 503/outage."""
+    path = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml")
+    coding = path.read_text(encoding="utf-8")
+    gate = "Block coding if DeepSeek provider API is unhealthy"
+    install = "Install pinned Aider coding CLI"
+    agent = "Run isolated DeepSeek coding agent"
+    assert gate in coding
+    assert coding.index("Create trusted prompt and require DeepSeek secret") < coding.index(gate)
+    assert coding.index(gate) < coding.index(install) < coding.index(agent)
+    # Same reviewed direct probe module, one request, no retries.
+    assert coding.count("python -m engineering_autonomy.deepseek_probe") == 1
+    assert "timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe" in coding
+    assert "secrets.DEEPSEEK_API_KEY" in coding
+    assert "GITHUB_TOKEN: ''" in coding
+    assert "GH_TOKEN: ''" in coding
+    assert "workflow_dispatch:" in coding
+    assert "inputs.confirm == true" in coding
+    assert "schedule:" not in coding
+    assert "python -m engineering_autonomy.coding_gate capture --output /tmp/autonomy.patch" in coding

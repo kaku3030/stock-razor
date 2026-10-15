@@ -69,6 +69,18 @@ jobs:
             exit 1
           fi
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
+      - name: Block coding if DeepSeek provider API is unhealthy (one low-token request)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This test-only, manually confirmed run spends at most one tiny probe request
+          # before installing Aider. HTTP 503, missing auth, billing or malformed
+          # responses fail closed, preventing a further slow or expensive attempt.
+          timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe
       - name: Install pinned Aider coding CLI
         run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
       - name: Run isolated DeepSeek coding agent (bounded, non-streaming)
