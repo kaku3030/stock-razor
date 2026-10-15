@@ -266,14 +266,15 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5"
+                # Lattice validity is REQUIRED for both historical and
+                # same-day vendor-float exceptions; a tiny body gap alone
+                # does not qualify an off-tick historical OHLC value.
+                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                 and (not current_shanghai_day or (
-                    _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
-                    and (
-                        _post_close_research_eligible(stamp, now_utc)
-                        or (
-                            timeframe in ("15m","60m")
-                            and stamp <= now_utc - timedelta(seconds=90)
-                        )
+                    _post_close_research_eligible(stamp, now_utc)
+                    or (
+                        timeframe in ("15m","60m")
+                        and stamp <= now_utc - timedelta(seconds=90)
                     )
                 )))
             if float_only:
@@ -527,20 +528,18 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                             !="WITHIN_1E_MINUS_5"
+                        or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
-                                and (
-                                    (research_mode=="historical_only"
-                                     and _post_close_research_eligible(bar_stamp, now))
-                                    or (research_mode=="session_progress"
-                                        and timeframe in ("15m","60m")
-                                        and (now.astimezone(CN).hour,
-                                             now.astimezone(CN).minute)<(15,2)
-                                        and bar_stamp.astimezone(timezone.utc)
-                                            <= now-timedelta(seconds=90))
-                                )
-                            ))))
+                                (research_mode=="historical_only"
+                                 and _post_close_research_eligible(bar_stamp, now))
+                                or (research_mode=="session_progress"
+                                    and timeframe in ("15m","60m")
+                                    and (now.astimezone(CN).hour,
+                                         now.astimezone(CN).minute)<(15,2)
+                                    and bar_stamp.astimezone(timezone.utc)
+                                        <= now-timedelta(seconds=90))
+                            )))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
             safe.append({"label":label,**numerical,"amount_availability":availability,
