@@ -23,9 +23,12 @@ remain unchanged unless the isolated AWS worker opts into supplemental frames.
   revisions have been independently deployed and verified. The existing
   `TICKFLOW:FAST` route remains 15m+60m only to avoid breaking callers.
 - Larger bounded private JSON budget (350KiB decimal bytes) accounts for
-  extra periods. Each periodic poll is now eight requests instead of four;
-  no change to the existing 60s CN-session / 300s off-hours / 900s
-  weekend cadence.
+  extra periods. Each successful worker poll now makes eight requests instead
+  of four. The deployed worker polls every 15 seconds during China trading
+  sessions, every 300 seconds on weekday off-hours, and every 900 seconds on
+  weekends. Transient network failures back off at 15/30/60/120/240/300 seconds;
+  SDK retries remain disabled. The separate half-hour AWS audit reads cached
+  evidence only and does not add TickFlow provider requests.
 
 Deployment requires guarded worker rollout **after** current-main MCP
 upgrade. Because the previous MCP reader enforces a smaller 150kB cache
