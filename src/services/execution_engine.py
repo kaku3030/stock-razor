@@ -287,6 +287,13 @@ class ExecutionEngine:
         for fill_id,quantity,price in fills:
             quantity=_decimal(quantity,"fill quantity"); price=_decimal(price,"fill price")
             if not fill_id or fill_id in seen or self.store.fill_exists(fill_id) or price<=0 or quantity<=0 or total+quantity>intent.qty: raise ExecutionBlocked("invalid or duplicate paper fill")
+            # Each LIMIT execution must honor the side-specific limit, not
+            # merely average out an invalid price with a favorable fill.
+            # Reject the entire synthetic batch before journal ACCEPTED.
+            if (intent.side is Side.BUY and price > intent.limit_price) or (
+                intent.side is Side.SELL and price < intent.limit_price
+            ):
+                raise ExecutionBlocked("paper fill violates side-specific limit price; reconciliation required")
             seen.add(fill_id); total+=quantity; validated.append((fill_id,quantity,price))
         # Check the entire returned batch against the already reserved
         # cash / owned position BEFORE appending even the first FILLED or
