@@ -83,6 +83,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     eligible = set()
     future_or_forming = 0
     invalid_ohlc = 0
+    tiny_vendor_float_drift_rows = 0
     duplicate_or_reordered = 0
     same_day_daily_quarantined = 0
     latest_prior_daily_seen = False
@@ -104,6 +105,17 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
             if previous is not None and stamp <= previous:
                 duplicate_or_reordered += 1
             previous = stamp
+            # A tolerance-accepted row is NOT strict OHLC. Earlier local
+            # results called this PASS while AWS correctly quarantined the
+            # same session's malformed 10:00 bar. Explicitly refuse it
+            # as a qualified due-label without changing vendor prices.
+            strict_gap = (
+                nums[1] < max(nums[0], nums[2], nums[3])
+                or nums[2] > min(nums[0], nums[1], nums[3])
+            )
+            if strict_gap:
+                tiny_vendor_float_drift_rows += 1
+                continue
             if timeframe == "1d":
                 if stamp.date() >= now_cn.date():
                     same_day_daily_quarantined += 1
@@ -121,13 +133,15 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     if timeframe == "1d":
         status = (
             "PASS_PRIOR_DAILY_RESEARCH_ONLY"
-            if latest_prior_daily_seen and not invalid_ohlc and not duplicate_or_reordered
+            if latest_prior_daily_seen and not invalid_ohlc
+            and not tiny_vendor_float_drift_rows and not duplicate_or_reordered
             else "BLOCKED"
         )
         return {
             "status": status, "returned_rows": count,
             "same_day_daily_quarantined": same_day_daily_quarantined,
             "invalid_rows": invalid_ohlc,
+            "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
             "current_day_d1_finality": "NOT_VERIFIED",
         }
@@ -135,7 +149,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     missing = len(due - eligible)
     status = (
         "PASS_RESEARCH_ONLY"
-        if not missing and not invalid_ohlc and not duplicate_or_reordered
+        if not missing and not invalid_ohlc
+        and not tiny_vendor_float_drift_rows and not duplicate_or_reordered
         else "BLOCKED_UNVERIFIED"
     )
     return {
@@ -143,6 +158,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         "due_count": len(due), "due_labels_present": len(due & eligible),
         "due_labels_missing": missing, "future_or_forming_quarantined": future_or_forming,
         "invalid_rows": invalid_ohlc,
+        "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
         "reordered_or_duplicate_rows": duplicate_or_reordered,
         "exchange_bar_finality": "NOT_VERIFIED",
     }
