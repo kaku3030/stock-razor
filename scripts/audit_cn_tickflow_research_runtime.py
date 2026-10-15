@@ -870,6 +870,20 @@ def sample():
                     symbol.replace(".","_")+"_"+period
                 ]={
                     "state":hstatus,
+                    "cache_rejection_reason":(
+                        hist.get("cache_rejection_reason","NONE")
+                        if hist.get("cache_rejection_reason") in {
+                            "NONE","CACHE_SIZE_EXCEEDED","CACHE_UNREADABLE",
+                            "CACHE_ENVELOPE_INVALID","CACHE_SAFETY_FLAGS_INVALID",
+                            "CACHE_REPO_SHA_INVALID","CACHE_OBSERVED_AT_INVALID",
+                            "CACHE_STALE","FRAME_OR_PERIOD_MISSING",
+                            "BAR_COUNT_INVALID","FRAME_METADATA_INVALID",
+                            "BAR_RECORD_INVALID","BAR_LABEL_INVALID",
+                            "BAR_TIMESTAMP_INVALID","BAR_TIME_GRID_OR_FUTURE_INVALID",
+                            "BAR_ORDER_INVALID","BAR_NUMERIC_VALUE_INVALID",
+                            "BAR_AMOUNT_INVALID","BAR_OHLC_INVALID",
+                        } else "UNKNOWN"
+                    ),
                     "research_only":hist.get("research_only") is True,
                     "currentness_unproven":hist.get("currentness")=="UNPROVEN",
                     "radar_blocked":hist.get("radar_admission")=="BLOCKED",

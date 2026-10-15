@@ -438,11 +438,15 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "research_only":True, "bar_finality":"NOT_VERIFIED",
         "currentness":"UNPROVEN", "source_arbiter_admission":"BLOCKED",
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
-        "canonical_write_authorized":False, "provider_requests":0,
+        "canonical_write_authorized":False, "provider_requests":0,"cache_rejection_reason":"NONE",
         "research_mode":research_mode if research_mode in
             ("session_progress","historical_only") else "INVALID",
         "exchange_bar_finality":"NOT_VERIFIED",
     }
+    def invalid_cache(reason: str) -> dict:
+        # Fixed enum only: never expose raw cache values, labels or exceptions.
+        return {**base,"status":"INVALID_CACHE",
+                "cache_rejection_reason":reason}
     if (not isinstance(symbol,str) or symbol not in SYMBOLS
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
@@ -453,17 +457,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         with open(path,"rb") as f:
             data=f.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES:
-            return {**base,"status":"INVALID_CACHE"}
+            return invalid_cache("CACHE_SIZE_EXCEEDED")
         obj=json.loads(data)
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
     if not isinstance(obj,dict) or obj.get("schema")!=SCHEMA or obj.get("provider")!=_SOURCE or obj.get("status")!="PASS_RESEARCH_ONLY":
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_ENVELOPE_INVALID")
     if not (obj.get("research_only") is True and obj.get("radar_admission")=="BLOCKED" and obj.get("source_arbiter_admission")=="BLOCKED" and obj.get("live_trade") is False and obj.get("canonical_write_authorized") is False and obj.get("can_confirm_signal") is False):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_SAFETY_FLAGS_INVALID")
     sha=obj.get("repo_sha")
     if not isinstance(sha,str) or not re.fullmatch("[0-9a-f]{40}",sha):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_REPO_SHA_INVALID")
     try:
         now=now_utc or datetime.now(timezone.utc)
         observed=datetime.fromisoformat(obj["observed_at_utc"])
@@ -471,7 +475,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             raise ValueError
         age=(now-observed).total_seconds()
     except (ValueError,TypeError,KeyError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_OBSERVED_AT_INVALID")
     # Strict live-session provenance never inherits the slower off-hours
     # refresh schedule. Historical-only read gets a 6m bounded tolerance
     # after close (collector polls every 300s), or 18m on weekends (900s).
@@ -481,13 +485,16 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     max_age=(historical_max_age if research_mode=="historical_only"
              else MAX_AGE_SECONDS)
     if age < -5 or age > max_age:
-        return {**base,"status":"STALE","age_seconds":round(age,2),
+        return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
+    reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
         raw=obj["symbols"][symbol][timeframe]
         rows=raw["rows"]
+        reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
+        reject_reason="FRAME_METADATA_INVALID"
         if raw.get("closure")!="NOT_VERIFIED" or raw.get("currentness")!="UNPROVEN":
             raise ValueError
         safe=[]
@@ -495,23 +502,30 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         # Validate the entire bounded cache, not only the requested tail. A
         # limit=1 client must not conceal earlier gaps or poisoned records.
         for item in rows:
+            reject_reason="BAR_RECORD_INVALID"
             if not isinstance(item,dict) or item.get("bar_finality")!="NOT_VERIFIED" or item.get("is_partial_bar") is not True:
                 raise ValueError
             label=item.get("label")
+            reject_reason="BAR_LABEL_INVALID"
             if not isinstance(label,str):
                 raise ValueError
+            reject_reason="BAR_TIMESTAMP_INVALID"
             bar_stamp=datetime.strptime(label,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+            reject_reason="BAR_TIME_GRID_OR_FUTURE_INVALID"
             if bar_stamp.strftime("%H:%M") not in _LABEL_END[timeframe] or bar_stamp.astimezone(timezone.utc)>now:
                 raise ValueError
+            reject_reason="BAR_ORDER_INVALID"
             if previous is not None and bar_stamp<=previous:
                 raise ValueError
             previous=bar_stamp
+            reject_reason="BAR_NUMERIC_VALUE_INVALID"
             numerical={}
             for key in ("open","high","low","close","volume"):
                 val=item.get(key)
                 if type(val) not in (int,float) or not isfinite(val):
                     raise ValueError
                 numerical[key]=val
+            reject_reason="BAR_AMOUNT_INVALID"
             availability=item.get("amount_availability")
             amount=item.get("amount")
             if availability=="SDK_OMITTED" and amount is None:
@@ -520,6 +534,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 numerical["amount"]=amount
             else:
                 raise ValueError
+            reject_reason="BAR_OHLC_INVALID"
             op,hi,lo,cl=(numerical[k] for k in ("open","high","low","close"))
             shape_gap=(hi<max(op,cl,lo) or lo>min(op,cl,hi))
             tolerance=item.get("ohlc_validation","STRICT")
@@ -548,7 +563,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "is_partial_bar":True,"bar_finality":"NOT_VERIFIED",
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache(reject_reason)
     # Rows are bounded by the collector contract (<=144); retain the whole
     # verified label grid for session continuity, then trim public output.
     validated_labels = {item["label"] for item in safe}

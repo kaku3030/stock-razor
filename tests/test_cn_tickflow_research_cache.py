@@ -631,3 +631,20 @@ def test_research_reader_small_limit_does_not_hide_poisoned_earlier_row(tmp_path
     )
     assert observed["status"] == "INVALID_CACHE"
     assert observed["ok"] is False
+
+
+def test_historical_cache_rejection_exposes_only_fixed_safe_reason(tmp_path):
+    snap = build_observation(FakeClient(), now_utc=NOW, repo_sha="e"*40, sequence=8)
+    snap["symbols"]["159611.SZ"]["15m"]["rows"][0]["high"] = -1
+    cache = tmp_path / "invalid-shape.json"
+    atomic_publish(str(cache), snap)
+    result = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert result["status"] == "INVALID_CACHE"
+    assert result["cache_rejection_reason"] == "BAR_OHLC_INVALID"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    assert "1.5" not in json.dumps(result)
+    assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(result)
