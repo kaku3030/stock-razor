@@ -133,3 +133,27 @@ def test_public_tickflow_workflow_restricts_journal_projection_to_enums():
     assert 'assert d[when].get("worker_journal_observation") in worker_journal' in workflow
     assert '"BOOT_BLOCKED","POLL_BLOCKED","POLL_RESEARCH_ONLY_PASS"' in workflow
     assert "StandardErrorContent" not in workflow
+
+
+def test_writer_preflights_reader_byte_bound_and_preserves_existing_cache(tmp_path):
+    from data_provider.cn_tickflow_research_cache import atomic_publish, MAX_BYTES
+
+    path = tmp_path / "private-cache.json"
+    atomic_publish(str(path), {"status": "BLOCKED", "source": "research"})
+    original = path.read_bytes()
+    oversized = {"secret_in_private_payload": "V" * MAX_BYTES}
+    with pytest.raises(ValueError, match="bounded bytes"):
+        atomic_publish(str(path), oversized)
+    assert path.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [path]
+    assert "V" * 64 not in path.read_text(encoding="utf-8")
+
+
+def test_private_tickflow_writer_enforces_same_limit_as_audit_and_reader():
+    from data_provider.cn_tickflow_research_cache import atomic_publish, MAX_BYTES
+    import inspect
+
+    source = inspect.getsource(atomic_publish)
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
+    assert 'len(encoded.encode("utf-8"))>MAX_BYTES' in source
+    assert source.index("len(encoded.encode") < source.index("parent.mkdir")
