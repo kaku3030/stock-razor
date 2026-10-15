@@ -58,3 +58,29 @@ def test_record_is_sanitized_and_chains_previous_run(tmp_path):
 def test_record_status_is_fail_closed(status):
     with pytest.raises(ValueError):
         build_record("100", "a" * 40, "record-run", None, status, "reason")
+
+
+def test_previous_run_id_fails_closed_on_corrupt_record(tmp_path):
+    root = tmp_path / "runs"
+    root.mkdir()
+    (root / "100.json").write_text("{not valid json", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        previous_run_id(root)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        ["100"],
+        None,
+        {"status": "PASS"},
+        {"run_id": 100},
+        {"run_id": "abc"},
+    ],
+)
+def test_previous_run_id_rejects_malformed_record(tmp_path, payload):
+    root = tmp_path / "runs"
+    root.mkdir()
+    (root / "100.json").write_text(json.dumps({"run_id": "100"}), encoding="utf-8")
+    (root / "101.json").write_text(json.dumps(payload), encoding="utf-8")
+    assert previous_run_id(root) is None
