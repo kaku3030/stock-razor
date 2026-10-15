@@ -6,7 +6,7 @@ on:
       - "tests/test_engineering_coding_e2e_offline.py"
       - "engineering_autonomy/coding_gate.py"
       - "engineering_autonomy/deepseek_budget.py"
-      - "engineering_autonomy/deepseek_budget_issue.py"
+      - "engineering_autonomy/deepseek_budget_discord.py"
       - "tests/test_engineering_deepseek_budget.py"
       - ".github/workflows/engineering-autonomy-deepseek-balance-watch.yml"
       - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
@@ -17,7 +17,7 @@ on:
       - "tests/test_engineering_coding_e2e_offline.py"
       - "engineering_autonomy/coding_gate.py"
       - "engineering_autonomy/deepseek_budget.py"
-      - "engineering_autonomy/deepseek_budget_issue.py"
+      - "engineering_autonomy/deepseek_budget_discord.py"
       - "tests/test_engineering_deepseek_budget.py"
       - ".github/workflows/engineering-autonomy-deepseek-balance-watch.yml"
       - ".github/workflows/engineering-autonomy-coding-v1-1.yml"
@@ -47,7 +47,7 @@ jobs:
           GH_TOKEN: ""
           DEEPSEEK_API_KEY: ""
         run: python -m pytest --noconftest -q tests/test_engineering_coding_e2e_offline.py
-      - name: Test DeepSeek balance, recharge issue dedupe and token accounting without API
+      - name: Test DeepSeek balance, Discord alerts and token accounting without API
         env:
           DEEPSEEK_API_KEY: ""
           GH_TOKEN: ""
