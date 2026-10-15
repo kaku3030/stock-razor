@@ -208,3 +208,52 @@ def test_paper_runtime_ssm_gate_distinguishes_transport_from_readback(tmp_path):
         assert result.returncode != 0
         assert "PAPER_RUNTIME_QUALIFICATION=BLOCKED" in result.stdout
         assert "CORE_READBACK_ONLY" not in result.stdout
+
+
+def test_paper_runtime_sha_probe_accepts_git_linked_worktree(tmp_path):
+    """Execute the workflow's POSIX condition against real local Git layouts."""
+    import os
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *map(str, args)],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    git("-C", root, "init", "-q")
+    (root / "README").write_text("paper probe fixture\n", encoding="utf-8")
+    git("-C", root, "add", "README")
+    git(
+        "-C", root, "-c", "user.name=Test",
+        "-c", "user.email=test@example.invalid",
+        "commit", "-qm", "initial",
+    )
+    exact_sha = git("-C", root, "rev-parse", "HEAD")
+    linked = tmp_path / "linked"
+    git("-C", root, "worktree", "add", "-q", "-b", "paper-check", linked)
+    assert (root / ".git").is_dir()
+    assert (linked / ".git").is_file()
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    lines = [
+        line.strip() for line in workflow.splitlines()
+        if line.strip().startswith('if test -d "$working"')
+    ]
+    assert len(lines) == 1
+    assert lines[0].endswith("; then")
+    condition = lines[0][3:-6]
+
+    def probe(working, sha):
+        return subprocess.run(
+            ["sh", "-c", condition],
+            env={**os.environ, "working": str(working), "expected_sha": sha},
+            capture_output=True, text=True, check=False, timeout=5,
+        ).returncode
+
+    assert probe(root, exact_sha) == 0
+    assert probe(linked, exact_sha) == 0
+    assert probe(linked, "0" * 40) != 0
+    assert probe(tmp_path / "not-a-git-dir", exact_sha) != 0
