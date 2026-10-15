@@ -98,6 +98,9 @@ def qualify_us_current_session_intraday_closure(
                 or bar.provider != "futu"
                 or bar.feed != "opend"
                 or bar.timeframe != timeframe
+                # A full same-OpenD historical postclose grid may repair the
+                # 16:00 research cache. It cannot prove realtime close.
+                or "HISTORICAL_QUERY" in bar.quality_flags
                 or local_end > eligible_end
                 or bar.source_timestamp.astimezone(US_EASTERN) != local_end
             ):
