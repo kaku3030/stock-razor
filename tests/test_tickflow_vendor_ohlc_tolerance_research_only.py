@@ -62,6 +62,16 @@ def test_above_vendor_bound_historical_rejected_with_original_failure(field,valu
     assert context.value._tickflow_ohlc_float_gap_bucket=="OVER_1E_MINUS_5"
 
 
+def test_historical_vendor_float_gap_with_off_tick_open_is_rejected():
+    # The 5e-6 high/body gap is small, but another field is 0.00045 CNY
+    # off the ETF lattice. Neither current nor *past* days may launder it.
+    raw=series()
+    raw["high"][0]=1.599995
+    raw["open"][0]=1.50045
+    with pytest.raises(ValueError, match="high below body"):
+        collect(raw)
+
+
 class Client:
     class Klines:
         def get(self,symbol,*,period,count,adjust,as_dataframe):
@@ -108,6 +118,23 @@ def test_private_cache_and_reader_revalidate_tolerance_and_deny_promotion(tmp_pa
         assert rejected["ok"] is False
 
 
+def test_reader_rejects_forged_historical_off_tick_float_row(tmp_path):
+    snap=build_observation(Client(),now_utc=NOW,repo_sha="a"*40,sequence=7)
+    forged=deepcopy(snap)
+    row=forged["symbols"]["159611.SZ"]["15m"]["rows"][0]
+    assert row["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    row["open"]=1.50045
+    path=tmp_path/"forged-private.json"
+    atomic_publish(str(path),forged)
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","15m",research_mode="historical_only",
+        path=str(path),now_utc=NOW,limit=20)
+    assert result["ok"] is False
+    assert result["status"]=="INVALID_CACHE"
+    assert result["radar_admission"]=="BLOCKED"
+    assert result["source_arbiter_admission"]=="BLOCKED"
+
+
 def test_same_day_over_vendor_limit_is_still_quarantined():
     now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
     raw=series()
@@ -130,9 +157,10 @@ def test_same_day_over_vendor_limit_is_still_quarantined():
     ("high",1.599995), ("high",1.59999),
     ("low",1.500005), ("low",1.50001),
 ])
-def test_current_session_small_vendor_float_gap_is_still_quarantined(field,value):
-    # Today's incomplete/newly due bar MUST NOT use the historical
-    # precision exception even if it is within the vendor's 1e-5 tolerance.
+def test_current_session_small_vendor_float_research_only_not_final(field,value):
+    # At 13:18 CST, the 13:15 label has cleared the 90-second buffer.
+    # The candidate may preserve the unrounded vendor row only for research;
+    # it must never certify strict OHLC, currentness or exchange finality.
     now=datetime(2026,10,13,5,18,tzinfo=timezone.utc)
     raw=series()
     for key in raw:
@@ -144,14 +172,13 @@ def test_current_session_small_vendor_float_gap_is_still_quarantined(field,value
         raw[key].append(value if key==field else val)
     count={}
     output=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=count)
-    assert len(output)==7
-    assert count==({
-        "TODAY_HIGH_BELOW_BODY":1
-    } if field=="high" else {
-        "TODAY_LOW_ABOVE_BODY":1
-    })
-    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in output)
-    assert all(x["ohlc_validation"]=="STRICT" for x in output)
+    assert len(output)==8
+    assert count=={}
+    assert all(x["bar_finality"]=="NOT_VERIFIED" and x["is_partial_bar"] is True
+               for x in output)
+    assert all(x["ohlc_validation"]=="STRICT" for x in output[:-1])
+    assert output[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert output[-1][field]==value  # native float unchanged; no quantization
 
 
 @pytest.mark.parametrize("field",["volume","amount"])

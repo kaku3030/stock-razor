@@ -250,6 +250,13 @@ def get_cn_market_data(
         return _read_tickflow_historical_batch(limit)
     if symbol == "TICKFLOW:FULL":
         return _read_tickflow_historical_batch(limit, full=True)
+    # Opt in to due-grid progress, not exchange finality or source admission.
+    # Keep historical-only and normal Eastmoney/Tencent routes unchanged.
+    if isinstance(symbol, str) and symbol.startswith("TICKFLOW:PROGRESS:"):
+        return read_cn_tickflow_research_data(
+            symbol[len("TICKFLOW:PROGRESS:"):],
+            timeframe=timeframe, limit=limit, research_mode="session_progress",
+        )
     if isinstance(symbol, str) and symbol.startswith("TICKFLOW:"):
         return read_cn_tickflow_research_data(
             symbol[len("TICKFLOW:"):], timeframe=timeframe, limit=limit,

@@ -266,9 +266,16 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5"
+                # Lattice validity is REQUIRED for both historical and
+                # same-day vendor-float exceptions; a tiny body gap alone
+                # does not qualify an off-tick historical OHLC value.
+                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                 and (not current_shanghai_day or (
                     _post_close_research_eligible(stamp, now_utc)
-                    and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                    or (
+                        timeframe in ("5m","15m","60m")
+                        and stamp <= now_utc - timedelta(seconds=90)
+                    )
                 )))
             if float_only:
                 # Post-close same-day *historical-only* exception is gated
@@ -394,6 +401,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
     }
 
 def atomic_publish(path: str, payload: dict) -> None:
+    # Never publish a JSON blob that the strict reader and AWS auditor will
+    # reject as oversized. Validate before opening or replacing any file.
+    encoded=json.dumps(payload,allow_nan=False,separators=(",",":"))
+    if len(encoded.encode("utf-8"))>MAX_BYTES:
+        raise ValueError("private research cache exceeds bounded bytes")
     parent=Path(path).parent
     parent.mkdir(parents=True,exist_ok=True)
     temporary=None
@@ -404,7 +416,7 @@ def atomic_publish(path: str, payload: dict) -> None:
         else:
             os.chmod(temporary,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as f:
-            json.dump(payload,f,allow_nan=False,separators=(",",":"))
+            f.write(encoded)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary,path)
@@ -480,7 +492,9 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             raise ValueError
         safe=[]
         previous=None
-        for item in rows[-limit:]:
+        # Validate the entire bounded cache, not only the requested tail. A
+        # limit=1 client must not conceal earlier gaps or poisoned records.
+        for item in rows:
             if not isinstance(item,dict) or item.get("bar_finality")!="NOT_VERIFIED" or item.get("is_partial_bar") is not True:
                 raise ValueError
             label=item.get("label")
@@ -516,11 +530,17 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                             !="WITHIN_1E_MINUS_5"
+                        or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                research_mode=="historical_only"
-                                and _post_close_research_eligible(bar_stamp, now)
-                                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                                (research_mode=="historical_only"
+                                 and _post_close_research_eligible(bar_stamp, now))
+                                or (research_mode=="session_progress"
+                                    and timeframe in ("5m","15m","60m")
+                                    and (now.astimezone(CN).hour,
+                                         now.astimezone(CN).minute)<(15,2)
+                                    and bar_stamp.astimezone(timezone.utc)
+                                        <= now-timedelta(seconds=90))
                             ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
@@ -529,22 +549,46 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
         return {**base,"status":"INVALID_CACHE"}
+    # Rows are bounded by the collector contract (<=144); retain the whole
+    # verified label grid for session continuity, then trim public output.
+    validated_labels = {item["label"] for item in safe}
+    safe = safe[-limit:]
+    # Never present non-mutating vendor precision as strict OHLC.
+    tolerated_rows=sum(
+        1 for row in safe if
+        row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    )
     expected=_expected_closed_grid_label(now,timeframe)
     latest=bar_stamp
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
+        # Reaching the last scheduled boundary is NOT sufficient: a source
+        # can omit 10:00 while reporting 10:15. Check every due current-day
+        # boundary (including morning when reading in the afternoon).
+        due_labels = {
+            expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                             second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+            for clock in _LABEL_END[timeframe]
+            if expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                                second=0, microsecond=0) <= expected
+        }
+        missing_due_grid = not due_labels.issubset(validated_labels)
+        if research_mode=="session_progress" and (
+                latest < expected or missing_due_grid):
+            # A freshly rewritten cache with a new last bar but earlier
+            # missing due labels cannot be declared continuous research.
+            return {
+                **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                "source_age_seconds":round(age,2),
+                "expected_grid_progress":"NOT_OBSERVED",
+                "due_grid_continuity":"INCOMPLETE",
+                "bar_finality":"NOT_VERIFIED",
+                "rows":[],
+            }
         if latest < expected:
-            if research_mode=="session_progress":
-                # Do not allow a stale/partial session to pass currentness
-                # merely because the poller rewrites the cache.
-                return {
-                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                    "source_age_seconds":round(age,2),
-                    "expected_grid_progress":"NOT_OBSERVED",
-                    "bar_finality":"NOT_VERIFIED",
-                    "rows":[],
-                }
             progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        elif missing_due_grid:
+            progress="DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
         else:
             progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
@@ -558,6 +602,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "max_age_seconds":max_age,
             "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
             "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "ohlc_precision_scope":(
+                "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+                else "STRICT"
+            ),
+            "tolerated_vendor_float_rows":tolerated_rows,
             "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
@@ -569,6 +618,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
+        "ohlc_precision_scope":(
+            "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+            else "STRICT"
+        ),
+        "tolerated_vendor_float_rows":tolerated_rows,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
     }
