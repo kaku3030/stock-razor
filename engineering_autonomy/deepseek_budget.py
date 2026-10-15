@@ -72,7 +72,9 @@ def classify_balance(body: bytes) -> tuple[str, list[str]]:
     return "OK", currencies
 
 
-def fetch_balance(key: str, opener=urllib.request.urlopen) -> tuple[str, list[str]]:
+def fetch_balance(key: str, opener=None) -> tuple[str, list[str]]:
+    # Resolve the stdlib transport at call time so offline tests can replace it.
+    opener = opener or urllib.request.urlopen
     if not key:
         raise ValueError("missing key")
     request = urllib.request.Request(
