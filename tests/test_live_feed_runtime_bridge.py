@@ -214,7 +214,9 @@ def test_start_rejected_ingress_rolls_back_partial_desired_registry():
         r.start([KEY, second])
     assert c.desired_registry_snapshot().entries == ()
     assert r.snapshot().subscribed == ()
-    assert ("stop",) in a.calls
+    # Ingress failed before adapter.start(): no provider cleanup is needed.
+    assert ("start",) not in a.calls
+    assert ("stop",) not in a.calls
     assert not any(call[0] == "subscribe_many" for call in a.calls)
 
 def test_initial_adapter_start_sees_desired_registry_before_callback():
