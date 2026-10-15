@@ -17,10 +17,36 @@ import re
 import time
 from zoneinfo import ZoneInfo
 
-from data_provider.cn_tickflow_research_cache import (
-    _vendor_ohlc_float_gap_bucket,
-    _vendor_etf_tick_lattice_shape_valid,
-)
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+
+def _vendor_ohlc_float_gap_bucket(op: float, hi: float, lo: float, cl: float) -> str:
+    """Independent local mirror of the <=1e-5 research tolerance."""
+    try:
+        o,h,l,c=(Decimal(str(x)) for x in (op,hi,lo,cl))
+        if not all(x.is_finite() and x>0 for x in (o,h,l,c)):
+            return "UNKNOWN"
+        gap=max(Decimal("0"),max(o,c,l)-h,l-min(o,c,h))
+        return "WITHIN_1E_MINUS_5" if gap<=Decimal("0.00001") else "OVER_1E_MINUS_5"
+    except (InvalidOperation,TypeError,ValueError,OverflowError):
+        return "UNKNOWN"
+
+
+def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: float) -> bool:
+    """Mirror bounded ETF lattice checks without importing cloud libraries."""
+    try:
+        raw=tuple(Decimal(str(x)) for x in (op,hi,lo,cl))
+        if not all(x.is_finite() and x>0 for x in raw):
+            return False
+        snapped=tuple(x.quantize(Decimal("0.001"),rounding=ROUND_HALF_UP)
+                      for x in raw)
+        if not all(abs(x-y)<=Decimal("0.00001")
+                   for x,y in zip(raw,snapped)):
+            return False
+        o,h,l,c=snapped
+        return h>=max(o,c,l) and l<=min(o,c,h)
+    except (InvalidOperation,TypeError,ValueError,OverflowError):
+        return False
 
 SYMBOLS = ("159611.SZ", "518880.SH")
 PERIOD_COUNTS = {"5m": 144, "15m": 96, "60m": 24, "1d": 40}
