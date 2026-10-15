@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Aider 返回零费用但存在 Token 用量时保留 Token 统计并将估算费用标为未知，避免把未识别价格误报为免费。
 - [修复] TickFlow 暂时性网络超时按15至300秒有界退避恢复，成功后重置；鉴权、限流及数据错误仍保留300秒退避，周末900秒，失败缓存不冒充有效行情。
 - [修复] Context Manager 使用跨进程写入锁避免事件版本冲突；显式恢复仅修正经校验的连续重复版本，先保留0600原始备份，不改变任何交易门禁。
 - [改进] MCP 部署失败仅导出固定错误分类，用于定位事件日志完整性、序列、依赖或权限问题；原始 SSM 和安装输出仍不公开，失败继续阻断。
