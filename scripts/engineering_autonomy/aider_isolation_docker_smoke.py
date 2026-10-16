@@ -169,19 +169,36 @@ def run_scenario(mode: str) -> dict[str, object]:
 
 
 def verify_no_default_routes() -> bool:
-    """Docker --network none must have no default route in either IP family."""
-    ipv4 = Path("/proc/net/route")
-    ipv6 = Path("/proc/net/ipv6_route")
-    if not ipv4.is_file() or not ipv6.is_file():
-        return False
+    """The Docker test namespace must expose loopback and NO other interface.
+
+    /proc/net/ipv6_route is absent when IPv6 is disabled, so requiring that
+    file would falsely reject a correctly isolated container. Conversely a
+    host-network container exposes ethernet interfaces and is always denied.
+    """
+    interfaces = Path("/sys/class/net")
     try:
-        for line in ipv4.read_text().splitlines()[1:]:
-            parts = line.split()
-            if len(parts) > 1 and parts[1] == "00000000":
-                return False
-        for line in ipv6.read_text().splitlines():
-            if line.split()[:2] == ["0" * 32, "00"]:
-                return False
+        names = {entry.name for entry in interfaces.iterdir()}
+    except OSError:
+        print("AIDER_NETNS=INTERFACES_UNREADABLE")
+        return False
+    print("AIDER_NETNS=ONLY_LOOPBACK" if names == {"lo"} else
+          "AIDER_NETNS=NON_LOOPBACK_INTERFACE_OR_NO_LOOPBACK")
+    if names != {"lo"}:
+        return False
+    # A default route through a non-loopback device would be prohibited.
+    try:
+        ipv4 = Path("/proc/net/route")
+        if ipv4.is_file():
+            for line in ipv4.read_text().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) > 1 and parts[1] == "00000000" and parts[0] != "lo":
+                    return False
+        ipv6 = Path("/proc/net/ipv6_route")
+        if ipv6.is_file():
+            for line in ipv6.read_text().splitlines():
+                parts = line.split()
+                if len(parts) >= 10 and parts[:2] == ["0" * 32, "00"] and parts[-1] != "lo":
+                    return False
     except (OSError, ValueError):
         return False
     return True
