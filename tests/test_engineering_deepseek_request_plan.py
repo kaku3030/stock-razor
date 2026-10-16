@@ -3,6 +3,9 @@
 These tests prove only local envelope checks. They do NOT validate provider
 billing, input-token counting, direct-network bypass prevention or Aider retries.
 """
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 from engineering_autonomy.deepseek_request_plan import (
@@ -105,3 +108,79 @@ def test_input_text_does_not_leak_to_sanitized_summary():
         claimed_input_tokens=10, max_tokens=1,
     )
     assert secret not in repr(ledger.sanitized_summary())
+
+
+def test_exact_duplicate_replay_is_denied_without_extra_reservation():
+    ledger = OfflineRequestPlan()
+    kwargs = {
+        "model": MODEL, "messages": MESSAGES,
+        "claimed_input_tokens": 123, "max_tokens": 456,
+    }
+    ledger.reserve(**kwargs)
+    with pytest.raises(RequestPlanDenied, match="duplicate envelope replay denied"):
+        ledger.reserve(**kwargs)
+    assert ledger.sanitized_summary()["requests_reserved"] == 1
+    assert ledger.sanitized_summary()["output_tokens_reserved"] == 456
+
+
+def test_parallel_distinct_envelopes_do_not_oversubscribe_single_process():
+    ledger = OfflineRequestPlan()
+    workers = 12
+    start = Barrier(workers)
+
+    def attempt(index):
+        start.wait(timeout=15)
+        try:
+            ledger.reserve(
+                model=MODEL,
+                messages=[{"role": "user", "content": f"unique attempt {index}"}],
+                claimed_input_tokens=1,
+                max_tokens=1,
+            )
+            return True
+        except RequestPlanDenied:
+            return False
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        outcome = list(executor.map(attempt, range(workers)))
+    assert sum(outcome) == 2
+    assert ledger.sanitized_summary() == {
+        "status": "OFFLINE_ONLY_NOT_BILLING_PROOF",
+        "requests_reserved": 2,
+        "input_tokens_claimed": 2,
+        "output_tokens_reserved": 2,
+    }
+
+
+def test_parallel_same_envelope_is_deduplicated_not_counted_twice():
+    ledger = OfflineRequestPlan()
+    workers = 8
+    start = Barrier(workers)
+
+    def attempt(_):
+        start.wait(timeout=15)
+        try:
+            ledger.reserve(
+                model=MODEL, messages=MESSAGES, claimed_input_tokens=50, max_tokens=50
+            )
+            return "accepted"
+        except RequestPlanDenied as exc:
+            return str(exc)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        outcomes = list(executor.map(attempt, range(workers)))
+    assert outcomes.count("accepted") == 1
+    assert outcomes.count("duplicate envelope replay denied") == workers - 1
+    assert ledger.sanitized_summary()["requests_reserved"] == 1
+
+
+def test_each_process_plan_is_independent_and_not_a_distributed_ledger():
+    first = OfflineRequestPlan()
+    second = OfflineRequestPlan()
+    request = {
+        "model": MODEL, "messages": MESSAGES,
+        "claimed_input_tokens": 1, "max_tokens": 1,
+    }
+    assert first.reserve(**request) == second.reserve(**request)
+    assert first.sanitized_summary()["requests_reserved"] == 1
+    assert second.sanitized_summary()["requests_reserved"] == 1
