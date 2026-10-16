@@ -450,10 +450,10 @@ daily_stock_analysis/
 > - 台股：在美股/港股 offshore 基础路径之外，`institution` 区块额外展示三大法人原始买卖超净额（TWSE T86 / TPEx，默认开启、fail-open，取不到数据时维持 `not_supported`）；`capital_flow`、`dragon_tiger`、`boards` 仍为 `not_supported`；
 > - 任何异常走 fail-open，仅记录错误，不影响技术面/新闻/筹码主链路。
 > - 配置 `TICKFLOW_API_KEY` 后，TickFlow 会作为可选 A 股日 K 数据源和大盘复盘增强源实例化；`TICKFLOW_PRIORITY` 只影响普通 A 股日 K/通用数据源回退链。实时行情优先级由 `REALTIME_SOURCE_PRIORITY` 单独控制，只有显式包含 `tickflow` 时才会使用 TickFlow 实时行情。`REALTIME_SOURCE_PRIORITY` 中排在 `tickflow` 前面的数据源会先被尝试。
-> - 当前 `IndexRegistry` 已登记的 5 个沪深指数为 `sh000016`（上证50）、`sh000688`（科创50）、`sz399001`（深证成指）、`sz399006`（创业板指）和 `sh000300`（沪深300）。使用显式市场输入（也接受 `000016.SH` 等交易所后缀形式）时，它们不参与通用 priority 排序，固定按 Tencent → AkShare → TickFlow → YFinance 降级；未配置或不可用的来源会跳过。裸 `000016` 等代码仍按股票处理，不触发指数链。该固定链不读取 `EFINANCE_PRIORITY`、`AKSHARE_PRIORITY`、`TUSHARE_PRIORITY`、`TICKFLOW_PRIORITY`、`PYTDX_PRIORITY`、`BAOSTOCK_PRIORITY`、`YFINANCE_PRIORITY` 或 `TENCENT_PRIORITY`，不影响普通股票和实时行情的既有顺序。
+> - 当前 `IndexRegistry` 已登记的 5 个沪深指数为 `sh000016`（上证50）、`sh000688`（科创50）、`sz399001`（深证成指）、`sz399006`（创业板指）和 `sh000300`（沪深300）。使用显式市场输入（也接受 `000016.SH` 等交易所后缀形式）时，它们不参与通用 priority 排序；配置有效 TickFlow Key 时优先 TickFlow，随后按 Tencent → AkShare → YFinance 降级，无 Key 时保持 Tencent → AkShare → TickFlow → YFinance。未配置或不可用的来源会跳过。裸 `000016` 等代码仍按股票处理，不触发指数链。该固定链不读取普通日 K 的 `*_PRIORITY` 配置，不影响普通股票和实时行情的既有顺序。
 
 启动网络预热可以分别控制：`STOCK_INDEX_REMOTE_UPDATE_ENABLED` 默认 `true`，控制启动时的股票索引远程刷新；`AKSHARE_NAME_CACHE_WARMUP_ENABLED` 默认 `true`，只控制启动时的 AkShare 名称缓存预热，不会关闭按需名称解析或其本地回退。两个变量只有明确的 `false`、`0`、`no` 或 `off` 会关闭；未设置、空值或其他值均保持开启。`/stocks.index.json` 的请求级索引读取行为不受 startup 开关改变。
-> - 已登记指数名称优先来自本地注册表；只有注册名称无效时才按 Tencent → AkShare → TickFlow 查询，名称链不使用 YFinance。指数日线四源全部失败时返回空结果并记录汇总告警；普通股票仍保持既有的 `DataFetchError` 最终失败契约。
+> - 已登记指数名称优先来自本地注册表；只有注册名称无效时，配置有效 TickFlow Key 则优先 TickFlow，否则按 Tencent → AkShare → TickFlow 查询，名称链不使用 YFinance。指数日线四源全部失败时返回空结果并记录汇总告警；普通股票仍保持既有的 `DataFetchError` 最终失败契约。
 > - TickFlow 日 K 默认 `TICKFLOW_KLINE_ADJUST=none`；日线 `volume` 从手统一转为股，`amount` 保持元口径。
 > - TickFlow 日 K 区间请求会显式传入 `start_time` / `end_time` / `count`；官方 quickstart 明确说明时间范围查询仍受 `count` 限制。若返回非空但行数打满 `count` 且首个返回交易日晚于请求起始交易日，系统会判定为疑似截断，不写入缓存并让 manager 继续回退。
 > - 批量分析时，`prefetch_daily_klines()` 会在逐股 `get_daily_data()` 之前预热进程内缓存，不改变对外调用路径。

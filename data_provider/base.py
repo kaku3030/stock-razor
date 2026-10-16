@@ -1403,7 +1403,11 @@ class DataFetcherManager:
         fetchers_by_name = {
             fetcher.name: fetcher for fetcher in self._get_fetchers_snapshot()
         }
-        for source_name in self._CN_INDEX_NAME_SOURCE_ORDER:
+        source_order = self._CN_INDEX_NAME_SOURCE_ORDER
+        tickflow_fetcher = fetchers_by_name.get("TickFlowFetcher")
+        if isinstance(getattr(tickflow_fetcher, "api_key", None), str) and tickflow_fetcher.api_key.strip():
+            source_order = ("TickFlowFetcher", *(name for name in source_order if name != "TickFlowFetcher"))
+        for source_name in source_order:
             provider_symbol = self._cn_index_provider_symbol(target, source_name)
             if not provider_symbol:
                 logger.warning(
