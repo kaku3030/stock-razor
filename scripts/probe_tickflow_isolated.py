@@ -14,11 +14,14 @@ import importlib.metadata
 import json
 import math
 import os
+from pathlib import Path
 import re
 import threading
 import time
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
 
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
@@ -817,6 +820,8 @@ def build_probe(
 
 
 def main() -> int:
+    env_path = os.getenv("ENV_FILE") or str(Path(__file__).resolve().parents[1] / ".env")
+    load_dotenv(env_path, override=False)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode", choices=("metadata", "free", "premium", "premium-contract"),

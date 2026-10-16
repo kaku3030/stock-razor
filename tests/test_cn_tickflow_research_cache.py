@@ -6,10 +6,13 @@ import pandas as pd
 import pytest
 
 from data_provider.cn_tickflow_research_cache import (
-    SCHEMA,normalize_bars,build_observation,atomic_publish,read_cn_tickflow_research_data,
+    SCHEMA,MAX_SCAN_SYMBOLS,normalize_bars,build_observation,atomic_publish,
+    read_cn_tickflow_research_data,resolve_scan_symbols,
 )
 
 SH=ZoneInfo("Asia/Shanghai")
+TEST_SCAN_SYMBOLS=20
+TEST_MAX_SYMBOLS=200
 NOW=datetime(2026,10,11,5,0,tzinfo=timezone.utc)  # Sunday: historical research only
 TIMES={
  "15m":("09:45","10:00","10:15","10:30","10:45","11:00",
@@ -20,8 +23,18 @@ TIMES={
 
 def frame(period,day="2026-10-09"):
     rows=[]
-    for h in TIMES[period]:
-        stamp=datetime.fromisoformat(f"{day}T{h}").replace(tzinfo=SH)
+    clocks = TIMES.get(period, ())
+    if period == "1m":
+        clocks = ("09:31", "09:32", "09:33", "09:34")
+    elif period == "5m":
+        clocks = ("09:35", "09:40", "09:45", "09:50")
+    elif period == "1d":
+        clocks = ("00:00",) * 4
+        day = None
+    for index,h in enumerate(clocks):
+        row_day = day or (datetime.fromisoformat("2026-10-09") -
+                          timedelta(days=3-index)).date().isoformat()
+        stamp=datetime.fromisoformat(f"{row_day}T{h}").replace(tzinfo=SH)
         rows.append(dict(timestamp=int(stamp.timestamp())*1000,open=1.5,high=1.7,
                 low=1.3,close=1.6,volume=1000,amount=1600,
                 credential="SECRET_SHOULD_NOT_LEAK"))
@@ -30,11 +43,27 @@ def frame(period,day="2026-10-09"):
 class FakeKlines:
     def __init__(self):
         self.calls=[]
+        self.batch_calls=[]
+        self.intraday_batch_calls=[]
     def get(self,symbol,*,period,count,as_dataframe,adjust):
         self.calls.append((symbol,period,count,as_dataframe,adjust))
         df = frame(period)
         return {key: df[key].tolist() for key in
                 ("timestamp","open","high","low","close","volume","amount")}
+
+    def batch(self, symbols, **kwargs):
+        self.batch_calls.append((list(symbols), kwargs))
+        return {symbol: self.get(
+            symbol, period=kwargs["period"], count=kwargs["count"],
+            as_dataframe=kwargs["as_dataframe"], adjust=kwargs.get("adjust", "none"),
+        ) for symbol in symbols}
+
+    def intraday_batch(self, symbols, **kwargs):
+        self.intraday_batch_calls.append((list(symbols), kwargs))
+        return {symbol: self.get(
+            symbol, period=kwargs["period"], count=kwargs["count"],
+            as_dataframe=kwargs["as_dataframe"], adjust="none",
+        ) for symbol in symbols}
 
 class FakeClient:
     def __init__(self):
@@ -170,6 +199,73 @@ def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
         with pytest.raises(ValueError,match="unapproved symbols"):
             build_observation(FakeClient(),now_utc=NOW,repo_sha="a"*40,
                               sequence=1,symbols=syms)
+
+
+def test_scan_capacity_accepts_twenty_explicit_symbols_and_reader_sees_all(tmp_path):
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    assert resolve_scan_symbols(",".join(symbols)) == symbols
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, allow_scan_symbols=True,
+    )
+    assert tuple(snapshot["symbols"]) == symbols
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 2
+    path = tmp_path / "twenty.json"
+    atomic_publish(str(path), snapshot)
+    result = read_cn_tickflow_research_data(
+        symbols[-1], "15m", path=str(path), now_utc=NOW,
+    )
+    assert result["ok"] is True
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_scan_capacity_covers_twenty_symbols_across_all_five_periods():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True, allow_scan_symbols=True,
+    )
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 5
+    assert all(set(snapshot["symbols"][symbol]) ==
+               {"1m", "5m", "15m", "60m", "1d"} for symbol in symbols)
+
+
+def test_full_capacity_uses_one_batch_request_per_period():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True,
+        allow_scan_symbols=True, use_batch=True,
+    )
+    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(snapshot["symbols"]) == TEST_SCAN_SYMBOLS
+
+
+def test_two_hundred_symbol_batch_capacity_covers_all_five_periods():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_MAX_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True,
+        allow_scan_symbols=True, use_batch=True,
+    )
+    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(snapshot["symbols"]) == TEST_MAX_SYMBOLS
+
+
+@pytest.mark.parametrize("value", [
+    "000001.SZ,000001.SZ",
+    ",".join(f"{100000 + index:06d}.SZ" for index in range(MAX_SCAN_SYMBOLS + 1)),
+    "000001,600000.SH",
+])
+def test_scan_symbol_parser_fails_closed(value):
+    with pytest.raises(ValueError, match="invalid scan symbols"):
+        resolve_scan_symbols(value)
 
 def test_current_session_offgrid_start_label_quarantined_without_false_finality():
     current=datetime(2026,10,13,5,8,tzinfo=timezone.utc) # Shanghai 13:08

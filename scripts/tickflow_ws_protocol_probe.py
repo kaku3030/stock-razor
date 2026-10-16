@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+from pathlib import Path
 import re
 import time
 from datetime import datetime
@@ -19,9 +20,12 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
+
 ENDPOINT = "wss://api.tickflow.org/v1/ws/stream"
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
-MAX_SYMBOLS = 5
+MAX_SYMBOLS = 200
+SUBSCRIBE_BATCH_SIZE = 5
 HOLDINGS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
 KLINE_PERIODS = ("1m", "5m", "15m", "60m", "1d")
 _KLINE_FINGERPRINT_FIELDS = (
@@ -66,6 +70,8 @@ class ProtocolEvidence:
             raise ValueError("invalid symbols")
         self.symbols = frozenset(symbols)
         self.ack_verified = False
+        self.ack_symbols: set[str] = set()
+        self.partial_ack_allowed = False
         self.ack_messages = 0
         self.invalid_ack_messages = 0
         self.pre_ack_quote_frames = 0
@@ -107,16 +113,25 @@ class ProtocolEvidence:
         if kind == "subscribed":
             syms = item.get("symbols")
             total = item.get("total")
-            if (item.get("channel") == "quotes" and isinstance(syms, list)
+            exact_ack = (isinstance(syms, list)
                     and all(isinstance(s, str) for s in syms)
-                    # One isolated connection sends exactly one subscription.
-                    # Extra/duplicate symbols or inaccurate counts are not proof
-                    # that only the requested bounded scope was acknowledged.
                     and len(syms) == len(self.symbols)
                     and set(syms) == self.symbols
-                    and type(total) is int and total == len(self.symbols)):
+                    and type(total) is int and total == len(self.symbols))
+            partial_ack = (self.partial_ack_allowed and isinstance(syms, list)
+                    and all(isinstance(s, str) for s in syms)
+                    # The client may append subscriptions in bounded batches;
+                    # accept only an exact subset and require the union to
+                    # cover the complete requested scope before ACK is true.
+                    and 1 <= len(syms) <= len(self.symbols)
+                    and len(set(syms)) == len(syms)
+                    and set(syms).issubset(self.symbols)
+                    and type(total) is int
+                    and total in (len(syms), len(self.ack_symbols | set(syms))))
+            if item.get("channel") == "quotes" and (exact_ack or partial_ack):
                 self.ack_messages += 1
-                self.ack_verified = True
+                self.ack_symbols.update(syms)
+                self.ack_verified = self.ack_symbols == self.symbols
             else:
                 self.invalid_ack_messages += 1
         elif kind == "quotes":
@@ -246,10 +261,13 @@ async def observe_socket(
 ) -> None:
     if type(seconds) is not int or not 1 <= seconds <= 16800:
         raise ValueError("unsupported bounded duration")
-    await ws.send(json.dumps({
-        "op": "subscribe", "channel": "quotes",
-        "symbols": sorted(evidence.symbols),
-    }))
+    evidence.partial_ack_allowed = True
+    symbols = sorted(evidence.symbols)
+    for offset in range(0, len(symbols), SUBSCRIBE_BATCH_SIZE):
+        await ws.send(json.dumps({
+            "op": "subscribe", "channel": "quotes",
+            "symbols": symbols[offset:offset + SUBSCRIBE_BATCH_SIZE],
+        }))
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
@@ -334,7 +352,7 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
                 evidence.kline_digest_changes += changes
                 evidence.kline_read_errors += errors
 
-    # Always anchor the bounded realtime window with the same 4x5 K-line
+    # Always anchor the bounded realtime window with the same 20x5 K-line
     # matrix. Intraday checkpoint labels are intentionally future-dated during
     # the morning, so checkpoint-only snapshots would otherwise report zero
     # K-line reads even when the provider is healthy.
@@ -347,6 +365,7 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
     while time.monotonic() < deadline:
         try:
             evidence.ack_verified = False
+            evidence.ack_symbols.clear()
             async with websockets.connect(
                 endpoint, ping_interval=20, ping_timeout=10, open_timeout=5,
                 max_size=16 * 1024 * 1024, compression="deflate",
@@ -397,6 +416,8 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
 
 
 def main() -> int:
+    env_path = os.getenv("ENV_FILE") or str(Path(__file__).resolve().parents[1] / ".env")
+    load_dotenv(env_path, override=False)
     parser = argparse.ArgumentParser(description="Isolated, explicit quote WS ACK observer")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--symbols", nargs="+", default=list(HOLDINGS))

@@ -16,10 +16,13 @@ CN = ZoneInfo("Asia/Shanghai")
 SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
 SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# Expert capacity ceiling. The deployment default remains 20; explicit scans
+# may use the full 200 only through the bounded batch path.
+MAX_SCAN_SYMBOLS = 200
 TIMEFRAMES = ("1m", "5m", "15m", "60m", "1d")
-# Four holdings × five periods requires a larger bounded private envelope;
+# Twenty symbols × five periods requires a larger bounded private envelope;
 # this remains a hard reader/writer limit and is not public market-data output.
-MAX_BYTES = 2_000_000
+MAX_BYTES = 64_000_000
 MAX_AGE_SECONDS = 180
 _LABEL_END = {
     "1m": frozenset(
@@ -41,6 +44,49 @@ _LABEL_END = {
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
 _ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
 _SOURCE = "TICKFLOW_PREMIUM"
+
+
+def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
+    """Resolve an explicit, bounded scan list without changing the safe default."""
+    if value is None or not value.strip():
+        return SYMBOLS
+    symbols = tuple(item.strip().upper() for item in value.replace(";", ",").split(",")
+                    if item.strip())
+    if (not symbols or len(symbols) > MAX_SCAN_SYMBOLS
+            or len(set(symbols)) != len(symbols)
+            or not all(_SYMBOL_RE.fullmatch(item) for item in symbols)):
+        raise ValueError("invalid scan symbols")
+    return symbols
+
+
+class _BatchKlinesFacade:
+    """Materialize one bounded provider batch per timeframe for the builder."""
+
+    def __init__(self, client: Any, symbols: tuple[str, ...], periods: dict[str, int],
+                 batch_size: int) -> None:
+        self._frames: dict[tuple[str, str], Any] = {}
+        for period, count in periods.items():
+            method = (client.klines.batch if period == "1d"
+                      else client.klines.intraday_batch)
+            kwargs = {
+                "period": period, "count": count, "as_dataframe": False,
+                "show_progress": False, "max_workers": 5,
+                "batch_size": batch_size,
+            }
+            if period == "1d":
+                kwargs["adjust"] = "none"
+            result = method(list(symbols), **kwargs)
+            if not isinstance(result, dict):
+                raise ValueError("batch SDK shape invalid")
+            for symbol in symbols:
+                if symbol not in result:
+                    raise ValueError("batch SDK symbol missing")
+                self._frames[(symbol, period)] = result[symbol]
+
+    def get(self, symbol: str, *, period: str, count: int,
+            adjust: str, as_dataframe: bool) -> Any:
+        del count, adjust, as_dataframe
+        return self._frames[(symbol, period)]
 
 def _timestamp(value: object) -> datetime:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
@@ -346,22 +392,42 @@ def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime |
 
 def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence: int,
                       symbols: tuple[str,...]=SYMBOLS,
-                      include_supplemental: bool=False) -> dict:
+                      include_supplemental: bool=False,
+                      allow_scan_symbols: bool=False,
+                      use_batch: bool=False) -> dict:
     if now_utc.tzinfo is None or not re.fullmatch("[0-9a-f]{40}",repo_sha):
         raise ValueError("invalid wall clock or source revision")
     if type(sequence) is not int or sequence < 1:
         raise ValueError("invalid monotonic sequence")
-    if (not symbols or len(symbols)>len(SYMBOLS)
+    approved = (set(SYMBOLS) if not allow_scan_symbols else None)
+    if (not symbols or len(symbols)>MAX_SCAN_SYMBOLS
             or len(set(symbols))!=len(symbols)
-            or any(not isinstance(x,str) or x not in SYMBOLS for x in symbols)):
-        # Hard billing/entitlement boundary: no arbitrary A-share scan until
-        # separate reviewed quota and license approvals.
+            or any(not isinstance(x,str) or not _SYMBOL_RE.fullmatch(x)
+                   or (approved is not None and x not in approved)
+                   for x in symbols)):
         raise ValueError("unapproved symbols")
     if type(include_supplemental) is not bool:
         raise ValueError("invalid supplemental timeframe flag")
     output={}
     periods=(_ALLOWED_PERIODS if include_supplemental
              else {"15m":96,"60m":24})
+    if type(use_batch) is not bool:
+        raise ValueError("invalid batch mode flag")
+    if use_batch:
+        # The installed SDK contract defaults to 100 symbols per request.
+        # Keep the scan ceiling at 200 while letting the SDK split each
+        # timeframe into bounded batches instead of passing an unsupported
+        # 200-symbol request size.
+        try:
+            configured_batch_size = int(os.environ.get("TICKFLOW_BATCH_SIZE", "100"))
+        except ValueError:
+            configured_batch_size = 100
+        batch_size = min(len(symbols), max(1, min(configured_batch_size, 100)))
+        client = type("_BatchClient", (), {
+            "klines": _BatchKlinesFacade(
+                client, symbols, periods, batch_size=batch_size,
+            ),
+        })()
     for index,symbol in enumerate(symbols):
         frames={}
         for interval, n in periods.items():
@@ -392,7 +458,7 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 # Some SDK responses may contain more rows than the requested
                 # count. Keep the bounded, newest window requested by the
                 # caller so one oversized response cannot invalidate the
-                # complete four-symbol snapshot at publish time.
+                # complete bounded snapshot at publish time.
                 bars=bars[-n:]
             except Exception as exc:
                 exc._tickflow_stage=stage
@@ -468,7 +534,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         # Fixed enum only: never expose raw cache values, labels or exceptions.
         return {**base,"status":"INVALID_CACHE",
                 "cache_rejection_reason":reason}
-    if (not isinstance(symbol,str) or symbol not in SYMBOLS
+    if (not isinstance(symbol,str) or not _SYMBOL_RE.fullmatch(symbol)
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
             or (timeframe=="1d" and research_mode!="historical_only")
@@ -513,11 +579,19 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     if age < -5 or age > max_age:
         return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
+    cached_symbols = obj.get("symbols")
+    if not isinstance(cached_symbols, dict) or symbol not in cached_symbols:
+        return {**base,"status":"INVALID_REQUEST"}
     websocket_evidence = obj.get("websocket_evidence")
     if websocket_evidence is not None:
+        ws_symbols = (websocket_evidence.get("symbols")
+                      if isinstance(websocket_evidence, dict) else None)
         if (not isinstance(websocket_evidence, dict)
                 or websocket_evidence.get("schema") != "stock_razor_tickflow_ws_research_evidence_v0_1"
-                or websocket_evidence.get("symbols") != sorted(SYMBOLS)
+                or not isinstance(ws_symbols, list)
+                or ws_symbols != sorted(ws_symbols)
+                or not all(isinstance(value, str) for value in ws_symbols)
+                or not set(ws_symbols).issubset(cached_symbols)
                 or websocket_evidence.get("subscription_ack") != "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
                 or websocket_evidence.get("continuous_feed_qualified") is not False
                 or websocket_evidence.get("bar_finality") != "NOT_VERIFIED"
@@ -537,7 +611,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             return invalid_cache("WEBSOCKET_EVIDENCE_LAG_INVALID")
     reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
-        raw=obj["symbols"][symbol][timeframe]
+        raw=cached_symbols[symbol][timeframe]
         rows=raw["rows"]
         reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:

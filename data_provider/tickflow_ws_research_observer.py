@@ -14,7 +14,8 @@ from typing import Any, Iterable
 
 
 _SYMBOL_RE = __import__("re").compile(r"^[0-9]{6}\.(?:SH|SZ)$")
-_MAX_SYMBOLS = 5
+_MAX_SYMBOLS = 200
+_SUBSCRIBE_BATCH_SIZE = 5
 _MAX_LAG_SAMPLES = 4096
 
 
@@ -51,7 +52,12 @@ class TickFlowWebSocketResearchObserver:
 
     def subscribe(self, stream: Any) -> None:
         """Issue the documented SDK subscribe call; this is not server ACK."""
-        stream.subscribe("quotes", sorted(self.symbols))
+        symbols = sorted(self.symbols)
+        # Keep each command at the previously verified five-symbol size while
+        # using the documented append semantics to cover the phase-bounded
+        # scan on one connection.
+        for offset in range(0, len(symbols), _SUBSCRIBE_BATCH_SIZE):
+            stream.subscribe("quotes", symbols[offset:offset + _SUBSCRIBE_BATCH_SIZE])
         self.subscription_call = "PASS"
 
     def mark_connected(self) -> None:
