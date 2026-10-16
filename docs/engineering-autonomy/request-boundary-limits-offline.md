@@ -22,6 +22,11 @@ making network calls, or launching Aider.
   rejects tool calls, images, malformed types and invalid encodings.
 * Reservation happens before returning the envelope. There are no refunds
   based on after-the-fact analytics.
+* The admitted request is returned as **immutable UTF-8 JSON bytes**, not a
+  mutable dictionary. This prevents modifying `max_tokens` in-place after
+  reservation. A later caller could still parse and forge a *different* byte
+  string, so only a future independently enforced network transport using the
+  **exact emitted bytes** would provide on-wire assurances.
 * Within a single Python process, a lock protects the shared request/input/
   output counters from simultaneous reservations. Exact-envelope fingerprints
   reject accidental replay attempts without storing or logging message text.
@@ -34,11 +39,11 @@ making network calls, or launching Aider.
 
 ## Adversarial regression cases
 
-`tests/test_engineering_deepseek_request_plan.py` exercises 33 cases:
+`tests/test_engineering_deepseek_request_plan.py` exercises 35 cases:
 third request, cross-request input/output overspend, one-shot output overrun,
 invalid model, streaming, retry, bool/negative/unknown token counts, unsupported
 messages/roles/modalities, oversized and invalid UTF-8 content, and text
-leakage prevention, same-envelope replay and simultaneous attempts. They are
+leakage prevention, same-envelope replay, post-reservation payload mutation and simultaneous attempts. They are
 offline fixture tests only.
 
 ## Required before any paid run
