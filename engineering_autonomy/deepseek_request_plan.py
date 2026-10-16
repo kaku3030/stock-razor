@@ -76,7 +76,8 @@ class OfflineRequestPlan:
         max_tokens: object,
         stream: bool = False,
         retry: bool = False,
-    ) -> dict[str, object]:
+    ) -> bytes:
+        """Return immutable JSON bytes; never an editable post-check mapping."""
         if model != MODEL or stream is not False or retry is not False:
             raise RequestPlanDenied("unsupported model, stream or retry")
         if not _positive_integer(claimed_input_tokens) or not _positive_integer(max_tokens):
@@ -91,9 +92,13 @@ class OfflineRequestPlan:
         }
         # An exact envelope replay can be a hidden accidental retry.
         # Only the SHA-256 fingerprint is kept in memory, never message text.
-        fingerprint = hashlib.sha256(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        try:
+            wire_payload = json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")
+        except UnicodeError as exc:
+            raise RequestPlanDenied("invalid request encoding") from exc
+        fingerprint = hashlib.sha256(wire_payload).hexdigest()
         # Atomic reservation against simultaneous callers in ONE Python process.
         # This is not a cross-process transaction or a network-transport guard.
         with self._lock:
@@ -115,7 +120,10 @@ class OfflineRequestPlan:
                 "reserved_output_tokens": max_tokens,
                 "evidence": "UNVERIFIED_INPUT_COUNT",
             })
-        return payload
+        # These bytes cannot be modified in-place after pre-request reservation.
+        # Only a future transport that sends these exact bytes can claim
+        # on-wire enforcement; this offline planner does not send anything.
+        return wire_payload
 
     def sanitized_summary(self) -> dict[str, int | str]:
         with self._lock:
