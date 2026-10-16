@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta, timezone
+from datetime import time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from data_provider.market_data_adapter import Bar, evaluate_health
@@ -11,6 +11,15 @@ from .futu_k1m_forming_accumulator import FormingMinuteBar
 FUTU_US_KLINE_TIMEZONE = ZoneInfo("America/New_York")
 FUTU_US_K1M_FRESHNESS_LIMIT_SECONDS = 120
 FUTU_US_K1M_FUTURE_SKEW_SECONDS = 5
+
+
+def is_futu_us_rth_interval_end(interval_end) -> bool:
+    """Classify an OpenD exchange-local interval-end without creating a bar."""
+    if interval_end.tzinfo is None:
+        local_end = interval_end
+    else:
+        local_end = interval_end.astimezone(FUTU_US_KLINE_TIMEZONE)
+    return time(9, 31) <= local_end.time() <= time(16, 0)
 
 
 def closed_futu_minute_to_bar(minute: FormingMinuteBar, *, received_at):
@@ -34,6 +43,11 @@ def closed_futu_minute_to_bar(minute: FormingMinuteBar, *, received_at):
         end = minute.start.replace(tzinfo=FUTU_US_KLINE_TIMEZONE).astimezone(timezone.utc)
     else:
         end = minute.start.astimezone(timezone.utc)
+    # The OpenD stream may remain active in premarket or after-hours.
+    # Do not mislabel those K_1M rows as RTH without a separately
+    # qualified extended-session normalization contract.
+    if not is_futu_us_rth_interval_end(minute.start):
+        raise ValueError("US_RTH_END_LABEL_REQUIRED")
     start = end - timedelta(minutes=1)
     received = received_at.astimezone(timezone.utc)
     age_seconds = (received - end).total_seconds()

@@ -138,7 +138,7 @@ def test_cloud_ws_smoke_is_independent_opt_in_and_bounded():
     assert 'QUOTE_ONLY: ${{ inputs.quote_only }}' in PREMIUM_WORKFLOW
     assert 'probe_args+=(--quote-only)' in PREMIUM_BOOTSTRAP
     assert 'ws_seconds="$6"' in PREMIUM_BOOTSTRAP
-    assert '[[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]' in PREMIUM_BOOTSTRAP
+    assert '[[ "$ws_seconds" =~ ^(0|10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]' in PREMIUM_BOOTSTRAP
     assert '--ws-seconds "$ws_seconds"' in PREMIUM_BOOTSTRAP
     assert 'RADAR_ADMISSION=BLOCKED' in PREMIUM_BOOTSTRAP
     assert 'LIVE_TRADE=NO' in PREMIUM_BOOTSTRAP
@@ -146,7 +146,7 @@ def test_cloud_ws_smoke_is_independent_opt_in_and_bounded():
 
 def test_cloud_ws_duration_is_validated_before_remote_network_calls():
     assert PREMIUM_WORKFLOW.index('[[ "$WS_SECONDS" =~ ^(0|10|15|30|60)$ ]]') < PREMIUM_WORKFLOW.index('aws ssm send-command')
-    assert PREMIUM_BOOTSTRAP.index('[[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]') < PREMIUM_BOOTSTRAP.index('curl --fail')
+    assert PREMIUM_BOOTSTRAP.index('[[ "$ws_seconds" =~ ^(0|10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]') < PREMIUM_BOOTSTRAP.index('curl --fail')
 
 
 def test_cloud_premium_probe_has_exactly_two_explicit_qualification_symbols():

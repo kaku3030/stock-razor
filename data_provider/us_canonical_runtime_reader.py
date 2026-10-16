@@ -10,6 +10,7 @@ import os
 from threading import RLock
 from time import perf_counter
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 
 DEFAULT_STATUS_PATH = "/run/stock-razor-us-livefeed/latest-heartbeat.json"
@@ -179,24 +180,40 @@ def _snapshot_source(
             source_path=source_path,
         )
     now = _now(now_utc)
-    age = _age_seconds(payload.get("emitted_at_utc"), now_utc=now)
-    if age is None or age < -5:
+    publication_age = _age_seconds(payload.get("emitted_at_utc"), now_utc=now)
+    if publication_age is None or publication_age < -5:
         return None, _fail(
             "INVALID",
             error="INVALID_EMITTED_AT",
             source_path=source_path,
         )
-    source_status = "PASS" if age <= max_age_seconds else "STALE"
+    # The file can be rewritten by a heartbeat while the newest bar remains
+    # old. Prefer provider evidence when present and retain the old publication
+    # timestamp fallback for pre-migration snapshots.
+    data_age = _age_seconds(
+        payload.get("latest_source_timestamp_utc") or payload.get("emitted_at_utc"),
+        now_utc=now,
+    )
+    if data_age is None or data_age < -5:
+        return None, _fail(
+            "INVALID",
+            error="INVALID_LATEST_SOURCE_TIMESTAMP",
+            source_path=source_path,
+        )
+    source_status = "PASS" if data_age <= max_age_seconds else "STALE"
     meta = {
         "ok": True,
         "status": source_status,
         "source_path": source_path,
-        "source_age_seconds": age,
+        "source_age_seconds": data_age,
+        "publication_age_seconds": publication_age,
         "source_cache_hit": cache_hit,
         "repo_sha": payload.get("repo_sha"),
         "runtime_instance_id": payload.get("runtime_instance_id"),
         "sequence": payload.get("sequence"),
         "emitted_at_utc": payload.get("emitted_at_utc"),
+        "latest_source_timestamp_utc": payload.get("latest_source_timestamp_utc"),
+        "latest_received_at_utc": payload.get("latest_received_at_utc"),
         "market_state_us": payload.get("market_state_us"),
         "cache_session_us": payload.get("cache_session_us"),
         "delivery_mode": payload.get("delivery_mode"),
@@ -301,8 +318,82 @@ def read_us_livefeed_health(
         for symbol, item in symbols.items()
         if isinstance(item, dict)
     }
+    # Sanitized postclose historical evidence only; never interpret an
+    # untrusted heartbeat subtree as runtime bar-closure authorization.
+    postclose = heartbeat.get("postclose_reconciliation")
+    postclose_summary = None
+    if isinstance(postclose, dict):
+        allowed_status = {
+            "NOT_DUE", "BLOCKED", "ALREADY_PRESENT",
+            "PASS_HISTORICAL_ONLY", "PARTIAL_HISTORICAL_ONLY",
+        }
+        requests = postclose.get("provider_requests")
+        seeded = postclose.get("seeded_count")
+        session_date = postclose.get("session_date")
+        # A previously repaired session must not be advertised as today's.
+        expected_session_date = now.astimezone(
+            ZoneInfo("America/New_York")
+        ).date().isoformat()
+        safety_ok = (
+            type(session_date) is str
+            and session_date == expected_session_date
+            and postclose.get("status") in allowed_status
+            and type(requests) is int and 0 <= requests <= 20
+            and type(seeded) is int and 0 <= seeded <= requests
+            and postclose.get("historical_query") is True
+            and postclose.get("currentness_proven") is False
+            and postclose.get("bar_closure_promotion_authorized") is False
+            and postclose.get("radar_admission") == "BLOCKED"
+            and postclose.get("live_trade") is False
+        )
+        if safety_ok:
+            raw_symbols = postclose.get("symbols")
+            raw_symbols = raw_symbols if isinstance(raw_symbols, dict) else {}
+            qualified = (
+                sum(
+                    isinstance(item, dict) and item.get("status") == "PASS_HISTORICAL_ONLY"
+                    for item in raw_symbols.values()
+                )
+                if len(raw_symbols) <= 20 else 0
+            )
+            postclose_summary = {
+                "session_date": session_date,
+                "status": postclose["status"],
+                "reason": str(postclose.get("reason") or "")[:100],
+                "provider_requests": requests,
+                "seeded_count": seeded,
+                "qualified_symbol_count": qualified,
+                "historical_query": True,
+                "provider_finality": "NOT_VERIFIED",
+                "bar_closure_promotion_authorized": False,
+                "radar_admission": "BLOCKED",
+                "live_trade": False,
+            }
+        else:
+            postclose_summary = {
+                "status": "INVALID_EVIDENCE",
+                "radar_admission": "BLOCKED",
+                "live_trade": False,
+            }
     healthy = heartbeat_fresh and controller_connected and export_pass
     status = "HEALTHY" if healthy else ("STALE" if not heartbeat_fresh else "DEGRADED")
+    # Operational heartbeat and provider market evidence are independent.
+    # A live service cannot certify realtime bars by heartbeat alone.
+    source_identity_matched = (
+        snapshot is not None
+        and bool(snapshot_meta.get("repo_sha"))
+        and snapshot_meta.get("repo_sha") == heartbeat.get("repo_sha")
+        and bool(snapshot_meta.get("runtime_instance_id"))
+        and snapshot_meta.get("runtime_instance_id") == heartbeat.get("runtime_instance_id")
+    )
+    live_source_evidence = (
+        healthy
+        and source_identity_matched
+        and snapshot_meta.get("status") == "PASS"
+        and isinstance(snapshot.get("latest_source_timestamp_utc"), str)
+        and heartbeat.get("delivery_mode") == "REALTIME"
+        and snapshot_meta.get("delivery_mode") == "REALTIME"
+    )
     return _latency_payload(started_at, {
         "ok": healthy,
         "status": status,
@@ -328,6 +419,7 @@ def read_us_livefeed_health(
             "provider_callback_latency_sample_count"
         ),
         "quote_right_evidence": heartbeat.get("quote_right_evidence"),
+        "postclose_reconciliation": postclose_summary,
         "canonical_export_status": canonical_export.get("status"),
         "canonical_snapshot_status": snapshot_meta.get("status"),
         "canonical_snapshot_age_seconds": snapshot_meta.get("source_age_seconds"),
@@ -335,8 +427,10 @@ def read_us_livefeed_health(
         "heartbeat_cache_hit": heartbeat_cache_hit,
         "canonical_snapshot_cache_hit": snapshot_meta.get("source_cache_hit"),
         "cache_counts": cache_counts,
-        "realtime_delivery_evidence": (
-            heartbeat_fresh and heartbeat.get("delivery_mode") == "REALTIME"
+        "realtime_delivery_evidence": bool(live_source_evidence),
+        "realtime_evidence_scope": (
+            "SOURCE_RECENCY_AND_RUNTIME_MATCH_NOT_PER_SYMBOL"
+            if live_source_evidence else "NOT_VERIFIED"
         ),
         "bar_closure_proven": heartbeat.get("bar_closure") == "PROVEN",
         "radar_admission": "BLOCKED",

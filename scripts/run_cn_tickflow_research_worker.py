@@ -10,8 +10,9 @@ import signal
 import time
 
 from data_provider.cn_tickflow_research_cache import (
-    SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation,
+    SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation, resolve_scan_symbols,
 )
+from data_provider.tickflow_ws_research_observer import attach_tickflow_stream
 
 SECRET_NAME="stock-razor/tickflow/premium-api-key"
 running=True
@@ -46,6 +47,9 @@ _NORMALIZE_REJECTION_REASON = {
 
 def _normalize_rejection_reason(error: Exception) -> str:
     stage=getattr(error, "_tickflow_stage", "")
+    if (type(error) is ValueError and stage == "S4_CACHE_PUBLISH"
+            and str(error) == "private research cache exceeds bounded bytes"):
+        return "CACHE_SIZE_EXCEEDED"
     if (type(error) is ValueError and isinstance(stage,str)
             and stage.endswith("_NORMALIZE")):
         return _NORMALIZE_REJECTION_REASON.get(str(error), "OTHER")
@@ -87,8 +91,36 @@ def _interval(now: datetime, failure: bool=False) -> int:
         return 900
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
-    # Read-only REST, 8 bounded Kline requests per cadence, not ticks.
-    return 300 if failure or not session else 60
+    # Read-only REST, bounded Kline requests per cadence, not ticks. The
+    # default remains the four held ETFs; explicit phase scans are capped by
+    # resolve_scan_symbols.
+    return 300 if failure or not session else 15
+
+def _network_retry_interval(now: datetime, error: Exception | None, failures: int) -> int:
+    """Bounded polling recovery, never hidden SDK retries or auth retries.
+
+    The default four-symbol cycle is bounded and >=15s between cycles retain a
+    single worker. Repeated network failures
+    back off to the original 300s; weekends retain 900s.
+    """
+    conservative = _interval(now, failure=True)
+    # SDK versions may wrap transport errors in their own exception classes.
+    # Match fixed names only; do not inspect or log their private messages.
+    transient = type(error).__name__ in {
+        "TimeoutError", "ConnectTimeout", "ReadTimeout", "WriteTimeout",
+        "PoolTimeout", "ConnectionError", "ConnectError", "ReadError",
+        "RemoteProtocolError",
+    }
+    if not transient or conservative == 900:
+        return conservative
+    return min(300, 15 * (2 ** min(max(failures - 1, 0), 5)))
+
+
+def _websocket_enabled() -> bool:
+    return os.environ.get("TICKFLOW_RESEARCH_WS_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes",
+    }
+
 
 def main() -> int:
     sha=os.environ.get("STOCK_RAZOR_REPO_SHA","")
@@ -100,6 +132,11 @@ def main() -> int:
         return 2
     signal.signal(signal.SIGTERM,_stop)
     signal.signal(signal.SIGINT,_stop)
+    try:
+        scan_symbols=resolve_scan_symbols(os.environ.get("TICKFLOW_RESEARCH_SYMBOLS"))
+    except ValueError:
+        print("TICKFLOW_RESEARCH_SYMBOLS=BLOCKED:INVALID",flush=True)
+        return 2
     # Init SDK with AWS IAM key in process memory, never argv or systemd env.
     try:
         with open(os.devnull,"w",encoding="utf-8") as null:
@@ -113,21 +150,49 @@ def main() -> int:
     except Exception as exc:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)
         return 3
+    ws_observer = None
+    if _websocket_enabled():
+        try:
+            with open(os.devnull, "w", encoding="utf-8") as null:
+                with redirect_stdout(null), redirect_stderr(null):
+                    # The official observer remains capped at five symbols;
+                    # REST/Kline capacity is independent from this protocol
+                    # evidence leg.
+                    ws_observer = attach_tickflow_stream(client, scan_symbols[:5])
+        except Exception as exc:
+            # REST research remains independent; the optional WS leg is an
+            # explicit blocked observation rather than a silent live claim.
+            print("TICKFLOW_RESEARCH_WS=BLOCKED:" + type(exc).__name__, flush=True)
     sequence=0
+    network_failures=0
     try:
         while running:
             sequence+=1
             now=datetime.now(timezone.utc)
             failed=False
+            failure=None
             try:
                 with open(os.devnull,"w",encoding="utf-8") as null:
                     with redirect_stdout(null), redirect_stderr(null):
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
-                              sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
-                atomic_publish(status_path,snapshot)
+                              sequence=sequence,symbols=scan_symbols,
+                              include_supplemental=True,allow_scan_symbols=True,
+                              use_batch=True)
+                if ws_observer is not None:
+                    try:
+                        snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
+                    except Exception as exc:
+                        exc._tickflow_stage="S4_WS_SUMMARY"
+                        raise
+                try:
+                    atomic_publish(status_path,snapshot)
+                except Exception as exc:
+                    exc._tickflow_stage="S4_CACHE_PUBLISH"
+                    raise
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
                 failed=True
+                failure=exc
                 # Invalid/late feed must replace an older apparently fresh file.
                 atomic_publish(status_path,{
                     "schema":"stock_razor_cn_tickflow_research_observation_v0_1",
@@ -140,14 +205,10 @@ def main() -> int:
                     "failure_stage":(
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
-                            "S0_15M_FETCH","S0_15M_NORMALIZE",
-                            "S0_60M_FETCH","S0_60M_NORMALIZE",
-                            "S1_15M_FETCH","S1_15M_NORMALIZE",
-                            "S1_60M_FETCH","S1_60M_NORMALIZE",
-                            "S0_5M_FETCH","S0_5M_NORMALIZE",
-                            "S1_5M_FETCH","S1_5M_NORMALIZE",
-                            "S0_1D_FETCH","S0_1D_NORMALIZE",
-                            "S1_1D_FETCH","S1_1D_NORMALIZE",
+                            *[f"S{i}_{period}_{action}"
+                              for i in range(len(scan_symbols))
+                              for period in ("1M","5M","15M","60M","1D")
+                              for action in ("FETCH","NORMALIZE")],
                         } else "UNKNOWN"
                     ),
                     "symbols":{},"research_only":True,
@@ -157,7 +218,9 @@ def main() -> int:
                     "can_confirm_signal":False,"canonical_write_authorized":False,
                 })
                 print("TICKFLOW_RESEARCH_POLL=BLOCKED:"+type(exc).__name__,flush=True)
-            pause=_interval(datetime.now(timezone.utc),failure=failed)
+            network_failures = network_failures + 1 if failed else 0
+            pause=(_network_retry_interval(datetime.now(timezone.utc), failure, network_failures)
+                   if failed else _interval(datetime.now(timezone.utc)))
             # Interruptible shutdown, no runaway provider retry loop.
             for _ in range(pause):
                 if not running: break
@@ -166,6 +229,8 @@ def main() -> int:
         try:
             with open(os.devnull,"w",encoding="utf-8") as null:
                 with redirect_stdout(null),redirect_stderr(null):
+                    if ws_observer is not None:
+                        client.stream.close()
                     client.close()
         except Exception:
             pass

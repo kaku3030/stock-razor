@@ -46,16 +46,16 @@ def make_readers(*, missing=None, different_sequence=None):
     return ns["get_cn_market_data"], calls
 
 
-def test_batch_gets_two_etfs_and_two_periods_in_one_connected_action():
+def test_batch_gets_four_holdings_and_two_periods_in_one_connected_action():
     handler, calls = make_readers()
     response = handler("TICKFLOW:BATCH", timeframe="15m", limit=2)
     assert response["ok"] is True
     assert response["status"] == "PASS_HISTORICAL_ONLY"
     assert response["provider"] == "TICKFLOW_PREMIUM"
-    assert response["frame_count"] == 4
+    assert response["frame_count"] == 8
     assert response["sequence"] == 9
     assert response["repo_sha"] == "a" * 40
-    assert set(response["symbols"]) == {"159611.SZ", "518880.SH"}
+    assert set(response["symbols"]) == {"159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"}
     assert all(set(p) == {"15m", "60m"} for p in response["symbols"].values())
     assert response["bar_finality"] == "NOT_VERIFIED"
     assert response["radar_admission"] == "BLOCKED"
@@ -66,23 +66,27 @@ def test_batch_gets_two_etfs_and_two_periods_in_one_connected_action():
     assert calls == [
         ("159611.SZ", "15m", 2, "historical_only"),
         ("159611.SZ", "60m", 2, "historical_only"),
-        ("518880.SH", "15m", 2, "historical_only"),
-        ("518880.SH", "60m", 2, "historical_only"),
+        ("159209.SZ", "15m", 2, "historical_only"),
+        ("159209.SZ", "60m", 2, "historical_only"),
+        ("512730.SH", "15m", 2, "historical_only"),
+        ("512730.SH", "60m", 2, "historical_only"),
+        ("159363.SZ", "15m", 2, "historical_only"),
+        ("159363.SZ", "60m", 2, "historical_only"),
     ]
 
 
 def test_batch_stale_frame_blocks_whole_response_and_never_leaks_partial_rows():
-    handler, _ = make_readers(missing=("518880.SH", "15m"))
+    handler, _ = make_readers(missing=("159209.SZ", "15m"))
     response = handler("TICKFLOW:BATCH", limit=1)
     assert response["ok"] is False
     assert response["status"] == "PARTIAL_OR_STALE"
     assert "symbols" not in response
-    assert response["frame_status"]["518880.SH:15m"] == "STALE"
+    assert response["frame_status"]["159209.SZ:15m"] == "STALE"
     assert response["radar_admission"] == "BLOCKED"
 
 
 def test_batch_misaligned_source_sequence_fails_closed():
-    handler, _ = make_readers(different_sequence=("518880.SH", "60m"))
+    handler, _ = make_readers(different_sequence=("159209.SZ", "60m"))
     response = handler("TICKFLOW:BATCH", limit=1)
     assert response["status"] == "INVALID_SOURCE_ALIGNMENT"
     assert response["ok"] is False

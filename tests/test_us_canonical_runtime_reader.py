@@ -227,6 +227,21 @@ def test_stale_snapshot_is_returned_as_stale_not_laundered(tmp_path):
     assert result["bar_count"] == 2
 
 
+def test_fresh_publication_does_not_launder_old_provider_bar(tmp_path):
+    payload = _snapshot(emitted_at=NOW - timedelta(seconds=2))
+    payload["latest_source_timestamp_utc"] = (NOW - timedelta(minutes=10)).isoformat()
+    payload["latest_received_at_utc"] = (NOW - timedelta(seconds=2)).isoformat()
+    snapshot = _write(tmp_path / "snapshot.json", payload)
+
+    result = read_us_market_bars(
+        "AMD", timeframe="1m", limit=1, path=snapshot, now_utc=NOW
+    )
+
+    assert result["status"] == "STALE"
+    assert result["source_age_seconds"] == 600
+    assert result["publication_age_seconds"] == 2
+
+
 def test_snapshot_safety_contract_violation_blocks_reads(tmp_path):
     snapshot = _write(tmp_path / "snapshot.json", _snapshot(safe=False))
 
@@ -304,3 +319,123 @@ def test_livefeed_health_rejects_malformed_provider_callback_latency(tmp_path):
     assert result["error"] == "INVALID_PROVIDER_CALLBACK_LATENCY"
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_postclose_historical_repair_evidence_is_visible_without_promoting(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "session_date": "2026-10-07",
+        "status": "PASS_HISTORICAL_ONLY",
+        "reason": "HISTORICAL_TERMINAL_RECONCILIATION",
+        "provider_requests": 1,
+        "seeded_count": 1,
+        "historical_query": True,
+        "currentness_proven": False,
+        "bar_closure_promotion_authorized": False,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "symbols": {"US.AMD": {"status": "PASS_HISTORICAL_ONLY"}},
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    evidence = out["postclose_reconciliation"]
+    assert evidence["status"] == "PASS_HISTORICAL_ONLY"
+    assert evidence["provider_requests"] == 1
+    assert evidence["seeded_count"] == 1
+    assert evidence["qualified_symbol_count"] == 1
+    assert evidence["provider_finality"] == "NOT_VERIFIED"
+    assert evidence["bar_closure_promotion_authorized"] is False
+    assert out["radar_admission"] == "BLOCKED"
+
+
+def test_postclose_subtree_cannot_launder_admission_or_fake_cost(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "status": "PASS_HISTORICAL_ONLY",
+        "provider_requests": True,
+        "seeded_count": 999,
+        "historical_query": True,
+        "currentness_proven": True,
+        "bar_closure_promotion_authorized": True,
+        "radar_admission": "ADMITTED",
+        "live_trade": True,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
+    assert out["radar_admission"] == "BLOCKED"
+    assert out["live_trade"] is False
+
+
+def test_postclose_mcp_rejects_yesterday_repair_as_current_session(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["postclose_reconciliation"] = {
+        "session_date": "2026-10-05",
+        "status": "PASS_HISTORICAL_ONLY",
+        "provider_requests": 1,
+        "seeded_count": 1,
+        "historical_query": True,
+        "currentness_proven": False,
+        "bar_closure_promotion_authorized": False,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+    out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
+    assert out["radar_admission"] == "BLOCKED"
+
+
+
+def test_livefeed_health_realtime_evidence_requires_fresh_provenanced_source(tmp_path):
+    fresh = _snapshot(emitted_at=NOW - timedelta(seconds=2))
+    fresh["latest_source_timestamp_utc"] = (
+        NOW - timedelta(seconds=10)
+    ).isoformat()
+    status = _write(tmp_path / "status.json", _heartbeat())
+    snapshot = _write(tmp_path / "snapshot.json", fresh)
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert result["status"] == "HEALTHY"
+    assert result["canonical_snapshot_status"] == "PASS"
+    assert result["realtime_delivery_evidence"] is True
+
+    # Current heartbeats and export time cannot make a stale provider bar live.
+    fresh["latest_source_timestamp_utc"] = (
+        NOW - timedelta(minutes=10)
+    ).isoformat()
+    _write(tmp_path / "snapshot.json", fresh)
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert result["status"] == "HEALTHY"
+    assert result["canonical_snapshot_status"] == "STALE"
+    assert result["canonical_snapshot_age_seconds"] == 600
+    assert result["realtime_delivery_evidence"] is False
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_realtime_evidence_rejects_unverified_source_identity(tmp_path):
+    status = _write(tmp_path / "status.json", _heartbeat())
+    snapshot = tmp_path / "snapshot.json"
+    payload = _snapshot()
+    payload["latest_source_timestamp_utc"] = (
+        NOW - timedelta(seconds=5)
+    ).isoformat()
+    for changed_field in ("repo_sha", "runtime_instance_id"):
+        corrupted = dict(payload)
+        corrupted[changed_field] = (
+            "other-run" if changed_field == "runtime_instance_id" else "b" * 40
+        )
+        _write(snapshot, corrupted)
+        result = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
+        assert result["status"] == "HEALTHY"
+        assert result["canonical_snapshot_status"] == "PASS"
+        assert result["realtime_delivery_evidence"] is False
+        assert result["radar_admission"] == "BLOCKED"
+
+    # Legacy snapshots without source-time provenance cannot establish fresh bars.
+    _write(snapshot, _snapshot())
+    unknown = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
+    assert unknown["status"] == "HEALTHY"
+    assert unknown["realtime_delivery_evidence"] is False

@@ -123,3 +123,137 @@ def test_full_config_grid_does_not_claim_service_trigger_execution(tmp_path):
     assert outcome == "PAPER_HALF_HOUR_SCHEDULE CONFIGURED_48_SLOTS_ONLY"
     assert "PASS" not in outcome
     assert "not-for-output" not in outcome
+
+def test_paper_heartbeat_future_mtime_is_not_fresh(tmp_path):
+    """A future-dated heartbeat must never be treated as fresh by the SSM probe."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import textwrap
+    import time
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    marker = '/usr/bin/python3 - "$status_path" <<\'PY\''
+    assert workflow.count(marker) == 1
+    snippet = workflow.split(marker, 1)[1].split("\n          PY", 1)[0]
+    code = textwrap.dedent(snippet)
+    heartbeat = tmp_path / "latest-heartbeat.json"
+    heartbeat.write_text(json.dumps({
+        "live_trade": False,
+        "trade_execution": False,
+        "paper_auto_ready": False,
+        "radar_admission": "BLOCKED",
+        "source_arbiter_admission": "BLOCKED",
+    }), encoding="utf-8")
+    now = time.time()
+    for age_seconds, expected in (
+        (30, "PASS"),
+        (-3600, "UNKNOWN"),
+        (1200, "UNKNOWN"),
+    ):
+        stamped = now - age_seconds
+        os.utime(heartbeat, (stamped, stamped))
+        process = subprocess.run(
+            [sys.executable, "-c", code, str(heartbeat)],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        assert process.returncode == 0, process.stderr
+        assert "PAPER_HEARTBEAT_SCHEMA=PASS" in process.stdout
+        assert "PAPER_RUNTIME_GATES_CLOSED=PASS" in process.stdout
+        assert f"PAPER_HEARTBEAT_FRESHNESS={expected}" in process.stdout
+
+
+def _run_ssm_core_readback_gate(tmp_path, rows):
+    """Execute the same bounded status gate used after the SSM capture."""
+    import subprocess
+    import textwrap
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    marker = "          # Fail closed: SSM transport success is not runtime qualification."
+    assert workflow.count(marker) == 1
+    source = workflow.split(marker, 1)[1].split(
+        "\n      - name: Emit bounded qualification summary", 1,
+    )[0]
+    code = "set -euo pipefail\n" + textwrap.dedent(source)
+    (tmp_path / "qualification.txt").write_text(
+        "\n".join(rows) + "\n", encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", "-c", code], cwd=tmp_path, capture_output=True,
+        text=True, check=False, timeout=5,
+    )
+
+
+def test_paper_runtime_ssm_gate_distinguishes_transport_from_readback(tmp_path):
+    required = (
+        "PAPER_UNIT_ACTIVE", "PAPER_RUNTIME_SHA", "PAPER_HEARTBEAT_SCHEMA",
+        "PAPER_RUNTIME_GATES_CLOSED", "PAPER_HEARTBEAT_FRESHNESS",
+    )
+    good = [f"{key}=PASS" for key in required]
+    verified = _run_ssm_core_readback_gate(tmp_path, good)
+    assert verified.returncode == 0, verified.stderr
+    assert "PAPER_RUNTIME_QUALIFICATION=CORE_READBACK_ONLY" in verified.stdout
+    assert "PAPER_AUTO_READY=YES" not in verified.stdout
+
+    # SSM returned safely, but the deployed runtime is absent or stale.
+    for bad in (
+        ["PAPER_UNIT_ACTIVE=UNKNOWN", *good[1:]],
+        [*good[:2], "PAPER_HEARTBEAT_SCHEMA=UNKNOWN", *good[3:]],
+        [*good[:4], "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN"],
+        good[:-1],
+        [*good, "PAPER_RUNTIME_SHA=UNKNOWN"],
+    ):
+        result = _run_ssm_core_readback_gate(tmp_path, bad)
+        assert result.returncode != 0
+        assert "PAPER_RUNTIME_QUALIFICATION=BLOCKED" in result.stdout
+        assert "CORE_READBACK_ONLY" not in result.stdout
+
+
+def test_paper_runtime_sha_probe_accepts_git_linked_worktree(tmp_path):
+    """Execute the workflow's POSIX condition against real local Git layouts."""
+    import os
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *map(str, args)],
+            capture_output=True, text=True, check=True, timeout=10,
+        ).stdout.strip()
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    git("-C", root, "init", "-q")
+    (root / "README").write_text("paper probe fixture\n", encoding="utf-8")
+    git("-C", root, "add", "README")
+    git(
+        "-C", root, "-c", "user.name=Test",
+        "-c", "user.email=test@example.invalid",
+        "commit", "-qm", "initial",
+    )
+    exact_sha = git("-C", root, "rev-parse", "HEAD")
+    linked = tmp_path / "linked"
+    git("-C", root, "worktree", "add", "-q", "-b", "paper-check", linked)
+    assert (root / ".git").is_dir()
+    assert (linked / ".git").is_file()
+
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    lines = [
+        line.strip() for line in workflow.splitlines()
+        if line.strip().startswith('if test -d "$working"')
+    ]
+    assert len(lines) == 1
+    assert lines[0].endswith("; then")
+    condition = lines[0][3:-6]
+
+    def probe(working, sha):
+        return subprocess.run(
+            ["sh", "-c", condition],
+            env={**os.environ, "working": str(working), "expected_sha": sha},
+            capture_output=True, text=True, check=False, timeout=5,
+        ).returncode
+
+    assert probe(root, exact_sha) == 0
+    assert probe(linked, exact_sha) == 0
+    assert probe(linked, "0" * 40) != 0
+    assert probe(tmp_path / "not-a-git-dir", exact_sha) != 0

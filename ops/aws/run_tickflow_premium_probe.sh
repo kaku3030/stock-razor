@@ -44,7 +44,7 @@ if [[ "$#" -eq 9 ]]; then
   protocol_hash="$8"
   sanitizer_hash="$9"
 fi
-[[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]
+[[ "$ws_seconds" =~ ^(0|10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]
 [[ "$quote_only" == true || "$quote_only" == false ]]
 if [[ "$quote_only" == true ]]; then
   [[ "$ws_seconds" == 0 ]]
@@ -206,7 +206,13 @@ if [[ "$protocol_only" == true ]]; then
   # transport or market-data qualification. Emit only the validated schema.
   probe_stage=RUN_DIRECT_WS_PROTOCOL
   protocol_rc=0
-  protocol_summary="$(TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true "$venv/bin/python" "$stage/ws_protocol.py" --execute --symbols 159611.SZ 518880.SH --seconds "$ws_seconds" 2>/dev/null)" || protocol_rc=$?
+  ws_symbols="${TICKFLOW_WS_SYMBOLS:-159611.SZ 159209.SZ 600519.SH 000001.SZ 300750.SZ 601318.SH 600036.SH 000858.SZ 601398.SH 600900.SH 601888.SH 600276.SH 000333.SZ 002594.SZ 600030.SH 601857.SH 600028.SH 600809.SH 000651.SZ 601012.SH}"
+  read -r -a ws_symbol_args <<< "$ws_symbols"
+  (( ${#ws_symbol_args[@]} >= 1 && ${#ws_symbol_args[@]} <= 20 )) || {
+    echo 'TICKFLOW_WS_SYMBOLS_INVALID' >&2
+    exit 2
+  }
+  protocol_summary="$(TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true "$venv/bin/python" "$stage/ws_protocol.py" --execute --symbols "${ws_symbol_args[@]}" --seconds "$ws_seconds" 2>/dev/null)" || protocol_rc=$?
   [[ "$protocol_rc" == 0 || "$protocol_rc" == 2 ]]
   probe_stage=SANITIZE_DIRECT_WS_PROTOCOL
   printf '%s\n' "$protocol_summary" | "$venv/bin/python" "$stage/ws_sanitizer.py" --repo-sha "$revision"

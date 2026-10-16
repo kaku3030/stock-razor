@@ -19,6 +19,33 @@ US_EASTERN = ZoneInfo("America/New_York")
 SCHEMA = "stock_razor_futu_us_daily_history_v1"
 
 
+def daily_history_refresh_due(
+    now: datetime,
+    last_attempt: datetime | None,
+    *,
+    earliest_hour_et: int = 1,
+) -> bool:
+    """Whether one bounded historical refresh is due for this NY weekday.
+
+    The worker calls this from its existing loop. It refreshes after 01:00 ET,
+    before premarket, at most once per New York calendar date. Weekends are
+    skipped; exchange holidays need no special calendar because the provider
+    still returns the latest completed prior-session history.
+    """
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware")
+    if not 0 <= earliest_hour_et <= 23:
+        raise ValueError("earliest_hour_et must be in 0..23")
+    local_now = now.astimezone(US_EASTERN)
+    if local_now.weekday() >= 5 or local_now.hour < earliest_hour_et:
+        return False
+    if last_attempt is None:
+        return True
+    if last_attempt.tzinfo is None or last_attempt.utcoffset() is None:
+        raise ValueError("last_attempt must be timezone-aware")
+    return local_now.date() != last_attempt.astimezone(US_EASTERN).date()
+
+
 def _symbol(value: object) -> str:
     symbol = str(value or "").strip().upper()
     if not symbol.startswith("US.") or not symbol[3:]:

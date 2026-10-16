@@ -109,7 +109,7 @@ jobs:
           working="$(systemctl show "$unit" -p WorkingDirectory --value 2>/dev/null || true)"
           restart_policy="$(systemctl show "$unit" -p Restart --value 2>/dev/null || true)"
           test -n "$working" && test "$working" != - && emit PAPER_WORKING_DIRECTORY PRESENT || emit PAPER_WORKING_DIRECTORY UNKNOWN
-          if test -d "$working/.git" && test "$(git -C "$working" rev-parse HEAD 2>/dev/null || true)" = "$expected_sha"; then
+          if test -d "$working" && test "$(git -C "$working" rev-parse --is-inside-work-tree 2>/dev/null || true)" = true && test "$(git -C "$working" rev-parse HEAD 2>/dev/null || true)" = "$expected_sha"; then
             emit PAPER_RUNTIME_SHA PASS
           else
             emit PAPER_RUNTIME_SHA UNKNOWN
@@ -130,7 +130,8 @@ jobs:
               assert payload.get("source_arbiter_admission") == "BLOCKED"
               print("PAPER_HEARTBEAT_SCHEMA=PASS")
               print("PAPER_RUNTIME_GATES_CLOSED=PASS")
-              print("PAPER_HEARTBEAT_FRESHNESS=PASS" if time.time() - os.stat(path).st_mtime <= 900 else "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
+              age_seconds = time.time() - os.stat(path).st_mtime
+              print("PAPER_HEARTBEAT_FRESHNESS=PASS" if 0 <= age_seconds <= 900 else "PAPER_HEARTBEAT_FRESHNESS=UNKNOWN")
           except Exception:
               print("PAPER_HEARTBEAT_SCHEMA=UNKNOWN")
               print("PAPER_RUNTIME_GATES_CLOSED=UNKNOWN")
@@ -200,6 +201,16 @@ jobs:
           output="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
           printf '%s\n' "$output" | grep -E '^(PAPER_|SSM_PROBE_|RAW_RUNTIME_)' | tee qualification.txt
           ! grep -Eq '^PAPER_EXTERNAL_TRADING_ACTIVITY=(YES|true|PASS)$' qualification.txt
+          # Fail closed: SSM transport success is not runtime qualification.
+          for key in PAPER_UNIT_ACTIVE PAPER_RUNTIME_SHA PAPER_HEARTBEAT_SCHEMA PAPER_RUNTIME_GATES_CLOSED PAPER_HEARTBEAT_FRESHNESS; do
+            matches="$(grep -Ec "^${key}=" qualification.txt || true)"
+            if test "$matches" != 1 || ! grep -Fxq "${key}=PASS" qualification.txt; then
+              echo 'PAPER_RUNTIME_QUALIFICATION=BLOCKED'
+              exit 2
+            fi
+          done
+          # Core heartbeat only; schedule execution and fills remain unproven.
+          echo 'PAPER_RUNTIME_QUALIFICATION=CORE_READBACK_ONLY'
 
       - name: Emit bounded qualification summary
         if: always()
@@ -212,6 +223,8 @@ jobs:
             echo '- External trading activity: NOT_VERIFIED (runtime orders were not inspected)'
             echo '- SecretString: NOT_READ'
             echo '- Restart recovery: UNVERIFIED (no restart was performed)'
+            echo '- Paper core runtime attestation: BLOCKED unless unit, SHA and fresh heartbeat all PASS'
+            echo '- No schedule execution, broker ACK, fills or Paper L2 qualification is asserted'
             echo '- PAPER_AUTO_READY: NO'
             echo '- RADAR_ADMISSION: BLOCKED'
             echo '- SOURCE_ARBITER_ADMISSION: BLOCKED'

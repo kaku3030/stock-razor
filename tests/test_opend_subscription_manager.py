@@ -191,3 +191,122 @@ def test_optional_mutation_frequency_limit_covers_recovery():
     assert service.recover("generation-2", quota=quota()).reason == "MUTATION_RATE_LIMITED"
     clock[0] += timedelta(seconds=30)
     assert service.recover("generation-2", quota=quota()).status == "RECOVERED"
+
+
+def test_closed_session_still_allows_quota_guarded_subscription_intent():
+    """Session closure does not prohibit provider *control-plane* requests.
+
+    This is a fake owner, not proof of a real OpenD Qot_Sub ACK or new bars.
+    """
+    closed_time = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
+    extended_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    owner = FakeAdapter()
+    service = OpenDSubscriptionManager(
+        owner, runtime_instance_id="closed-session",
+        now_utc=lambda: closed_time,
+    )
+    fresh_quota = OpenDSubscriptionQuota(
+        total_used=4, remaining=2,
+        observed_at_utc=closed_time, verified=True,
+    )
+
+    planned = service.preview_candidates((extended_key,), quota=fresh_quota)
+    assert planned.status == "PLAN_ONLY"
+    assert planned.transport_mutations_attempted == 0
+    assert owner.subscribe_calls == []
+
+    result = service.update_candidates((extended_key,), quota=fresh_quota)
+    assert result.status == "APPLIED"
+    assert result.added == (extended_key,)
+    assert result.transport_mutations_attempted == 1
+    assert owner.subscribe_calls == [(extended_key,)]
+    assert service.update_candidates(
+        (extended_key,), quota=fresh_quota,
+    ).status == "NOOP"
+    assert service.snapshot().realtime_qualification == "UNKNOWN"
+    assert service.snapshot().radar_admission == "BLOCKED"
+    assert service.snapshot().live_trade is False
+
+
+def test_off_session_subscription_still_requires_fresh_verified_quota():
+    closed_time = datetime(2026, 10, 17, 3, 0, tzinfo=timezone.utc)
+    owner = FakeAdapter()
+    service = OpenDSubscriptionManager(
+        owner, runtime_instance_id="closed-session",
+        now_utc=lambda: closed_time,
+    )
+    stale_quota = OpenDSubscriptionQuota(
+        total_used=4, remaining=2,
+        observed_at_utc=closed_time - timedelta(minutes=3),
+        verified=True,
+    )
+    assert service.add(KEY_A, quota=None).reason == (
+        "QUOTA_OBSERVATION_REQUIRED"
+    )
+    assert service.add(KEY_A, quota=stale_quota).reason == (
+        "STALE_OR_FUTURE_QUOTA_OBSERVATION"
+    )
+    assert owner.subscribe_calls == []
+
+
+def test_off_session_history_warm_start_never_qualifies_live_bars():
+    key = SemanticStreamKey(
+        "futu", "us", "US.VRTX", "K_1M", "1m", session_mode="ALL",
+    )
+    owner = FakeAdapter()
+    service = manager(owner)
+    result = service.warm_start(
+        key, HistoryWarmStartEvidence(
+            status="PASS", evidence_id="history-off-session:synthetic",
+            research_cache_seed_eligible=True,
+        ),
+    )
+    assert result.status == "PASS"
+    assert result.realtime_qualification == "UNKNOWN"
+    assert service.snapshot().radar_admission == "BLOCKED"
+    assert service.snapshot().source_arbiter_admission == "BLOCKED"
+    assert owner.subscribe_calls == []
+
+
+def test_unsupported_us_session_flag_never_reaches_adapter():
+    owner = FakeAdapter()
+    service = manager(owner)
+    unsupported = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m",
+        session_mode="OVERNIGHT",
+    )
+    rejected = service.update_candidates((unsupported,), quota=quota())
+    assert rejected.status == "BLOCKED"
+    assert rejected.reason == "UNSUPPORTED_OPEND_STREAM_KEY"
+    assert service.snapshot().candidate_pool == ()
+    assert service.snapshot().applied == ()
+    assert owner.subscribe_calls == []
+    assert service.preview_candidates(
+        (unsupported,), quota=quota(),
+    ).status == "BLOCKED"
+
+
+def test_mixed_us_sessions_use_separate_provider_batches_and_recover():
+    """One Futu Qot_Sub has only one session; the manager owns the split."""
+    owner = FakeAdapter()
+    service = manager(owner)
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    outcome = service.update_candidates(
+        (KEY_A, all_key), quota=quota(remaining=2),
+    )
+    assert outcome.status == "APPLIED"
+    assert outcome.transport_mutations_attempted == 2
+    assert owner.subscribe_calls == [(KEY_A,), (all_key,)]
+    assert service.snapshot().applied == (KEY_A, all_key)
+    assert service.recover(
+        "fresh-provider-incarnation", quota=quota(remaining=2),
+    ).status == "RECOVERED"
+    assert owner.subscribe_calls == [
+        (KEY_A,), (all_key,), (KEY_A,), (all_key,),
+    ]
+    assert service.snapshot().realtime_qualification == "UNKNOWN"
+    assert service.snapshot().radar_admission == "BLOCKED"

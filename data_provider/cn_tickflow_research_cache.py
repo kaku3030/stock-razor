@@ -15,11 +15,21 @@ from typing import Any
 CN = ZoneInfo("Asia/Shanghai")
 SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
-SYMBOLS = ("159611.SZ", "518880.SH")
-TIMEFRAMES = ("15m", "60m")
-MAX_BYTES = 350_000
+SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# Expert capacity ceiling. The deployment default remains 20; explicit scans
+# may use the full 200 only through the bounded batch path.
+MAX_SCAN_SYMBOLS = 200
+TIMEFRAMES = ("1m", "5m", "15m", "60m", "1d")
+# Twenty symbols × five periods requires a larger bounded private envelope;
+# this remains a hard reader/writer limit and is not public market-data output.
+MAX_BYTES = 64_000_000
 MAX_AGE_SECONDS = 180
 _LABEL_END = {
+    "1m": frozenset(
+        f"{minute//60:02d}:{minute%60:02d}"
+        for minute in (*range(9*60+31, 11*60+31),
+                       *range(13*60+1, 15*60+1))
+    ),
     "15m": frozenset(("09:45","10:00","10:15","10:30","10:45","11:00",
        "11:15","11:30","13:15","13:30","13:45","14:00","14:15",
        "14:30","14:45","15:00")),
@@ -32,8 +42,51 @@ _LABEL_END = {
     "1d": frozenset(("00:00",)),
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
-_ALLOWED_PERIODS = {"15m":96,"60m":24,"5m":144,"1d":40}
+_ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
 _SOURCE = "TICKFLOW_PREMIUM"
+
+
+def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
+    """Resolve an explicit, bounded scan list without changing the safe default."""
+    if value is None or not value.strip():
+        return SYMBOLS
+    symbols = tuple(item.strip().upper() for item in value.replace(";", ",").split(",")
+                    if item.strip())
+    if (not symbols or len(symbols) > MAX_SCAN_SYMBOLS
+            or len(set(symbols)) != len(symbols)
+            or not all(_SYMBOL_RE.fullmatch(item) for item in symbols)):
+        raise ValueError("invalid scan symbols")
+    return symbols
+
+
+class _BatchKlinesFacade:
+    """Materialize one bounded provider batch per timeframe for the builder."""
+
+    def __init__(self, client: Any, symbols: tuple[str, ...], periods: dict[str, int],
+                 batch_size: int) -> None:
+        self._frames: dict[tuple[str, str], Any] = {}
+        for period, count in periods.items():
+            method = (client.klines.batch if period == "1d"
+                      else client.klines.intraday_batch)
+            kwargs = {
+                "period": period, "count": count, "as_dataframe": False,
+                "show_progress": False, "max_workers": 5,
+                "batch_size": batch_size,
+            }
+            if period == "1d":
+                kwargs["adjust"] = "none"
+            result = method(list(symbols), **kwargs)
+            if not isinstance(result, dict):
+                raise ValueError("batch SDK shape invalid")
+            for symbol in symbols:
+                if symbol not in result:
+                    raise ValueError("batch SDK symbol missing")
+                self._frames[(symbol, period)] = result[symbol]
+
+    def get(self, symbol: str, *, period: str, count: int,
+            adjust: str, as_dataframe: bool) -> Any:
+        del count, adjust, as_dataframe
+        return self._frames[(symbol, period)]
 
 def _timestamp(value: object) -> datetime:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
@@ -266,9 +319,16 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and vol >= 0 and (amt is None or amt >= 0)
                 and _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                     == "WITHIN_1E_MINUS_5"
+                # Lattice validity is REQUIRED for both historical and
+                # same-day vendor-float exceptions; a tiny body gap alone
+                # does not qualify an off-tick historical OHLC value.
+                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                 and (not current_shanghai_day or (
                     _post_close_research_eligible(stamp, now_utc)
-                    and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                    or (
+                        timeframe in ("5m","15m","60m")
+                        and stamp <= now_utc - timedelta(seconds=90)
+                    )
                 )))
             if float_only:
                 # Post-close same-day *historical-only* exception is gated
@@ -332,22 +392,42 @@ def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime |
 
 def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence: int,
                       symbols: tuple[str,...]=SYMBOLS,
-                      include_supplemental: bool=False) -> dict:
+                      include_supplemental: bool=False,
+                      allow_scan_symbols: bool=False,
+                      use_batch: bool=False) -> dict:
     if now_utc.tzinfo is None or not re.fullmatch("[0-9a-f]{40}",repo_sha):
         raise ValueError("invalid wall clock or source revision")
     if type(sequence) is not int or sequence < 1:
         raise ValueError("invalid monotonic sequence")
-    if (not symbols or len(symbols)>len(SYMBOLS)
+    approved = (set(SYMBOLS) if not allow_scan_symbols else None)
+    if (not symbols or len(symbols)>MAX_SCAN_SYMBOLS
             or len(set(symbols))!=len(symbols)
-            or any(not isinstance(x,str) or x not in SYMBOLS for x in symbols)):
-        # Hard billing/entitlement boundary: no arbitrary A-share scan until
-        # separate reviewed quota and license approvals.
+            or any(not isinstance(x,str) or not _SYMBOL_RE.fullmatch(x)
+                   or (approved is not None and x not in approved)
+                   for x in symbols)):
         raise ValueError("unapproved symbols")
     if type(include_supplemental) is not bool:
         raise ValueError("invalid supplemental timeframe flag")
     output={}
     periods=(_ALLOWED_PERIODS if include_supplemental
              else {"15m":96,"60m":24})
+    if type(use_batch) is not bool:
+        raise ValueError("invalid batch mode flag")
+    if use_batch:
+        # The installed SDK contract defaults to 100 symbols per request.
+        # Keep the scan ceiling at 200 while letting the SDK split each
+        # timeframe into bounded batches instead of passing an unsupported
+        # 200-symbol request size.
+        try:
+            configured_batch_size = int(os.environ.get("TICKFLOW_BATCH_SIZE", "100"))
+        except ValueError:
+            configured_batch_size = 100
+        batch_size = min(len(symbols), max(1, min(configured_batch_size, 100)))
+        client = type("_BatchClient", (), {
+            "klines": _BatchKlinesFacade(
+                client, symbols, periods, batch_size=batch_size,
+            ),
+        })()
     for index,symbol in enumerate(symbols):
         frames={}
         for interval, n in periods.items():
@@ -361,11 +441,25 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 raise
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
+                if isinstance(frame,dict):
+                    columns={key:value for key,value in frame.items()
+                             if isinstance(value,(list,tuple))}
+                    sizes={len(value) for value in columns.values()}
+                    if len(sizes)==1 and sizes and next(iter(sizes))>n:
+                        frame={key:(list(value)[-n:] if key in columns else value)
+                               for key,value in frame.items()}
+                elif hasattr(frame,"tail"):
+                    frame=frame.tail(n)
                 reasons={}
                 evidence={}
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
                                     quarantine_counts=reasons,
                                     quarantine_evidence=evidence)
+                # Some SDK responses may contain more rows than the requested
+                # count. Keep the bounded, newest window requested by the
+                # caller so one oversized response cannot invalidate the
+                # complete bounded snapshot at publish time.
+                bars=bars[-n:]
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise
@@ -394,6 +488,11 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
     }
 
 def atomic_publish(path: str, payload: dict) -> None:
+    # Never publish a JSON blob that the strict reader and AWS auditor will
+    # reject as oversized. Validate before opening or replacing any file.
+    encoded=json.dumps(payload,allow_nan=False,separators=(",",":"))
+    if len(encoded.encode("utf-8"))>MAX_BYTES:
+        raise ValueError("private research cache exceeds bounded bytes")
     parent=Path(path).parent
     parent.mkdir(parents=True,exist_ok=True)
     temporary=None
@@ -404,7 +503,7 @@ def atomic_publish(path: str, payload: dict) -> None:
         else:
             os.chmod(temporary,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as f:
-            json.dump(payload,f,allow_nan=False,separators=(",",":"))
+            f.write(encoded)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary,path)
@@ -426,32 +525,36 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "research_only":True, "bar_finality":"NOT_VERIFIED",
         "currentness":"UNPROVEN", "source_arbiter_admission":"BLOCKED",
         "radar_admission":"BLOCKED","live_trade":False,"can_confirm_signal":False,
-        "canonical_write_authorized":False, "provider_requests":0,
+        "canonical_write_authorized":False, "provider_requests":0,"cache_rejection_reason":"NONE",
         "research_mode":research_mode if research_mode in
             ("session_progress","historical_only") else "INVALID",
         "exchange_bar_finality":"NOT_VERIFIED",
     }
-    if (not isinstance(symbol,str) or symbol not in SYMBOLS
+    def invalid_cache(reason: str) -> dict:
+        # Fixed enum only: never expose raw cache values, labels or exceptions.
+        return {**base,"status":"INVALID_CACHE",
+                "cache_rejection_reason":reason}
+    if (not isinstance(symbol,str) or not _SYMBOL_RE.fullmatch(symbol)
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
             or (timeframe=="1d" and research_mode!="historical_only")
-            or type(limit)!=int or not 1<=limit<=144):
+            or type(limit)!=int or not 1<=limit<=240):
         return {**base,"status":"INVALID_REQUEST"}
     try:
         with open(path,"rb") as f:
             data=f.read(MAX_BYTES+1)
         if len(data)>MAX_BYTES:
-            return {**base,"status":"INVALID_CACHE"}
+            return invalid_cache("CACHE_SIZE_EXCEEDED")
         obj=json.loads(data)
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
     if not isinstance(obj,dict) or obj.get("schema")!=SCHEMA or obj.get("provider")!=_SOURCE or obj.get("status")!="PASS_RESEARCH_ONLY":
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_ENVELOPE_INVALID")
     if not (obj.get("research_only") is True and obj.get("radar_admission")=="BLOCKED" and obj.get("source_arbiter_admission")=="BLOCKED" and obj.get("live_trade") is False and obj.get("canonical_write_authorized") is False and obj.get("can_confirm_signal") is False):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_SAFETY_FLAGS_INVALID")
     sha=obj.get("repo_sha")
     if not isinstance(sha,str) or not re.fullmatch("[0-9a-f]{40}",sha):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_REPO_SHA_INVALID")
     try:
         now=now_utc or datetime.now(timezone.utc)
         observed=datetime.fromisoformat(obj["observed_at_utc"])
@@ -459,45 +562,92 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             raise ValueError
         age=(now-observed).total_seconds()
     except (ValueError,TypeError,KeyError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache("CACHE_OBSERVED_AT_INVALID")
     # Strict live-session provenance never inherits the slower off-hours
     # refresh schedule. Historical-only read gets a 6m bounded tolerance
     # after close (collector polls every 300s), or 18m on weekends (900s).
     # A 6m old snapshot is NOT represented as fresh/current live data.
     sh_now=now.astimezone(CN)
     historical_max_age=1080 if sh_now.weekday()>=5 else 360
+    post_close_progress = (
+        research_mode == "session_progress"
+        and sh_now.weekday() < 5
+        and (sh_now.hour, sh_now.minute) >= (15, 2)
+    )
     max_age=(historical_max_age if research_mode=="historical_only"
-             else MAX_AGE_SECONDS)
+             or post_close_progress else MAX_AGE_SECONDS)
     if age < -5 or age > max_age:
-        return {**base,"status":"STALE","age_seconds":round(age,2),
+        return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
+    cached_symbols = obj.get("symbols")
+    if not isinstance(cached_symbols, dict) or symbol not in cached_symbols:
+        return {**base,"status":"INVALID_REQUEST"}
+    websocket_evidence = obj.get("websocket_evidence")
+    if websocket_evidence is not None:
+        ws_symbols = (websocket_evidence.get("symbols")
+                      if isinstance(websocket_evidence, dict) else None)
+        if (not isinstance(websocket_evidence, dict)
+                or websocket_evidence.get("schema") != "stock_razor_tickflow_ws_research_evidence_v0_1"
+                or not isinstance(ws_symbols, list)
+                or ws_symbols != sorted(ws_symbols)
+                or not all(isinstance(value, str) for value in ws_symbols)
+                or not set(ws_symbols).issubset(cached_symbols)
+                or websocket_evidence.get("subscription_ack") != "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+                or websocket_evidence.get("continuous_feed_qualified") is not False
+                or websocket_evidence.get("bar_finality") != "NOT_VERIFIED"
+                or websocket_evidence.get("radar_admission") != "BLOCKED"
+                or websocket_evidence.get("source_arbiter_admission") != "BLOCKED"
+                or websocket_evidence.get("live_trade") is not False):
+            return invalid_cache("WEBSOCKET_EVIDENCE_INVALID")
+        for name in ("quote_callbacks", "quote_events", "initial_snapshot_candidates",
+                     "post_initial_update_candidates", "duplicate_timestamp_events",
+                     "out_of_order_timestamp_events", "unrequested_symbol_events",
+                     "invalid_timestamp_events", "error_callbacks", "post_initial_lag_samples"):
+            value = websocket_evidence.get(name)
+            if type(value) is not int or value < 0:
+                return invalid_cache("WEBSOCKET_EVIDENCE_COUNTER_INVALID")
+        if websocket_evidence.get("post_initial_lag_bucket") not in {
+                "NOT_VERIFIED", "UNDER_2S", "TWO_TO_FIVE_S", "FIVE_TO_THIRTY_S", "OVER_THIRTY_S"}:
+            return invalid_cache("WEBSOCKET_EVIDENCE_LAG_INVALID")
+    reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
-        raw=obj["symbols"][symbol][timeframe]
+        raw=cached_symbols[symbol][timeframe]
         rows=raw["rows"]
+        reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
+        reject_reason="FRAME_METADATA_INVALID"
         if raw.get("closure")!="NOT_VERIFIED" or raw.get("currentness")!="UNPROVEN":
             raise ValueError
         safe=[]
         previous=None
-        for item in rows[-limit:]:
+        # Validate the entire bounded cache, not only the requested tail. A
+        # limit=1 client must not conceal earlier gaps or poisoned records.
+        for item in rows:
+            reject_reason="BAR_RECORD_INVALID"
             if not isinstance(item,dict) or item.get("bar_finality")!="NOT_VERIFIED" or item.get("is_partial_bar") is not True:
                 raise ValueError
             label=item.get("label")
+            reject_reason="BAR_LABEL_INVALID"
             if not isinstance(label,str):
                 raise ValueError
+            reject_reason="BAR_TIMESTAMP_INVALID"
             bar_stamp=datetime.strptime(label,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
+            reject_reason="BAR_TIME_GRID_OR_FUTURE_INVALID"
             if bar_stamp.strftime("%H:%M") not in _LABEL_END[timeframe] or bar_stamp.astimezone(timezone.utc)>now:
                 raise ValueError
+            reject_reason="BAR_ORDER_INVALID"
             if previous is not None and bar_stamp<=previous:
                 raise ValueError
             previous=bar_stamp
+            reject_reason="BAR_NUMERIC_VALUE_INVALID"
             numerical={}
             for key in ("open","high","low","close","volume"):
                 val=item.get(key)
                 if type(val) not in (int,float) or not isfinite(val):
                     raise ValueError
                 numerical[key]=val
+            reject_reason="BAR_AMOUNT_INVALID"
             availability=item.get("amount_availability")
             amount=item.get("amount")
             if availability=="SDK_OMITTED" and amount is None:
@@ -506,6 +656,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 numerical["amount"]=amount
             else:
                 raise ValueError
+            reject_reason="BAR_OHLC_INVALID"
             op,hi,lo,cl=(numerical[k] for k in ("open","high","low","close"))
             shape_gap=(hi<max(op,cl,lo) or lo>min(op,cl,hi))
             tolerance=item.get("ohlc_validation","STRICT")
@@ -516,11 +667,22 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                         tolerance!="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
                         or _vendor_ohlc_float_gap_bucket(op,hi,lo,cl)
                             !="WITHIN_1E_MINUS_5"
+                        or not _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
                         or (bar_stamp.date()==now.astimezone(CN).date()
                             and not (
-                                research_mode=="historical_only"
-                                and _post_close_research_eligible(bar_stamp, now)
-                                and _vendor_etf_tick_lattice_shape_valid(op,hi,lo,cl)
+                                # After the Shanghai close, session_progress
+                                # remains a read-only due-grid view. It may
+                                # accept the same bounded post-close vendor
+                                # float evidence as historical_only, while
+                                # keeping finality/currentness unproven.
+                                ((research_mode in ("historical_only", "session_progress"))
+                                 and _post_close_research_eligible(bar_stamp, now))
+                                or (research_mode=="session_progress"
+                                    and timeframe in ("5m","15m","60m")
+                                    and (now.astimezone(CN).hour,
+                                         now.astimezone(CN).minute)<(15,2)
+                                    and bar_stamp.astimezone(timezone.utc)
+                                        <= now-timedelta(seconds=90))
                             ))))
                     or (not shape_gap and tolerance!="STRICT")):
                 raise ValueError
@@ -528,23 +690,47 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "is_partial_bar":True,"bar_finality":"NOT_VERIFIED",
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
-        return {**base,"status":"INVALID_CACHE"}
+        return invalid_cache(reject_reason)
+    # Rows are bounded by the collector contract (<=144); retain the whole
+    # verified label grid for session continuity, then trim public output.
+    validated_labels = {item["label"] for item in safe}
+    safe = safe[-limit:]
+    # Never present non-mutating vendor precision as strict OHLC.
+    tolerated_rows=sum(
+        1 for row in safe if
+        row.get("ohlc_validation")=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    )
     expected=_expected_closed_grid_label(now,timeframe)
     latest=bar_stamp
     progress="NOT_DUE_OR_NO_SESSION_CALENDAR"
     if expected is not None:
+        # Reaching the last scheduled boundary is NOT sufficient: a source
+        # can omit 10:00 while reporting 10:15. Check every due current-day
+        # boundary (including morning when reading in the afternoon).
+        due_labels = {
+            expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                             second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+            for clock in _LABEL_END[timeframe]
+            if expected.replace(hour=int(clock[:2]), minute=int(clock[3:]),
+                                second=0, microsecond=0) <= expected
+        }
+        missing_due_grid = not due_labels.issubset(validated_labels)
+        if research_mode=="session_progress" and (
+                latest < expected or missing_due_grid):
+            # A freshly rewritten cache with a new last bar but earlier
+            # missing due labels cannot be declared continuous research.
+            return {
+                **base, "status":"BAR_LABEL_BEHIND_SESSION",
+                "source_age_seconds":round(age,2),
+                "expected_grid_progress":"NOT_OBSERVED",
+                "due_grid_continuity":"INCOMPLETE",
+                "bar_finality":"NOT_VERIFIED",
+                "rows":[],
+            }
         if latest < expected:
-            if research_mode=="session_progress":
-                # Do not allow a stale/partial session to pass currentness
-                # merely because the poller rewrites the cache.
-                return {
-                    **base, "status":"BAR_LABEL_BEHIND_SESSION",
-                    "source_age_seconds":round(age,2),
-                    "expected_grid_progress":"NOT_OBSERVED",
-                    "bar_finality":"NOT_VERIFIED",
-                    "rows":[],
-                }
             progress="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
+        elif missing_due_grid:
+            progress="DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
         else:
             progress="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
     label_age=(now-latest.astimezone(timezone.utc)).total_seconds()
@@ -558,18 +744,31 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "max_age_seconds":max_age,
             "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
             "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            "ohlc_precision_scope":(
+                "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+                else "STRICT"
+            ),
+            "tolerated_vendor_float_rows":tolerated_rows,
             "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
+            "websocket_evidence":websocket_evidence,
         }
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
         "expected_grid_progress":progress,
         "last_bar_end_label_age_seconds":round(max(0,label_age),2),
         "latency_scope":"BAR_END_LABEL_AGE_NOT_PROVIDER_LATENCY",
+        "max_age_seconds":max_age,
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
+        "ohlc_precision_scope":(
+            "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
+            else "STRICT"
+        ),
+        "tolerated_vendor_float_rows":tolerated_rows,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
+        "websocket_evidence":websocket_evidence,
     }
 

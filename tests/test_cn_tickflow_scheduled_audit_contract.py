@@ -7,12 +7,18 @@ WORKFLOW = Path(__file__).resolve().parents[1] / '.github/workflows/audit-cn-tic
 
 def test_market_session_cron_is_readonly_and_weekday_scoped():
     text = WORKFLOW.read_text(encoding='utf-8')
-    assert "    - cron: '20 2 * * 1-5'" in text
-    assert "    - cron: '20 6 * * 1-5'" in text
-    assert text.count('    - cron:') == 2
-    for hour, local in ((2, 10), (6, 14)):
-        sh = datetime(2026, 10, 14, hour, 20, tzinfo=timezone.utc).astimezone(ZoneInfo('Asia/Shanghai'))
-        assert (sh.hour, sh.minute) == (local, 20)
+    assert "    - cron: '0,30 2-7 * * 1-5'" in text
+    assert text.count('    - cron:') == 1
+    slots = []
+    for hour in range(2, 8):
+        for minute in (0, 30):
+            sh = datetime(2026, 10, 14, hour, minute,
+                          tzinfo=timezone.utc).astimezone(ZoneInfo('Asia/Shanghai'))
+            slots.append((sh.hour, sh.minute))
+    assert slots == [
+        (hour, minute) for hour in range(10, 16) for minute in (0, 30)
+    ]
+    assert len(slots) == 12
     assert "github.ref == 'refs/heads/main' && (" in text
     assert "github.event_name == 'schedule'" in text
     assert "github.event_name == 'workflow_dispatch'" in text

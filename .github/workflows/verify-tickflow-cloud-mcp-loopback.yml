@@ -53,8 +53,8 @@ jobs:
           from mcp import ClientSession
           from mcp.client.streamable_http import streamablehttp_client
 
-          CASES = (("159611.SZ", "15m"), ("159611.SZ", "60m"),
-                   ("518880.SH", "15m"), ("518880.SH", "60m"))
+          CASES = (("159209.SZ", "15m"), ("159209.SZ", "60m"),
+                   ("159611.SZ", "15m"), ("159611.SZ", "60m"))
 
           def unpack(result):
               value = getattr(result, "structuredContent", None)

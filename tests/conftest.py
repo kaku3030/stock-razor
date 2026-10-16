@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import os
+from pathlib import Path
+import shutil
 import time
 import threading
 from collections.abc import Awaitable, Callable
@@ -18,6 +21,23 @@ import fastapi.testclient
 import httpx
 import starlette.testclient
 from anyio._backends import _asyncio
+
+
+def _ensure_windows_git_bash_on_path() -> None:
+    """Expose an installed Git Bash to subprocess-based shell contract tests."""
+    if os.name != "nt" or shutil.which("bash"):
+        return
+    candidates = (
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git" / "bin",
+        Path(os.environ.get("ProgramW6432", r"C:\Program Files")) / "Git" / "bin",
+    )
+    for directory in candidates:
+        if (directory / "bash.exe").is_file():
+            os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
+            return
+
+
+_ensure_windows_git_bash_on_path()
 
 T = TypeVar("T")
 

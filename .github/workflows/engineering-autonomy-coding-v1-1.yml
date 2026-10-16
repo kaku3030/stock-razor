@@ -50,7 +50,7 @@ jobs:
     needs: preflight
     if: needs.preflight.outputs.pending == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 8
     permissions:
       contents: read
     steps:
@@ -69,9 +69,16 @@ jobs:
             exit 1
           fi
           python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
-      - name: Install pinned Aider coding CLI
-        run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
-      - name: Run isolated DeepSeek coding agent
+      - name: Enforce official DeepSeek balance budget before any paid completion
+        id: budget
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --status-file "$RUNNER_TEMP/deepseek-budget-status.json"
+      - name: Block coding if DeepSeek provider API is unhealthy (one low-token request)
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GITHUB_TOKEN: ''
@@ -79,7 +86,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aider \
+          # This test-only, manually confirmed run spends at most one tiny probe request
+          # before installing Aider. HTTP 503, missing auth, billing or malformed
+          # responses fail closed, preventing a further slow or expensive attempt.
+          timeout --signal=TERM --kill-after=5s 50s python -m engineering_autonomy.deepseek_probe
+      - name: Install pinned Aider coding CLI
+        run: python -m pip install --disable-pip-version-check --no-cache-dir aider-chat==0.86.2
+      - name: Run isolated DeepSeek coding agent (bounded, non-streaming)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GITHUB_TOKEN: ''
+          GH_TOKEN: ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Avoid 25m silent waits and indefinite LiteLLM retry loops.
+          # Aider API timeout is per request; GNU timeout bounds the whole process.
+          set +e
+          timeout --signal=TERM --kill-after=10s 240s aider \
             --file tests/test_engineering_autonomy.py \
             --read .gitignore \
             --no-gitignore \
@@ -87,11 +111,52 @@ jobs:
             --chat-history-file "$RUNNER_TEMP/autonomy-aider-chat.history.md" \
             --map-tokens 0 \
             --no-analytics \
-            --model deepseek/deepseek-chat \
+            --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" \
+            --no-cache-prompts \
+            --no-stream \
+            --timeout 90 \
+            --model deepseek/deepseek-flash \
+            --model-metadata-file docs/engineering-autonomy/deepseek-flash-model-metadata.json \
+            --edit-format diff \
             --message-file /tmp/autonomy-prompt.txt \
             --yes-always \
             --no-auto-commits \
             --no-check-update
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "BLOCKED: DeepSeek/Aider exceeded 240-second overall limit" >&2
+            exit 124
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "BLOCKED: bounded DeepSeek/Aider exited nonzero" >&2
+            exit "$rc"
+          fi
+      - name: Summarize Aider token usage without publishing raw analytics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget usage \
+            --analytics-log "$RUNNER_TEMP/autonomy-aider-usage.jsonl" \
+            --output "$RUNNER_TEMP/autonomy-deepseek-usage.json"
+      - name: Retain sanitized token counters only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-deepseek-usage
+          path: ${{ runner.temp }}/autonomy-deepseek-usage.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Recheck official DeepSeek budget after attempted coding
+        if: always() && steps.budget.outcome == 'success'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m engineering_autonomy.deepseek_budget check \
+            --monitor --status-file "$RUNNER_TEMP/deepseek-budget-after.json"
       - name: Diagnose changed worktree paths only (no file contents)
         shell: bash
         run: |
@@ -143,7 +208,7 @@ jobs:
       - name: Install isolated test dependency
         run: python -m pip install pytest==8.4.2
       - name: Execute focused tests, without secrets
-        run: python -m pytest -q tests/test_engineering_autonomy.py tests/test_engineering_coding_gate.py
+        run: python -m pytest --noconftest -q tests/test_engineering_autonomy.py tests/test_engineering_coding_gate.py
       - uses: actions/upload-artifact@v4
         with:
           name: verified-autonomy-patch

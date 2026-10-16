@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.services.live_feed.futu_us_daily_history import (
     build_futu_us_daily_history,
+    daily_history_refresh_due,
     normalize_futu_us_daily_history_rows,
 )
 
@@ -133,3 +134,33 @@ def test_build_daily_history_isolates_symbol_query_failure():
     assert result["can_confirm_signal"] is False
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
+
+
+def test_daily_refresh_waits_until_one_am_new_york_time():
+    before_window = datetime(2026, 10, 16, 4, 59, tzinfo=timezone.utc)
+    at_window = datetime(2026, 10, 16, 5, 0, tzinfo=timezone.utc)
+
+    assert daily_history_refresh_due(before_window, None) is False
+    assert daily_history_refresh_due(at_window, None) is True
+
+
+def test_daily_refresh_is_limited_to_once_per_new_york_date():
+    first_attempt = datetime(2026, 10, 16, 5, 5, tzinfo=timezone.utc)
+    later_same_day = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)
+    next_weekday = datetime(2026, 10, 19, 5, 0, tzinfo=timezone.utc)
+
+    assert daily_history_refresh_due(later_same_day, first_attempt) is False
+    assert daily_history_refresh_due(next_weekday, first_attempt) is True
+
+
+def test_daily_refresh_skips_weekends():
+    saturday = datetime(2026, 10, 17, 12, 0, tzinfo=timezone.utc)
+
+    assert daily_history_refresh_due(saturday, None) is False
+
+
+def test_daily_refresh_rejects_naive_timestamps():
+    import pytest
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        daily_history_refresh_due(datetime(2026, 10, 16, 5, 0), None)

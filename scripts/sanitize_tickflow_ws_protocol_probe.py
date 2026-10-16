@@ -21,7 +21,9 @@ _COUNTS = (
     "quote_frames", "initial_snapshot_candidates", "post_initial_update_candidates",
     "duplicate_timestamp_count", "out_of_order_timestamp_count",
     "invalid_timestamp_count", "unknown_symbol_count",
-    "protocol_error_frames", "invalid_frames",
+    "protocol_error_frames", "invalid_frames", "reconnect_attempts",
+    "reconnect_successes", "planned_rotations", "kline_snapshots",
+    "kline_digest_changes", "kline_read_errors",
 )
 
 

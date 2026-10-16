@@ -8,10 +8,43 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.tickflow_ws_protocol_probe import (
-    ProtocolEvidence, observe_socket, run_protocol_probe, main,
+    ProtocolEvidence, has_overlapping_kline_revision, kline_fingerprints,
+    HOLDINGS, KLINE_PERIODS, observe_socket, run_protocol_probe, main,
 )
 
 SYMS = ("159611.SZ", "518880.SH")
+
+
+def test_default_cloud_matrix_is_the_four_holdings_and_five_periods():
+    assert HOLDINGS == ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+    assert KLINE_PERIODS == ("1m", "5m", "15m", "60m", "1d")
+
+
+def test_kline_fingerprint_compares_overlapping_bars_not_new_rows():
+    first = {
+        "timestamp": [1, 2], "open": [1.0, 2.0], "high": [1.1, 2.1],
+        "low": [0.9, 1.9], "close": [1.0, 2.0], "volume": [10, 20],
+        "amount": [100, 200],
+    }
+    later = {key: list(values) for key, values in first.items()}
+    for key, value in {
+        "timestamp": 3, "open": 3.0, "high": 3.1, "low": 2.9,
+        "close": 3.0, "volume": 30, "amount": 300,
+    }.items():
+        later[key].append(value)
+    first_fp = kline_fingerprints(first)
+    assert not has_overlapping_kline_revision(first_fp, kline_fingerprints(later))
+    later["close"][1] = 2.01
+    assert has_overlapping_kline_revision(first_fp, kline_fingerprints(later))
+
+
+def test_kline_fingerprint_rejects_inconsistent_column_lengths():
+    data = {key: [1] for key in (
+        "timestamp", "open", "high", "low", "close", "volume", "amount",
+    )}
+    data["close"].append(1.0)
+    with pytest.raises(ValueError):
+        kline_fingerprints(data)
 
 
 def test_ack_initial_snapshot_and_advanced_timestamp_do_not_auto_promote():
@@ -99,6 +132,34 @@ def test_bounded_session_sends_only_quotes_and_closes_without_network():
     assert e.summary(ws_handshake=True)["subscription_ack"] == "PASS"
     assert e.summary(ws_handshake=True)["bounded_window_status"] == "TERMINATED_EARLY"
     assert e.summary(ws_handshake=True)["protocol_acceptance"] == "FAIL"
+
+
+def test_twenty_symbol_session_sends_four_bounded_subscriptions_and_unions_acks():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(20))
+
+    class TwentySocket:
+        def __init__(self):
+            self.sent = []
+            self.frames = [
+                json.dumps({
+                    "op": "subscribed", "channel": "quotes",
+                    "symbols": list(sorted(symbols))[offset:offset + 5], "total": 5,
+                }) for offset in range(0, 20, 5)
+            ]
+
+        async def send(self, message):
+            self.sent.append(message)
+
+        async def recv(self):
+            if self.frames:
+                return self.frames.pop(0)
+            raise EOFError("done")
+
+    fake = TwentySocket()
+    evidence = ProtocolEvidence(symbols)
+    asyncio.run(observe_socket(fake, evidence, 10))
+    assert len(fake.sent) == 4
+    assert evidence.summary(ws_handshake=True)["subscription_ack"] == "PASS"
 
 
 @pytest.mark.parametrize("values", [(), ("INVALID",), ("159611.SZ",) * 6, ("159611.SZ",) * 2])

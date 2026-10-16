@@ -1,7 +1,7 @@
 name: TickFlow Direct WS ACK Cloud Probe (Explicit Opt-In)
 
-# Private key stays on existing Tokyo EC2. Bounded, manually approved quote
-# channel observation only. No REST/K-line/depth, canonical writes or orders.
+# Private key stays on existing Tokyo EC2. Manual read-only quotes and five
+# bounded K-line fingerprint checkpoints; no canonical writes or orders.
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +11,7 @@ on:
         required: true
         default: false
       ws_seconds:
-        description: "Bounded live observation; no retry"
+        description: "Read-only observation duration; reconnects use bounded backoff"
         type: choice
         required: true
         default: "30"
@@ -20,6 +20,12 @@ on:
           - "15"
           - "30"
           - "60"
+          - "900"
+          - "3600"
+          - "7200"
+          - "9000"
+          - "14160"
+          - "16800"
 
 permissions:
   id-token: write
@@ -33,7 +39,7 @@ jobs:
   direct-ws-ack:
     if: ${{ github.ref == 'refs/heads/main' && inputs.approve_paid_direct_ws_probe == true }}
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 300
     env:
       AWS_REGION: ap-northeast-1
       TARGET_INSTANCE_ID: i-01738342af3efac72
@@ -63,7 +69,7 @@ jobs:
             echo 'TICKFLOW_WS_MAIN_MOVED_ABORT' >&2
             exit 2
           }
-          [[ "$WS_SECONDS" =~ ^(10|15|30|60)$ ]]
+          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]
           test "$RADAR_ADMISSION" = BLOCKED
           test "$SOURCE_ARBITER_ADMISSION" = BLOCKED
           test "$LIVE_TRADE" = NO
@@ -91,7 +97,7 @@ jobs:
           WS_SECONDS: ${{ inputs.ws_seconds }}
         run: |
           set -euo pipefail
-          [[ "$WS_SECONDS" =~ ^(10|15|30|60)$ ]]
+          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]
           revision="$(git rev-parse HEAD)"
           [[ "$revision" == "$GITHUB_SHA" ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"
@@ -108,6 +114,7 @@ jobs:
           trap 'rm -rf "\$stage"' EXIT
           export TICKFLOW_PREMIUM_PROBE_ENABLED=true
           export TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
+          export TICKFLOW_WS_SYMBOLS='159209.SZ 159611.SZ 600519.SH 000001.SZ 300750.SZ 601318.SH 600036.SH 000858.SZ 601398.SH 600900.SH 601888.SH 600276.SH 000333.SZ 002594.SZ 600030.SH 601857.SH 600028.SH 600809.SH 000651.SZ 601012.SH'
           printf '%s' '$payload' | base64 -d | gzip -d > "\$stage/bootstrap.sh"
           printf '%s  %s\n' '$bootstrap_hash' "\$stage/bootstrap.sh" | sha256sum -c - >/dev/null
           bash "\$stage/bootstrap.sh" '$revision' \
@@ -120,7 +127,7 @@ jobs:
             --document-name AWS-RunShellScript \
             --instance-ids "$TARGET_INSTANCE_ID" \
             --parameters "$(jq -cn --arg script "$remote" '{commands:[$script]}')" \
-            --timeout-seconds 300 \
+            --timeout-seconds 16800 \
             --query 'Command.CommandId' --output text)"
           [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]]
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
@@ -133,7 +140,7 @@ jobs:
           set -euo pipefail
           [[ "$COMMAND_ID" =~ ^[0-9a-f-]{36}$ ]]
           status=UNKNOWN
-          for _ in $(seq 1 100); do
+          for _ in $(seq 1 5600); do
             status="$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" \
               --query Status --output text 2>/dev/null || true)"
@@ -177,7 +184,9 @@ jobs:
                     "initial_snapshot_candidates","post_initial_update_candidates",
                     "duplicate_timestamp_count","out_of_order_timestamp_count",
                     "invalid_timestamp_count","unknown_symbol_count",
-                    "protocol_error_frames","invalid_frames"}
+                    "protocol_error_frames","invalid_frames","reconnect_attempts",
+                    "reconnect_successes","planned_rotations","kline_snapshots",
+                    "kline_digest_changes","kline_read_errors"}
           assert set(counters)==expected
           assert all(type(n) is int and 0<=n<=1000000 for n in counters.values())
           assert d.get("post_initial_p95_lag_bucket") in (
@@ -202,6 +211,12 @@ jobs:
           print("TICKFLOW_WS_WINDOW="+d["bounded_window_status"])
           print("TICKFLOW_WS_PROGRESS="+d["protocol_progress_observation"])
           print("TICKFLOW_WS_POST_INITIAL_CANDIDATES="+str(counters["post_initial_update_candidates"]))
+          print("TICKFLOW_WS_RECONNECT_ATTEMPTS="+str(counters["reconnect_attempts"]))
+          print("TICKFLOW_WS_RECONNECT_SUCCESSES="+str(counters["reconnect_successes"]))
+          print("TICKFLOW_WS_PLANNED_ROTATIONS="+str(counters["planned_rotations"]))
+          print("TICKFLOW_WS_KLINE_SNAPSHOT_READS="+str(counters["kline_snapshots"]))
+          print("TICKFLOW_WS_KLINE_DIGEST_CHANGES="+str(counters["kline_digest_changes"]))
+          print("TICKFLOW_WS_KLINE_READ_ERRORS="+str(counters["kline_read_errors"]))
           print("TICKFLOW_WS_POST_INITIAL_P95_EVENT_LAG_BUCKET="+d["post_initial_p95_lag_bucket"])
           print("TICKFLOW_WS_POST_INITIAL_LAG_SAMPLES="+str(n))
           print("TICKFLOW_WS_FUTURE_EVENT_TIMESTAMPS="+str(future))

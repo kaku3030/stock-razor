@@ -6,10 +6,13 @@ import pandas as pd
 import pytest
 
 from data_provider.cn_tickflow_research_cache import (
-    SCHEMA,normalize_bars,build_observation,atomic_publish,read_cn_tickflow_research_data,
+    SCHEMA,MAX_SCAN_SYMBOLS,normalize_bars,build_observation,atomic_publish,
+    read_cn_tickflow_research_data,resolve_scan_symbols,
 )
 
 SH=ZoneInfo("Asia/Shanghai")
+TEST_SCAN_SYMBOLS=20
+TEST_MAX_SYMBOLS=200
 NOW=datetime(2026,10,11,5,0,tzinfo=timezone.utc)  # Sunday: historical research only
 TIMES={
  "15m":("09:45","10:00","10:15","10:30","10:45","11:00",
@@ -20,8 +23,18 @@ TIMES={
 
 def frame(period,day="2026-10-09"):
     rows=[]
-    for h in TIMES[period]:
-        stamp=datetime.fromisoformat(f"{day}T{h}").replace(tzinfo=SH)
+    clocks = TIMES.get(period, ())
+    if period == "1m":
+        clocks = ("09:31", "09:32", "09:33", "09:34")
+    elif period == "5m":
+        clocks = ("09:35", "09:40", "09:45", "09:50")
+    elif period == "1d":
+        clocks = ("00:00",) * 4
+        day = None
+    for index,h in enumerate(clocks):
+        row_day = day or (datetime.fromisoformat("2026-10-09") -
+                          timedelta(days=3-index)).date().isoformat()
+        stamp=datetime.fromisoformat(f"{row_day}T{h}").replace(tzinfo=SH)
         rows.append(dict(timestamp=int(stamp.timestamp())*1000,open=1.5,high=1.7,
                 low=1.3,close=1.6,volume=1000,amount=1600,
                 credential="SECRET_SHOULD_NOT_LEAK"))
@@ -30,11 +43,27 @@ def frame(period,day="2026-10-09"):
 class FakeKlines:
     def __init__(self):
         self.calls=[]
+        self.batch_calls=[]
+        self.intraday_batch_calls=[]
     def get(self,symbol,*,period,count,as_dataframe,adjust):
         self.calls.append((symbol,period,count,as_dataframe,adjust))
         df = frame(period)
         return {key: df[key].tolist() for key in
                 ("timestamp","open","high","low","close","volume","amount")}
+
+    def batch(self, symbols, **kwargs):
+        self.batch_calls.append((list(symbols), kwargs))
+        return {symbol: self.get(
+            symbol, period=kwargs["period"], count=kwargs["count"],
+            as_dataframe=kwargs["as_dataframe"], adjust=kwargs.get("adjust", "none"),
+        ) for symbol in symbols}
+
+    def intraday_batch(self, symbols, **kwargs):
+        self.intraday_batch_calls.append((list(symbols), kwargs))
+        return {symbol: self.get(
+            symbol, period=kwargs["period"], count=kwargs["count"],
+            as_dataframe=kwargs["as_dataframe"], adjust="none",
+        ) for symbol in symbols}
 
 class FakeClient:
     def __init__(self):
@@ -48,11 +77,11 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert snap["radar_admission"]=="BLOCKED"
     assert snap["canonical_write_authorized"] is False
     assert snap["live_trade"] is False
-    assert len(fake.klines.calls)==4
-    assert [x[2] for x in fake.klines.calls]==[96,24,96,24]
+    assert len(fake.klines.calls)==8
+    assert [x[2] for x in fake.klines.calls]==[96,24]*4
     assert all(x[3] is False and x[4]=="none" for x in fake.klines.calls)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(snap)
-    for sym in ("159611.SZ","518880.SH"):
+    for sym in ("159611.SZ","159209.SZ","512730.SH","159363.SZ"):
         for period in ("15m","60m"):
             bars=snap["symbols"][sym][period]["rows"]
             assert len(bars)==len(TIMES[period])
@@ -171,6 +200,73 @@ def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
             build_observation(FakeClient(),now_utc=NOW,repo_sha="a"*40,
                               sequence=1,symbols=syms)
 
+
+def test_scan_capacity_accepts_twenty_explicit_symbols_and_reader_sees_all(tmp_path):
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    assert resolve_scan_symbols(",".join(symbols)) == symbols
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, allow_scan_symbols=True,
+    )
+    assert tuple(snapshot["symbols"]) == symbols
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 2
+    path = tmp_path / "twenty.json"
+    atomic_publish(str(path), snapshot)
+    result = read_cn_tickflow_research_data(
+        symbols[-1], "15m", path=str(path), now_utc=NOW,
+    )
+    assert result["ok"] is True
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_scan_capacity_covers_twenty_symbols_across_all_five_periods():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True, allow_scan_symbols=True,
+    )
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 5
+    assert all(set(snapshot["symbols"][symbol]) ==
+               {"1m", "5m", "15m", "60m", "1d"} for symbol in symbols)
+
+
+def test_full_capacity_uses_one_batch_request_per_period():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True,
+        allow_scan_symbols=True, use_batch=True,
+    )
+    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(snapshot["symbols"]) == TEST_SCAN_SYMBOLS
+
+
+def test_two_hundred_symbol_batch_capacity_covers_all_five_periods():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_MAX_SYMBOLS))
+    fake = FakeClient()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=symbols, include_supplemental=True,
+        allow_scan_symbols=True, use_batch=True,
+    )
+    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(snapshot["symbols"]) == TEST_MAX_SYMBOLS
+
+
+@pytest.mark.parametrize("value", [
+    "000001.SZ,000001.SZ",
+    ",".join(f"{100000 + index:06d}.SZ" for index in range(MAX_SCAN_SYMBOLS + 1)),
+    "000001,600000.SH",
+])
+def test_scan_symbol_parser_fails_closed(value):
+    with pytest.raises(ValueError, match="invalid scan symbols"):
+        resolve_scan_symbols(value)
+
 def test_current_session_offgrid_start_label_quarantined_without_false_finality():
     current=datetime(2026,10,13,5,8,tzinfo=timezone.utc) # Shanghai 13:08
     old=frame("15m","2026-10-09").iloc[:7].copy()
@@ -283,8 +379,36 @@ def test_last_due_intraday_label_missing_allows_history_but_blocks_session(tmp_p
     assert hist["provider_requests"]==0
     assert len(hist["rows"])>0
 
+
+def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
+    """Post-close progress reads keep due-grid visibility without finality."""
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            if period=="15m":
+                df["high"]=1.5999999999999994
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
+            repo_sha="d"*40,sequence=5)
+    cache=tmp_path/"cache.json"
+    atomic_publish(str(cache),snap)
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path=str(cache),now_utc=current,
+        research_mode="session_progress")
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["expected_grid_progress"]=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert result["bar_finality"]=="NOT_VERIFIED"
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
+    assert result["live_trade"] is False
+
 def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path):
-    current=datetime(2026,10,13,7,16,tzinfo=timezone.utc)
+    current=datetime(2026,10,11,7,16,tzinfo=timezone.utc)
     snap=build_observation(FakeClient(),now_utc=current,
             repo_sha="c"*40,sequence=1)
     p=tmp_path/"cache.json"
@@ -296,11 +420,33 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
         path=str(p),now_utc=later,research_mode="historical_only")
     assert strict["status"]=="STALE"
     assert hist["status"]=="PASS_HISTORICAL_ONLY"
-    assert hist["max_age_seconds"]==360
+    assert hist["max_age_seconds"]==1080
     too_late=read_cn_tickflow_research_data("159611.SZ",
-        path=str(p),now_utc=current+timedelta(seconds=370),
+        path=str(p),now_utc=current+timedelta(seconds=1090),
         research_mode="historical_only")
     assert too_late["status"]=="STALE"
+
+def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
+    current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
+    class CurrentDayKlines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            df=frame(period,"2026-10-14")
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class CurrentDayClient:
+        klines=CurrentDayKlines()
+    snap=build_observation(CurrentDayClient(),now_utc=current,
+            repo_sha="a"*40,sequence=2)
+    p=tmp_path/"obs.json"
+    atomic_publish(str(p),snap)
+    later=current+timedelta(seconds=300)
+    result=read_cn_tickflow_research_data("159611.SZ","15m",path=str(p),
+            now_utc=later)
+    assert result["ok"] is True
+    assert result["status"]=="PASS_RESEARCH_ONLY"
+    assert result["max_age_seconds"]==360
+    assert result["currentness"]=="UNPROVEN"
+    assert result["radar_admission"]=="BLOCKED"
 
 def test_unrecognized_research_mode_cannot_disable_gates(tmp_path):
     q=read_cn_tickflow_research_data("159611.SZ",
@@ -351,9 +497,11 @@ def test_ohlc_gap_evidence_is_bounded_magnitude_not_raw_prices():
     evidence={}
     bars=normalize_bars(raw,"15m",now_utc=now,
          quarantine_counts=quarantined,quarantine_evidence=evidence)
-    assert len(bars)==len(old)
-    assert sum(quarantined.values())==2
-    assert evidence["GAP_LT_1BP"]==1
+    assert len(bars)==len(old)+1
+    assert bars[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert bars[-1]["high"]==1.59999  # exact native float, not repaired
+    assert sum(quarantined.values())==1
+    assert evidence.get("GAP_LT_1BP",0)==0  # near-boundary row is retained
     assert evidence["GAP_GE_100BP"]==1
     assert evidence["HILO_SWAP_WOULD_ENCLOSE_BODY"]==1
     assert all("price" not in k.lower() for k in evidence)
@@ -386,9 +534,14 @@ def test_today_ohlc_tick_lattice_shadow_can_identify_rounding_only():
     evidence={}
     out=normalize_bars(raw,"15m",now_utc=now,
          quarantine_counts=reasons,quarantine_evidence=evidence)
-    assert len(out)==6 # never actually amend nor admit the two bad rows
-    assert evidence["ETF_TICK_LATTICE_NEAR"]==2
-    assert evidence["ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY"]==1
+    # The tiny tick-lattice-compatible vendor float row is retained
+    # unchanged for blocked RESEARCH ONLY. The genuinely invalid second
+    # row stays quarantined, and must not be auto-repaired.
+    assert len(out)==7
+    assert out[-1]["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert out[-1]["high"]==1.59999999
+    assert evidence["ETF_TICK_LATTICE_NEAR"]==1
+    assert evidence.get("ETF_LATTICE_QUANTIZE_WOULD_ENCLOSE_BODY",0)==0
     assert evidence.get("ETF_TICK_LATTICE_FAR",0)==0
 
 def test_today_ohlc_off_tick_grid_never_counted_as_repairable():
@@ -453,10 +606,10 @@ def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_resear
     assert hist["live_trade"] is False
     strict=read_cn_tickflow_research_data("159611.SZ","15m",
          limit=1,path=str(p),now_utc=now,research_mode="session_progress")
-    assert strict["ok"] is False and strict["status"]=="INVALID_CACHE"
+    assert strict["ok"] is True and strict["status"]=="PASS_RESEARCH_ONLY"
 
 
-def test_intraday_current_vendor_float_stays_quarantined_and_unclosed():
+def test_intraday_vendor_float_precision_research_only_remains_unclosed():
     now=datetime(2026,10,14,5,37,tzinfo=timezone.utc)  # Shanghai 13:37
     prior=frame("15m","2026-10-13").iloc[:8].copy()
     current=frame("15m","2026-10-14").iloc[8:10].copy()
@@ -466,9 +619,14 @@ def test_intraday_current_vendor_float_stays_quarantined_and_unclosed():
          ("timestamp","open","high","low","close","volume","amount")}
     reasons={}
     got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
-    assert len(got)==len(prior)
-    assert reasons.get("TODAY_HIGH_BELOW_BODY")==2
+    assert len(got)==len(prior)+2
+    assert reasons=={}
     assert all(item["bar_finality"]=="NOT_VERIFIED" for item in got)
+    assert all(item["is_partial_bar"] is True for item in got)
+    assert all(item["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+               for item in got[-2:])
+    # No raw OHLC rewriting: same native floats stay research-only.
+    assert all(item["high"]==1.5999999999999994 for item in got[-2:])
 
 
 def test_postclose_large_gap_and_non_tick_lattice_stay_quarantined():
@@ -487,3 +645,152 @@ def test_postclose_large_gap_and_non_tick_lattice_stay_quarantined():
     got=normalize_bars(raw,"15m",now_utc=now,quarantine_counts=reasons)
     assert len(got)==len(old)
     assert reasons["TODAY_HIGH_BELOW_BODY"]==2
+
+
+def test_tiny_vendor_intraday_precision_exception_never_grants_trade_or_finality(tmp_path):
+    # Reproduce only the 2026-10-15 159611 10:00 vendor float-shape
+    # category on synthesized data, not any actual provider price.
+    now=datetime(2026,10,15,2,2,tzinfo=timezone.utc)  # Shanghai 10:02
+    prior=frame("15m","2026-10-14").iloc[:8].copy()
+    today=frame("15m","2026-10-15").iloc[:2].copy()
+    today["high"]=1.5999999999999994  # native vendor float, <1e-5 above-body gap
+    mixed=pd.concat([prior,today],ignore_index=True)
+    raw={k:mixed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+
+    rows=normalize_bars(raw,"15m",now_utc=now)
+    assert len(rows)==len(mixed)
+    assert [row["label"][-5:] for row in rows[-2:]]==["09:45","10:00"]
+    assert all(row["ohlc_validation"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+               for row in rows[-2:])
+    assert all(row["high"]==1.5999999999999994 for row in rows[-2:])
+    assert all(row["bar_finality"]=="NOT_VERIFIED"
+               and row["is_partial_bar"] is True for row in rows)
+
+    class Klines:
+        def get(self,symbol,*,period,count,as_dataframe,adjust):
+            if symbol=="159611.SZ" and period=="15m":
+                return raw
+            df=frame(period,"2026-10-14")
+            return {k:df[k].tolist() for k in
+                    ("timestamp","open","high","low","close","volume","amount")}
+    class Client:
+        klines=Klines()
+    snap=build_observation(Client(),now_utc=now,repo_sha="a"*40,sequence=17)
+    path=tmp_path/"research-precision.json"
+    atomic_publish(str(path),snap)
+    accepted=read_cn_tickflow_research_data(
+        "159611.SZ","15m",limit=2,path=str(path),now_utc=now,
+        research_mode="session_progress",
+    )
+    assert accepted["status"]=="PASS_RESEARCH_ONLY"
+    assert accepted["ok"] is True
+    assert accepted["ohlc_precision_scope"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert accepted["tolerated_vendor_float_rows"]==2
+    assert accepted["bar_finality"]=="NOT_VERIFIED"
+    assert accepted["exchange_bar_finality"]=="NOT_VERIFIED"
+    assert accepted["currentness"]=="UNPROVEN"
+    assert accepted["can_confirm_signal"] is False
+    assert accepted["radar_admission"]=="BLOCKED"
+    assert accepted["source_arbiter_admission"]=="BLOCKED"
+    assert accepted["live_trade"] is False
+    assert accepted["canonical_write_authorized"] is False
+
+
+def test_vendor_precision_intraday_waits_90_seconds_and_never_excuses_true_shape_error():
+    prior=frame("15m","2026-10-14").iloc[:8].copy()
+    current=frame("15m","2026-10-15").iloc[:2].copy()
+    current["high"]=1.5999999999999994
+    merged=pd.concat([prior,current],ignore_index=True)
+    raw={k:merged[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    # At 10:00:30 the 10:00 bar is still within publish grace.
+    near=datetime(2026,10,15,2,0,30,tzinfo=timezone.utc)
+    reasons={}
+    rows=normalize_bars(raw,"15m",now_utc=near,quarantine_counts=reasons)
+    assert [item["label"] for item in rows if item["label"].startswith("2026-10-15")]==[
+        "2026-10-15 09:45"
+    ]
+    assert reasons.get("TODAY_HIGH_BELOW_BODY")==1
+
+    current.loc[current.index[1],"high"]=1.598  # genuine invalid 0.002 CNY gap
+    changed=pd.concat([prior,current],ignore_index=True)
+    raw={k:changed[k].tolist() for k in
+         ("timestamp","open","high","low","close","volume","amount")}
+    rows=normalize_bars(raw,"15m",
+                        now_utc=datetime(2026,10,15,2,2,tzinfo=timezone.utc))
+    assert all(item["label"]!="2026-10-15 10:00" for item in rows)
+    assert all(item["bar_finality"]=="NOT_VERIFIED" for item in rows)
+
+
+def test_session_progress_rejects_middle_due_gap_even_when_last_bar_present(tmp_path):
+    """Real 159611 scenario: a skipped 10:00 must block at 10:17, even limit=1."""
+    now = datetime(2026, 10, 15, 2, 17, tzinfo=timezone.utc)  # 10:17 Shanghai
+    snap = build_observation(FakeClient(), now_utc=now, repo_sha="e"*40, sequence=7)
+    today_rows = snap["symbols"]["159611.SZ"]["15m"]["rows"]
+    template = dict(today_rows[-1])
+    today_rows.extend([
+        {**template, "label": "2026-10-15 09:45"},
+        {**template, "label": "2026-10-15 10:15"},
+    ])
+    cache = tmp_path / "gap.json"
+    atomic_publish(str(cache), snap)
+    blocked = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="session_progress",
+    )
+    assert blocked["ok"] is False
+    assert blocked["status"] == "BAR_LABEL_BEHIND_SESSION"
+    assert blocked["due_grid_continuity"] == "INCOMPLETE"
+    assert blocked["rows"] == []
+    assert blocked["radar_admission"] == "BLOCKED"
+    historical = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="historical_only",
+    )
+    assert historical["ok"] is True
+    assert historical["status"] == "PASS_HISTORICAL_ONLY"
+    assert historical["expected_grid_progress"] == (
+        "DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
+    )
+    today_rows.insert(-1, {**template, "label": "2026-10-15 10:00"})
+    atomic_publish(str(cache), snap)
+    complete = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
+        research_mode="session_progress",
+    )
+    assert complete["ok"] is True
+    assert complete["status"] == "PASS_RESEARCH_ONLY"
+    assert complete["expected_grid_progress"] == "DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert complete["bar_finality"] == "NOT_VERIFIED"
+    assert complete["radar_admission"] == "BLOCKED"
+
+
+def test_research_reader_small_limit_does_not_hide_poisoned_earlier_row(tmp_path):
+    snap = build_observation(FakeClient(), now_utc=NOW, repo_sha="e"*40, sequence=7)
+    snap["symbols"]["159611.SZ"]["15m"]["rows"][0]["high"] = -1
+    cache = tmp_path / "poisoned.json"
+    atomic_publish(str(cache), snap)
+    observed = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert observed["status"] == "INVALID_CACHE"
+    assert observed["ok"] is False
+
+
+def test_historical_cache_rejection_exposes_only_fixed_safe_reason(tmp_path):
+    snap = build_observation(FakeClient(), now_utc=NOW, repo_sha="e"*40, sequence=8)
+    snap["symbols"]["159611.SZ"]["15m"]["rows"][0]["high"] = -1
+    cache = tmp_path / "invalid-shape.json"
+    atomic_publish(str(cache), snap)
+    result = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert result["status"] == "INVALID_CACHE"
+    assert result["cache_rejection_reason"] == "BAR_OHLC_INVALID"
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    assert "1.5" not in json.dumps(result)
+    assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(result)
