@@ -83,6 +83,7 @@ from src.services.stock_radar_v2.daily_history_reader import (
 from src.services.stock_radar_v2.options_context_reader import RadarOptionsContextReader
 from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
 from src.services.stock_radar_v2.export_latency_ledger import CanonicalExportLatencyLedger
+from src.services.stock_radar_v2.systemd_notify import notify_systemd
 
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().lower()
@@ -138,6 +139,8 @@ cycle = 0
 latency_ledger = CanonicalExportLatencyLedger()
 daily_history_cache = ValidatedDailyHistoryFileCache()
 last_logged_poll_status = None
+
+notify_systemd("READY=1", "WATCHDOG=1", "STATUS=US Radar research worker ready")
 
 
 def publish(payload):
@@ -281,6 +284,7 @@ while True:
         }
         print(json.dumps(audit, separators=(",", ":"), allow_nan=False), flush=True)
         last_logged_poll_status = evaluation.status
+    notify_systemd("WATCHDOG=1", f"STATUS=US Radar research worker cycle {cycle}")
     time.sleep(poll_seconds)
 PY
 
@@ -291,7 +295,9 @@ After=stock-razor-us-livefeed.service
 Wants=stock-razor-us-livefeed.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=90s
 WorkingDirectory=$INSTALL_ROOT/repo
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$INSTALL_ROOT/repo
