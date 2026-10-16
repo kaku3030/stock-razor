@@ -63,6 +63,9 @@ class FutuK1MStreamingAdapter:
         self._callback_latency_ms_sum = 0.0
         self._callback_latency_sample_count = 0
         self._last_subscribe_result = None
+        # Keep the active semantic key so US Session.ALL callbacks map to
+        # the desired registry entry rather than a false default-session key.
+        self._subscribed_keys_by_symbol: dict[str, SemanticStreamKey] = {}
 
     def register_event_sink(self, sink: Callable[[ProviderEvent], None]) -> None:
         if not callable(sink):
@@ -144,6 +147,8 @@ class FutuK1MStreamingAdapter:
             raise ValueError("only K_1M / 1m is supported in this slice")
         if not key.symbol.startswith("US."):
             raise ValueError("US OpenD symbols must use canonical US.* form")
+        if key.session_mode not in (None, "ALL"):
+            raise ValueError("unsupported US OpenD quote session")
 
     def subscribe_stream(self, key: SemanticStreamKey) -> None:
         self.subscribe_streams((key,))
@@ -154,10 +159,29 @@ class FutuK1MStreamingAdapter:
             raise ValueError("at least one K_1M stream is required")
         for key in unique:
             self._validate_key(key)
+        # Futu accepts Session.ALL for 24H US subscriptions, but not
+        # Session.OVERNIGHT. One SDK call has one session scope; never
+        # silently use the default market session for an ALL request.
+        sessions = {key.session_mode for key in unique}
+        if len(sessions) != 1:
+            raise ValueError("mixed US OpenD quote session modes in one batch")
+        if len({key.symbol for key in unique}) != len(unique):
+            raise ValueError("duplicate symbol with conflicting stream identities")
+        for key in unique:
+            existing = self._subscribed_keys_by_symbol.get(key.symbol)
+            if existing is not None and existing != key:
+                raise ValueError("conflicting US OpenD quote session for subscribed symbol")
+        kwargs = {}
+        if "ALL" in sessions:
+            session_all = getattr(getattr(self._ft, "Session", None), "ALL", None)
+            if session_all is None:
+                raise ValueError("OpenD SDK Session.ALL is unavailable")
+            kwargs["session"] = session_all
         ret, data = self._ctx.subscribe(
             [key.symbol for key in unique],
             [self._ft.SubType.K_1M],
             subscribe_push=True,
+            **kwargs,
         )
         self._last_subscribe_result = {"ret": ret, "data": str(data)[:300]}
         if self._transport_connected_evidence:
@@ -187,6 +211,79 @@ class FutuK1MStreamingAdapter:
                 )
         if ret != self._ft.RET_OK:
             raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
+        for key in unique:
+            self._subscribed_keys_by_symbol[key.symbol] = key
+
+    def inspect_current_connection_subscriptions(
+        self, keys: tuple[SemanticStreamKey, ...],
+    ) -> dict:
+        """Read Qot_GetSubInfo on this *existing* connection, never mutate.
+
+        A K_1M listing does not expose whether Session.ALL was honored, nor
+        prove current bar freshness, exchange finality or subscription rights.
+        No raw provider payload, account metadata or error is returned.
+        """
+        requested = tuple(keys)
+        result = {
+            "status": "BLOCKED",
+            "requested_count": len(requested),
+            "matched_count": 0,
+            "missing_symbols": (),
+            "total_used": None,
+            "own_used": None,
+            "remaining": None,
+            "session_mode_evidence": "NOT_VERIFIED",
+            "realtime_qualification": "UNKNOWN",
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+        if not self._started or not requested or len(requested) > 200:
+            return result
+        if len({key.symbol for key in requested}) != len(requested):
+            return result
+        try:
+            for key in requested:
+                self._validate_key(key)
+            query = getattr(self._ctx, "query_subscription", None)
+            if not callable(query):
+                return result
+            ret, data = query(is_all_conn=False)
+            if ret != self._ft.RET_OK or not isinstance(data, dict):
+                return result
+            total = data.get("total_used")
+            own = data.get("own_used")
+            remain = data.get("remain")
+            if (
+                any(type(v) is not int or v < 0 for v in (total, own, remain))
+                or own > total
+            ):
+                return result
+            subscriptions = data.get("sub_list")
+            if not isinstance(subscriptions, dict):
+                return result
+            listed = subscriptions.get(self._ft.SubType.K_1M)
+            if not isinstance(listed, (tuple, list)) or len(listed) > 10000:
+                return result
+            if not all(isinstance(code, str) for code in listed):
+                return result
+            subscribed = set(listed)
+            missing = tuple(sorted(
+                key.symbol for key in requested if key.symbol not in subscribed
+            ))
+            result.update(
+                status=(
+                    "MISSING_SUBSCRIPTIONS" if missing
+                    else "OBSERVED_CURRENT_CONNECTION_ONLY"
+                ),
+                matched_count=len(requested) - len(missing),
+                missing_symbols=missing,
+                total_used=total, own_used=own, remaining=remain,
+            )
+        except Exception:
+            # Existing owner may be disconnected or running an older SDK.
+            # Never echo vendor response strings or trust partial readbacks.
+            return result
+        return result
 
     def diagnostics(self) -> dict:
         mean_latency = (
@@ -221,9 +318,13 @@ class FutuK1MStreamingAdapter:
 
     def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
         self._validate_key(key)
+        existing = self._subscribed_keys_by_symbol.get(key.symbol)
+        if existing is not None and existing != key:
+            raise ValueError("unsubscribe stream session does not match owned key")
         ret, data = self._ctx.unsubscribe([key.symbol], [self._ft.SubType.K_1M])
         if ret != self._ft.RET_OK:
             raise RuntimeError("OpenD K_1M unsubscribe rejected: " + str(data)[:300])
+        self._subscribed_keys_by_symbol.pop(key.symbol, None)
 
     def _emit_row(self, row: dict) -> None:
         symbol = str(row.get("code") or "").strip()
@@ -231,13 +332,17 @@ class FutuK1MStreamingAdapter:
         if not symbol.startswith("US."):
             self._emit_error("unexpected non-US K_1M symbol")
             return
-        key = SemanticStreamKey(
-            provider_id="futu",
-            market="us",
-            symbol=symbol,
-            stream_type="K_1M",
-            timeframe="1m",
-        )
+        key = self._subscribed_keys_by_symbol.get(symbol)
+        if key is None:
+            # A push before subscription ACK cannot establish a session
+            # identity. Preserve it only as unqualified evidence.
+            key = SemanticStreamKey(
+                provider_id="futu",
+                market="us",
+                symbol=symbol,
+                stream_type="K_1M",
+                timeframe="1m",
+            )
         # US time_key progress semantics are intentionally NOT promoted from
         # the older HK evidence set. Preserve the raw value as evidence only.
         payload = freeze_normalized_payload(

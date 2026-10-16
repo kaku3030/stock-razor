@@ -310,3 +310,235 @@ def test_callback_latency_diagnostics_measure_processing_without_promoting_deliv
     assert diagnostics["provider_callback_latency_ms_max"] == pytest.approx(5.0)
     assert diagnostics["provider_callback_latency_ms_mean"] == pytest.approx(5.0)
     assert events[0].delivery_mode is DeliveryMode.UNKNOWN
+
+
+def test_all_session_reaches_sdk_and_callback_preserves_semantic_identity():
+    """OpenD Session.ALL must reach the SDK, not just the manager metadata."""
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", symbols, subtypes, subscribe_push, kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0,
+        CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1",
+        controller_generation=lambda: 1,
+    )
+    requested = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    adapter.register_event_sink(events.append)
+    adapter.start()
+    adapter.subscribe_stream(requested)
+    assert ctx.calls == [
+        ("sub", ["US.XLV"], ["K_1M"], True, {"session": "ALL"}),
+    ]
+    ctx.handler.on_recv_rsp(Frame([{
+        "code": "US.XLV", "time_key": "2026-10-16 08:01:00",
+        "close": 160.12,
+    }]))
+    assert events[-1].event_kind is ProviderEventKind.DATA
+    assert events[-1].semantic_stream_key == requested
+    assert events[-1].delivery_mode is DeliveryMode.UNKNOWN
+    assert events[-1].diagnostic_fields["bar_closure"] == "UNPROVEN"
+
+
+def test_session_all_missing_sdk_support_fails_before_provider_request():
+    ctx = Context()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    with pytest.raises(ValueError, match="Session.ALL"):
+        adapter.subscribe_stream(all_key)
+    assert ctx.calls == []
+
+
+def test_mixed_us_quote_sessions_and_overnight_only_fail_without_mutation():
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", symbols, subtypes, kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0,
+        CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    overnight_only = SemanticStreamKey(
+        "futu", "us", "US.VRTX", "K_1M", "1m", session_mode="OVERNIGHT",
+    )
+    with pytest.raises(ValueError, match="session"):
+        adapter.subscribe_stream(overnight_only)
+    with pytest.raises(ValueError, match="mixed"):
+        adapter.subscribe_streams((key("US.AMD"), all_key))
+    assert ctx.calls == []
+
+
+def test_runtime_bridge_tracks_all_session_push_under_correct_desired_key():
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", tuple(symbols), kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0, CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    controller = LiveFeedController(
+        runtime_instance_id="r1", provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+    )
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1",
+        controller_generation=lambda: controller.snapshot().controller_generation,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    bridge = LiveFeedRuntimeBridge(controller, adapter)
+    bridge.start([all_key])
+    assert ctx.calls == [("sub", ("US.XLV",), {"session": "ALL"})]
+    assert {
+        entry.semantic_stream_key
+        for entry in controller.desired_registry_snapshot().entries
+    } == {all_key}
+    ctx.handler.on_recv_rsp(Frame([{
+        "code": "US.XLV", "time_key": "2026-10-16 08:01:00",
+        "close": 150.0,
+    }]))
+    bridge.drain()
+    assert bridge.snapshot().subscribed == (all_key,)
+    # An observed provider push still cannot grant LIVE or closed-bar truth.
+    assert controller.snapshot().lifecycle_state is not LifecycleState.LIVE
+    assert adapter.diagnostics()["row_count"] == 1
+    bridge.stop()
+    assert ctx.calls[-1][0] == "unsub"
+
+
+def test_opend_current_connection_query_only_checks_k1m_without_promotion():
+    class QueryContext(Context):
+        def query_subscription(self, is_all_conn):
+            assert is_all_conn is False
+            self.calls.append(("query", False))
+            return 0, {
+                "total_used": 2, "own_used": 2, "remain": 298,
+                "sub_list": {"K_1M": ["US.AMD", "US.XLV"]},
+                "own_security_firm": "redacted-sensitive-info",
+            }
+
+    ctx = QueryContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    report = adapter.inspect_current_connection_subscriptions((
+        key("US.AMD"),
+        SemanticStreamKey(
+            "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+        ),
+    ))
+    assert ctx.calls == [("query", False)]
+    assert report == {
+        "status": "OBSERVED_CURRENT_CONNECTION_ONLY",
+        "requested_count": 2, "matched_count": 2,
+        "missing_symbols": (), "total_used": 2,
+        "own_used": 2, "remaining": 298,
+        "session_mode_evidence": "NOT_VERIFIED",
+        "realtime_qualification": "UNKNOWN",
+        "radar_admission": "BLOCKED", "live_trade": False,
+    }
+    assert "redacted-sensitive-info" not in str(report)
+
+
+def test_subscription_readback_missing_symbol_or_bad_shape_fails_closed():
+    class QueryContext(Context):
+        def __init__(self):
+            super().__init__()
+            self.payload = {
+                "total_used": 1, "own_used": 1, "remain": 3,
+                "sub_list": {"K_1M": ["US.AMD"]},
+            }
+
+        def query_subscription(self, is_all_conn):
+            self.calls.append(("query", is_all_conn))
+            return 0, self.payload
+
+    ctx = QueryContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    requested = (key("US.AMD"), key("US.XLV"))
+    missing = adapter.inspect_current_connection_subscriptions(requested)
+    assert missing["status"] == "MISSING_SUBSCRIPTIONS"
+    assert missing["missing_symbols"] == ("US.XLV",)
+    assert missing["radar_admission"] == "BLOCKED"
+
+    for malformed in (
+        {"total_used": "1", "own_used": 1, "remain": 3, "sub_list": {}},
+        {"total_used": 1, "own_used": 2, "remain": 3,
+         "sub_list": {"K_1M": ["US.AMD"]}},
+        {"total_used": 1, "own_used": 1, "remain": 3,
+         "sub_list": {"K_1M": "US.AMD"}},
+    ):
+        ctx.payload = malformed
+        assert adapter.inspect_current_connection_subscriptions(
+            requested,
+        )["status"] == "BLOCKED"
+    assert all(call == ("query", False) for call in ctx.calls)
+
+
+def test_missing_or_failed_subscription_query_never_promotes_to_verified():
+    class NoQueryContext(Context):
+        pass
+
+    adapter = FutuK1MStreamingAdapter(
+        NoQueryContext(), FT,
+        runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    result = adapter.inspect_current_connection_subscriptions((key(),))
+    assert result["status"] == "BLOCKED"
+    assert result["session_mode_evidence"] == "NOT_VERIFIED"
+
+    class FailingQueryContext(Context):
+        def query_subscription(self, is_all_conn):
+            return -1, "Bearer should-not-print"
+
+    denied = FutuK1MStreamingAdapter(
+        FailingQueryContext(), FT,
+        runtime_instance_id="r2", controller_generation=lambda: 1,
+    )
+    denied.register_event_sink(lambda event: None)
+    denied.start()
+    blocked = denied.inspect_current_connection_subscriptions((key(),))
+    assert blocked["status"] == "BLOCKED"
+    assert "Bearer should-not-print" not in str(blocked)

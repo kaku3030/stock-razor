@@ -50,17 +50,39 @@ class LiveFeedRuntimeBridge:
         if not unique:
             raise ValueError("at least one stream is required")
         self._adapter.register_event_sink(self._submit_event)
-        self._adapter.start()
+        registered: list[SemanticStreamKey] = []
+        adapter_start_attempted = False
         try:
             for key in unique:
                 accepted = self._controller.request_add_desired(key)
                 if not accepted.accepted:
                     raise RuntimeError("desired registry ingress rejected")
-            self._adapter.subscribe_streams(unique)
+                registered.append(key)
+            # Desired keys must be committed before start(), because the
+            # provider may emit data synchronously from its start callback.
+            self._controller.process_pending()
+            adapter_start_attempted = True
+            self._adapter.start()
+            # A failed subscribe batch can be partially applied. Own all
+            # attempted keys for bounded cleanup before invoking the adapter.
             self._subscribed.extend(unique)
+            self._adapter.subscribe_streams(unique)
+            # Drain immediate provider callbacks as on the original startup
+            # path; each event follows the already committed desired keys.
             self._controller.process_pending()
         except Exception:
-            self._cleanup()
+            try:
+                if adapter_start_attempted:
+                    self._cleanup()
+            finally:
+                # A failed start must not leave ghost desired streams that
+                # could accept delayed provider pushes on the next attempt.
+                self._controller.process_pending()
+                for key in registered:
+                    removed = self._controller.request_remove_desired(key)
+                    if not removed.accepted:
+                        raise RuntimeError("startup desired registry rollback rejected")
+                self._controller.process_pending()
             raise
         self._started = True
         return self.snapshot()
@@ -70,6 +92,74 @@ class LiveFeedRuntimeBridge:
             raise RuntimeError("live feed runtime is not started")
         self._controller.process_pending()
         return self.snapshot()
+
+    def subscribe_streams(self, streams: Sequence[SemanticStreamKey]) -> None:
+        """Add streams through the existing controller and provider owner.
+
+        This is the mutation seam used by the instance-scoped subscription
+        manager. Desired keys are registered before provider subscription so
+        an immediate push is not rejected as undesired. If provider mutation
+        fails, the desired registry is rolled back and the exception remains
+        visible to the manager as an unknown transport outcome.
+        """
+        if not self._started:
+            raise RuntimeError("live feed runtime is not started")
+        unique = tuple(key for key in dict.fromkeys(streams) if key not in self._subscribed)
+        if not unique:
+            return
+        queued: list[SemanticStreamKey] = []
+        for key in unique:
+            accepted = self._controller.request_add_desired(key)
+            if not accepted.accepted:
+                self._rollback_desired(queued)
+                raise RuntimeError("desired registry ingress rejected")
+            queued.append(key)
+        self._controller.process_pending()
+        try:
+            self._adapter.subscribe_streams(unique)
+        except Exception:
+            # A batch exception is ambiguous: the provider may have
+            # accepted some streams. Request bounded per-key compensation;
+            # the manager still marks transport UNKNOWN if any step failed.
+            for key in reversed(unique):
+                try:
+                    self._adapter.unsubscribe_stream(key)
+                except Exception:
+                    pass
+            self._rollback_desired(unique)
+            raise
+        self._subscribed.extend(unique)
+
+    def _rollback_desired(self, keys: Sequence[SemanticStreamKey]) -> None:
+        """Undo bounded desired mutations without overflowing the owner queue."""
+        # A full queue first has to be drained; otherwise even the rollback
+        # command may be rejected, leaving an unowned desired stream behind.
+        self._controller.process_pending()
+        for key in keys:
+            result = self._controller.request_remove_desired(key)
+            if not result.accepted:
+                raise RuntimeError("desired registry rollback rejected")
+            # Process each removal before enqueuing the next; this also
+            # supports a deliberately bounded one-command control queue.
+            self._controller.process_pending()
+
+    def subscribe_stream(self, key: SemanticStreamKey) -> None:
+        self.subscribe_streams((key,))
+
+    def unsubscribe_stream(self, key: SemanticStreamKey) -> None:
+        """Remove one stream after provider ACK; baseline policy stays external."""
+        if not self._started:
+            raise RuntimeError("live feed runtime is not started")
+        if key not in self._subscribed:
+            return
+        self._adapter.unsubscribe_stream(key)
+        accepted = self._controller.request_remove_desired(key)
+        if not accepted.accepted:
+            # Keep local ownership so stop() still attempts cleanup. The
+            # provider may have unsubscribed, but controller state is unknown.
+            raise RuntimeError("desired registry ingress rejected after provider unsubscribe")
+        self._controller.process_pending()
+        self._subscribed.remove(key)
 
     def stop(self) -> LiveFeedRuntimeSnapshot:
         if not self._started:
