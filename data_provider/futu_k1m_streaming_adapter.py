@@ -214,6 +214,77 @@ class FutuK1MStreamingAdapter:
         for key in unique:
             self._subscribed_keys_by_symbol[key.symbol] = key
 
+    def inspect_current_connection_subscriptions(
+        self, keys: tuple[SemanticStreamKey, ...],
+    ) -> dict:
+        """Read Qot_GetSubInfo on this *existing* connection, never mutate.
+
+        A K_1M listing does not expose whether Session.ALL was honored, nor
+        prove current bar freshness, exchange finality or subscription rights.
+        No raw provider payload, account metadata or error is returned.
+        """
+        requested = tuple(keys)
+        result = {
+            "status": "BLOCKED",
+            "requested_count": len(requested),
+            "matched_count": 0,
+            "missing_symbols": (),
+            "total_used": None,
+            "own_used": None,
+            "remaining": None,
+            "session_mode_evidence": "NOT_VERIFIED",
+            "realtime_qualification": "UNKNOWN",
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+        }
+        if not self._started or not requested or len(requested) > 200:
+            return result
+        if len({key.symbol for key in requested}) != len(requested):
+            return result
+        try:
+            for key in requested:
+                self._validate_key(key)
+            query = getattr(self._ctx, "query_subscription", None)
+            if not callable(query):
+                return result
+            ret, data = query(is_all_conn=False)
+            if ret != self._ft.RET_OK or not isinstance(data, dict):
+                return result
+            total = data.get("total_used")
+            own = data.get("own_used")
+            remain = data.get("remain")
+            if (
+                any(type(v) is not int or v < 0 for v in (total, own, remain))
+                or own > total
+            ):
+                return result
+            subscriptions = data.get("sub_list")
+            if not isinstance(subscriptions, dict):
+                return result
+            listed = subscriptions.get(self._ft.SubType.K_1M)
+            if not isinstance(listed, (tuple, list)) or len(listed) > 10000:
+                return result
+            if not all(isinstance(code, str) for code in listed):
+                return result
+            subscribed = set(listed)
+            missing = tuple(sorted(
+                key.symbol for key in requested if key.symbol not in subscribed
+            ))
+            result.update(
+                status=(
+                    "MISSING_SUBSCRIPTIONS" if missing
+                    else "OBSERVED_CURRENT_CONNECTION_ONLY"
+                ),
+                matched_count=len(requested) - len(missing),
+                missing_symbols=missing,
+                total_used=total, own_used=own, remaining=remain,
+            )
+        except (Exception,):
+            # Existing owner may be disconnected or running an older SDK.
+            # Never echo vendor response strings or trust partial readbacks.
+            return result
+        return result
+
     def diagnostics(self) -> dict:
         mean_latency = (
             self._callback_latency_ms_sum / self._callback_latency_sample_count
