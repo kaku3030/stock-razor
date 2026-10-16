@@ -148,7 +148,8 @@ def test_end_labeled_k1m_chain_matches_end_labeled_native_k5m():
         label = datetime(2026, 10, 5, 9, 31 + index)
         minute = FormingMinuteBar(
             "US.AMD", label, 100 + index, 101 + index, 99 + index,
-            100.5 + index, 10 + index, 1000 + index, True
+            100.5 + index, 10 + index,
+            (100.5 + index) * (10 + index), True
         )
         closed.append(
             closed_futu_minute_to_bar(
