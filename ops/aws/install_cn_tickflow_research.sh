@@ -6,10 +6,9 @@ REPO_REF="${REPO_REF:?exact SHA required}"
 [[ "$(id -u)" == 0 ]]
 DEPLOY_DRY_RUN="${DEPLOY_DRY_RUN:-false}"
 ALLOW_SERVICE_MUTATION="${ALLOW_SERVICE_MUTATION:-false}"
-# Explicitly bounded starter scan universe: two holdings plus 18 liquid A-share
-# references. Operators may replace this list, but the phase-two worker
-# hard-caps it at 200.
-TICKFLOW_RESEARCH_SYMBOLS="${TICKFLOW_RESEARCH_SYMBOLS:-159611.SZ,159209.SZ,600519.SH,000001.SZ,300750.SZ,601318.SH,600036.SH,000858.SZ,601398.SH,600900.SH,601888.SH,600276.SH,000333.SZ,002594.SZ,600030.SH,601857.SH,600028.SH,600809.SH,000651.SZ,601012.SH}"
+# The production default is a bounded 200-symbol A-share scan. Operators may
+# replace it explicitly, while the worker still hard-caps every scan at 200.
+TICKFLOW_RESEARCH_SYMBOLS="${TICKFLOW_RESEARCH_SYMBOLS:-AUTO_200}"
 ROOT=/opt/stock-razor-cn-tickflow
 SERVICE=stock-razor-cn-tickflow-research.service
 REPO=https://github.com/kaku3030/stock-razor.git
@@ -68,6 +67,30 @@ git -C "$ROOT/repo" fetch --depth=1 origin "$REPO_REF" >/dev/null 2>&1
 git -C "$ROOT/repo" checkout --detach "$REPO_REF" >/dev/null 2>&1
 [[ "$(git -C "$ROOT/repo" rev-parse HEAD)" == "$REPO_REF" ]]
 if [[ ! -x "$ROOT/venv/bin/python" ]]; then python3 -m venv "$ROOT/venv"; fi
+if [[ "$TICKFLOW_RESEARCH_SYMBOLS" == AUTO_200 ]]; then
+  TICKFLOW_RESEARCH_SYMBOLS="$("$ROOT/venv/bin/python" - "$ROOT/repo/apps/dsa-web/public/stocks.index.json" <<'PY'
+import json
+import re
+import sys
+
+path = sys.argv[1]
+rows = json.load(open(path, encoding="utf-8"))
+symbols = []
+for row in rows:
+    if not isinstance(row, list) or len(row) < 8:
+        continue
+    symbol, market, asset_type = row[0], row[6], row[7]
+    if (market == "CN" and asset_type == "stock"
+            and isinstance(symbol, str)
+            and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)):
+        symbols.append(symbol)
+symbols = list(dict.fromkeys(symbols))[:200]
+if len(symbols) != 200:
+    raise SystemExit("CN stock index has fewer than 200 valid symbols")
+print(",".join(symbols))
+PY
+)"
+fi
 "$ROOT/venv/bin/pip" install --no-input --disable-pip-version-check --quiet \
   -r "$ROOT/repo/ops/requirements/tickflow-isolated-v0.1.txt" 'boto3==1.40.65' >/dev/null 2>&1
 PYTHONPATH="$ROOT/repo" "$ROOT/venv/bin/python" - <<'PY' >/dev/null
