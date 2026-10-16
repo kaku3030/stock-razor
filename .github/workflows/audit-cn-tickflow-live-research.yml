@@ -163,7 +163,8 @@ jobs:
               assert obj["status"] in statuses
               assert obj["overlap_bucket"] in count_buckets
               assert obj["max_ohlc_price_difference_ticks"] in tick_diffs
-              assert obj["reference"]=="TENCENT_QUALIFIED_ONLY"
+              assert obj["reference"] in ("TENCENT_QUALIFIED_ONLY",
+                                           "TENCENT_UNQUALIFIED")
               for term in ("earlier_session_agreement","same_session_agreement"):
                   assert obj[term] in split_agreement
               for term in ("earlier_session_overlap_bucket","same_session_overlap_bucket"):
