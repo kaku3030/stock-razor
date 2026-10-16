@@ -268,3 +268,21 @@ def test_off_session_history_warm_start_never_qualifies_live_bars():
     assert service.snapshot().radar_admission == "BLOCKED"
     assert service.snapshot().source_arbiter_admission == "BLOCKED"
     assert owner.subscribe_calls == []
+
+
+def test_unsupported_us_session_flag_never_reaches_adapter():
+    owner = FakeAdapter()
+    service = manager(owner)
+    unsupported = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m",
+        session_mode="OVERNIGHT",
+    )
+    rejected = service.update_candidates((unsupported,), quota=quota())
+    assert rejected.status == "BLOCKED"
+    assert rejected.reason == "UNSUPPORTED_OPEND_STREAM_KEY"
+    assert service.snapshot().candidate_pool == ()
+    assert service.snapshot().applied == ()
+    assert owner.subscribe_calls == []
+    assert service.preview_candidates(
+        (unsupported,), quota=quota(),
+    ).status == "BLOCKED"
