@@ -9,7 +9,9 @@ egress; this module is insufficient as an admission mechanism.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
+from threading import Lock
 
 
 MODEL = "deepseek-flash"
@@ -62,6 +64,8 @@ class OfflineRequestPlan:
     input_tokens_claimed: int = 0
     output_tokens_reserved: int = 0
     _history: list[dict[str, object]] = field(default_factory=list, repr=False)
+    _seen_envelopes: set[str] = field(default_factory=set, repr=False)
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     def reserve(
         self,
@@ -78,12 +82,6 @@ class OfflineRequestPlan:
         if not _positive_integer(claimed_input_tokens) or not _positive_integer(max_tokens):
             raise RequestPlanDenied("missing or invalid token budget")
         message_list = _validate_messages(messages)
-        if self.requests_reserved >= MAX_REQUESTS:
-            raise RequestPlanDenied("request budget exhausted")
-        if self.input_tokens_claimed + claimed_input_tokens > MAX_INPUT_TOKENS:
-            raise RequestPlanDenied("input budget exhausted")
-        if self.output_tokens_reserved + max_tokens > MAX_OUTPUT_TOKENS:
-            raise RequestPlanDenied("output reservation exhausted")
         payload: dict[str, object] = {
             "model": MODEL,
             "messages": message_list,
@@ -91,22 +89,39 @@ class OfflineRequestPlan:
             "stream": False,
             "thinking": {"type": "disabled"},
         }
-        # No network operation takes place. Reserve before returning the payload.
-        self.requests_reserved += 1
-        self.input_tokens_claimed += claimed_input_tokens
-        self.output_tokens_reserved += max_tokens
-        self._history.append({
-            "request": self.requests_reserved,
-            "claimed_input_tokens": claimed_input_tokens,
-            "reserved_output_tokens": max_tokens,
-            "evidence": "UNVERIFIED_INPUT_COUNT",
-        })
+        # An exact envelope replay can be a hidden accidental retry.
+        # Only the SHA-256 fingerprint is kept in memory, never message text.
+        fingerprint = hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        # Atomic reservation against simultaneous callers in ONE Python process.
+        # This is not a cross-process transaction or a network-transport guard.
+        with self._lock:
+            if fingerprint in self._seen_envelopes:
+                raise RequestPlanDenied("duplicate envelope replay denied")
+            if self.requests_reserved >= MAX_REQUESTS:
+                raise RequestPlanDenied("request budget exhausted")
+            if self.input_tokens_claimed + claimed_input_tokens > MAX_INPUT_TOKENS:
+                raise RequestPlanDenied("input budget exhausted")
+            if self.output_tokens_reserved + max_tokens > MAX_OUTPUT_TOKENS:
+                raise RequestPlanDenied("output reservation exhausted")
+            self.requests_reserved += 1
+            self.input_tokens_claimed += claimed_input_tokens
+            self.output_tokens_reserved += max_tokens
+            self._seen_envelopes.add(fingerprint)
+            self._history.append({
+                "request": self.requests_reserved,
+                "claimed_input_tokens": claimed_input_tokens,
+                "reserved_output_tokens": max_tokens,
+                "evidence": "UNVERIFIED_INPUT_COUNT",
+            })
         return payload
 
     def sanitized_summary(self) -> dict[str, int | str]:
-        return {
-            "status": "OFFLINE_ONLY_NOT_BILLING_PROOF",
-            "requests_reserved": self.requests_reserved,
-            "input_tokens_claimed": self.input_tokens_claimed,
-            "output_tokens_reserved": self.output_tokens_reserved,
-        }
+        with self._lock:
+            return {
+                "status": "OFFLINE_ONLY_NOT_BILLING_PROOF",
+                "requests_reserved": self.requests_reserved,
+                "input_tokens_claimed": self.input_tokens_claimed,
+                "output_tokens_reserved": self.output_tokens_reserved,
+            }
