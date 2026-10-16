@@ -6,6 +6,10 @@ REPO_REF="${REPO_REF:?exact SHA required}"
 [[ "$(id -u)" == 0 ]]
 DEPLOY_DRY_RUN="${DEPLOY_DRY_RUN:-false}"
 ALLOW_SERVICE_MUTATION="${ALLOW_SERVICE_MUTATION:-false}"
+# Explicitly bounded starter scan universe: two holdings plus 18 liquid A-share
+# references. Operators may replace this list, but the phase-two worker
+# hard-caps it at 200.
+TICKFLOW_RESEARCH_SYMBOLS="${TICKFLOW_RESEARCH_SYMBOLS:-159611.SZ,159209.SZ,600519.SH,000001.SZ,300750.SZ,601318.SH,600036.SH,000858.SZ,601398.SH,600900.SH,601888.SH,600276.SH,000333.SZ,002594.SZ,600030.SH,601857.SH,600028.SH,600809.SH,000651.SZ,601012.SH}"
 ROOT=/opt/stock-razor-cn-tickflow
 SERVICE=stock-razor-cn-tickflow-research.service
 REPO=https://github.com/kaku3030/stock-razor.git
@@ -92,6 +96,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONPATH=$ROOT/repo
 Environment=STOCK_RAZOR_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_CN_TICKFLOW_STATUS_PATH=/run/stock-razor-cn-tickflow/latest-research-observation.json
+Environment=TICKFLOW_RESEARCH_SYMBOLS=$TICKFLOW_RESEARCH_SYMBOLS
 RuntimeDirectory=stock-razor-cn-tickflow
 RuntimeDirectoryMode=0700
 ExecStart=$ROOT/venv/bin/python -m scripts.run_cn_tickflow_research_worker

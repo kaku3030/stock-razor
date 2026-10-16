@@ -134,6 +134,34 @@ def test_bounded_session_sends_only_quotes_and_closes_without_network():
     assert e.summary(ws_handshake=True)["protocol_acceptance"] == "FAIL"
 
 
+def test_twenty_symbol_session_sends_four_bounded_subscriptions_and_unions_acks():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(20))
+
+    class TwentySocket:
+        def __init__(self):
+            self.sent = []
+            self.frames = [
+                json.dumps({
+                    "op": "subscribed", "channel": "quotes",
+                    "symbols": list(sorted(symbols))[offset:offset + 5], "total": 5,
+                }) for offset in range(0, 20, 5)
+            ]
+
+        async def send(self, message):
+            self.sent.append(message)
+
+        async def recv(self):
+            if self.frames:
+                return self.frames.pop(0)
+            raise EOFError("done")
+
+    fake = TwentySocket()
+    evidence = ProtocolEvidence(symbols)
+    asyncio.run(observe_socket(fake, evidence, 10))
+    assert len(fake.sent) == 4
+    assert evidence.summary(ws_handshake=True)["subscription_ack"] == "PASS"
+
+
 @pytest.mark.parametrize("values", [(), ("INVALID",), ("159611.SZ",) * 6, ("159611.SZ",) * 2])
 def test_untrusted_symbols_fail_closed(values):
     with pytest.raises(ValueError):

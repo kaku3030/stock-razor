@@ -206,9 +206,9 @@ if [[ "$protocol_only" == true ]]; then
   # transport or market-data qualification. Emit only the validated schema.
   probe_stage=RUN_DIRECT_WS_PROTOCOL
   protocol_rc=0
-  ws_symbols="${TICKFLOW_WS_SYMBOLS:-159611.SZ 159209.SZ 512730.SH 159363.SZ}"
+  ws_symbols="${TICKFLOW_WS_SYMBOLS:-159611.SZ 159209.SZ 600519.SH 000001.SZ 300750.SZ 601318.SH 600036.SH 000858.SZ 601398.SH 600900.SH 601888.SH 600276.SH 000333.SZ 002594.SZ 600030.SH 601857.SH 600028.SH 600809.SH 000651.SZ 601012.SH}"
   read -r -a ws_symbol_args <<< "$ws_symbols"
-  (( ${#ws_symbol_args[@]} >= 1 && ${#ws_symbol_args[@]} <= 5 )) || {
+  (( ${#ws_symbol_args[@]} >= 1 && ${#ws_symbol_args[@]} <= 20 )) || {
     echo 'TICKFLOW_WS_SYMBOLS_INVALID' >&2
     exit 2
   }

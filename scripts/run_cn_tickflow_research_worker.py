@@ -10,7 +10,7 @@ import signal
 import time
 
 from data_provider.cn_tickflow_research_cache import (
-    SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation,
+    SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation, resolve_scan_symbols,
 )
 from data_provider.tickflow_ws_research_observer import attach_tickflow_stream
 
@@ -91,15 +91,16 @@ def _interval(now: datetime, failure: bool=False) -> int:
         return 900
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
-    # Read-only REST, 20 bounded Kline requests per cadence, not ticks:
-    # four held ETFs across the five approved research periods.
+    # Read-only REST, bounded Kline requests per cadence, not ticks. The
+    # default remains the four held ETFs; explicit phase scans are capped by
+    # resolve_scan_symbols.
     return 300 if failure or not session else 15
 
 def _network_retry_interval(now: datetime, error: Exception | None, failures: int) -> int:
     """Bounded polling recovery, never hidden SDK retries or auth retries.
 
-    Twenty calls maximum per cycle and >=15s between cycles retain a single
-    worker and bounded request cadence. Repeated network failures
+    The default four-symbol cycle is bounded and >=15s between cycles retain a
+    single worker. Repeated network failures
     back off to the original 300s; weekends retain 900s.
     """
     conservative = _interval(now, failure=True)
@@ -131,6 +132,11 @@ def main() -> int:
         return 2
     signal.signal(signal.SIGTERM,_stop)
     signal.signal(signal.SIGINT,_stop)
+    try:
+        scan_symbols=resolve_scan_symbols(os.environ.get("TICKFLOW_RESEARCH_SYMBOLS"))
+    except ValueError:
+        print("TICKFLOW_RESEARCH_SYMBOLS=BLOCKED:INVALID",flush=True)
+        return 2
     # Init SDK with AWS IAM key in process memory, never argv or systemd env.
     try:
         with open(os.devnull,"w",encoding="utf-8") as null:
@@ -149,7 +155,10 @@ def main() -> int:
         try:
             with open(os.devnull, "w", encoding="utf-8") as null:
                 with redirect_stdout(null), redirect_stderr(null):
-                    ws_observer = attach_tickflow_stream(client, SYMBOLS)
+                    # The official observer remains capped at five symbols;
+                    # REST/Kline capacity is independent from this protocol
+                    # evidence leg.
+                    ws_observer = attach_tickflow_stream(client, scan_symbols[:5])
         except Exception as exc:
             # REST research remains independent; the optional WS leg is an
             # explicit blocked observation rather than a silent live claim.
@@ -166,7 +175,9 @@ def main() -> int:
                 with open(os.devnull,"w",encoding="utf-8") as null:
                     with redirect_stdout(null), redirect_stderr(null):
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
-                              sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
+                              sequence=sequence,symbols=scan_symbols,
+                              include_supplemental=True,allow_scan_symbols=True,
+                              use_batch=True)
                 if ws_observer is not None:
                     try:
                         snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
@@ -195,7 +206,7 @@ def main() -> int:
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
                             *[f"S{i}_{period}_{action}"
-                              for i in range(len(SYMBOLS))
+                              for i in range(len(scan_symbols))
                               for period in ("1M","5M","15M","60M","1D")
                               for action in ("FETCH","NORMALIZE")],
                         } else "UNKNOWN"
