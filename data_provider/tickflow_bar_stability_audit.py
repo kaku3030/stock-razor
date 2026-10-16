@@ -146,6 +146,12 @@ def audit_tickflow_bar_stability(
     next_time = _time(second.get("observed_at_utc"))
     if prev_time is None or next_time is None:
         return _result("SOURCE_PROVENANCE_INVALID")
+    # The *first* observation must also be after the provider boundary
+    # grace. Two identical in-flight candles before the close prove nothing.
+    if prev_time < boundary.astimezone(timezone.utc) + timedelta(
+        seconds=_GRACE_SECONDS,
+    ):
+        return _result("FIRST_POLL_BEFORE_MATURITY")
     age = (now - next_time).total_seconds()
     gap = (next_time - prev_time).total_seconds()
     if (
