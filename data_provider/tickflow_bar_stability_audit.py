@@ -308,6 +308,7 @@ def audit_tickflow_vendor_successor_close(
             )
         return {
             **_result(status),
+            "bar_clock_matured": closed,
             "provider_operational_closed_research_only": closed,
             "closure_rule": "TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE",
             "provider_finality_attestation": "NO_IS_FINAL_FIELD",
