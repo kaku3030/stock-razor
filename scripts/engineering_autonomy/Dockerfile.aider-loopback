@@ -9,6 +9,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 RUN python -m pip install --no-cache-dir aider-chat==0.86.2
 
 COPY aider_isolation_docker_smoke.py /opt/aider_isolation_docker_smoke.py
+COPY aider_two_server_proxy_smoke.py /opt/aider_two_server_proxy_smoke.py
 
 USER 65534:65534
 WORKDIR /tmp
