@@ -90,7 +90,15 @@ def _safe_bar(snapshot: Mapping, symbol: str, timeframe: str, label: str):
                 fields.append(float(value))
         if any(value is not None and value <= 0 for value in fields[:4]):
             return None
-        return tuple(fields)
+        opening, high, low, closing = fields[:4]
+        if high < max(opening, closing, low) or low > min(
+                opening, closing, high):
+            # Never treat a malformed OHLC record as a stable, closed bar.
+            return None
+        return (
+            *fields, item.get("amount_availability"),
+            item.get("ohlc_validation"),
+        )
     except (KeyError, TypeError, ValueError):
         return None
 
