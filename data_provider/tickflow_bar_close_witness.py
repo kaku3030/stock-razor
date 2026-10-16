@@ -99,7 +99,7 @@ def _safe_bar(snapshot: Mapping, symbol: str, timeframe: str, label: str):
             *fields, item.get("amount_availability"),
             item.get("ohlc_validation"),
         )
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return None
 
 
