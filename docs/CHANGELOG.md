@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] 增加 Feedback Hub EC2 手动只读 SSM 存储探针：仅观察已存在的 SQLite 结构、审计聚合和挂载类型，不创建数据库，不宣称跨运行持久化或生产者消费通过。
 - [修复] Paper SSM 只读验收拒绝未来时间戳的心跳文件作为新鲜状态，保持运行时未知及所有交易门禁阻断。
 - [修复] OpenD canonical 快照区分发布心跳与最新行情源时间戳；运行时可持续推进只读快照序列，同时 MCP 仍按真实 K 线源时间判定新鲜度，避免缓存停滞或心跳刷新掩盖旧数据。
 - [修复] TickFlow 暂时性网络超时按15至300秒有界退避恢复，成功后重置；鉴权、限流及数据错误仍保留300秒退避，周末900秒，失败缓存不冒充有效行情。
