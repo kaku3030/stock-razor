@@ -214,7 +214,7 @@ jobs:
             "512730_SH_1m","512730_SH_5m","512730_SH_15m","512730_SH_60m",
             "159363_SZ_1m","159363_SZ_5m","159363_SZ_15m","159363_SZ_60m")
           historical_periods=(*periods,
-            "159611_SZ_1d","159209_SZ_1d","512730_SZ_1d","159363_SZ_1d")
+             "159611_SZ_1d","159209_SZ_1d","512730_SH_1d","159363_SZ_1d")
           allowed_grid=("UNKNOWN","NO_SESSION_GRID_DUE","NO_SAME_DAY_RETAINED_BAR",
                         "LAST_LABEL_OFF_GRID","MATCHED_DUE_LABEL",
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
