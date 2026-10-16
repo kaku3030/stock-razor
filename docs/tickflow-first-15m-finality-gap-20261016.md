@@ -94,8 +94,8 @@ key operational definitions for the user's Expert A-share use case.
 These facts supersede our earlier assumption that all timestamp semantics
 and a candle-close *rule* were completely undocumented:
 
-- **K-line \`timestamp\` is BAR_END**, not BAR_START.
-- The provider has **no separate \`is_final\` or \`closed\` field**.
+- **K-line `timestamp` is BAR_END**, not BAR_START.
+- The provider has **no separate `is_final` or `closed` field**.
 - **Once a next K-line forms, the preceding K-line may be regarded as
   closed.** This is a provider-defined operational close, NOT an
   independently sealed/irreversible exchange record.
@@ -108,24 +108,24 @@ and a candle-close *rule* were completely undocumented:
   close**. Post-close reconciliation and versioned audit are required;
   no source revision ID or guaranteed finality cutoff was supplied.
 - Small JSON floating serialization mismatches can be validated with
-  absolute bounds: \`max(open, close, low)-high <= 1e-5\` and
-  \`low-min(open, close, high) <= 1e-5\`. Do not edit vendor prices.
+  absolute bounds: `max(open, close, low)-high <= 1e-5` and
+  `low-min(open, close, high) <= 1e-5`. Do not edit vendor prices.
 
 This reply is stronger than the SDK's column schema alone. In particular,
-the absence of an \`is_final\` field does **not** mean that *no* operational
+the absence of an `is_final` field does **not** mean that *no* operational
 closed-bar inference is possible. It means immutable provider/exchange
 finality cannot be derived from that API alone.
 
-\`audit_tickflow_vendor_successor_close()\` implements the conservative
+`audit_tickflow_vendor_successor_close()` implements the conservative
 version of this support rule on already-collected research snapshots.
 For a target 15m ending at 09:45, it requires the *same provider's*
 subsequent 10:00 bar to appear in the approved regular-session grid.
 Because the research cache quarantines future-end-label forming candles,
 this is slower than the provider's earliest "next candle formed" moment,
 but remains strictly research-only. It emits
-\`provider_operational_closed_research_only=true\`,
-\`closure_rule=TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE\`,
-\`bar_finality=NOT_VERIFIED\` and all trading/Radar gates BLOCKED.
+`provider_operational_closed_research_only=true`,
+`closure_rule=TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE`,
+`bar_finality=NOT_VERIFIED` and all trading/Radar gates BLOCKED.
 
 The official reply distinguishes two separate notions of "closed":
 
