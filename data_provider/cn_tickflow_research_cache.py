@@ -414,9 +414,18 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
     if type(use_batch) is not bool:
         raise ValueError("invalid batch mode flag")
     if use_batch:
+        # The installed SDK contract defaults to 100 symbols per request.
+        # Keep the scan ceiling at 200 while letting the SDK split each
+        # timeframe into bounded batches instead of passing an unsupported
+        # 200-symbol request size.
+        try:
+            configured_batch_size = int(os.environ.get("TICKFLOW_BATCH_SIZE", "100"))
+        except ValueError:
+            configured_batch_size = 100
+        batch_size = min(len(symbols), max(1, min(configured_batch_size, 100)))
         client = type("_BatchClient", (), {
             "klines": _BatchKlinesFacade(
-                client, symbols, periods, batch_size=len(symbols),
+                client, symbols, periods, batch_size=batch_size,
             ),
         })()
     for index,symbol in enumerate(symbols):
