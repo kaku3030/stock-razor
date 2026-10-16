@@ -47,6 +47,9 @@ _NORMALIZE_REJECTION_REASON = {
 
 def _normalize_rejection_reason(error: Exception) -> str:
     stage=getattr(error, "_tickflow_stage", "")
+    if (type(error) is ValueError and stage == "S4_CACHE_PUBLISH"
+            and str(error) == "private research cache exceeds bounded bytes"):
+        return "CACHE_SIZE_EXCEEDED"
     if (type(error) is ValueError and isinstance(stage,str)
             and stage.endswith("_NORMALIZE")):
         return _NORMALIZE_REJECTION_REASON.get(str(error), "OTHER")
@@ -165,8 +168,16 @@ def main() -> int:
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
                               sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
                 if ws_observer is not None:
-                    snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
-                atomic_publish(status_path,snapshot)
+                    try:
+                        snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
+                    except Exception as exc:
+                        exc._tickflow_stage="S4_WS_SUMMARY"
+                        raise
+                try:
+                    atomic_publish(status_path,snapshot)
+                except Exception as exc:
+                    exc._tickflow_stage="S4_CACHE_PUBLISH"
+                    raise
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
                 failed=True
