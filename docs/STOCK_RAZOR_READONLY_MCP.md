@@ -262,3 +262,11 @@ The existing `TICKFLOW:BATCH` (15m+60m, limit<=24),
 `TICKFLOW:FAST` (compact 15m+60m latest) and normal Eastmoney/Tencent
 read routes remain unchanged. The provider's daily 00:00 timestamp is
 a DATE stamp only, not a BAR_END assertion; daily remains historical-only.
+
+## Read-only US OpenD historical D1 (guarded compatibility route)
+
+For currently connected ChatGPT tools, call `get_market_bars(symbol="NVDA", timeframe="1d", limit=5)` after the MCP revision is deployed. This special 1d path reads the existing `/run/stock-razor-us-livefeed/daily-history.json` cache from Futu/OpenD; it makes **zero** provider, account or order requests. The default intraday 1m/5m/15m/1h routes are unchanged.
+
+The D1 reader checks livefeed health, exact runtime/commit lineage, cache age, symbol, source safety flags, strictly increasing prior-session dates and finite OHLCV. Missing/stale/mismatched evidence fails closed. A successful response uses `PASS_HISTORICAL_ONLY`, not regular `PASS`. **The current New York trading date is excluded; the reader neither confirms today's D1 close nor proves native provider finality.** The response retains `provider_finality=NOT_VERIFIED`, `current_session_daily_bar=NOT_AVAILABLE`, `source_arbiter_admission=BLOCKED`, `radar_admission=BLOCKED`, `paper_auto_ready=false` and `live_trade=false`.
+
+A merged PR or green unit test does **not** prove the cache exists or that this new code is deployed to AWS. A direct connected MCP readback is required before calling the route operational, and current-day D1 completion remains a separate unverified capability.
