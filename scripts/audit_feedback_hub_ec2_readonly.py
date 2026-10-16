@@ -26,9 +26,14 @@ def _path_allowed(raw: str) -> Path | None:
             or PATH_RE.fullmatch(raw) is None):
         return None
     path = Path(raw)
-    if ".." in path.parts or path.is_symlink():
+    if ".." in path.parts:
         return None
     try:
+        # A symlink in any parent can silently redirect the requested
+        # storage authority. Reject that alias before following the path.
+        for component in (path, *path.parents):
+            if component.is_symlink():
+                return None
         resolved = path.resolve(strict=True)
         if not resolved.is_file() or resolved.stat().st_size > MAX_DB_BYTES:
             return None
@@ -85,6 +90,9 @@ def observe(db: str, *, mountinfo: str | None = None) -> dict:
         uri = path.as_uri() + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=3) as conn:
             conn.execute("PRAGMA query_only=ON")
+            # Hold one consistent read snapshot for all count and digest
+            # fields if other producers are concurrently appending events.
+            conn.execute("BEGIN")
             version = conn.execute(
                 "SELECT value FROM metadata WHERE key='schema_version'"
             ).fetchone()
