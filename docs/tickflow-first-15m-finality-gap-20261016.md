@@ -87,28 +87,81 @@ volume, amount, missing rows, invalid/ambiguous provenance or vendor-float
 tolerance fail closed. The output never grants provider finality, source
 or Radar admission, even on perfect cross-period equality.
 
-## The true missing external contract (P0)
+## Confirmed vendor data contract — written reply dated 2026-10-13
 
-Before *any* provider-final bar may be admitted, obtain documentary and
-on-AWS independent confirmation from TickFlow for:
+The TickFlow technical support team **already confirmed in writing** the
+key operational definitions for the user's Expert A-share use case.
+These facts supersede our earlier assumption that all timestamp semantics
+and a candle-close *rule* were completely undocumented:
 
-1. **Timestamp semantics:** K-line `timestamp` denotes bar start or
-   bar end? Confirm 09:30–09:45 mapping and exchange break rules.
-2. **Finality:** Does each returned minute K-line represent a finalized
-   exchange bar only after its time interval has elapsed, or may the
-   provider revise it later? Is there a producer/server confirmation
-   event/field that uniquely attests to bar close?
-3. **Correction/revision mechanism:** If 09:45 OHLCV/amount changes at
-   09:47 or after reconnection, what source revision/sequence/clock
-   identifies the corrected final value?
-4. **1m→5m→15m→60m/D1 cross-period consistency** with actual
-   entitlement and session calendars, including partial present bar.
-5. **Version/runtime provenance:** deploy only reviewed main after CI,
-   confirm same API/collector schema and independently verify EC2
-   provider QOS/rights, source lag and re-connect behavior.
+- **K-line \`timestamp\` is BAR_END**, not BAR_START.
+- The provider has **no separate \`is_final\` or \`closed\` field**.
+- **Once a next K-line forms, the preceding K-line may be regarded as
+  closed.** This is a provider-defined operational close, NOT an
+  independently sealed/irreversible exchange record.
+- Off-market, if a minute K-line receives **no volume update for more
+  than one minute**, it can be regarded as no longer changing under
+  ordinary delivery. This is *not* an immutable-data guarantee.
+- 15m/60m timestamps normally advance monotonically; missing due labels
+  should be checked on subsequent polling rather than invented.
+- The provider may **revise K-line values about one hour after the
+  close**. Post-close reconciliation and versioned audit are required;
+  no source revision ID or guaranteed finality cutoff was supplied.
+- Small JSON floating serialization mismatches can be validated with
+  absolute bounds: \`max(open, close, low)-high <= 1e-5\` and
+  \`low-min(open, close, high) <= 1e-5\`. Do not edit vendor prices.
 
-Until verified, source arbiter and Radar stay **BLOCKED**, even when
-the present clock-grid and two-poll stability both PASS.
+This reply is stronger than the SDK's column schema alone. In particular,
+the absence of an \`is_final\` field does **not** mean that *no* operational
+closed-bar inference is possible. It means immutable provider/exchange
+finality cannot be derived from that API alone.
 
-Proof of stable data is useful for research; it cannot be silently
-promoted to trade-executable K-lines.
+\`audit_tickflow_vendor_successor_close()\` implements the conservative
+version of this support rule on already-collected research snapshots.
+For a target 15m ending at 09:45, it requires the *same provider's*
+subsequent 10:00 bar to appear in the approved regular-session grid.
+Because the research cache quarantines future-end-label forming candles,
+this is slower than the provider's earliest "next candle formed" moment,
+but remains strictly research-only. It emits
+\`provider_operational_closed_research_only=true\`,
+\`closure_rule=TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE\`,
+\`bar_finality=NOT_VERIFIED\` and all trading/Radar gates BLOCKED.
+
+The official reply distinguishes two separate notions of "closed":
+
+| Evidence | Operational research closed? | Exchange/immutable finality? |
+| --- | --- | --- |
+| Boundary reached by wall clock | No | No |
+| New same-provider K-line formed after the target | Yes, provider rule | No |
+| 2 post-boundary snapshots and 5m→15m match | Integrity support only | No |
+| 1h post-close correction window elapsed | Stronger settlement context | Still not guaranteed |
+| Authenticated exchange/server-final revision seal | Not exposed by current SDK | Only if independently provided |
+
+## Remaining P0: runtime qualification and amendment handling
+
+**The vendor already answered BAR_END and operational close by successor.**
+Remaining engineering questions are different:
+
+1. **Upstream correction visibility:** How can later revisions after 15:00
+   be linked to the source's revision/sequence? The provider warns of
+   corrections around one hour after close but has not committed to a
+   guaranteed immutable cutoff or issued a signed finality event.
+2. **Production integration:** Apply the vendor operational-close rule to
+   actual AWS read-only evidence without touching immutable finality flags
+   or reopening SOURCE_ARBITER/RADAR/TRADE gates.
+3. **Session + cross-period:** Verify the last due 1m/5m/15m/60m/1d
+   grids, lunch break, exchange holidays and OHLCVA equality, not just
+   one today's first 15m bar. Expert access includes 1m as confirmed
+   in writing, but today's narrow research cache does not expose
+   1m session_progress.
+4. **Correction audit:** Carry out versioned post-close readbacks after
+   the approximate revision window, compare full OHLCVA revisions,
+   and preserve corrections rather than silently replacing provenance.
+5. **Cloud version and rights:** Independently confirm AWS runtime/main
+   SHA parity, SDK and transport rights, source freshness, reconnect
+   consistency and authoritative account-level resource budget.
+
+Vendor operational closure is appropriate for a strictly labeled
+research signal. It is not the same as a permanently immutable record.
+Current system admission gates remain **BLOCKED** until the reviewed
+risk/admission policy and actual runtime qualification are completed.
