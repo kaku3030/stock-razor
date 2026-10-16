@@ -211,8 +211,8 @@ def test_three_5m_bars_reconstruct_vendor_15m_but_never_finality():
     (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
         volume=5001
     ), "OHLCV_DIVERGENCE"),
-    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
-        close=1.046
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][2].update(
+        close=1.041
     ), "OHLCV_DIVERGENCE"),
     (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
         amount=5501.0
