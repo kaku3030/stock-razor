@@ -703,6 +703,7 @@ def sample():
         "mcp_unit_active":active(MCP_UNIT),
         "worker_journal_observation":safe_worker_journal_observation(),
         "status":"NOT_VERIFIED",
+        "failure_class":"UNKNOWN",
         "cache_unavailable_reason":"NOT_APPLICABLE",
         "failure_stage":"UNKNOWN",
         "failure_reason":"UNKNOWN",
@@ -783,6 +784,17 @@ def sample():
                     )
         if data.get("status")=="BLOCKED":
             result["status"]=blocked_status(data.get("failure_class"))
+            failure_class=data.get("failure_class")
+            allowed_failure_classes={
+                "ValueError","TypeError","KeyError","ImportError","OSError",
+                "TimeoutError","ConnectionError","ConnectTimeout","ReadTimeout",
+                "WriteTimeout","PoolTimeout","ConnectError","ReadError",
+                "RemoteProtocolError","JSONDecodeError","InvalidOperation",
+            }
+            result["failure_class"]=(
+                failure_class if isinstance(failure_class,str)
+                and failure_class in allowed_failure_classes else "UNKNOWN"
+            )
             result["failure_stage"]=safe_failure_stage(data.get("failure_stage"))
             reason=data.get("failure_reason")
             allowed_reasons={
