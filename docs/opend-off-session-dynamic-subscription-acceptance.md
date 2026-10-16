@@ -12,9 +12,13 @@ US K-line options include `extended_time` and `session=Session.ALL`;
 `Session.OVERNIGHT` by itself is not allowed for US quotes. The provider
 documentation cautions to wait at least one minute before unsubscribing.
 `is_first_push=True` can replay cached data, including after reconnect.
-These are **provider adapter responsibilities**; merely retaining
-`SemanticStreamKey.session_mode="ALL"` in #812's owner-neutral manager
-does not prove the SDK adapter honors it.
+In this unmerged PR, the Python Futu K_1M adapter now explicitly passes
+`session=Session.ALL` for `session_mode="ALL"`, and preserves that exact
+semantic stream key for subsequent callbacks. It rejects missing SDK
+`Session.ALL` support and unsupported `OVERNIGHT`-only requests. The
+manager groups regular and ALL candidates into separate provider batches;
+a direct adapter call with mixed scopes fails closed. **These are offline
+behavioral contracts, not provider-side ACK or live cloud evidence.**
 
 References (official provider docs):
 https://openapi.futunn.com/futu-api-doc/en/quote/sub.html
@@ -68,8 +72,15 @@ Offline fake adapter tests verify that the manager does not unnecessarily
 gate the control plane on wall-clock session phase, *while still requiring*
 fresh verified quota. No test here contacts OpenD, verifies `Qot_Sub` ACK,
 rights, provider session flags or actual after-hours/overnight K-lines.
-The existing cloud runtime is a different SHA from PR #812, which is open and
-not deployed. A green CI cannot qualify cloud operations.
+The updated adapter and manager are covered by fake OpenD SDK/context
+tests for `Session.ALL` argument propagation, callback semantic identity,
+unsupported SDK session support, mixed batch grouping and runtime bridge
+ownership. Genuine `Qot_Sub` provider ACK followed by
+`query_subscription` reconciliation is **not implemented or verified**
+by this PR; rights and fresh 1m K-lines remain independent gates.
+
+The existing cloud runtime is a different SHA from PR #812, which is open
+and not deployed. A green CI cannot qualify cloud operations.
 
 Off-session **preparation** is useful and should happen before the market
 opens. Real closed-bar and first live K-line acceptance remains a separate
