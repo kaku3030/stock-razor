@@ -289,7 +289,7 @@ jobs:
                   assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket, ("same_session_vendor_float_rows_bucket",_v.get("same_session_vendor_float_rows_bucket"))
                   assert _v.get("retained_bar_count_bucket") in allowed_rows, ("retained_bar_count_bucket",_v.get("retained_bar_count_bucket"))
               supp=d[when].get("supplemental_5m_reader")
-              assert isinstance(supp,dict) and set(supp).issubset(set(historical_periods))
+              assert isinstance(supp,dict) and set(periods).issubset(set(supp)) and set(supp).issubset(set(historical_periods))
               for observed in supp.values():
                   assert isinstance(observed,dict)
                   assert observed.get("state") in states
@@ -301,7 +301,7 @@ jobs:
                   assert 0<=observed.get("rows")<=2
               period_map=d[when].get("per_period_observation")
               assert isinstance(period_map,dict)
-              assert set(period_map).issubset(periods)
+              assert set(periods).issubset(set(period_map)) and set(period_map).issubset(set(historical_periods))
               assert all(isinstance(v,dict) and v.get("state") in states
                          and type(v.get("radar_blocked")) is bool
                          and type(v.get("finality_unproven")) is bool
