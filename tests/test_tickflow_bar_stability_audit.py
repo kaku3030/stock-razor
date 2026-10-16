@@ -4,7 +4,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from data_provider.cn_tickflow_research_cache import SCHEMA
-from data_provider.tickflow_bar_stability_audit import audit_tickflow_bar_stability
+from data_provider.tickflow_bar_stability_audit import (
+    audit_tickflow_bar_stability,
+    audit_tickflow_5m_15m_reconciliation,
+)
 
 
 NOW = datetime(2026, 10, 16, 2, 5, tzinfo=timezone.utc)
@@ -156,3 +159,93 @@ def test_invalid_boundary_including_daily_and_off_grid_is_rejected():
         )
         assert verdict["two_poll_stable_research_only"] is False
         assert verdict["radar_admission"] == "BLOCKED"
+
+
+def multi_period_fixture():
+    snap = observation(100, NOW - timedelta(seconds=7))
+    snap["symbols"][SYMBOL]["5m"] = {
+        "rows": [
+            {
+                "label": "2026-10-16 09:35", "open": 1.03,
+                "high": 1.04, "low": 1.02, "close": 1.035,
+                "volume": 4000, "amount": 4000.0,
+                "bar_finality": "NOT_VERIFIED",
+                "is_partial_bar": True, "ohlc_validation": "STRICT",
+            },
+            {
+                "label": "2026-10-16 09:40", "open": 1.035,
+                "high": 1.05, "low": 1.03, "close": 1.045,
+                "volume": 5000, "amount": 5500.0,
+                "bar_finality": "NOT_VERIFIED",
+                "is_partial_bar": True, "ohlc_validation": "STRICT",
+            },
+            {
+                "label": "2026-10-16 09:45", "open": 1.045,
+                "high": 1.049, "low": 1.04, "close": 1.04,
+                "volume": 3345, "amount": 3062.3,
+                "bar_finality": "NOT_VERIFIED",
+                "is_partial_bar": True, "ohlc_validation": "STRICT",
+            },
+        ],
+    }
+    return snap
+
+
+def reconcile(snap):
+    return audit_tickflow_5m_15m_reconciliation(
+        snap, symbol=SYMBOL, label=LABEL, now_utc=NOW,
+    )
+
+
+def test_three_5m_bars_reconstruct_vendor_15m_but_never_finality():
+    snap = multi_period_fixture()
+    got = reconcile(snap)
+    assert got["status"] == "OHLCVA_AGGREGATION_RESEARCH_MATCH"
+    assert got["provider_requests"] == 0
+    assert got["bar_finality"] == "NOT_VERIFIED"
+    assert got["radar_admission"] == "BLOCKED"
+    assert got["live_trade"] is False
+
+
+@pytest.mark.parametrize(("edit", "expected"), [
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        volume=5001
+    ), "OHLCV_DIVERGENCE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        close=1.046
+    ), "OHLCV_DIVERGENCE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        amount=5501.0
+    ), "AMOUNT_DIVERGENCE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        is_partial_bar=False
+    ), "RECONCILIATION_ROWS_MISSING_OR_UNSAFE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        ohlc_validation="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    ), "RECONCILIATION_ROWS_MISSING_OR_UNSAFE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"][1].update(
+        amount=None
+    ), "OHLCV_MATCH_AMOUNT_NOT_AVAILABLE"),
+    (lambda x: x["symbols"][SYMBOL]["5m"]["rows"].pop(),
+     "RECONCILIATION_ROWS_MISSING_OR_UNSAFE"),
+    (lambda x: x.update(provider="TENCENT"), "SOURCE_PROVENANCE_INVALID"),
+    (lambda x: x.update(radar_admission="PASS"),
+     "SOURCE_PROVENANCE_INVALID"),
+])
+def test_reconciliation_never_promotes_invalid_rows(edit, expected):
+    snap = multi_period_fixture()
+    edit(snap)
+    got = reconcile(snap)
+    assert got["status"] == expected
+    assert got["bar_finality"] == "NOT_VERIFIED"
+    assert got["radar_admission"] == "BLOCKED"
+
+
+def test_reconciliation_does_not_accept_before_expected_bar_clock():
+    snap = multi_period_fixture()
+    result = audit_tickflow_5m_15m_reconciliation(
+        snap, symbol=SYMBOL, label=LABEL,
+        now_utc=datetime(2026, 10, 16, 1, 45, tzinfo=timezone.utc),
+    )
+    assert result["status"] == "BOUNDARY_NOT_MATURE"
+    assert result["live_trade"] is False
