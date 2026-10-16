@@ -326,7 +326,8 @@ jobs:
           def compact_reader(value):
               return {k:value.get(k) for k in (
                   "state","radar_blocked","finality_unproven","rows")}
-          public_keys=("status","worker_journal_observation","repo_sha_match",
+          public_keys=("status","failure_stage","failure_reason","failure_ohlc_float_gap_bucket",
+                       "worker_journal_observation","repo_sha_match",
                        "sequence","cache_age_seconds","mcp_cache_consumer",
                        "mcp_historical_consumer","all_four_readonly_requests_ok",
                        "all_four_historical_requests_ok")
