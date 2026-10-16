@@ -314,17 +314,22 @@ class OpenDSubscriptionManager:
             if not desired:
                 return self._result("NOOP", "RECOVERY_EMPTY_CANDIDATE_POOL")
             self._last_mutation_at_utc = self._now_utc().astimezone(timezone.utc)
+            attempted = 0
             try:
-                self._adapter.subscribe_streams(desired)
+                for batch in self._session_batches(desired):
+                    attempted += 1
+                    self._adapter.subscribe_streams(batch)
             except Exception:
                 self._transport_state = "UNKNOWN"
                 return self._result(
                     "UNKNOWN",
                     "TRANSPORT_MUTATION_OUTCOME_UNKNOWN",
-                    attempted=1,
+                    attempted=attempted,
                 )
             self._applied = set(desired)
-            return self._result("RECOVERED", None, added=desired, attempted=1)
+            return self._result(
+                "RECOVERED", None, added=desired, attempted=attempted,
+            )
 
     def record_history_warm_start(
         self,
@@ -397,9 +402,9 @@ class OpenDSubscriptionManager:
         attempted = 0
         self._last_mutation_at_utc = self._now_utc().astimezone(timezone.utc)
         try:
-            if additions:
+            for batch in self._session_batches(additions):
                 attempted += 1
-                self._adapter.subscribe_streams(additions)
+                self._adapter.subscribe_streams(batch)
             for key in removals:
                 attempted += 1
                 self._adapter.unsubscribe_stream(key)
@@ -470,6 +475,16 @@ class OpenDSubscriptionManager:
             candidate_pool=self._ordered(self._candidate_pool),
             applied=self._ordered(self._applied),
         )
+
+    @staticmethod
+    def _session_batches(
+        keys: Sequence[SemanticStreamKey],
+    ) -> tuple[tuple[SemanticStreamKey, ...], ...]:
+        """One provider subscribe call has one US quote session scope."""
+        grouped: dict[str | None, list[SemanticStreamKey]] = {}
+        for key in keys:
+            grouped.setdefault(key.session_mode, []).append(key)
+        return tuple(tuple(batch) for batch in grouped.values())
 
     @staticmethod
     def _ordered(keys: set[SemanticStreamKey] | Sequence[SemanticStreamKey]) -> tuple[SemanticStreamKey, ...]:
