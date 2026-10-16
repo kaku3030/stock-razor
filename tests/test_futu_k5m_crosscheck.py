@@ -176,7 +176,8 @@ def test_end_labeled_k1m_chain_matches_end_labeled_native_k5m():
             "low": 99,
             "close": 104.5,
             "volume": 60,
-            "turnover": 5010,
+            # Match the sum of the five source-minute turnover values.
+            "turnover": 6160,
         },
         timezone_semantics_verified=True,
         native_is_forming=False,
