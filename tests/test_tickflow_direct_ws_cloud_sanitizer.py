@@ -152,7 +152,9 @@ def test_existing_premium_seven_argument_mode_remains_and_protocol_only_avoids_r
     assert "sha256sum -c - >/dev/null" in s
     assert "stage/ws_protocol.py" in s
     assert "stage/ws_sanitizer.py" in s
-    assert "--symbols 159611.SZ 159209.SZ 512730.SH 159363.SZ --seconds \"$ws_seconds\"" in s
+    assert 'ws_symbols="${TICKFLOW_WS_SYMBOLS:-159611.SZ 159209.SZ 512730.SH 159363.SZ}"' in s
+    assert 'read -r -a ws_symbol_args <<< "$ws_symbols"' in s
+    assert '--symbols "${ws_symbol_args[@]}" --seconds "$ws_seconds"' in s
     assert 'TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true' in s
     assert 'TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true' in s
     assert s.index('if [[ "$protocol_only" == true ]]; then\n  # Only one bounded') < s.index('probe_args=(--mode premium')
