@@ -438,3 +438,107 @@ def test_runtime_bridge_tracks_all_session_push_under_correct_desired_key():
     assert adapter.diagnostics()["row_count"] == 1
     bridge.stop()
     assert ctx.calls[-1][0] == "unsub"
+
+
+def test_opend_current_connection_query_only_checks_k1m_without_promotion():
+    class QueryContext(Context):
+        def query_subscription(self, is_all_conn):
+            assert is_all_conn is False
+            self.calls.append(("query", False))
+            return 0, {
+                "total_used": 2, "own_used": 2, "remain": 298,
+                "sub_list": {"K_1M": ["US.AMD", "US.XLV"]},
+                "own_security_firm": "redacted-sensitive-info",
+            }
+
+    ctx = QueryContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    report = adapter.inspect_current_connection_subscriptions((
+        key("US.AMD"),
+        SemanticStreamKey(
+            "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+        ),
+    ))
+    assert ctx.calls == [("query", False)]
+    assert report == {
+        "status": "OBSERVED_CURRENT_CONNECTION_ONLY",
+        "requested_count": 2, "matched_count": 2,
+        "missing_symbols": (), "total_used": 2,
+        "own_used": 2, "remaining": 298,
+        "session_mode_evidence": "NOT_VERIFIED",
+        "realtime_qualification": "UNKNOWN",
+        "radar_admission": "BLOCKED", "live_trade": False,
+    }
+    assert "redacted-sensitive-info" not in str(report)
+
+
+def test_subscription_readback_missing_symbol_or_bad_shape_fails_closed():
+    class QueryContext(Context):
+        def __init__(self):
+            super().__init__()
+            self.payload = {
+                "total_used": 1, "own_used": 1, "remain": 3,
+                "sub_list": {"K_1M": ["US.AMD"]},
+            }
+
+        def query_subscription(self, is_all_conn):
+            self.calls.append(("query", is_all_conn))
+            return 0, self.payload
+
+    ctx = QueryContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    requested = (key("US.AMD"), key("US.XLV"))
+    missing = adapter.inspect_current_connection_subscriptions(requested)
+    assert missing["status"] == "MISSING_SUBSCRIPTIONS"
+    assert missing["missing_symbols"] == ("US.XLV",)
+    assert missing["radar_admission"] == "BLOCKED"
+
+    for malformed in (
+        {"total_used": "1", "own_used": 1, "remain": 3, "sub_list": {}},
+        {"total_used": 1, "own_used": 2, "remain": 3,
+         "sub_list": {"K_1M": ["US.AMD"]}},
+        {"total_used": 1, "own_used": 1, "remain": 3,
+         "sub_list": {"K_1M": "US.AMD"}},
+    ):
+        ctx.payload = malformed
+        assert adapter.inspect_current_connection_subscriptions(
+            requested,
+        )["status"] == "BLOCKED"
+    assert all(call == ("query", False) for call in ctx.calls)
+
+
+def test_missing_or_failed_subscription_query_never_promotes_to_verified():
+    class NoQueryContext(Context):
+        pass
+
+    adapter = FutuK1MStreamingAdapter(
+        NoQueryContext(), FT,
+        runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    result = adapter.inspect_current_connection_subscriptions((key(),))
+    assert result["status"] == "BLOCKED"
+    assert result["session_mode_evidence"] == "NOT_VERIFIED"
+
+    class FailingQueryContext(Context):
+        def query_subscription(self, is_all_conn):
+            return -1, "Bearer should-not-print"
+
+    denied = FutuK1MStreamingAdapter(
+        FailingQueryContext(), FT,
+        runtime_instance_id="r2", controller_generation=lambda: 1,
+    )
+    denied.register_event_sink(lambda event: None)
+    denied.start()
+    blocked = denied.inspect_current_connection_subscriptions((key(),))
+    assert blocked["status"] == "BLOCKED"
+    assert "Bearer should-not-print" not in str(blocked)
