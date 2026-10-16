@@ -206,7 +206,7 @@ def test_workflow_separates_balance_secrets_and_discord_notification():
     assert "secrets.STOCK_RAZOR_DISCORD_WEBHOOK_URL" not in notify
     assert "secrets.DISCORD_RADAR_WEBHOOK_URL" in notify
     assert "gh pr merge" not in watch and "aider " not in watch
-    coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text()
+    coding = Path(".github/workflows/engineering-autonomy-coding-v1-1.yml").read_text(encoding="utf-8")
     guard = coding.index("Enforce official DeepSeek balance budget")
     api_probe = coding.index("Block coding if DeepSeek provider API is unhealthy")
     coder = coding.index("Run isolated DeepSeek coding agent")
