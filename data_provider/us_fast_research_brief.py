@@ -8,7 +8,7 @@ research only; all trading and signal authority remains BLOCKED.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Iterable
 
 from data_provider.us_canonical_runtime_reader import read_us_market_snapshots
@@ -110,6 +110,31 @@ def _symbol_research(price: dict, studied: dict) -> dict:
     }
 
 
+def _one_sequence_publication_race(market: dict, radar: dict) -> bool:
+    """Only a one-step local source lead is eligible for a bounded reread.
+
+    This is not acceptance of an older Radar sequence: the reread must
+    satisfy the same exact provenance and freshness tests as normal.
+    """
+    market_seq = market.get("sequence")
+    radar_seq = radar.get("source_sequence")
+    return (
+        market.get("ok") is True
+        and radar.get("ok") is True
+        and market.get("status") == radar.get("status") == "PASS"
+        and radar.get("poll_status") in {"PASS", "UNCHANGED"}
+        and type(market_seq) is int
+        and type(radar_seq) is int
+        and market_seq == radar_seq + 1
+        and bool(market.get("repo_sha"))
+        and market.get("repo_sha") == radar.get("expected_source_repo_sha")
+        and bool(market.get("runtime_instance_id"))
+        and market.get("runtime_instance_id") == radar.get("source_runtime_instance_id")
+        and market.get("delivery_mode") == radar.get("source_delivery_mode")
+        and market.get("bar_closure") == radar.get("source_bar_closure")
+    )
+
+
 def read_us_fast_research_brief(
     symbols: Iterable[str] | None = None,
     *,
@@ -170,6 +195,31 @@ def read_us_fast_research_brief(
     except (OSError, ValueError, TypeError):
         return finish(ok=False, status="BLOCKED", reasons=["SOURCE_READER_ERROR"], symbols={})
 
+    # The canonical file may publish one sequence just before the Radar
+    # file. Retry ONLY that precise benign candidate with at most two
+    # further pairs of cloud-local reads, never a provider request. No
+    # sleeping or retrying for invalid provenance, larger gaps or stale data.
+    sequence_recheck_attempts = 0
+    for _ in range(2):
+        if not _one_sequence_publication_race(market, radar):
+            break
+        sleep(0.05)
+        try:
+            market = read_us_market_snapshots(
+                list(requested) if requested else None,
+                path=snapshot_path, now_utc=now,
+            )
+            radar = read_us_radar_analysis(
+                list(requested) if requested else None,
+                path=radar_path, now_utc=now,
+            )
+        except (OSError, ValueError, TypeError):
+            return finish(
+                ok=False, status="BLOCKED", reasons=["SOURCE_RECHECK_ERROR"],
+                symbols={},
+            )
+        sequence_recheck_attempts += 1
+
     reasons = []
     if market.get("ok") is not True or market.get("status") != "PASS":
         reasons.append("MARKET_SOURCE_NOT_FRESH_AND_VALID")
@@ -210,6 +260,7 @@ def read_us_fast_research_brief(
         "market_repo_sha": market.get("repo_sha"),
         "market_runtime_instance_id": market.get("runtime_instance_id"),
         "market_sequence": market.get("sequence"),
+        "sequence_recheck_attempts": sequence_recheck_attempts,
         "market_emitted_at_utc": market.get("emitted_at_utc"),
         "market_age_seconds": market.get("source_age_seconds"),
         "radar_worker_repo_sha": radar.get("worker_repo_sha"),
