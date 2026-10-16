@@ -394,3 +394,47 @@ def test_mixed_us_quote_sessions_and_overnight_only_fail_without_mutation():
     with pytest.raises(ValueError, match="mixed"):
         adapter.subscribe_streams((key("US.AMD"), all_key))
     assert ctx.calls == []
+
+
+def test_runtime_bridge_tracks_all_session_push_under_correct_desired_key():
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", tuple(symbols), kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0, CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    controller = LiveFeedController(
+        runtime_instance_id="r1", provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+    )
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1",
+        controller_generation=lambda: controller.snapshot().controller_generation,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    bridge = LiveFeedRuntimeBridge(controller, adapter)
+    bridge.start([all_key])
+    assert ctx.calls == [("sub", ("US.XLV",), {"session": "ALL"})]
+    assert {
+        entry.semantic_stream_key
+        for entry in controller.desired_registry_snapshot().entries
+    } == {all_key}
+    ctx.handler.on_recv_rsp(Frame([{
+        "code": "US.XLV", "time_key": "2026-10-16 08:01:00",
+        "close": 150.0,
+    }]))
+    bridge.drain()
+    assert bridge.snapshot().subscribed == (all_key,)
+    # An observed provider push still cannot grant LIVE or closed-bar truth.
+    assert controller.snapshot().lifecycle_state is not LifecycleState.LIVE
+    assert adapter.diagnostics()["row_count"] == 1
+    bridge.stop()
+    assert ctx.calls[-1][0] == "unsub"
