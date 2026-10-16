@@ -58,7 +58,10 @@ def _row(snapshot: Mapping, symbol: str, timeframe: str, label: str) -> dict | N
             return None
         for field in ("open", "high", "low", "close", "volume"):
             val = row.get(field)
-            if type(val) not in (int, float) or not isfinite(val):
+            if (
+                type(val) not in (int, float) or abs(val) > 1e18
+                or not isfinite(val)
+            ):
                 return None
             if field == "volume" and val < 0:
                 return None
@@ -70,8 +73,8 @@ def _row(snapshot: Mapping, symbol: str, timeframe: str, label: str) -> dict | N
             return None
         amount = row.get("amount")
         if amount is not None and (
-            type(amount) not in (int, float) or not isfinite(amount)
-            or amount < 0
+            type(amount) not in (int, float) or abs(amount) > 1e18
+            or not isfinite(amount) or amount < 0
         ):
             return None
         return row
