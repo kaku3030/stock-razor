@@ -101,3 +101,9 @@ def test_mount_class_chooses_longest_nested_mount(tmp_path):
     assert audit._mount_class(path, DISK_MOUNT) == (
         "NON_VOLATILE_TYPE_OBSERVED_NOT_PROVEN"
     )
+    assert audit._mount_class(
+        path, "12 1 0:1 / / rw - unknownfs unknown rw\n",
+    ) == "EPHEMERAL_OR_UNKNOWN"
+    assert audit._mount_class(
+        path, "13 1 0:1 / / rw - overlay overlay rw\n",
+    ) == "EPHEMERAL_OR_UNKNOWN"
