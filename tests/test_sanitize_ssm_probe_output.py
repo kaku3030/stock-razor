@@ -159,6 +159,7 @@ def test_opend_subscription_audit_projects_only_bounded_tracked_evidence() -> No
         "live_trade": False,
     })
     output = "\\n".join(project(raw, "us_opend_subscription_audit"))
+    assert '"quota_verified":true' in output
     assert '"subscription_capacity":{"remain":17,"total_used":3}' in output
     assert '"subscribed_tracked":["US.AMD","US.QQQ"]' in output
     assert '"unsubscribed_tracked":["US.NVDA"]' in output
