@@ -265,3 +265,16 @@ def test_aws_observed_tsla_joint_volume_turnover_delta_remains_fail():
     assert "VOLUME_MISMATCH" in result.mismatches
     assert "TURNOVER_MISMATCH" in result.mismatches
     assert "VOLUME_QUANTIZATION_UNVERIFIED" not in result.unknowns
+
+
+def test_live_source_minute_impossible_vwap_is_flagged_and_amount_suppressed():
+    minute = FormingMinuteBar(
+        "US.AMD", datetime(2026, 10, 5, 9, 31),
+        100.0, 101.0, 99.0, 100.5, 10.0, 1200.0, True,
+    )
+    bar = closed_futu_minute_to_bar(
+        minute, received_at=datetime(2026, 10, 5, 13, 32, tzinfo=timezone.utc)
+    )
+    assert "VWAP_OUTSIDE_BAR_RANGE" in bar.quality_flags
+    assert bar.amount is None
+    assert bar.health.signal_permission.value == "blocked"
