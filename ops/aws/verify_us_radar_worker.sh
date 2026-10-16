@@ -118,6 +118,8 @@ PY
     then
       systemctl is-enabled "$service"
       systemctl is-active "$service"
+      test "$(systemctl show "$service" -p Type --value)" = "notify"
+      test "$(systemctl show "$service" -p WatchdogUSec --value)" = "90000000"
       test "$(systemctl show "$service" -p PrivateNetwork --value)" = "yes"
       test "$(systemctl show "$service" -p NoNewPrivileges --value)" = "yes"
       cat "$status"

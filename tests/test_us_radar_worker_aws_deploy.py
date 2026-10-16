@@ -241,6 +241,17 @@ def test_us_radar_worker_uses_subsecond_pickup_poll_without_changing_admission()
     assert '"live_trade": False' in INSTALLER
 
 
+def test_worker_systemd_watchdog_restarts_a_hung_readonly_radar():
+    assert 'from src.services.stock_radar_v2.systemd_notify import notify_systemd' in INSTALLER
+    assert 'notify_systemd("READY=1", "WATCHDOG=1"' in INSTALLER
+    assert 'notify_systemd("WATCHDOG=1"' in INSTALLER
+    assert "Type=notify" in INSTALLER
+    assert "WatchdogSec=90s" in INSTALLER
+    assert "Restart=on-failure" in INSTALLER
+    assert 'systemctl show "$service" -p Type --value' in VERIFY
+    assert 'systemctl show "$service" -p WatchdogUSec --value' in VERIFY
+
+
 def test_us_radar_verifier_requires_runtime_latency_telemetry_consistency():
     assert 'radar_analysis_performed = payload.get("radar_analysis_performed")' in VERIFY
     assert 'radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")' in VERIFY
