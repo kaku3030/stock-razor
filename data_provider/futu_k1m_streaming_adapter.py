@@ -279,7 +279,7 @@ class FutuK1MStreamingAdapter:
                 missing_symbols=missing,
                 total_used=total, own_used=own, remaining=remain,
             )
-        except (Exception,):
+        except Exception:
             # Existing owner may be disconnected or running an older SDK.
             # Never echo vendor response strings or trust partial readbacks.
             return result
