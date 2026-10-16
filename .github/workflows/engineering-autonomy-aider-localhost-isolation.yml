@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="stock-razor-aider-localhost-test:one-shot"
-          for mode in success http503; do
+          for mode in success http503 stress; do
             AGENT_NET="sr-agent-$GITHUB_RUN_ID-$mode"
             PROVIDER_NET="sr-provider-$GITHUB_RUN_ID-$mode"
             PROVIDER="sr-fake-$GITHUB_RUN_ID-$mode"
@@ -92,12 +92,14 @@ jobs:
             # Docker bridge --internal supplies no external Internet route.
             docker network create --internal "$AGENT_NET" >/dev/null
             docker network create --internal "$PROVIDER_NET" >/dev/null
+            PROVIDER_MODE="$mode"
+            if [ "$mode" = stress ]; then PROVIDER_MODE=success; fi
             docker run --detach --name "$PROVIDER" \
               --network "$PROVIDER_NET" --network-alias fake-provider \
               --read-only --cap-drop ALL --security-opt no-new-privileges \
               --pids-limit 96 --memory 768m --tmpfs /tmp:rw,nosuid,size=50m \
               --entrypoint python "$IMAGE" \
-              /opt/aider_segmented_network_smoke.py provider --mode "$mode" >/dev/null
+              /opt/aider_segmented_network_smoke.py provider --mode "$PROVIDER_MODE" >/dev/null
             docker run --detach --name "$GATEWAY" \
               --network "$AGENT_NET" --network-alias fake-gateway \
               --read-only --cap-drop ALL --security-opt no-new-privileges \
