@@ -42,9 +42,44 @@ making network calls, or launching Aider.
 `tests/test_engineering_deepseek_request_plan.py` exercises 35 cases:
 third request, cross-request input/output overspend, one-shot output overrun,
 invalid model, streaming, retry, bool/negative/unknown token counts, unsupported
-messages/roles/modalities, oversized and invalid UTF-8 content, and text
-leakage prevention, same-envelope replay, post-reservation payload mutation and simultaneous attempts. They are
-offline fixture tests only.
+messages/roles/modalities, oversized and invalid UTF-8 content, text-leakage
+prevention, same-envelope replay, post-reservation mutation and concurrency.
+These are offline in-process fixture tests.
+
+## Real localhost HTTP mock (zero provider cost)
+
+`engineering_autonomy/deepseek_loopback_mock.py` proves that the *exact
+prevalidated JSON bytes* can cross an actual **localhost HTTP** boundary,
+without transmitting real DeepSeek credentials. It only allows literal
+`http://127.0.0.1:<port>/v1/chat/completions`, disables urllib environment
+HTTP proxies and redirects, always uses a hard-coded fake API key, and
+requires a one-time dispatch claim bound to the admitted byte fingerprint.
+A failed HTTP attempt consumes its dispatch claim; no retry occurs. Mock
+responses must include structurally valid usage within the claimed input
+and reserved output or fail closed. Returned counters are explicitly marked
+`SIMULATED_LOOPBACK_ONLY`, never official provider usage.
+
+`tests/test_engineering_deepseek_loopback_mock.py` runs a real local
+`ThreadingHTTPServer` and tests exact wire bytes, sealed-request replay,
+concurrent attempts, forged `max_tokens`, nonlocal destination rejection,
+proxy/credential isolation, 3xx redirect denial, 429/500/503 no-retry, and
+oversized or invalid response accounting. The fake HTTP server stays on
+127.0.0.1 and never calls the DeepSeek provider.
+
+**Unchanged hard limit:** the mock transport is not on Aider's execution
+path. Aider can still use its own network/SDK and provider credentials if
+those are exposed to its process. The mock only demonstrates an integration
+seam; it does not isolate the paid agent, verify its input token counts,
+provide a cross-process/global ledger or enforce provider-side cost.
+
+A future guarded sandbox would need to run Aider without the real provider
+key, configure an OpenAI-compatible API base to point solely at a local
+gateway, keep the real provider key only inside that gateway, and enforce
+network egress isolation independently of CLI configuration. Aider documents
+custom OpenAI-compatible endpoints here:
+https://aider.chat/docs/llms/openai-compat.html
+
+The local mock transport is NOT suitable for real network forwarding.
 
 ## Required before any paid run
 
