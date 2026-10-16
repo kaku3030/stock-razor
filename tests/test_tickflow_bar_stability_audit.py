@@ -7,6 +7,7 @@ from data_provider.cn_tickflow_research_cache import SCHEMA
 from data_provider.tickflow_bar_stability_audit import (
     audit_tickflow_bar_stability,
     audit_tickflow_5m_15m_reconciliation,
+    audit_tickflow_vendor_successor_close,
 )
 
 
@@ -294,3 +295,88 @@ def test_weekend_bar_label_is_not_exchange_session_evidence():
     assert aggregation["status"] == "NON_TRADING_WEEKDAY"
     assert stability["radar_admission"] == "BLOCKED"
     assert aggregation["exchange_bar_finality"] == "NOT_VERIFIED"
+
+
+def successor_fixture():
+    snapshot = multi_period_fixture()
+    first = snapshot["symbols"][SYMBOL]["15m"]["rows"][0]
+    snapshot["symbols"][SYMBOL]["15m"]["rows"].append({
+        **first, "label": "2026-10-16 10:00",
+        "open": 1.04, "high": 1.06, "low": 1.03, "close": 1.05,
+    })
+    return snapshot
+
+
+def vendor_close(snapshot, *, label=LABEL, now_utc=NOW):
+    return audit_tickflow_vendor_successor_close(
+        snapshot, symbol=SYMBOL, timeframe="15m",
+        label=label, now_utc=now_utc,
+    )
+
+
+def test_vendor_written_successor_rule_grants_only_operational_research_close():
+    snapshot = successor_fixture()
+    report = vendor_close(snapshot)
+    assert report["status"] == "PROVIDER_RULE_CLOSED_REVISION_POSSIBLE"
+    assert report["bar_clock_matured"] is True
+    assert report["provider_operational_closed_research_only"] is True
+    assert report["closure_rule"] == (
+        "TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE"
+    )
+    assert report["postclose_revision_risk"] == (
+        "WITHIN_APPROX_POSTCLOSE_CORRECTION_WINDOW"
+    )
+    assert report["bar_finality"] == "NOT_VERIFIED"
+    assert report["exchange_bar_finality"] == "NOT_VERIFIED"
+    assert report["provider_finality_attestation"] == "NO_IS_FINAL_FIELD"
+    assert report["radar_admission"] == "BLOCKED"
+    assert report["source_arbiter_admission"] == "BLOCKED"
+    assert report["live_trade"] is False
+    assert report["provider_requests"] == 0
+
+
+def test_vendor_successor_missing_or_forming_is_not_operationally_closed():
+    missing = vendor_close(multi_period_fixture())
+    assert missing["status"] == "NEXT_KLINE_NOT_OBSERVED"
+    assert missing["provider_operational_closed_research_only"] is False
+
+    early = successor_fixture()
+    early["observed_at_utc"] = datetime(
+        2026, 10, 16, 1, 59, 0, tzinfo=timezone.utc,
+    ).isoformat()
+    forming = vendor_close(
+        early,
+        now_utc=datetime(2026, 10, 16, 2, 1, tzinfo=timezone.utc),
+    )
+    assert forming["status"] == "SUCCESSOR_NOT_MATURE_IN_SOURCE"
+    assert forming["bar_finality"] == "NOT_VERIFIED"
+
+
+def test_vendor_close_rejects_wrong_provider_or_false_successor_candle():
+    bad = successor_fixture()
+    bad["provider"] = "TENCENT"
+    assert vendor_close(bad)["status"] == "SOURCE_PROVENANCE_INVALID"
+
+    bad = successor_fixture()
+    bad["symbols"][SYMBOL]["15m"]["rows"][1]["high"] = 0.5
+    assert vendor_close(bad)["status"] == "NEXT_KLINE_NOT_OBSERVED"
+
+
+def test_no_fabricated_successor_for_last_bar_and_postclose_amendments():
+    snapshot = successor_fixture()
+    assert vendor_close(
+        snapshot, label="2026-10-16 15:00",
+    )["status"] == "END_OF_SESSION_NO_SUCCESSOR"
+
+    snapshot["observed_at_utc"] = datetime(
+        2026, 10, 16, 8, 4, 53, tzinfo=timezone.utc,
+    ).isoformat()
+    report = vendor_close(
+        snapshot,
+        now_utc=datetime(2026, 10, 16, 8, 5, tzinfo=timezone.utc),
+    )
+    assert report["provider_operational_closed_research_only"] is True
+    assert report["postclose_revision_risk"] == (
+        "AFTER_APPROX_WINDOW_NOT_IMMUTABLE"
+    )
+    assert report["exchange_bar_finality"] == "NOT_VERIFIED"
