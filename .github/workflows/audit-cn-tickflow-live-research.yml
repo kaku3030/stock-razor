@@ -256,38 +256,38 @@ jobs:
               )
               assert d[when].get("mcp_read_failure_reason") in reasons
               parity=d[when].get("independent_price_shadow")
-              assert isinstance(parity,dict) and set(parity).issubset(shadow_periods)
+              assert isinstance(parity,dict) and set(parity).issubset(shadow_periods), sorted(set(parity or {})-set(shadow_periods))
               for _v in parity.values():
-                  assert isinstance(_v,dict)
-                  assert _v.get("status") in parity_status
-                  assert _v.get("overlap_bucket") in allowed_bucket
-                  assert _v.get("max_price_difference_ticks") in parity_difference
-                  assert _v.get("lineage") in parity_lineage
+                  assert isinstance(_v,dict), type(_v).__name__
+                  assert _v.get("status") in parity_status, ("parity.status",_v.get("status"))
+                  assert _v.get("overlap_bucket") in allowed_bucket, ("parity.overlap_bucket",_v.get("overlap_bucket"))
+                  assert _v.get("max_price_difference_ticks") in parity_difference, ("parity.max_price_difference_ticks",_v.get("max_price_difference_ticks"))
+                  assert _v.get("lineage") in parity_lineage, ("parity.lineage",_v.get("lineage"))
               frame_map=d[when].get("source_frame_progress")
-              assert isinstance(frame_map,dict)
-              assert set(frame_map).issubset(historical_periods)
+              assert isinstance(frame_map,dict), type(frame_map).__name__
+              assert set(frame_map).issubset(historical_periods), sorted(set(frame_map)-set(historical_periods))
               for _v in frame_map.values():
-                  assert isinstance(_v,dict)
-                  assert _v.get("last_due_grid") in allowed_grid
-                  assert _v.get("due_grid_continuity") in allowed_continuity
-                  assert _v.get("dominant_quarantine_reason") in allowed_cause
+                  assert isinstance(_v,dict), type(_v).__name__
+                  assert _v.get("last_due_grid") in allowed_grid, ("last_due_grid",_v.get("last_due_grid"))
+                  assert _v.get("due_grid_continuity") in allowed_continuity, ("due_grid_continuity",_v.get("due_grid_continuity"))
+                  assert _v.get("dominant_quarantine_reason") in allowed_cause, ("dominant_quarantine_reason",_v.get("dominant_quarantine_reason"))
                   cause_buckets=_v.get("quarantine_cause_buckets")
-                  assert isinstance(cause_buckets,dict)
-                  assert len(cause_buckets)<=8
+                  assert isinstance(cause_buckets,dict), type(cause_buckets).__name__
+                  assert len(cause_buckets)<=8, len(cause_buckets)
                   assert all(name in allowed_cause and name not in ("UNKNOWN","NONE")
                              and bucket in allowed_bucket
                              and bucket not in ("UNKNOWN","ZERO")
-                             for name,bucket in cause_buckets.items())
-                  assert _v.get("largest_ohlc_gap_bucket") in allowed_gap
-                  assert _v.get("gap_violation_rows_bucket") in allowed_bucket
-                  assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket
-                  assert _v.get("etf_tick_grid_near_bucket") in allowed_bucket
-                  assert _v.get("etf_tick_research_shadow_compatible_bucket") in allowed_bucket
-                  assert _v.get("quarantined_rows_bucket") in allowed_bucket
-                  assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket
-                  assert _v.get("vendor_float_rows_bucket") in allowed_bucket
-                  assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket
-                  assert _v.get("retained_bar_count_bucket") in allowed_rows
+                             for name,bucket in cause_buckets.items()), sorted(cause_buckets)
+                  assert _v.get("largest_ohlc_gap_bucket") in allowed_gap, ("largest_ohlc_gap_bucket",_v.get("largest_ohlc_gap_bucket"))
+                  assert _v.get("gap_violation_rows_bucket") in allowed_bucket, ("gap_violation_rows_bucket",_v.get("gap_violation_rows_bucket"))
+                  assert _v.get("hilo_swap_candidate_bucket") in allowed_bucket, ("hilo_swap_candidate_bucket",_v.get("hilo_swap_candidate_bucket"))
+                  assert _v.get("etf_tick_grid_near_bucket") in allowed_bucket, ("etf_tick_grid_near_bucket",_v.get("etf_tick_grid_near_bucket"))
+                  assert _v.get("etf_tick_research_shadow_compatible_bucket") in allowed_bucket, ("etf_tick_research_shadow_compatible_bucket",_v.get("etf_tick_research_shadow_compatible_bucket"))
+                  assert _v.get("quarantined_rows_bucket") in allowed_bucket, ("quarantined_rows_bucket",_v.get("quarantined_rows_bucket"))
+                  assert _v.get("sdk_amount_omitted_bucket") in allowed_bucket, ("sdk_amount_omitted_bucket",_v.get("sdk_amount_omitted_bucket"))
+                  assert _v.get("vendor_float_rows_bucket") in allowed_bucket, ("vendor_float_rows_bucket",_v.get("vendor_float_rows_bucket"))
+                  assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket, ("same_session_vendor_float_rows_bucket",_v.get("same_session_vendor_float_rows_bucket"))
+                  assert _v.get("retained_bar_count_bucket") in allowed_rows, ("retained_bar_count_bucket",_v.get("retained_bar_count_bucket"))
               supp=d[when].get("supplemental_5m_reader")
               assert isinstance(supp,dict) and set(supp).issubset(set(periods))
               for observed in supp.values():
