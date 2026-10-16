@@ -107,3 +107,30 @@ def test_mount_class_chooses_longest_nested_mount(tmp_path):
     assert audit._mount_class(
         path, "13 1 0:1 / / rw - overlay overlay rw\n",
     ) == "EPHEMERAL_OR_UNKNOWN"
+
+
+def test_parent_symlink_is_detected_independently_of_volatile_root(tmp_path):
+    """Do not trust a requested path when its parent redirects elsewhere."""
+    authority = tmp_path / "actual-disk"
+    authority.mkdir()
+    database = authority / "queue.sqlite3"
+    database.write_bytes(b"fixture")
+    alias = tmp_path / "alias"
+    alias.symlink_to(authority, target_is_directory=True)
+
+    assert audit._has_symlink_component(database) is False
+    assert audit._has_symlink_component(alias / "queue.sqlite3") is True
+    assert audit._path_allowed(str(alias / "queue.sqlite3")) is None
+
+
+def test_observer_uses_one_sqlite_read_transaction():
+    source = Path("scripts/audit_feedback_hub_ec2_readonly.py").read_text(
+        encoding="utf-8",
+    )
+    marker = 'conn.execute("PRAGMA query_only=ON")'
+    assert source.count(marker) == 1
+    section = source.split(marker, 1)[1].split(
+        "status_rows = conn.execute(", 1,
+    )[0]
+    assert 'conn.execute("BEGIN")' in section
+    assert "PRAGMA journal_mode=WAL" not in source
