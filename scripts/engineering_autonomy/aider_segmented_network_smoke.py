@@ -7,6 +7,7 @@ on the fake-provider bridge. The gateway changes the outbound request.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from threading import Barrier, Lock
 import urllib.error
 import urllib.request
 
@@ -104,6 +106,7 @@ def serve_provider(mode: str):
 
 def serve_gateway():
     counters = {"inbound": 0, "admitted": 0, "denied": 0}
+    reservation_lock = Lock()
     transport = opener()
 
     class Gateway(BaseHTTPRequestHandler):
@@ -120,7 +123,9 @@ def serve_gateway():
             except (urllib.error.URLError, ValueError, OSError):
                 reply(self, 503, {"status": "provider-unavailable"})
                 return
-            reply(self, 200, {"gateway": counters, "provider": provider})
+            with reservation_lock:
+                snapshot = dict(counters)
+            reply(self, 200, {"gateway": snapshot, "provider": provider})
 
         def do_POST(self):
             if self.path != "/v1/chat/completions":
@@ -128,46 +133,50 @@ def serve_gateway():
                 reply(self, 400, {})
                 return
             payload = read_object(self)
-            counters["inbound"] += 1
-            if counters["admitted"] >= 1:
-                counters["denied"] += 1
-                reply(self, 429, {"error": {"message": "mock quota", "type": "rate_limit_error"}})
-                return
-            valid = (
-                payload is not None
-                and self.headers.get("Authorization") == "Bearer " + AGENT_KEY
-                and payload.get("model") == MODEL
-                and payload.get("stream") in (False, None)
-                and isinstance(payload.get("messages"), list)
-                and bool(payload["messages"])
-            )
-            if not valid:
-                counters["denied"] += 1
-                reply(self, 400, {})
-                return
-            cap = payload.get("max_tokens")
-            if cap is not None and (type(cap) is not int or not 0 < cap <= LIMIT):
-                counters["denied"] += 1
-                reply(self, 400, {})
-                return
-            outbound = {
-                "model": MODEL,
-                "messages": payload["messages"],
-                "max_tokens": LIMIT if cap is None else cap,
-                "stream": False,
-            }
-            try:
-                raw = json.dumps(outbound, ensure_ascii=False).encode("utf-8")
-            except UnicodeError:
-                counters["denied"] += 1
-                reply(self, 400, {})
-                return
-            if len(raw) > MAX_BODY:
-                counters["denied"] += 1
-                reply(self, 413, {})
-                return
-            # Reserve before *any* simulated provider network attempt.
-            counters["admitted"] += 1
+            # Exactly one thread may reserve the mock upstream quota.
+            # Validation, admitted-count check and reservation share ONE lock.
+            with reservation_lock:
+                counters["inbound"] += 1
+                if counters["admitted"] >= 1:
+                    counters["denied"] += 1
+                    reply(self, 429, {"error": {"message": "mock quota",
+                                                 "type": "rate_limit_error"}})
+                    return
+                valid = (
+                    payload is not None
+                    and self.headers.get("Authorization") == "Bearer " + AGENT_KEY
+                    and payload.get("model") == MODEL
+                    and payload.get("stream") in (False, None)
+                    and isinstance(payload.get("messages"), list)
+                    and bool(payload["messages"])
+                )
+                if not valid:
+                    counters["denied"] += 1
+                    reply(self, 400, {})
+                    return
+                cap = payload.get("max_tokens")
+                if cap is not None and (type(cap) is not int or not 0 < cap <= LIMIT):
+                    counters["denied"] += 1
+                    reply(self, 400, {})
+                    return
+                outbound = {
+                    "model": MODEL,
+                    "messages": payload["messages"],
+                    "max_tokens": LIMIT if cap is None else cap,
+                    "stream": False,
+                }
+                try:
+                    raw = json.dumps(outbound, ensure_ascii=False).encode("utf-8")
+                except UnicodeError:
+                    counters["denied"] += 1
+                    reply(self, 400, {})
+                    return
+                if len(raw) > MAX_BODY:
+                    counters["denied"] += 1
+                    reply(self, 413, {})
+                    return
+                # Reserve before *any* simulated provider network attempt.
+                counters["admitted"] += 1
             req = urllib.request.Request(
                 UPSTREAM_URL, data=raw,
                 headers={"Content-Type": "application/json",
@@ -238,6 +247,51 @@ def client(mode, provider_ip):
     else:
         print("SEGMENT_CLIENT=BLOCKED;REASON=GATEWAY_UNAVAILABLE")
         return 2
+
+    if mode == "stress":
+        workers = 12
+        barrier = Barrier(workers)
+        raw = json.dumps({
+            "model": MODEL,
+            "stream": False,
+            "messages": [{"role": "user", "content": "simulated quota stress"}],
+        }).encode("utf-8")
+        def attempt(_):
+            barrier.wait(timeout=10)
+            req = urllib.request.Request(
+                GATE_URL + "/v1/chat/completions", data=raw,
+                headers={"Content-Type": "application/json",
+                         "Authorization": "Bearer " + AGENT_KEY},
+                method="POST",
+            )
+            try:
+                with transport.open(req, timeout=6) as response:
+                    response.read(2048)
+                    return response.status
+            except urllib.error.HTTPError as exc:
+                return exc.code
+            except (urllib.error.URLError, OSError, TimeoutError):
+                return 0
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            outcomes = list(pool.map(attempt, range(workers)))
+        final = state()
+        gate, provider = final["gateway"], final["provider"]
+        good = (
+            outcomes.count(200) == 1 and outcomes.count(429) == workers - 1
+            and gate["inbound"] == workers
+            and gate["admitted"] == 1
+            and gate["denied"] == workers - 1
+            and provider["posts"] == 1
+            and provider["max256"] and provider["fake_key"] and provider["non_stream"]
+        )
+        print(
+            f"SEGMENT_STRESS=TOTAL={workers};UPSTREAM={provider['posts']};"
+            f"ALLOWED={gate['admitted']};DENIED={gate['denied']};"
+            f"UPSTREAM_MAX_256={provider['max256']};"
+            f"RESULT={'PASS' if good else 'FAIL'}", flush=True,
+        )
+        return 0 if good else 2
 
     with tempfile.TemporaryDirectory(prefix="aider-segmented-") as cwd:
         env = {
@@ -319,7 +373,7 @@ def main():
     provider.add_argument("--mode", required=True, choices=("success", "http503"))
     sub.add_parser("gateway")
     agent = sub.add_parser("client")
-    agent.add_argument("--mode", required=True, choices=("success", "http503"))
+    agent.add_argument("--mode", required=True, choices=("success", "http503", "stress"))
     agent.add_argument("--provider-ip", required=True)
     opts = parser.parse_args()
     if opts.role == "provider":
