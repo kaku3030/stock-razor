@@ -22,16 +22,24 @@ making network calls, or launching Aider.
   rejects tool calls, images, malformed types and invalid encodings.
 * Reservation happens before returning the envelope. There are no refunds
   based on after-the-fact analytics.
+* Within a single Python process, a lock protects the shared request/input/
+  output counters from simultaneous reservations. Exact-envelope fingerprints
+  reject accidental replay attempts without storing or logging message text.
+  A caller that changes model parameters can produce a different envelope;
+  this is not a proof that arbitrary SDK retries are blocked.
+* Separate Python processes, instances, hosts or runners do NOT share state;
+  the independent-ledger regression test demonstrates this limitation.
 * A sanitized summary labels all input counts as **UNVERIFIED** and cannot be
   presented as an actual bill or provider-wallet statement.
 
 ## Adversarial regression cases
 
-`tests/test_engineering_deepseek_request_plan.py` exercises 29 cases:
+`tests/test_engineering_deepseek_request_plan.py` exercises 33 cases:
 third request, cross-request input/output overspend, one-shot output overrun,
 invalid model, streaming, retry, bool/negative/unknown token counts, unsupported
 messages/roles/modalities, oversized and invalid UTF-8 content, and text
-leakage prevention. They are offline fixture tests only.
+leakage prevention, same-envelope replay and simultaneous attempts. They are
+offline fixture tests only.
 
 ## Required before any paid run
 
@@ -44,6 +52,10 @@ leakage prevention. They are offline fixture tests only.
 3. Enforce remaining `max_tokens` **at the actual HTTP request boundary**,
    including any tool use, hidden retries, internal probes and multiple SDK
    paths. Reject unexpected model aliases and mutable thinking configurations.
+   Aider's own advanced settings documentation states that it does *not*
+   enforce token limits; model metadata and LiteLLM settings do not establish
+   upstream request-level cost control. See
+   https://aider.chat/docs/config/adv-model-settings.html .
 4. Obtain independently verified **provider-side** CNY 5 hard-cost protection
    or an auditable, conservative pricing/currency maximum supported by an
    upstream enforced spend limit. Neither a GitHub variable nor a balance
