@@ -198,7 +198,11 @@ class TestDiscordSender(unittest.TestCase):
 
         self.assertFalse(sender.send_to_discord("content"))
 
-        logged = " ".join(str(value) for value in mock_log_error.call_args.args)
+        logged = " ".join(
+            str(value)
+            for call in mock_log_error.call_args_list
+            for value in (*call.args, *call.kwargs.values())
+        )
         self.assertNotIn("secret response body", logged)
         self.assertNotIn(webhook_url, logged)
         self.assertIn("400", logged)
