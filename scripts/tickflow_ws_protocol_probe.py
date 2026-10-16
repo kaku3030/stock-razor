@@ -12,12 +12,15 @@ import hashlib
 import json
 import math
 import os
+from pathlib import Path
 import re
 import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
 
 ENDPOINT = "wss://api.tickflow.org/v1/ws/stream"
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -413,6 +416,8 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
 
 
 def main() -> int:
+    env_path = os.getenv("ENV_FILE") or str(Path(__file__).resolve().parents[1] / ".env")
+    load_dotenv(env_path, override=False)
     parser = argparse.ArgumentParser(description="Isolated, explicit quote WS ACK observer")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--symbols", nargs="+", default=list(HOLDINGS))
