@@ -252,3 +252,45 @@ def test_reconciliation_does_not_accept_before_expected_bar_clock():
     )
     assert result["status"] == "BOUNDARY_NOT_MATURE"
     assert result["live_trade"] is False
+
+
+def test_missing_turnover_cannot_be_called_complete_bar_stability():
+    first, second = sample_pair()
+    first["symbols"][SYMBOL]["15m"]["rows"][0]["amount"] = None
+    second["symbols"][SYMBOL]["15m"]["rows"][0]["amount"] = None
+    result = check(first, second)
+    assert result["status"] == "AMOUNT_NOT_AVAILABLE_FOR_STABILITY"
+    assert result["two_poll_stable_research_only"] is False
+    assert result["fingerprint"] is None
+    assert result["bar_finality"] == "NOT_VERIFIED"
+
+
+def test_aggregation_rejects_provider_snapshot_observed_before_bar_maturity():
+    snapshot = multi_period_fixture()
+    snapshot["observed_at_utc"] = datetime(
+        2026, 10, 16, 1, 45, 20, tzinfo=timezone.utc,
+    ).isoformat()
+    result = audit_tickflow_5m_15m_reconciliation(
+        snapshot, symbol=SYMBOL, label=LABEL,
+        now_utc=datetime(2026, 10, 16, 1, 47, 0, tzinfo=timezone.utc),
+    )
+    assert result["status"] == "SOURCE_OBSERVED_BEFORE_MATURITY"
+    assert result["bar_finality"] == "NOT_VERIFIED"
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_weekend_bar_label_is_not_exchange_session_evidence():
+    first, second = sample_pair()
+    bad_label = "2026-10-17 09:45"  # Saturday in Shanghai
+    later = datetime(2026, 10, 18, 2, 5, tzinfo=timezone.utc)
+    stability = audit_tickflow_bar_stability(
+        first, second, symbol=SYMBOL, timeframe="15m",
+        label=bad_label, now_utc=later,
+    )
+    aggregation = audit_tickflow_5m_15m_reconciliation(
+        second, symbol=SYMBOL, label=bad_label, now_utc=later,
+    )
+    assert stability["status"] == "NON_TRADING_WEEKDAY"
+    assert aggregation["status"] == "NON_TRADING_WEEKDAY"
+    assert stability["radar_admission"] == "BLOCKED"
+    assert aggregation["exchange_bar_finality"] == "NOT_VERIFIED"
