@@ -73,6 +73,40 @@ def send_discord(status: str, webhook: str, user_id: str = "", opener=None) -> s
     return "ALERT_SENT"
 
 
+def send_with_fallback(
+    status: str, environment: dict[str, str], user_id: str = "",
+    sender=None,
+) -> str:
+    """Try existing approved Discord channels once each, without new secrets.
+
+    Keep the main Radar webhook first (same priority as the unified billing
+    watcher), then the legacy budget webhook. No retries to the same endpoint.
+    Network error categories and webhook URLs must never be logged.
+    """
+    if message_for_status(status) is None:
+        return "HEALTHY_NO_ALERT"
+    candidates: list[str] = []
+    for key in ("DISCORD_RADAR_WEBHOOK_URL", "DISCORD_WEBHOOK_URL"):
+        webhook = environment.get(key, "")
+        if webhook and webhook not in candidates:
+            candidates.append(webhook)
+    if not candidates:
+        return "CHANNEL_NOT_CONFIGURED"
+    send = sender or send_discord
+    last_error: Exception | None = None
+    for index, webhook in enumerate(candidates):
+        try:
+            result = send(status, webhook, user_id)
+            if result == "ALERT_SENT":
+                return "ALERT_SENT" if index == 0 else "ALERT_SENT_FALLBACK"
+            last_error = ValueError("Discord did not accept alert")
+        except (ValueError, TypeError, OSError, urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise ValueError("Discord did not accept alert")
+
+
 def failure_category(exc: Exception) -> str:
     """Emit only an allowlisted class/status, never provider error text or URLs."""
     if isinstance(exc, urllib.error.HTTPError):
@@ -102,8 +136,8 @@ def main() -> int:
         if not args.test_delivery and args.status_file is None:
             raise ValueError("missing status file")
         status = "TEST" if args.test_delivery else read_status(args.status_file)
-        result = send_discord(
-            status, os.getenv("DISCORD_WEBHOOK_URL", ""),
+        result = send_with_fallback(
+            status, dict(os.environ),
             os.getenv("STOCK_RAZOR_DISCORD_USER_ID", ""),
         )
     except (ValueError, TypeError, KeyError, OSError, urllib.error.URLError,
@@ -111,7 +145,7 @@ def main() -> int:
         print("BUDGET_ALERT=FAILED_CLOSED;CATEGORY=" + failure_category(exc))
         return 2
     print("BUDGET_ALERT=" + result)
-    return 0 if result in ("HEALTHY_NO_ALERT", "ALERT_SENT") else 2
+    return 0 if result in ("HEALTHY_NO_ALERT", "ALERT_SENT", "ALERT_SENT_FALLBACK") else 2
 
 
 if __name__ == "__main__":
