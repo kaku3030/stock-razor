@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Paper AWS SSM 只读验收区分命令执行成功与运行时真实核验；缺失服务、SHA、关闭门禁心跳或新鲜度证据时工作流明确失败，仍不证明模拟成交或 L2 准入。
 - [修复] 云端 TickFlow Premium 缓存从旧的两标的/两周期默认范围扩展为四个持仓 ETF 的 1m/5m/15m/60m/1d 研究矩阵；MCP 批量读取和 AWS 审计同步覆盖，仍保持闭合、当前性与 Radar/交易准入未验证。
 - [改进] TickFlow 本机只读审计与云端 WebSocket/K线探针统一覆盖持仓四 ETF（159611、159209、512730、159363）的 1m/5m/15m/60m/1d 矩阵；研究通过仍不提升最终闭合、实时连续性或 Radar/交易准入。
 - [改进] 云端每日分析在已配置 TickFlow Key 时默认将 TickFlow 置于 A 股日线、实时行情和指数名称路由首位，失败后仍按既有 fallback 降级。
