@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo
 ENDPOINT = "wss://api.tickflow.org/v1/ws/stream"
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 MAX_SYMBOLS = 5
+HOLDINGS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+KLINE_PERIODS = ("1m", "5m", "15m", "60m", "1d")
 _KLINE_FINGERPRINT_FIELDS = (
     "timestamp", "open", "high", "low", "close", "volume", "amount",
 )
@@ -305,7 +307,7 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
             client = TickFlow(api_key=key, timeout=8.0, max_retries=0)
         rows = changes = errors = 0
         for symbol in symbols:
-            for period in ("5m", "15m", "60m", "1d"):
+            for period in KLINE_PERIODS:
                 try:
                     data = client.klines.get(
                         symbol, period=period, count=20,
@@ -380,7 +382,7 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
 def main() -> int:
     parser = argparse.ArgumentParser(description="Isolated, explicit quote WS ACK observer")
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--symbols", nargs="+", default=["159611.SZ", "518880.SH"])
+    parser.add_argument("--symbols", nargs="+", default=list(HOLDINGS))
     parser.add_argument("--seconds", type=int, default=10)
     args = parser.parse_args()
     if (not args.execute

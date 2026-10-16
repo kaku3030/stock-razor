@@ -9,10 +9,15 @@ import pytest
 
 from scripts.tickflow_ws_protocol_probe import (
     ProtocolEvidence, has_overlapping_kline_revision, kline_fingerprints,
-    observe_socket, run_protocol_probe, main,
+    HOLDINGS, KLINE_PERIODS, observe_socket, run_protocol_probe, main,
 )
 
 SYMS = ("159611.SZ", "518880.SH")
+
+
+def test_default_cloud_matrix_is_the_four_holdings_and_five_periods():
+    assert HOLDINGS == ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+    assert KLINE_PERIODS == ("1m", "5m", "15m", "60m", "1d")
 
 
 def test_kline_fingerprint_compares_overlapping_bars_not_new_rows():

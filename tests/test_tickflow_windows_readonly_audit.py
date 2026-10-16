@@ -131,8 +131,25 @@ def test_only_exception_class_is_projected_to_logs():
 
 
 def test_fixed_symbol_and_timeframe_budget_only():
-    assert audit.SYMBOLS == ("159611.SZ", "518880.SH")
-    assert audit.PERIOD_COUNTS == {"5m": 144, "15m": 96, "60m": 24, "1d": 40}
+    assert audit.SYMBOLS == ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+    assert audit.PERIOD_COUNTS == {"1m": 240, "5m": 144, "15m": 96, "60m": 24, "1d": 40}
+
+
+def test_one_minute_due_grid_is_session_bounded():
+    assert audit.END_CLOCKS["1m"][0] == "09:31"
+    assert audit.END_CLOCKS["1m"][-1] == "15:00"
+    assert len(audit.END_CLOCKS["1m"]) == 240
+
+
+def test_one_minute_research_grid_uses_same_closed_bar_guard():
+    c = compact([
+        "2026-10-14 14:59", "2026-10-14 15:00",
+        "2026-10-15 09:31", "2026-10-15 09:32",
+    ])
+    out = audit.assess_compact(c, "1m", clock("2026-10-15 09:34"))
+    assert out["due_count"] == 2
+    assert out["due_labels_present"] == 2
+    assert out["exchange_bar_finality"] == "NOT_VERIFIED"
 
 
 def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
