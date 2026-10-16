@@ -129,6 +129,23 @@ jobs:
                   when:sorted(set(type(value).__name__ for value in
                       (d.get(when,{}).get("source_frame_progress") or {}).values()))
                   for when in ("before","after")
+              })+
+              " frame_field_values="+json.dumps({
+                  when:{field:sorted(set(
+                      str(value.get(field)) for value in
+                      (d.get(when,{}).get("source_frame_progress") or {}).values()
+                      if isinstance(value,dict)
+                  )) for field in (
+                      "last_due_grid","due_grid_continuity",
+                      "dominant_quarantine_reason","largest_ohlc_gap_bucket",
+                      "gap_violation_rows_bucket","hilo_swap_candidate_bucket",
+                      "etf_tick_grid_near_bucket",
+                      "etf_tick_research_shadow_compatible_bucket",
+                      "quarantined_rows_bucket","sdk_amount_omitted_bucket",
+                      "vendor_float_rows_bucket",
+                      "same_session_vendor_float_rows_bucket",
+                      "retained_bar_count_bucket"
+                  )} for when in ("before","after")
               }))
           assert d.get("schema")=="stock_razor_tickflow_aws_research_acceptance_v0_1"
           assert d.get("source_arbiter_admission")=="BLOCKED", repr(d.get("source_arbiter_admission"))
