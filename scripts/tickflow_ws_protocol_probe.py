@@ -333,6 +333,17 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
                 evidence.kline_snapshots += rows
                 evidence.kline_digest_changes += changes
                 evidence.kline_read_errors += errors
+
+    # Always anchor the bounded realtime window with the same 4x5 K-line
+    # matrix. Intraday checkpoint labels are intentionally future-dated during
+    # the morning, so checkpoint-only snapshots would otherwise report zero
+    # K-line reads even when the provider is healthy.
+    rows, changes, errors = await asyncio.to_thread(
+        snapshot_batch, "WINDOW_START",
+    )
+    evidence.kline_snapshots += rows
+    evidence.kline_digest_changes += changes
+    evidence.kline_read_errors += errors
     while time.monotonic() < deadline:
         try:
             evidence.ack_verified = False
@@ -370,6 +381,12 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
                 await asyncio.sleep(min(backoff, max(0, deadline - time.monotonic())))
                 backoff = min(30, backoff * 2)
     evidence.window_status = "COMPLETED"
+    rows, changes, errors = await asyncio.to_thread(
+        snapshot_batch, "WINDOW_END",
+    )
+    evidence.kline_snapshots += rows
+    evidence.kline_digest_changes += changes
+    evidence.kline_read_errors += errors
     result = evidence.summary(ws_handshake=handshake)
     if client is not None:
         try:
