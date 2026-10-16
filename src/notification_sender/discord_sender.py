@@ -296,10 +296,9 @@ class DiscordSender:
                 continue
 
             logger.error(
-                "Discord %s 发送失败: %s %s",
+                "Discord %s 发送失败: HTTP %s",
                 channel_name,
                 response.status_code,
-                response.text,
             )
             return False
 
