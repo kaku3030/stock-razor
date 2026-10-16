@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 22149)
-Total output lines: 2072
-
 # -*- coding: utf-8 -*-
 """
 Unit tests for src.notification_sender module.
@@ -844,7 +841,382 @@ class TestFeishuSender(unittest.TestCase):
         cfg = _config(feishu_webhook_url="https://feishu.example/hook")
         sender = FeishuSender(cfg)
 
-  …4149 tokens truncated…not_called()
+        result = sender.send_feishu_file("/tmp/report.md")
+
+        self.assertTrue(result)
+        rendered = mock_post.call_args.kwargs["json"]["card"]["elements"][0]["text"]["content"]
+        self.assertNotIn("[dsa-market-region]", rendered)
+        self.assertIn("**Test Report**", rendered)
+
+    @mock.patch("src.notification_sender.feishu_sender.Path")
+    def test_send_feishu_file_webhook_unreadable_file_returns_false(self, mock_path_cls):
+        """Webhook fallback returns False when the file cannot be read."""
+        mock_path = mock_path_cls.return_value
+        mock_path.is_file.return_value = True
+        mock_path.read_text.side_effect = OSError("Permission denied")
+        cfg = _config(feishu_webhook_url="https://feishu.example/hook")
+        sender = FeishuSender(cfg)
+        result = sender.send_feishu_file("/tmp/protected.md")
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.feishu_sender.Path")
+    def test_send_feishu_file_app_bot_missing_chat_id_returns_false(self, mock_path_cls):
+        """App Bot mode returns False when chat_id is not configured."""
+        mock_path = mock_path_cls.return_value
+        mock_path.is_file.return_value = True
+        cfg = _config(feishu_app_id="cli_app", feishu_app_secret="secret")
+        sender = FeishuSender(cfg)
+        result = sender.send_feishu_file("/tmp/report.md")
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequestBody", create=True)
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequest", create=True)
+    @mock.patch("src.notification_sender.feishu_sender.FEISHU_FILE_SDK_AVAILABLE", True)
+    @mock.patch("src.notification_sender.feishu_sender.Path")
+    def test_send_feishu_file_app_bot_uploads_file_and_sends_message(self, *_):
+        """App Bot uploads the file via SDK and sends a file message."""
+        mock_path = mock.MagicMock()
+        mock_path.is_file.return_value = True
+        mock_path.name = "report.md"
+        mock_path.suffix = ".md"
+        mock_path.open.return_value.__enter__.return_value = mock.MagicMock()
+        with mock.patch("src.notification_sender.feishu_sender.Path", return_value=mock_path):
+            cfg = _config(
+                feishu_app_id="cli_app",
+                feishu_app_secret="secret",
+                feishu_chat_id="oc_chat",
+            )
+            sender = FeishuSender(cfg)
+            dummy_client = mock.MagicMock()
+            file_resp = mock.MagicMock()
+            file_resp.success.return_value = True
+            file_resp.code = 0
+            file_resp.msg = "ok"
+            file_resp.data.file_key = "file_key_abc"
+            dummy_client.im.v1.file.create.return_value = file_resp
+            with mock.patch.object(FeishuSender, "_ensure_app_client", return_value=dummy_client), \
+                 mock.patch.object(FeishuSender, "_app_send_raw", return_value=True) as mock_raw:
+                result = sender.send_feishu_file("/tmp/report.md")
+        self.assertTrue(result)
+        dummy_client.im.v1.file.create.assert_called_once()
+        mock_raw.assert_called_once()
+        self.assertEqual(mock_raw.call_args[0][1], "file")
+        content_json = json.loads(mock_raw.call_args[0][2])
+        self.assertEqual(content_json["file_key"], "file_key_abc")
+
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequestBody", create=True)
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequest", create=True)
+    @mock.patch("src.notification_sender.feishu_sender.FEISHU_FILE_SDK_AVAILABLE", True)
+    @mock.patch("src.notification_sender.feishu_sender.tempfile.NamedTemporaryFile")
+    def test_send_feishu_file_app_bot_strips_hidden_metadata_before_upload(self, mock_tmpfile, *_):
+        mock_path = mock.MagicMock()
+        mock_path.is_file.return_value = True
+        mock_path.name = "report.md"
+        mock_path.suffix = ".md"
+        mock_path.read_text.return_value = "[dsa-market-region]: # (cn)\n\n# Test Report\n\nHello"
+
+        temp_handle = mock.MagicMock()
+        temp_handle.name = "/tmp/feishu_sanitized.md"
+        temp_handle.__enter__.return_value = temp_handle
+        temp_handle.__exit__.return_value = None
+        mock_tmpfile.return_value = temp_handle
+
+        sanitized_path = mock.MagicMock()
+        sanitized_path.name = "feishu_sanitized.md"
+        sanitized_path.suffix = ".md"
+        sanitized_path.open.return_value.__enter__.return_value = mock.MagicMock()
+        sanitized_path.unlink.return_value = None
+
+        with mock.patch("src.notification_sender.feishu_sender.Path", side_effect=[mock_path, sanitized_path]):
+            cfg = _config(
+                feishu_app_id="cli_app",
+                feishu_app_secret="secret",
+                feishu_chat_id="oc_chat",
+            )
+            sender = FeishuSender(cfg)
+            dummy_client = mock.MagicMock()
+            file_resp = mock.MagicMock()
+            file_resp.success.return_value = True
+            file_resp.code = 0
+            file_resp.msg = "ok"
+            file_resp.data.file_key = "file_key_abc"
+            dummy_client.im.v1.file.create.return_value = file_resp
+            with mock.patch.object(FeishuSender, "_ensure_app_client", return_value=dummy_client), \
+                 mock.patch.object(FeishuSender, "_app_send_raw", return_value=True):
+                result = sender.send_feishu_file("/tmp/report.md")
+
+        self.assertTrue(result)
+        temp_handle.write.assert_called_once()
+        written_content = temp_handle.write.call_args.args[0]
+        self.assertNotIn("[dsa-market-region]", written_content)
+        self.assertIn("# Test Report", written_content)
+        sanitized_path.open.assert_called_once()
+        sanitized_path.unlink.assert_called_once()
+
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequestBody", create=True)
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequest", create=True)
+    @mock.patch("src.notification_sender.feishu_sender.FEISHU_FILE_SDK_AVAILABLE", True)
+    def test_send_feishu_file_app_bot_upload_failure_returns_false(self, *_):
+        """App Bot returns False when the file upload fails."""
+        mock_path = mock.MagicMock()
+        mock_path.is_file.return_value = True
+        mock_path.name = "report.md"
+        mock_path.suffix = ".md"
+        mock_path.open.return_value.__enter__.return_value = mock.MagicMock()
+        with mock.patch("src.notification_sender.feishu_sender.Path", return_value=mock_path):
+            cfg = _config(
+                feishu_app_id="cli_app",
+                feishu_app_secret="secret",
+                feishu_chat_id="oc_chat",
+            )
+            sender = FeishuSender(cfg)
+            dummy_client = mock.MagicMock()
+            file_resp = mock.MagicMock()
+            file_resp.success.return_value = False
+            file_resp.code = 999
+            file_resp.msg = "upload failed"
+            dummy_client.im.v1.file.create.return_value = file_resp
+            with mock.patch.object(FeishuSender, "_ensure_app_client", return_value=dummy_client):
+                result = sender.send_feishu_file("/tmp/report.md")
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequestBody", create=True)
+    @mock.patch("src.notification_sender.feishu_sender._CreateFileRequest", create=True)
+    @mock.patch("src.notification_sender.feishu_sender.FEISHU_FILE_SDK_AVAILABLE", True)
+    def test_send_feishu_file_app_bot_missing_file_key_returns_false(self, *_):
+        """App Bot returns False when upload succeeds but file_key is missing."""
+        mock_path = mock.MagicMock()
+        mock_path.is_file.return_value = True
+        mock_path.name = "report.md"
+        mock_path.suffix = ".md"
+        mock_path.open.return_value.__enter__.return_value = mock.MagicMock()
+        with mock.patch("src.notification_sender.feishu_sender.Path", return_value=mock_path):
+            cfg = _config(
+                feishu_app_id="cli_app",
+                feishu_app_secret="secret",
+                feishu_chat_id="oc_chat",
+            )
+            sender = FeishuSender(cfg)
+            dummy_client = mock.MagicMock()
+            file_resp = mock.MagicMock()
+            file_resp.success.return_value = True
+            file_resp.data = None
+            dummy_client.im.v1.file.create.return_value = file_resp
+            with mock.patch.object(FeishuSender, "_ensure_app_client", return_value=dummy_client):
+                result = sender.send_feishu_file("/tmp/report.md")
+        self.assertFalse(result)
+
+    def test_file_upload_sdk_classes_exist_non_mock(self):
+        """Smoke: lark-oapi SDK actually exports CreateFileRequest/RequestBody."""
+        from lark_oapi.api.im.v1 import CreateFileRequest, CreateFileRequestBody
+        self.assertTrue(hasattr(CreateFileRequest, 'builder'))
+        self.assertTrue(hasattr(CreateFileRequestBody, 'builder'))
+
+
+class TestEmailSender(unittest.TestCase):
+    """Unit tests for EmailSender (config and receiver logic; send path covered via service)."""
+
+    def test_send_returns_false_when_not_configured(self):
+        cfg = _config()
+        sender = EmailSender(cfg)
+        result = sender.send_to_email("body")
+        self.assertFalse(result)
+
+    def test_get_receivers_for_stocks_no_groups_returns_default(self):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["b@qq.com", "c@qq.com"],
+        )
+        sender = EmailSender(cfg)
+        self.assertEqual(
+            sender.get_receivers_for_stocks(["000001"]),
+            ["b@qq.com", "c@qq.com"],
+        )
+
+    def test_get_receivers_for_stocks_with_matching_group(self):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["default@qq.com"],
+            stock_email_groups=[(["000001", "600519"], ["group1@qq.com"])],
+        )
+        sender = EmailSender(cfg)
+        self.assertEqual(
+            sender.get_receivers_for_stocks(["000001"]),
+            ["group1@qq.com"],
+        )
+
+    def test_get_receivers_for_stocks_no_match_falls_back_to_default(self):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["default@qq.com"],
+            stock_email_groups=[(["000001"], ["group@qq.com"])],
+        )
+        sender = EmailSender(cfg)
+        self.assertEqual(
+            sender.get_receivers_for_stocks(["999999"]),
+            ["default@qq.com"],
+        )
+
+    def test_get_all_email_receivers_returns_union(self):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["default@qq.com"],
+            stock_email_groups=[
+                (["000001"], ["g1@qq.com"]),
+                (["600519"], ["g2@qq.com"]),
+            ],
+        )
+        sender = EmailSender(cfg)
+        receivers = sender.get_all_email_receivers()
+        self.assertIn("g1@qq.com", receivers)
+        self.assertIn("g2@qq.com", receivers)
+        self.assertIn("default@qq.com", receivers)
+
+    @mock.patch("smtplib.SMTP_SSL")
+    def test_send_to_email_encodes_non_ascii_sender_name(self, mock_smtp_ssl):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["b@qq.com"],
+            email_sender_name="daily_stock_analysis股票分析助手",
+        )
+        sender = EmailSender(cfg)
+
+        result = sender.send_to_email("body", subject="测试主题")
+
+        self.assertTrue(result)
+        server = mock_smtp_ssl.return_value
+        server.send_message.assert_called_once()
+        msg = server.send_message.call_args[0][0]
+        realname, addr = parseaddr(msg["From"])
+        self.assertEqual(addr, "a@qq.com")
+        self.assertEqual(
+            str(make_header(decode_header(realname))),
+            "daily_stock_analysis股票分析助手",
+        )
+        server.quit.assert_called_once()
+
+    @mock.patch("smtplib.SMTP_SSL")
+    def test_send_to_email_strips_hidden_market_metadata(self, mock_smtp_ssl):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["b@qq.com"],
+        )
+        sender = EmailSender(cfg)
+
+        result = sender.send_to_email("[dsa-market-region]: # (cn)\n\n# 🎯 Market Review\n\nBody")
+
+        self.assertTrue(result)
+        msg = mock_smtp_ssl.return_value.send_message.call_args[0][0]
+        payloads = msg.get_payload()
+        self.assertNotIn("[dsa-market-region]", payloads[0].get_payload(decode=True).decode("utf-8"))
+        self.assertNotIn("[dsa-market-region]", payloads[1].get_payload(decode=True).decode("utf-8"))
+
+    @mock.patch("smtplib.SMTP_SSL")
+    def test_send_image_email_encodes_non_ascii_sender_name(self, mock_smtp_ssl):
+        cfg = _config(
+            email_sender="a@qq.com",
+            email_password="p",
+            email_receivers=["b@qq.com"],
+            email_sender_name="daily_stock_analysis股票分析助手",
+        )
+        sender = EmailSender(cfg)
+
+        result = sender._send_email_with_inline_image(b"PNG_BYTES", receivers=["b@qq.com"])
+
+        self.assertTrue(result)
+        server = mock_smtp_ssl.return_value
+        server.send_message.assert_called_once()
+        msg = server.send_message.call_args[0][0]
+        realname, addr = parseaddr(msg["From"])
+        self.assertEqual(addr, "a@qq.com")
+        self.assertEqual(
+            str(make_header(decode_header(realname))),
+            "daily_stock_analysis股票分析助手",
+        )
+        server.quit.assert_called_once()
+
+
+class TestNtfySender(unittest.TestCase):
+    """Unit tests for NtfySender."""
+
+    def test_send_returns_false_when_not_configured(self):
+        cfg = _config()
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("hello")
+
+        self.assertFalse(result)
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_success_uses_json_publish_with_topic_endpoint(self, mock_post):
+        mock_post.return_value = _response(200)
+        cfg = _config(
+            ntfy_url="https://ntfy.sh/dsa-topic",
+            ntfy_token="secret-token",
+            webhook_verify_ssl=False,
+        )
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("正文 **Markdown**", title="中文标题", timeout_seconds=5)
+
+        self.assertTrue(result)
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.args[0], "https://ntfy.sh")
+        call_kw = mock_post.call_args.kwargs
+        self.assertEqual(
+            call_kw["json"],
+            {
+                "topic": "dsa-topic",
+                "title": "中文标题",
+                "message": "正文 **Markdown**",
+                "markdown": True,
+            },
+        )
+        self.assertEqual(call_kw["headers"]["Authorization"], "Bearer secret-token")
+        self.assertEqual(call_kw["timeout"], 5)
+        self.assertFalse(call_kw["verify"])
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_strips_hidden_market_region_metadata_from_message(self, mock_post):
+        mock_post.return_value = _response(200)
+        cfg = _config(ntfy_url="https://ntfy.sh/dsa-topic")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("[dsa-market-region]: # (cn)\n\n# 🎯 Market Review\n\nBody")
+
+        self.assertTrue(result)
+        self.assertEqual(
+            mock_post.call_args.kwargs["json"]["message"],
+            "# 🎯 Market Review\n\nBody",
+        )
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_supports_self_hosted_path_prefix(self, mock_post):
+        mock_post.return_value = _response(200)
+        cfg = _config(ntfy_url="https://example.com/ntfy/dsa-topic")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body", title="title")
+
+        self.assertTrue(result)
+        self.assertEqual(mock_post.call_args.args[0], "https://example.com/ntfy")
+        self.assertEqual(mock_post.call_args.kwargs["json"]["topic"], "dsa-topic")
+
+    @mock.patch("src.notification_sender.ntfy_sender.requests.post")
+    def test_send_returns_false_when_url_has_no_topic(self, mock_post):
+        cfg = _config(ntfy_url="https://ntfy.sh")
+        sender = NtfySender(cfg)
+
+        result = sender.send_to_ntfy("body")
+
+        self.assertFalse(result)
+        mock_post.assert_not_called()
 
     @mock.patch("src.notification_sender.ntfy_sender.requests.post")
     def test_send_returns_false_when_url_scheme_is_not_http(self, mock_post):
