@@ -492,6 +492,28 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     if age < -5 or age > max_age:
         return {**base,"status":"STALE","cache_rejection_reason":"CACHE_STALE","age_seconds":round(age,2),
                 "max_age_seconds":max_age}
+    websocket_evidence = obj.get("websocket_evidence")
+    if websocket_evidence is not None:
+        if (not isinstance(websocket_evidence, dict)
+                or websocket_evidence.get("schema") != "stock_razor_tickflow_ws_research_evidence_v0_1"
+                or websocket_evidence.get("symbols") != sorted(SYMBOLS)
+                or websocket_evidence.get("subscription_ack") != "NOT_OBSERVABLE_VIA_OFFICIAL_SYNC_SDK"
+                or websocket_evidence.get("continuous_feed_qualified") is not False
+                or websocket_evidence.get("bar_finality") != "NOT_VERIFIED"
+                or websocket_evidence.get("radar_admission") != "BLOCKED"
+                or websocket_evidence.get("source_arbiter_admission") != "BLOCKED"
+                or websocket_evidence.get("live_trade") is not False):
+            return invalid_cache("WEBSOCKET_EVIDENCE_INVALID")
+        for name in ("quote_callbacks", "quote_events", "initial_snapshot_candidates",
+                     "post_initial_update_candidates", "duplicate_timestamp_events",
+                     "out_of_order_timestamp_events", "unrequested_symbol_events",
+                     "invalid_timestamp_events", "error_callbacks", "post_initial_lag_samples"):
+            value = websocket_evidence.get(name)
+            if type(value) is not int or value < 0:
+                return invalid_cache("WEBSOCKET_EVIDENCE_COUNTER_INVALID")
+        if websocket_evidence.get("post_initial_lag_bucket") not in {
+                "NOT_VERIFIED", "UNDER_2S", "TWO_TO_FIVE_S", "FIVE_TO_THIRTY_S", "OVER_THIRTY_S"}:
+            return invalid_cache("WEBSOCKET_EVIDENCE_LAG_INVALID")
     reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
         raw=obj["symbols"][symbol][timeframe]
@@ -635,6 +657,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
+            "websocket_evidence":websocket_evidence,
         }
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
@@ -651,5 +674,6 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "tolerated_vendor_float_rows":tolerated_rows,
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
+        "websocket_evidence":websocket_evidence,
     }
 

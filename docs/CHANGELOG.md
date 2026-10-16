@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] 为 CN TickFlow 研究 worker 增加默认关闭的官方 WebSocket quotes 只读证据观察层，并将其安全投影到 Radar 研究缓存；不改变实时连续性、K 线闭合或 Radar 准入。
 - [研究/验收] TickFlow 分钟K线新增双快照时间到期与OHLCV稳定性只读证据审计，严格与供应商最终闭合分离；未取得TickFlow最终确认契约前不允许开启Radar或交易门禁。
 - [修复] Paper SSM 只读验收拒绝未来时间戳的心跳文件作为新鲜状态，保持运行时未知及所有交易门禁阻断。
 - [修复] OpenD canonical 快照区分发布心跳与最新行情源时间戳；运行时可持续推进只读快照序列，同时 MCP 仍按真实 K 线源时间判定新鲜度，避免缓存停滞或心跳刷新掩盖旧数据。

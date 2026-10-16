@@ -12,6 +12,7 @@ import time
 from data_provider.cn_tickflow_research_cache import (
     SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation,
 )
+from data_provider.tickflow_ws_research_observer import attach_tickflow_stream
 
 SECRET_NAME="stock-razor/tickflow/premium-api-key"
 running=True
@@ -110,6 +111,12 @@ def _network_retry_interval(now: datetime, error: Exception | None, failures: in
     return min(300, 15 * (2 ** min(max(failures - 1, 0), 5)))
 
 
+def _websocket_enabled() -> bool:
+    return os.environ.get("TICKFLOW_RESEARCH_WS_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes",
+    }
+
+
 def main() -> int:
     sha=os.environ.get("STOCK_RAZOR_REPO_SHA","")
     if not __import__("re").fullmatch("[0-9a-f]{40}",sha):
@@ -133,6 +140,16 @@ def main() -> int:
     except Exception as exc:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)
         return 3
+    ws_observer = None
+    if _websocket_enabled():
+        try:
+            with open(os.devnull, "w", encoding="utf-8") as null:
+                with redirect_stdout(null), redirect_stderr(null):
+                    ws_observer = attach_tickflow_stream(client, SYMBOLS)
+        except Exception as exc:
+            # REST research remains independent; the optional WS leg is an
+            # explicit blocked observation rather than a silent live claim.
+            print("TICKFLOW_RESEARCH_WS=BLOCKED:" + type(exc).__name__, flush=True)
     sequence=0
     network_failures=0
     try:
@@ -146,6 +163,8 @@ def main() -> int:
                     with redirect_stdout(null), redirect_stderr(null):
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
                               sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
+                if ws_observer is not None:
+                    snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
                 atomic_publish(status_path,snapshot)
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
@@ -191,6 +210,8 @@ def main() -> int:
         try:
             with open(os.devnull,"w",encoding="utf-8") as null:
                 with redirect_stdout(null),redirect_stderr(null):
+                    if ws_observer is not None:
+                        client.stream.close()
                     client.close()
         except Exception:
             pass
