@@ -194,3 +194,52 @@ def audit_repeated_tickflow_bar(
     if baseline != latest:
         return _result("BAR_REVISED_BETWEEN_POLLS")
     return _result("STABLE_TWO_POLLS", poll_gap_seconds=round(gap, 2))
+
+
+def attach_research_stability_witness(
+    current: dict[str, Any],
+    previous: Mapping[str, Any] | None,
+    *,
+    now_utc: datetime,
+) -> None:
+    """Attach bounded no-quote witnesses within the existing worker poll.
+
+    No extra SDK calls, retained disk files or provider finality promotion.
+    Only a same-day prior bar with a following label can be considered.
+    """
+    if not isinstance(current, dict) or not isinstance(now_utc, datetime):
+        raise ValueError("invalid private witness inputs")
+    if now_utc.tzinfo is None or now_utc.utcoffset() is None:
+        raise ValueError("invalid private witness clock")
+    today = now_utc.astimezone(CN).strftime("%Y-%m-%d")
+    symbols = current.get("symbols", {})
+    if not isinstance(symbols, dict):
+        raise ValueError("invalid private witness frames")
+    for symbol in SYMBOLS:
+        frames = symbols.get(symbol, {})
+        if not isinstance(frames, dict):
+            continue
+        for timeframe in _PERIODS:
+            frame = frames.get(timeframe)
+            if not isinstance(frame, dict):
+                continue
+            rows = frame.get("rows", [])
+            if not isinstance(rows, list) or len(rows) < 2:
+                continue
+            candidate = rows[-2].get("label") if isinstance(rows[-2], dict) else None
+            if not isinstance(candidate, str) or not candidate.startswith(today + " "):
+                continue
+            witness = (
+                audit_repeated_tickflow_bar(
+                    previous, current, symbol=symbol,
+                    timeframe=timeframe, bar_end_label=candidate,
+                    now_utc=now_utc,
+                )
+                if previous is not None else _result("NO_PRIOR_POLL")
+            )
+            # The reader revalidates these exact research-only fields. The
+            # label is a public scheduled candle-end time, not raw OHLC.
+            frame["bar_stability_witness"] = {
+                "bar_end_label": candidate,
+                **witness,
+            }
