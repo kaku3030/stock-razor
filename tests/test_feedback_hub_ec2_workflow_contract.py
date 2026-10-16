@@ -31,6 +31,9 @@ def test_read_only_probe_does_not_claim_persistence():
     assert "ssm send-command" in code
     assert "role-to-assume:" in code
     assert "vars.STOCK_RAZOR_GITHUB_OPS_ROLE_ARN" in code
+    assert "aws sts get-caller-identity --query Account" in code
+    assert 'test "$actual_account" = "$expected_account"' in code
+    assert "EC2_CALLER_ACCOUNT_BOUND=PASS" in code
     assert "aws iam " not in code
     assert "aws secretsmanager " not in code
     assert "aws ec2 stop-instances" not in code
