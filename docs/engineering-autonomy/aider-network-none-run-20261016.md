@@ -64,3 +64,32 @@ shared ledger if deployed.
 
 The next experimental GitHub CI result must show the **exact branch head**
 before any PASS claim. No paid model execution is authorized by this document.
+
+## Controlled mock-gateway follow-up — CI PASS
+
+- Exact workflow: [run 38871440215](https://github.com/kaku3030/stock-razor/actions/runs/38871440215),
+  job ID `116876216653`, head
+  `efc5169ce92c652b2083b2c079dcb8d8d1dd6b78`.
+- Docker `--network none` process reports
+  `AIDER_NETNS=ONLY_LOOPBACK` by inspection of actual container interfaces.
+  On no-network Linux images the IPv6 route file can legitimately be absent;
+  the guard allows that only when no non-loopback interface is visible.
+- **Normal Aider**: HTTP attempts 1, mock-accepted 1, denied 0, exit 0.
+- **Strict missing-cap rejection**: HTTP attempts 1, mock-upstream accepted
+  **0**, blocked 1, Aider terminated (exit -15).
+- **Simulated first-provider-503**: Aider attempted 2 HTTP requests;
+  mock-upstream accepted **1**, the retry was blocked **1**, Aider terminated.
+  `AIDER_INTERNAL_RETRY_OBSERVED=True`.
+- Every first request had correct mock-only Authorization, loopback endpoint
+  and non-stream shape, and **NO `max_tokens`**. This confirms an independent
+  gateway is required to set/reject the upstream limit; CLI flags alone do not.
+- Overall status: `AIDER_ISOLATION=GATE_FAIL_CLOSED_LOOPBACK_PASS;`
+  `PAID_CODING=BLOCKED`. The GitHub Actions job completed **SUCCESS**.
+
+This is a **real pinned Aider executable**, not a stub client, but both the
+gateway and any simulated upstream are *test-only* and in the isolated
+container. The numeric `ACCEPTED_MOCK_UPSTREAM` counter does **not** mean a
+paid provider request; model provider traffic is impossible by container
+network isolation. Also note that a simple rejection gateway has not yet
+proved it can modify missing `max_tokens` into a safe forwarded upstream
+request, nor has it proved trusted input billing. Keep production closed.
