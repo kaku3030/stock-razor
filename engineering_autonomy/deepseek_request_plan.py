@@ -37,10 +37,14 @@ def _validate_messages(messages: object) -> list[dict[str, str]]:
         if not isinstance(item, dict) or set(item) != {"role", "content"}:
             raise RequestPlanDenied("unsupported message structure")
         role, message = item["role"], item["content"]
-        if role not in ROLES or type(message) is not str or not message:
+        if type(role) is not str or role not in ROLES or type(message) is not str or not message:
             raise RequestPlanDenied("unsupported role or content")
         checked.append({"role": role, "content": message})
-    if len(json.dumps(checked, ensure_ascii=False).encode("utf-8")) > MAX_PAYLOAD_BYTES:
+    try:
+        size = len(json.dumps(checked, ensure_ascii=False).encode("utf-8"))
+    except UnicodeError as exc:
+        raise RequestPlanDenied("invalid message encoding") from exc
+    if size > MAX_PAYLOAD_BYTES:
         raise RequestPlanDenied("message payload too large")
     return checked
 
