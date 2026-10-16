@@ -61,7 +61,7 @@ def get_cn_tickflow_research_data(
     limit: int = 30,
     research_mode: str = "session_progress",
 ) -> dict:
-    """Read direct AWS Premium TickFlow 15m/60m cache, strictly research-only.
+    """Read direct AWS Premium TickFlow 1m/5m/15m/60m/1d cache, strictly research-only.
 
     Uses no provider network requests, never marks current candle finalized,
     never asserts Radar/Source Arbiter admission or trading permission.
@@ -99,9 +99,9 @@ def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
 
 
 def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
-    """One remote MCP round trip for two ETF research histories; no provider IO.
+    """One remote MCP round trip for four held-ETF research histories; no provider IO.
 
-    Four or eight independent cache reads must share a source SHA and sequence.
+    Five or twenty independent cache reads must share a source SHA and sequence.
     Never promote an incomplete or misaligned set to a usable batch.
     """
     base = {
@@ -116,13 +116,13 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
     }
     if type(full) is not bool:
         return base
-    periods=(("5m","15m","60m","1d") if full else ("15m","60m"))
-    if type(limit) is not int or not 1 <= limit <= (48 if full else 24):
+    periods=(("1m","5m","15m","60m","1d") if full else ("15m","60m"))
+    if type(limit) is not int or not 1 <= limit <= (240 if full else 24):
         return base
     raw = {}
     states = {}
     source_versions = set()
-    for symbol in ("159611.SZ", "518880.SH"):
+    for symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"):
         frames = {}
         for period in periods:
             result = read_cn_tickflow_research_data(
@@ -164,7 +164,7 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
         **base, "ok": True, "status": "PASS_HISTORICAL_ONLY",
         "repo_sha": sha, "sequence": sequence,
         "symbols": raw, "frame_status": states,
-        "frame_count": 2*len(periods),
+        "frame_count": 4*len(periods),
         "source_age_seconds": max(
             frame["source_age_seconds"]
             for frames in raw.values() for frame in frames.values()
@@ -173,7 +173,7 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
 
 
 def _read_tickflow_fast_snapshot() -> dict:
-    """Compact 2-symbol/2-timeframe historical watchlist, never live advice.
+    """Compact four-symbol/2-timeframe historical watchlist, never live advice.
 
     Calls the same four-source-aligned, fail-closed research reader as BATCH.
     No TickFlow provider network I/O and no cached state held in the MCP.
@@ -196,14 +196,14 @@ def _read_tickflow_fast_snapshot() -> dict:
         "canonical_write_authorized": False,
         "provider_requests": 0,
         "research_mode": "historical_only",
-        "frame_count": 4,
+        "frame_count": 8,
         "read_scope": "CLOUD_MCP_LOCAL_CACHE_NOT_CHATGPT_RTT",
     }
     if not full.get("ok") or full.get("status") != "PASS_HISTORICAL_ONLY":
         return {**common, "frame_status": full.get("frame_status", {}),
                 "read_ms": round((perf_counter() - start) * 1000, 2)}
     latest = {}
-    for symbol in ("159611.SZ", "518880.SH"):
+    for symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"):
         frames = {}
         for tf in ("15m", "60m"):
             detail = full["symbols"][symbol][tf]

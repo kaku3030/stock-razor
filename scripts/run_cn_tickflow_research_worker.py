@@ -88,14 +88,15 @@ def _interval(now: datetime, failure: bool=False) -> int:
         return 900
     hhmm=sh.hour*60+sh.minute
     session=(570 <= hhmm <= 690) or (780 <= hhmm <= 900)
-    # Read-only REST, 8 bounded Kline requests per cadence, not ticks.
+    # Read-only REST, 20 bounded Kline requests per cadence, not ticks:
+    # four held ETFs across the five approved research periods.
     return 300 if failure or not session else 15
 
 def _network_retry_interval(now: datetime, error: Exception | None, failures: int) -> int:
     """Bounded polling recovery, never hidden SDK retries or auth retries.
 
-    Eight calls maximum per cycle and >=15s between cycles retain the
-    single-worker ceiling of 32 requests/minute. Repeated network failures
+    Twenty calls maximum per cycle and >=15s between cycles retain a single
+    worker and bounded request cadence. Repeated network failures
     back off to the original 300s; weekends retain 900s.
     """
     conservative = _interval(now, failure=True)
@@ -182,14 +183,10 @@ def main() -> int:
                     "failure_stage":(
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
-                            "S0_15M_FETCH","S0_15M_NORMALIZE",
-                            "S0_60M_FETCH","S0_60M_NORMALIZE",
-                            "S1_15M_FETCH","S1_15M_NORMALIZE",
-                            "S1_60M_FETCH","S1_60M_NORMALIZE",
-                            "S0_5M_FETCH","S0_5M_NORMALIZE",
-                            "S1_5M_FETCH","S1_5M_NORMALIZE",
-                            "S0_1D_FETCH","S0_1D_NORMALIZE",
-                            "S1_1D_FETCH","S1_1D_NORMALIZE",
+                            *[f"S{i}_{period}_{action}"
+                              for i in range(len(SYMBOLS))
+                              for period in ("1M","5M","15M","60M","1D")
+                              for action in ("FETCH","NORMALIZE")],
                         } else "UNKNOWN"
                     ),
                     "symbols":{},"research_only":True,

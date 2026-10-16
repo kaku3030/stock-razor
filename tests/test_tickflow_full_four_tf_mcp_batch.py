@@ -1,4 +1,4 @@
-"""One call for 2 ETFs × four TickFlow cloud research periods, never live admission."""
+"""One call for four holdings × five TickFlow cloud research periods, never live admission."""
 import ast
 from pathlib import Path
 
@@ -35,32 +35,32 @@ def make_dispatch(*, stale=None, misalign=None):
     return ns["get_cn_market_data"],calls
 
 
-def test_full_one_call_eight_bounded_research_frames():
+def test_full_one_call_twenty_bounded_research_frames():
     h,calls=make_dispatch()
     res=h("TICKFLOW:FULL",limit=40)
     assert res["status"]=="PASS_HISTORICAL_ONLY"
     assert res["provider"]=="TICKFLOW_PREMIUM"
-    assert res["frame_count"]==8
+    assert res["frame_count"]==20
     assert res["repo_sha"]=="f"*40 and res["sequence"]==7
     assert res["bar_finality"]=="NOT_VERIFIED"
     assert res["radar_admission"]=="BLOCKED"
     assert res["source_arbiter_admission"]=="BLOCKED"
     assert res["live_trade"] is False and res["provider_requests"]==0
-    assert set(res["symbols"])=={"159611.SZ","518880.SH"}
-    assert all(set(v)=={"5m","15m","60m","1d"} for v in res["symbols"].values())
-    assert len(calls)==8
+    assert set(res["symbols"])=={"159611.SZ","159209.SZ","512730.SH","159363.SZ"}
+    assert all(set(v)=={"1m","5m","15m","60m","1d"} for v in res["symbols"].values())
+    assert len(calls)==20
     assert all(x[2:]==(40,"historical_only") for x in calls)
-    assert h("TICKFLOW:BATCH",limit=1)["frame_count"]==4
-    assert len(calls)==12
+    assert h("TICKFLOW:BATCH",limit=1)["frame_count"]==8
+    assert len(calls)==28
     assert h("TICKFLOW:BATCH",limit=25)["status"]=="INVALID_REQUEST"
-    assert h("TICKFLOW:FULL",limit=49)["status"]=="INVALID_REQUEST"
+    assert h("TICKFLOW:FULL",limit=241)["status"]=="INVALID_REQUEST"
     assert h("TICKFLOW:FULL",limit=0)["status"]=="INVALID_REQUEST"
-    assert len(calls)==12
+    assert len(calls)==28
 
 
 def test_full_stale_or_misaligned_frame_fails_entire_result():
-    for params,expected in (({"stale":("159611.SZ","5m")},"PARTIAL_OR_STALE"),
-                            ({"misalign":("518880.SH","1d")},"INVALID_SOURCE_ALIGNMENT")):
+    for params,expected in (({"stale":("159209.SZ","5m")},"PARTIAL_OR_STALE"),
+                            ({"misalign":("159209.SZ","1d")},"INVALID_SOURCE_ALIGNMENT")):
         h,calls=make_dispatch(**params)
         r=h("TICKFLOW:FULL",limit=1)
         assert r["status"]==expected and r["ok"] is False

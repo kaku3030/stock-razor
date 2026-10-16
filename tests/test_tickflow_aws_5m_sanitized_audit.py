@@ -55,7 +55,7 @@ def test_github_sanitized_projection_includes_five_minute_fixed_enums():
     from pathlib import Path
     workflow=(Path(__file__).resolve().parents[1]/
              ".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
-    assert 'supplemental=("159611_SZ_5m","518880_SH_5m")' in workflow
+    assert '"159209_SZ_1m","159209_SZ_5m","159209_SZ_15m","159209_SZ_60m"' in workflow
     assert '"supplemental_5m_reader":{p:d["after"]["supplemental_5m_reader"].get(p,{})' in workflow
-    assert 'set(frame_map).issubset((*periods,*supplemental))' in workflow
+    assert 'set(frame_map).issubset(historical_periods)' in workflow
     assert 'allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144")' in workflow
