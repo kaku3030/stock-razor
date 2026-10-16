@@ -19,7 +19,7 @@ SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
 TIMEFRAMES = ("1m", "5m", "15m", "60m", "1d")
 # Four holdings × five periods requires a larger bounded private envelope;
 # this remains a hard reader/writer limit and is not public market-data output.
-MAX_BYTES = 600_000
+MAX_BYTES = 2_000_000
 MAX_AGE_SECONDS = 180
 _LABEL_END = {
     "1m": frozenset(

@@ -65,7 +65,7 @@ def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
 
     # Auditor used to impose a smaller 150 KB limit and falsely report
     # NO_VALID_CACHE for a legitimate bounded private snapshot.
-    assert audit.MAX_FILE_BYTES == MAX_BYTES == 600_000
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 2_000_000
 
 
 @pytest.mark.parametrize("symbol_index", [0, 1, 2, 3])
@@ -159,7 +159,7 @@ def test_private_tickflow_writer_enforces_same_limit_as_audit_and_reader():
     import inspect
 
     source = inspect.getsource(atomic_publish)
-    assert audit.MAX_FILE_BYTES == MAX_BYTES == 600_000
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 2_000_000
     assert 'len(encoded.encode("utf-8"))>MAX_BYTES' in source
     assert source.index("len(encoded.encode") < source.index("parent.mkdir")
 
