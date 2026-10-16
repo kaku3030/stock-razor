@@ -198,3 +198,45 @@ def test_mock_invalid_response_fails_closed_without_retry(body):
         with pytest.raises(LoopbackDenied, match="dispatch replay denied"):
             transport.send_once(sealed)
     assert len(observed) == 1
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_mock_upstream_failure_never_auto_retries(status):
+    plan = OfflineRequestPlan()
+    sealed = new_request(plan)
+    with fake_deepseek(status=status) as (endpoint, observed):
+        transport = LoopbackMockTransport(plan=plan, endpoint=endpoint)
+        with pytest.raises(LoopbackDenied, match="mock HTTP or response failure"):
+            transport.send_once(sealed)
+        with pytest.raises(LoopbackDenied, match="dispatch replay denied"):
+            transport.send_once(sealed)
+    assert len(observed) == 1
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+def test_mock_http_redirect_never_followed_even_when_post_replay_is_allowed(status):
+    plan = OfflineRequestPlan()
+    sealed = new_request(plan)
+    with fake_deepseek(
+        status=status, redirect="https://api.deepseek.com/v1/chat/completions"
+    ) as (endpoint, observed):
+        with pytest.raises(LoopbackDenied, match="mock HTTP or response failure"):
+            LoopbackMockTransport(plan=plan, endpoint=endpoint).send_once(sealed)
+    assert len(observed) == 1
+
+
+def test_inherited_provider_secret_and_http_proxy_are_never_used(monkeypatch):
+    secret = "DO_NOT_EXPOSE_THIS_PROVIDER_KEY"
+    monkeypatch.setenv("DEEPSEEK_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    plan = OfflineRequestPlan()
+    sealed = new_request(plan)
+    with fake_deepseek() as (endpoint, observed):
+        result = LoopbackMockTransport(plan=plan, endpoint=endpoint).send_once(sealed)
+    assert result["status"] == "SIMULATED_LOOPBACK_ONLY"
+    assert len(observed) == 1
+    assert secret not in observed[0]["authorization"]
+    assert secret.encode("utf-8") not in observed[0]["bytes"]
+    assert observed[0]["authorization"] == "Bearer offline-placeholder-not-real"
