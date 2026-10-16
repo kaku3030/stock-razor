@@ -75,9 +75,18 @@ rights, provider session flags or actual after-hours/overnight K-lines.
 The updated adapter and manager are covered by fake OpenD SDK/context
 tests for `Session.ALL` argument propagation, callback semantic identity,
 unsupported SDK session support, mixed batch grouping and runtime bridge
-ownership. Genuine `Qot_Sub` provider ACK followed by
-`query_subscription` reconciliation is **not implemented or verified**
-by this PR; rights and fresh 1m K-lines remain independent gates.
+ownership. The adapter now exposes `inspect_current_connection_subscriptions()`
+as a sanitized, **explicitly invoked read-only diagnostic**, using
+`query_subscription(is_all_conn=False)`: it validates the numeric
+`total_used/own_used/remain` quota fields, checks the requested K_1M
+symbols in this same connection, and fails closed on missing or malformed
+provider responses. A successful result is only
+`OBSERVED_CURRENT_CONNECTION_ONLY` — it cannot verify that the requested
+`Session.ALL` setting was effective, nor prove live bars, delivery mode
+or a broker-authoritative subscription. Both the SDK query and
+`Qot_Sub` are **not yet executed on AWS**, and the readback has not been
+integrated into the cloud owner. Actual provider-side read-after-write and
+live 1m K-lines remain independent P0 gates.
 
 The existing cloud runtime is a different SHA from PR #812, which is open
 and not deployed. A green CI cannot qualify cloud operations.
