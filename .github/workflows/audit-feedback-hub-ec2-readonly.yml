@@ -131,10 +131,17 @@ jobs:
           if state != "READBACK_ONLY": raise SystemExit(2)
           assert payload.get("existing_schema") == "PASS"
           assert payload.get("backing") == "NON_VOLATILE_TYPE_OBSERVED_NOT_PROVEN"
-          assert isinstance(payload.get("audit_count"),int)
-          assert isinstance(payload.get("open_p0"),int)
-          assert isinstance(payload.get("open_p1"),int)
-          assert len(payload.get("audit_tail_digest",""))==16
+          import re
+          for field in ("audit_count","open_p0","open_p1"):
+              value=payload.get(field)
+              assert type(value) is int and 0 <= value <= 10000000
+          witness=payload.get("audit_tail_digest")
+          assert type(witness) is str and re.fullmatch(r"[0-9a-f]{16}",witness)
           print("FEEDBACK_HUB_EXISTING_SCHEMA=PASS")
           print("FEEDBACK_HUB_NON_VOLATILE_MOUNT_TYPE=OBSERVED_NOT_PROVEN")
+          print("FEEDBACK_HUB_OPEN_P0="+str(payload["open_p0"]))
+          print("FEEDBACK_HUB_OPEN_P1="+str(payload["open_p1"]))
+          print("FEEDBACK_HUB_AUDIT_COUNT="+str(payload["audit_count"]))
+          print("FEEDBACK_HUB_AUDIT_TAIL_DIGEST="+witness)
+          print("FEEDBACK_HUB_CROSS_RUN_PERSISTENCE=NOT_VERIFIED")
           '
