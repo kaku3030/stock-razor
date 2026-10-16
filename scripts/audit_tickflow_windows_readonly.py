@@ -1,7 +1,7 @@
 """Bounded Windows TickFlow K-line qualification; absolutely no trading/writes.
 
 Official TickFlow 0.1.25 REST only; secure user Windows Credential Manager.
-Only fixed ETFs and 5m/15m/60m/1d. Reports enums/counts/latencies, never key,
+Only the four held ETFs and 1m/5m/15m/60m/1d. Reports enums/counts/latencies, never key,
 quotes, raw provider rows, exact OHLC, account info, or exception messages.
 
 Run explicitly: python scripts/audit_tickflow_windows_readonly.py --execute
@@ -48,9 +48,12 @@ def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: fl
     except (InvalidOperation,TypeError,ValueError,OverflowError):
         return False
 
-SYMBOLS = ("159611.SZ", "518880.SH")
-PERIOD_COUNTS = {"5m": 144, "15m": 96, "60m": 24, "1d": 40}
+SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+PERIOD_COUNTS = {"1m": 240, "5m": 144, "15m": 96, "60m": 24, "1d": 40}
 END_CLOCKS = {
+    "1m": tuple(f"{m // 60:02d}:{m % 60:02d}" for m in
+                (*range(9 * 60 + 31, 11 * 60 + 31),
+                 *range(13 * 60 + 1, 15 * 60 + 1))),
     "5m": tuple(f"{m // 60:02d}:{m % 60:02d}" for m in
                 (*range(9 * 60 + 35, 11 * 60 + 31, 5),
                  *range(13 * 60 + 5, 15 * 60 + 1, 5))),
@@ -164,7 +167,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 tiny_vendor_float_drift_rows += 1
                 if stamp.date() == now_cn.date():
                     same_session_float_drift_rows += 1
-                    if timeframe in ("5m", "15m", "60m"):
+                    if timeframe in ("1m", "5m", "15m", "60m"):
                         research_eligible.add(stamp)
                 continue
             if timeframe == "1d":
@@ -229,10 +232,10 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--execute", action="store_true", help="Opt in to <=8 bounded monthly-plan REST reads")
+    parser.add_argument("--execute", action="store_true", help="Opt in to <=20 bounded monthly-plan REST reads")
     parser.add_argument("--research-exit", action="store_true",
                         help="Success exit only for fully due research labels; strict status stays blocked")
-    parser.add_argument("--timeframe", choices=("5m", "15m", "60m", "1d", "all"), default="all")
+    parser.add_argument("--timeframe", choices=("1m", "5m", "15m", "60m", "1d", "all"), default="all")
     args = parser.parse_args()
     if not args.execute:
         print(json.dumps({

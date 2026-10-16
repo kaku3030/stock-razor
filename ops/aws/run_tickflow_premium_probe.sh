@@ -206,7 +206,7 @@ if [[ "$protocol_only" == true ]]; then
   # transport or market-data qualification. Emit only the validated schema.
   probe_stage=RUN_DIRECT_WS_PROTOCOL
   protocol_rc=0
-  protocol_summary="$(TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true "$venv/bin/python" "$stage/ws_protocol.py" --execute --symbols 159611.SZ 518880.SH --seconds "$ws_seconds" 2>/dev/null)" || protocol_rc=$?
+  protocol_summary="$(TICKFLOW_WS_PROTOCOL_PROBE_OPT_IN=true TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true "$venv/bin/python" "$stage/ws_protocol.py" --execute --symbols 159611.SZ 159209.SZ 512730.SH 159363.SZ --seconds "$ws_seconds" 2>/dev/null)" || protocol_rc=$?
   [[ "$protocol_rc" == 0 || "$protocol_rc" == 2 ]]
   probe_stage=SANITIZE_DIRECT_WS_PROTOCOL
   printf '%s\n' "$protocol_summary" | "$venv/bin/python" "$stage/ws_sanitizer.py" --repo-sha "$revision"

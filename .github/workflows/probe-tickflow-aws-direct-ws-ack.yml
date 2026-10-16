@@ -1,6 +1,6 @@
 name: TickFlow Direct WS ACK Cloud Probe (Explicit Opt-In)
 
-# Private key stays on existing Tokyo EC2. Manual read-only quotes and four
+# Private key stays on existing Tokyo EC2. Manual read-only quotes and five
 # bounded K-line fingerprint checkpoints; no canonical writes or orders.
 on:
   workflow_dispatch:
