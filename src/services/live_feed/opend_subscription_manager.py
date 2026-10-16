@@ -136,6 +136,9 @@ def _validate_key(key: object) -> str | None:
         or key.market != "us"
         or key.stream_type != "K_1M"
         or key.timeframe != "1m"
+        # Only the default US regular session or explicit 24H Session.ALL
+        # are supported. Futu rejects Session.OVERNIGHT as a subscribe flag.
+        or key.session_mode not in (None, "ALL")
         or not isinstance(key.symbol, str)
         or len(key.symbol) > 32
         or _OPEND_US_SYMBOL.fullmatch(key.symbol) is None
