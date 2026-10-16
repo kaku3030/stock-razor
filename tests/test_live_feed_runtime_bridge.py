@@ -6,6 +6,10 @@ import pytest
 from data_provider.live_feed_types import ProviderEvent, ProviderEventKind, SemanticStreamKey
 from src.services.live_feed.commands import FakeProviderCommandExecutor
 from src.services.live_feed.controller import LiveFeedController
+from src.services.live_feed.opend_subscription_manager import (
+    OpenDSubscriptionManager,
+    OpenDSubscriptionQuota,
+)
 from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 
 
@@ -96,3 +100,237 @@ def test_bridge_batches_provider_subscription_for_multiple_streams():
     assert ("subscribe_many", (KEY, second)) in a.calls
     assert not any(call[0] == "subscribe" for call in a.calls)
     assert snap.subscribed == (KEY, second)
+
+
+def test_bridge_dynamically_adds_and_removes_stream_through_existing_owner():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+
+    r.subscribe_streams([added, added])
+    assert r.snapshot().subscribed == (KEY, added)
+    assert c.desired_registry_snapshot().entries[-1].semantic_stream_key == added
+    assert ("subscribe_many", (added,)) in a.calls
+
+    r.unsubscribe_stream(added)
+    assert r.snapshot().subscribed == (KEY,)
+    assert added not in {
+        item.semantic_stream_key
+        for item in c.desired_registry_snapshot().entries
+    }
+    assert ("unsubscribe", added) in a.calls
+
+
+def test_dynamic_provider_subscribe_failure_rolls_back_desired_registry():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+
+    def fail(_keys):
+        raise RuntimeError("provider rejected")
+    a.subscribe_streams = fail
+    with pytest.raises(RuntimeError, match="provider rejected"):
+        r.subscribe_stream(added)
+    assert r.snapshot().subscribed == (KEY,)
+    assert added not in {
+        item.semantic_stream_key
+        for item in c.desired_registry_snapshot().entries
+    }
+
+
+def test_existing_opend_subscription_manager_can_reconcile_through_bridge():
+    added = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c=controller(); a=Adapter(); r=LiveFeedRuntimeBridge(c,a)
+    r.start([KEY])
+    manager=OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    quota=OpenDSubscriptionQuota(
+        total_used=1,
+        remaining=20,
+        observed_at_utc=datetime.now(timezone.utc),
+        verified=True,
+    )
+
+    added_result=manager.update_candidates([added], quota=quota)
+    assert added_result.status == "APPLIED"
+    assert r.snapshot().subscribed == (KEY, added)
+    removed_result=manager.update_candidates([])
+    assert removed_result.status == "APPLIED"
+    assert r.snapshot().subscribed == (KEY,)
+
+def test_start_partial_provider_batch_rolls_back_owner_and_registry():
+    """A failed initial batch may already have subscribed its first stream."""
+    second = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+
+    def partially_subscribe(keys):
+        assert tuple(keys) == (KEY, second)
+        a.calls.append(("subscribe_many_partial", tuple(keys)))
+        raise RuntimeError("partial provider subscription")
+
+    a.subscribe_streams = partially_subscribe
+    with pytest.raises(RuntimeError, match="partial provider subscription"):
+        r.start([KEY, second])
+
+    # The bridge must attempt bounded cleanup for every potentially
+    # subscribed stream, even when the provider gives no partial ACK list.
+    assert ("unsubscribe", KEY) in a.calls
+    assert ("unsubscribe", second) in a.calls
+    assert ("stop",) in a.calls
+    c.process_pending()
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
+
+def test_initial_subscribe_observes_committed_desired_registry():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    original = a.subscribe_streams
+
+    def inspect_registry(keys):
+        assert KEY in {
+            entry.semantic_stream_key
+            for entry in c.desired_registry_snapshot().entries
+        }
+        original(keys)
+
+    a.subscribe_streams = inspect_registry
+    r.start([KEY])
+    assert r.snapshot().subscribed == (KEY,)
+
+
+def test_start_rejected_ingress_rolls_back_partial_desired_registry():
+    second = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+        control_queue_maxsize=1,
+    )
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    with pytest.raises(RuntimeError, match="desired registry ingress rejected"):
+        r.start([KEY, second])
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
+    # Ingress failed before adapter.start(): no provider cleanup is needed.
+    assert ("start",) not in a.calls
+    assert ("stop",) not in a.calls
+    assert not any(call[0] == "subscribe_many" for call in a.calls)
+
+def test_initial_adapter_start_sees_desired_registry_before_callback():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    original = a.start
+
+    def immediate_start():
+        assert KEY in {
+            entry.semantic_stream_key
+            for entry in c.desired_registry_snapshot().entries
+        }
+        original()
+
+    a.start = immediate_start
+    r.start([KEY])
+    assert r.snapshot().subscribed == (KEY,)
+
+
+def test_partial_adapter_start_failure_rolls_back_desired_registry():
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+
+    def partially_start():
+        a.calls.append(("start_partial",))
+        raise RuntimeError("adapter startup failure")
+
+    a.start = partially_start
+    with pytest.raises(RuntimeError, match="adapter startup failure"):
+        r.start([KEY])
+
+    assert ("stop",) in a.calls
+    assert c.desired_registry_snapshot().entries == ()
+    assert r.snapshot().subscribed == ()
+    assert not any(call[0] == "subscribe_many" for call in a.calls)
+
+def test_dynamic_partial_subscribe_exception_attempts_compensating_unsubscribe():
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    second = SemanticStreamKey("futu", "us", "US.VRTX", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+
+    def partial_failure(keys):
+        assert tuple(keys) == (first, second)
+        raise RuntimeError("provider may have partially subscribed")
+
+    a.subscribe_streams = partial_failure
+    manager = OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    observed = datetime.now(timezone.utc)
+    quota = OpenDSubscriptionQuota(1, 20, observed, True)
+    outcome = manager.update_candidates([first, second], quota=quota)
+
+    assert outcome.status == "UNKNOWN"
+    assert outcome.reason == "TRANSPORT_MUTATION_OUTCOME_UNKNOWN"
+    assert ("unsubscribe", first) in a.calls
+    assert ("unsubscribe", second) in a.calls
+    assert r.snapshot().subscribed == (KEY,)
+    assert {x.semantic_stream_key for x in c.desired_registry_snapshot().entries} == {KEY}
+
+
+def test_dynamic_cleanup_failure_never_promotes_manager_transport():
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    c = controller()
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+
+    def fail(_keys):
+        raise RuntimeError("partial subscribe failure")
+
+    def fail_cleanup(key):
+        a.calls.append(("unsubscribe_failed", key))
+        raise RuntimeError("compensation failed")
+
+    a.subscribe_streams = fail
+    a.unsubscribe_stream = fail_cleanup
+    manager = OpenDSubscriptionManager(r, runtime_instance_id="r1")
+    quota = OpenDSubscriptionQuota(
+        1, 20, datetime.now(timezone.utc), True,
+    )
+    outcome = manager.update_candidates([first], quota=quota)
+    assert outcome.status == "UNKNOWN"
+    assert ("unsubscribe_failed", first) in a.calls
+    assert manager.snapshot().transport_state == "UNKNOWN"
+    assert manager.update_candidates([first], quota=quota).status == "BLOCKED"
+
+
+def test_dynamic_ingress_rejection_does_not_leave_ghost_desired_stream():
+    """The first accepted desired key must roll back if the queue fills."""
+    first = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m")
+    second = SemanticStreamKey("futu", "us", "US.VRTX", "K_1M", "1m")
+    c = LiveFeedController(
+        runtime_instance_id="r1",
+        provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+        control_queue_maxsize=1,
+    )
+    a = Adapter()
+    r = LiveFeedRuntimeBridge(c, a)
+    r.start([KEY])
+    calls_before = list(a.calls)
+
+    with pytest.raises(RuntimeError, match="desired registry ingress rejected"):
+        r.subscribe_streams([first, second])
+
+    # No provider mutation is allowed before all desired keys are accepted.
+    assert a.calls == calls_before
+    c.process_pending()
+    assert tuple(
+        entry.semantic_stream_key
+        for entry in c.desired_registry_snapshot().entries
+    ) == (KEY,)
+    assert r.snapshot().subscribed == (KEY,)
