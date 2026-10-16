@@ -5,6 +5,7 @@ billing, input-token counting, direct-network bypass prevention or Aider retries
 """
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+import json
 
 import pytest
 
@@ -18,12 +19,15 @@ MESSAGES = [{"role": "user", "content": "Add one regression test."}]
 
 def test_two_requests_fit_only_exact_worst_case_reserved_budget():
     ledger = OfflineRequestPlan()
-    first = ledger.reserve(
+    first_wire = ledger.reserve(
         model=MODEL, messages=MESSAGES, claimed_input_tokens=12_000, max_tokens=2_500
     )
-    second = ledger.reserve(
+    second_wire = ledger.reserve(
         model=MODEL, messages=MESSAGES, claimed_input_tokens=8_000, max_tokens=1_500
     )
+    assert isinstance(first_wire, bytes) and isinstance(second_wire, bytes)
+    first = json.loads(first_wire)
+    second = json.loads(second_wire)
     assert first == {
         "model": MODEL, "messages": MESSAGES,
         "max_tokens": 2_500, "stream": False, "thinking": {"type": "disabled"},
@@ -184,3 +188,38 @@ def test_each_process_plan_is_independent_and_not_a_distributed_ledger():
     assert first.reserve(**request) == second.reserve(**request)
     assert first.sanitized_summary()["requests_reserved"] == 1
     assert second.sanitized_summary()["requests_reserved"] == 1
+
+
+def test_emitted_wire_envelope_is_not_mutable_after_pre_send_validation():
+    ledger = OfflineRequestPlan()
+    source_messages = [{"role": "user", "content": "Never modify after signing"}]
+    payload = ledger.reserve(
+        model=MODEL, messages=source_messages, claimed_input_tokens=50,
+        max_tokens=400,
+    )
+    assert type(payload) is bytes
+    before = bytes(payload)
+    with pytest.raises(TypeError):
+        payload[0] = 12
+    original = json.loads(payload)
+    original["max_tokens"] = 9000
+    source_messages[0]["content"] = "mutated after reserve"
+    assert json.loads(payload)["max_tokens"] == 400
+    assert json.loads(payload)["messages"] == [
+        {"role": "user", "content": "Never modify after signing"}
+    ]
+    assert payload == before
+    assert ledger.sanitized_summary()["output_tokens_reserved"] == 400
+
+
+def test_immutable_wire_bytes_can_be_reused_only_by_an_external_transport():
+    # The planner does not send requests and cannot stop someone from
+    # re-parsing and forging new bytes outside its API.
+    ledger = OfflineRequestPlan()
+    sealed = ledger.reserve(
+        model=MODEL, messages=MESSAGES, claimed_input_tokens=100, max_tokens=500
+    )
+    tampered_copy = json.loads(sealed)
+    tampered_copy["max_tokens"] = 50_000
+    assert json.loads(sealed)["max_tokens"] == 500
+    assert tampered_copy["max_tokens"] != json.loads(sealed)["max_tokens"]
