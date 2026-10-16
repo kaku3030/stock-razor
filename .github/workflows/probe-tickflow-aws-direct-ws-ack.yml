@@ -114,7 +114,7 @@ jobs:
           trap 'rm -rf "\$stage"' EXIT
           export TICKFLOW_PREMIUM_PROBE_ENABLED=true
           export TICKFLOW_PREMIUM_NETWORK_REQUEST_ENABLED=true
-          export TICKFLOW_WS_SYMBOLS='159209.SZ 159611.SZ 600519.SH 000001.SZ 300750.SZ'
+          export TICKFLOW_WS_SYMBOLS='159209.SZ 159611.SZ 600519.SH 000001.SZ 300750.SZ 601318.SH 600036.SH 000858.SZ 601398.SH 600900.SH 601888.SH 600276.SH 000333.SZ 002594.SZ 600030.SH 601857.SH 600028.SH 600809.SH 000651.SZ 601012.SH'
           printf '%s' '$payload' | base64 -d | gzip -d > "\$stage/bootstrap.sh"
           printf '%s  %s\n' '$bootstrap_hash' "\$stage/bootstrap.sh" | sha256sum -c - >/dev/null
           bash "\$stage/bootstrap.sh" '$revision' \

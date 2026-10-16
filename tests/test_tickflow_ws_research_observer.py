@@ -71,3 +71,14 @@ def test_official_stream_usage_is_sanitized_and_not_qualified():
 def test_symbol_scope_fails_closed(symbols):
     with pytest.raises(ValueError):
         TickFlowWebSocketResearchObserver(symbols)
+
+
+def test_two_hundred_symbol_scope_uses_five_symbol_subscription_batches():
+    symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(200))
+    client = FakeClient()
+    attached = attach_tickflow_stream(client, symbols)
+    assert attached.subscription_call == "PASS"
+    assert client.stream.subscriptions == [
+        ("quotes", list(sorted(symbols))[offset:offset + 5])
+        for offset in range(0, 200, 5)
+    ]
