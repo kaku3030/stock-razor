@@ -23,9 +23,15 @@ as_dataframe=False)` compact response columns as
 `timestamp/open/high/low/close/volume/amount`. **No authenticated
 `is_closed`, candle revision, server close-ACK or exchange-sealed
 finality field was identified in that K-line response contract.**
-The current AWS worker makes four/supplemental bounded provider
-K-line requests per poll, without independently signed finality metadata.
+The current AWS worker fetches four eligible timeframes for each of
+two pilot ETFs when supplemental periods are enabled (up to eight K-line
+requests per successful poll), without independently signed finality metadata.
 It cannot manufacture that information at its cache layer.
+
+The upstream public WebSocket SDK `tickflow/resources/stream.py`
+currently advertises `quotes` and `depth` channels; it does not
+document a dedicated `KLINE_CLOSED` event which could independently
+qualify these minute bars.
 
 Official public SDK source:
 https://github.com/tickflow-org/tickflow/blob/main/tickflow/resources/klines.py
@@ -59,6 +65,27 @@ The output always states:
 
 The shadow audit does not overwrite any existing cached bars, upgrade
 readers, change installed worker, create new paid API calls or deploy.
+
+## Real cloud multi-timeframe readback (separate from finality)
+
+A direct read-only AWS MCP sample at about 11:04 JST on 2026-10-16
+retrieved the existing cached `TICKFLOW_PREMIUM` bars for both pilot
+ETFs. It reconstructed two independent 15m bars (`09:45`, `10:00`
+China-local end labels) using each corresponding three 5m rows:
+
+- 159611.SZ: OHLC exact within 1e-5, volume exactly equal, amount
+  only float rounding difference at most 1e-8.
+- 518880.SH: OHLC exact within 1e-5, volume exactly equal, amount
+  equal to floating precision.
+- Two retrieved timeframes had fresh research caches, but every row
+  still reported `is_partial_bar=true` and finality `NOT_VERIFIED`.
+
+`audit_tickflow_5m_15m_reconciliation()` makes that integrity check
+repeatable against a *single verified cache publication*, with fixed
+enumerated results only and no raw bar values in output. Divergent OHLC,
+volume, amount, missing rows, invalid/ambiguous provenance or vendor-float
+tolerance fail closed. The output never grants provider finality, source
+or Radar admission, even on perfect cross-period equality.
 
 ## The true missing external contract (P0)
 
