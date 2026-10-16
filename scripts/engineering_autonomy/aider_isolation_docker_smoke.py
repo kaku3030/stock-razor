@@ -13,7 +13,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from threading import Thread
+import time
+from threading import Event, Lock, Thread
 
 DUMMY_KEY = "stock-razor-offline-dummy-not-real"
 MODEL = "openai/gpt-4o-mini"
@@ -23,6 +24,9 @@ MAX_BODY = 1_000_000
 
 def run_scenario(mode: str) -> dict[str, object]:
     requests: list[dict[str, object]] = []
+    state = {"accepted": 0, "denied": 0}
+    locked = Lock()
+    stop_on_policy_violation = Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -35,14 +39,38 @@ def run_scenario(mode: str) -> dict[str, object]:
                 payload = json.loads(raw)
             except (ValueError, UnicodeError):
                 payload = None
-            requests.append({
+            record = {
                 "path": self.path,
                 "model": payload.get("model") if isinstance(payload, dict) else None,
                 "stream": payload.get("stream") if isinstance(payload, dict) else None,
                 "max_tokens": payload.get("max_tokens") if isinstance(payload, dict) else None,
                 "fake_key_only": self.headers.get("Authorization") == f"Bearer {DUMMY_KEY}",
-            })
-            if mode == "http503":
+            }
+            with locked:
+                requests.append(record)
+                if mode == "strict-gate":
+                    # A real provider request must include a bounded max_tokens.
+                    # The currently pinned Aider omits it: 100% reject, 0 upstream.
+                    valid = (
+                        record["fake_key_only"]
+                        and record["path"] == "/v1/chat/completions"
+                        and record["stream"] in (None, False)
+                        and type(record["max_tokens"]) is int
+                        and 0 < record["max_tokens"] <= 4000
+                    )
+                    if not valid:
+                        state["denied"] += 1
+                        stop_on_policy_violation.set()
+                        self.send_error(400)
+                        return
+                if mode == "retry-budget-gate" and state["accepted"] >= 1:
+                    state["denied"] += 1
+                    stop_on_policy_violation.set()
+                    self.send_error(429)
+                    return
+                state["accepted"] += 1
+            if mode == "retry-budget-gate":
+                # First fake upstream 503; no further call can pass this gate.
                 self.send_error(503)
                 return
             body = json.dumps({
@@ -103,35 +131,80 @@ def run_scenario(mode: str) -> dict[str, object]:
                 "--message", PROMPT,
                 "--yes-always",
             ]
-            try:
-                proc = subprocess.run(
-                    cmd, cwd=work, env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    text=True, errors="replace", timeout=65, check=False,
-                )
-                status = proc.returncode
-            except subprocess.TimeoutExpired:
-                status = 124
+            # Stop the process promptly at the FIRST gateway policy breach;
+            # do not wait for Aider to exhaust an unknown SDK retry schedule.
+            with subprocess.Popen(
+                cmd, cwd=work, env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, errors="replace",
+            ) as proc:
+                deadline = time.monotonic() + 35
+                while (
+                    proc.poll() is None
+                    and not stop_on_policy_violation.is_set()
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.08)
+                stopped_by_gate = stop_on_policy_violation.is_set()
+                if proc.poll() is None:
+                    proc.terminate()
+                try:
+                    proc.communicate(timeout=4)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate(timeout=4)
+                status = proc.returncode if not (
+                    proc.returncode is not None and time.monotonic() >= deadline
+                ) else 124
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=4)
-    return {"mode": mode, "exit_code": status, "requests": requests}
+    return {
+        "mode": mode, "exit_code": status, "requests": requests,
+        "accepted": state["accepted"], "denied": state["denied"],
+        "stopped_by_gate": stopped_by_gate,
+    }
+
+
+def verify_no_default_routes() -> bool:
+    """Docker --network none must have no default route in either IP family."""
+    ipv4 = Path("/proc/net/route")
+    ipv6 = Path("/proc/net/ipv6_route")
+    if not ipv4.is_file() or not ipv6.is_file():
+        return False
+    try:
+        for line in ipv4.read_text().splitlines()[1:]:
+            parts = line.split()
+            if len(parts) > 1 and parts[1] == "00000000":
+                return False
+        for line in ipv6.read_text().splitlines():
+            if line.split()[:2] == ["0" * 32, "00"]:
+                return False
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def main() -> int:
-    # Runner must prove Docker isolation externally; this code's local-only
-    # host validation cannot enforce network egress limits for arbitrary Aider.
-    if os.environ.get("STOCK_RAZOR_NETWORK_NONE") != "verified-by-runner":
+    if (os.environ.get("STOCK_RAZOR_NETWORK_NONE") != "verified-by-runner"
+            or not verify_no_default_routes()):
         print("AIDER_ISOLATION=BLOCKED;REASON=NO_NETWORK_NAMESPACE_EVIDENCE")
         return 2
+
     failures = []
-    for mode in ("success", "http503"):
+    for mode in ("success", "strict-gate", "retry-budget-gate"):
         result = run_scenario(mode)
         seen = result["requests"]
         count = len(seen)
-        print(f"AIDER_LOOPBACK_MODE={mode};REQUESTS={count};EXIT={result['exit_code']}")
+        accepted = result["accepted"]
+        denied = result["denied"]
+        print(
+            f"AIDER_LOOPBACK_MODE={mode};REQUESTS={count};"
+            f"ACCEPTED_MOCK_UPSTREAM={accepted};DENIED_AT_GATE={denied};"
+            f"EXIT={result['exit_code']}"
+        )
         if count:
             first = seen[0]
             print(
@@ -143,16 +216,23 @@ def main() -> int:
             )
             if not first["fake_key_only"] or first["path"] != "/v1/chat/completions":
                 failures.append(f"{mode}:wrong-endpoint-or-credential")
-        if count != 1:
-            failures.append(f"{mode}:expected-exactly-one-request")
-        if mode == "success" and result["exit_code"] != 0:
-            failures.append("success:aider-did-not-complete")
-        if mode == "http503" and result["exit_code"] == 0:
-            failures.append("http503:aider-ignored-provider-failure")
+        if mode == "success":
+            if count != 1 or accepted != 1 or result["exit_code"] != 0:
+                failures.append("success:real-aider-localhost-smoke")
+        elif mode == "strict-gate":
+            # Any unbounded call must be refused before forwarding.
+            if accepted != 0 or denied < 1 or count < 1:
+                failures.append("strict-gate:unbounded-model-request-forwarded")
+        elif mode == "retry-budget-gate":
+            # Aider may try hidden retries. The gate may forward ONLY the
+            # first fake 503 to its mock; all additional attempts are blocked.
+            if accepted != 1 or count < 1 or result["exit_code"] == 0:
+                failures.append("retry-budget-gate:provider-attempt-control-failed")
+            print(f"AIDER_INTERNAL_RETRY_OBSERVED={count > 1}")
     if failures:
         print("AIDER_ISOLATION=FAILED;REASONS=" + ",".join(failures))
         return 2
-    print("AIDER_ISOLATION=LOCALHOST_ONLY_PASS;PAID_CODING=BLOCKED")
+    print("AIDER_ISOLATION=GATE_FAIL_CLOSED_LOOPBACK_PASS;PAID_CODING=BLOCKED")
     return 0
 
 
