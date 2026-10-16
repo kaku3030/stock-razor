@@ -375,11 +375,25 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 raise
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
+                if isinstance(frame,dict):
+                    columns={key:value for key,value in frame.items()
+                             if isinstance(value,(list,tuple))}
+                    sizes={len(value) for value in columns.values()}
+                    if len(sizes)==1 and sizes and next(iter(sizes))>n:
+                        frame={key:(list(value)[-n:] if key in columns else value)
+                               for key,value in frame.items()}
+                elif hasattr(frame,"tail"):
+                    frame=frame.tail(n)
                 reasons={}
                 evidence={}
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
                                     quarantine_counts=reasons,
                                     quarantine_evidence=evidence)
+                # Some SDK responses may contain more rows than the requested
+                # count. Keep the bounded, newest window requested by the
+                # caller so one oversized response cannot invalidate the
+                # complete four-symbol snapshot at publish time.
+                bars=bars[-n:]
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise

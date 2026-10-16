@@ -85,6 +85,31 @@ def test_all_held_etfs_and_five_periods_are_requested_in_one_snapshot(tmp_path):
     assert rejected["ok"] is False
 
 
+def test_snapshot_bounds_provider_rows_to_requested_count():
+    class OverReturningGetter(KlineGetter):
+        def get(self,symbol,*,period,count,adjust,as_dataframe):
+            frame=super().get(symbol,period=period,count=count,
+                              adjust=adjust,as_dataframe=as_dataframe)
+            extra=([datetime.fromisoformat("2026-10-06T00:00:00").replace(tzinfo=CN)]
+                   if period=="1d" else _minutes(period,"2026-10-06"))
+            frame["timestamp"]=[int(t.timestamp())*1000 for t in extra]+frame["timestamp"]
+            for key in ("open","high","low","close","volume","amount"):
+                frame[key]=frame[key][:len(extra)]+frame[key]
+            return frame
+
+    class OverReturningClient:
+        def __init__(self):
+            self.klines=OverReturningGetter()
+
+    snapshot=build_observation(OverReturningClient(),now_utc=POSTCLOSE,
+                               repo_sha=SHA,sequence=3,
+                               include_supplemental=True)
+    assert all(len(snapshot["symbols"][symbol][period]["rows"])<=count
+               for symbol in snapshot["symbols"]
+               for period,count in (("1m",240),("5m",144),("15m",96),
+                                    ("60m",24),("1d",40)))
+
+
 def test_today_daily_date_stamp_quarantined_before_close_not_provider_finality():
     from data_provider.cn_tickflow_research_cache import normalize_bars
     client=Client()
