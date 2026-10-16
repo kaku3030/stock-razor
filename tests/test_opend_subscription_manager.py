@@ -286,3 +286,27 @@ def test_unsupported_us_session_flag_never_reaches_adapter():
     assert service.preview_candidates(
         (unsupported,), quota=quota(),
     ).status == "BLOCKED"
+
+
+def test_mixed_us_sessions_use_separate_provider_batches_and_recover():
+    """One Futu Qot_Sub has only one session; the manager owns the split."""
+    owner = FakeAdapter()
+    service = manager(owner)
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    outcome = service.update_candidates(
+        (KEY_A, all_key), quota=quota(remaining=2),
+    )
+    assert outcome.status == "APPLIED"
+    assert outcome.transport_mutations_attempted == 2
+    assert owner.subscribe_calls == [(KEY_A,), (all_key,)]
+    assert service.snapshot().applied == (KEY_A, all_key)
+    assert service.recover(
+        "fresh-provider-incarnation", quota=quota(remaining=2),
+    ).status == "RECOVERED"
+    assert owner.subscribe_calls == [
+        (KEY_A,), (all_key,), (KEY_A,), (all_key,),
+    ]
+    assert service.snapshot().realtime_qualification == "UNKNOWN"
+    assert service.snapshot().radar_admission == "BLOCKED"
