@@ -12,6 +12,9 @@ import time
 from data_provider.cn_tickflow_research_cache import (
     SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation,
 )
+from data_provider.tickflow_bar_close_witness import (
+    attach_research_stability_witness,
+)
 
 SECRET_NAME="stock-razor/tickflow/premium-api-key"
 running=True
@@ -134,6 +137,7 @@ def main() -> int:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)
         return 3
     sequence=0
+    previous_observation=None
     network_failures=0
     try:
         while running:
@@ -146,10 +150,17 @@ def main() -> int:
                     with redirect_stdout(null), redirect_stderr(null):
                         snapshot=build_observation(client,now_utc=now,repo_sha=sha,
                               sequence=sequence,symbols=SYMBOLS,include_supplemental=True)
+                # Compare only the last successful private worker poll;
+                # never perform extra paid data requests for this witness.
+                attach_research_stability_witness(
+                    snapshot, previous_observation, now_utc=now,
+                )
                 atomic_publish(status_path,snapshot)
+                previous_observation=snapshot
                 print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
             except Exception as exc:
                 failed=True
+                previous_observation=None
                 failure=exc
                 # Invalid/late feed must replace an older apparently fresh file.
                 atomic_publish(status_path,{
