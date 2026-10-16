@@ -102,14 +102,20 @@ The local mock transport is NOT suitable for real network forwarding.
    enforce token limits; model metadata and LiteLLM settings do not establish
    upstream request-level cost control. See
    https://aider.chat/docs/config/adv-model-settings.html .
-4. Obtain independently verified **provider-side** CNY 5 hard-cost protection
-   or an auditable, conservative pricing/currency maximum supported by an
-   upstream enforced spend limit. Neither a GitHub variable nor a balance
-   GET proves such a cap. Provider prices can change. The official public
-   Flash pricing page currently presents **USD/token** quotes, whereas this
-   project's one-shot limit is specified in **CNY**; conversion and the
-   authoritative charged currency cannot be inferred from a static price
-   table: https://api-docs.deepseek.com/quick_start/pricing/ .
+4. Obtain independently verified **provider-side** CNY 5 hard-cost
+   protection or an auditable, conservative per-call spend bound under a
+   provider-verifiable pricing and usage contract. Neither a GitHub variable
+   nor a balance GET proves such a cap. The official **Chinese** Flash
+   pricing page *does* quote CNY prices: peak cache-miss input CNY 2 / million
+   and output CNY 8 / million as checked on 2026-10-16
+   (https://api-docs.deepseek.com/zh-cn/quick_start/pricing/).
+   Under independently enforced 20k billed input + 4k billed output tokens,
+   the illustrative price calculation is CNY 0.072. **This is not a hard
+   budget guarantee**: input token counts are untrusted, the actual Aider
+   outbound requests are not intercepted, upstream retries are unknown and
+   the provider explicitly reserves the right to change prices. No FX is
+   necessary when quoting the CNY page, but the actual wallet deduction and
+   any future rate changes still require verification.
 5. Verify official before/after balance, provider usage and the exact cloud
    deployment SHA in one isolated one-shot canary; retain sanitized evidence.
 6. Only after independently reviewed checks pass, propose a **separate**
