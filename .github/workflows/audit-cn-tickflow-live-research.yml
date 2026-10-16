@@ -286,17 +286,24 @@ jobs:
                          for v in hist_map.values())
               assert d[when].get("mcp_historical_consumer") in ("PASS","BLOCKED","NOT_VERIFIED")
               assert type(d[when].get("all_four_historical_requests_ok")) is bool
+          def compact_frame(value):
+              return {k:value.get(k) for k in (
+                  "last_due_grid","due_grid_continuity",
+                  "dominant_quarantine_reason","retained_bar_count_bucket")}
+          def compact_reader(value):
+              return {k:value.get(k) for k in (
+                  "state","radar_blocked","finality_unproven","rows")}
           public={"schema":d["schema"],
                   "before":{**{k:d["before"].get(k) for k in keys},
                             "independent_price_shadow":{p:d["before"]["independent_price_shadow"].get(p,{}) for p in shadow_periods},
-                            "source_frame_progress":{p:d["before"]["source_frame_progress"].get(p,{}) for p in historical_periods},
-                            "supplemental_5m_reader":{p:d["before"]["supplemental_5m_reader"].get(p,{}) for p in periods},
+                            "source_frame_progress":{p:compact_frame(d["before"]["source_frame_progress"].get(p,{})) for p in historical_periods},
+                            "supplemental_5m_reader":{p:compact_reader(d["before"]["supplemental_5m_reader"].get(p,{})) for p in periods},
                             "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                             "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods}},
                   "after":{**{k:d["after"].get(k) for k in keys},
                            "independent_price_shadow":{p:d["after"]["independent_price_shadow"].get(p,{}) for p in shadow_periods},
-                           "source_frame_progress":{p:d["after"]["source_frame_progress"].get(p,{}) for p in historical_periods},
-                           "supplemental_5m_reader":{p:d["after"]["supplemental_5m_reader"].get(p,{}) for p in periods},
+                           "source_frame_progress":{p:compact_frame(d["after"]["source_frame_progress"].get(p,{})) for p in historical_periods},
+                           "supplemental_5m_reader":{p:compact_reader(d["after"]["supplemental_5m_reader"].get(p,{})) for p in periods},
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
                            "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods}},
                   "sequence_advanced":d["sequence_advanced"],
