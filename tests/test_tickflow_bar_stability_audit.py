@@ -117,6 +117,9 @@ def test_unchanged_candle_during_first_poll_cannot_qualify():
     (lambda a, b: b["symbols"][SYMBOL]["15m"]["rows"][0].update(
         close=float("nan")
     ), "BAR_NOT_OBSERVED_OR_UNSAFE"),
+    (lambda a, b: b["symbols"][SYMBOL]["15m"]["rows"][0].update(
+        close=10 ** 999
+    ), "BAR_NOT_OBSERVED_OR_UNSAFE"),
 ])
 def test_untrusted_provenance_or_bar_shape_blocks(mutate, expected):
     first, second = sample_pair()
