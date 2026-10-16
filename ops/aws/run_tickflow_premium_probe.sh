@@ -44,7 +44,7 @@ if [[ "$#" -eq 9 ]]; then
   protocol_hash="$8"
   sanitizer_hash="$9"
 fi
-[[ "$ws_seconds" =~ ^(0|10|15|30|60)$ ]]
+[[ "$ws_seconds" =~ ^(0|10|15|30|60|900|3600|7200|9000|14160)$ ]]
 [[ "$quote_only" == true || "$quote_only" == false ]]
 if [[ "$quote_only" == true ]]; then
   [[ "$ws_seconds" == 0 ]]

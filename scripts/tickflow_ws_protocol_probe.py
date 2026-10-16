@@ -8,17 +8,50 @@ or exceptions. No live feed qualification or source promotion is performed.
 from __future__ import annotations
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
 import re
 import time
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 ENDPOINT = "wss://api.tickflow.org/v1/ws/stream"
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 MAX_SYMBOLS = 5
+_KLINE_FINGERPRINT_FIELDS = (
+    "timestamp", "open", "high", "low", "close", "volume", "amount",
+)
+
+
+def kline_fingerprints(data: Any) -> dict[str, str]:
+    """Hash rows by BAR timestamp so new bars are not counted as revisions."""
+    if not isinstance(data, dict) or any(
+        not isinstance(data.get(field), (list, tuple))
+        for field in _KLINE_FINGERPRINT_FIELDS
+    ):
+        raise ValueError("invalid TickFlow K-line shape")
+    lengths = {len(data[field]) for field in _KLINE_FINGERPRINT_FIELDS}
+    if len(lengths) != 1:
+        raise ValueError("inconsistent TickFlow K-line columns")
+    result = {}
+    for index in range(lengths.pop()):
+        stamp = str(data["timestamp"][index])
+        encoded = json.dumps(
+            [data[field][index] for field in _KLINE_FINGERPRINT_FIELDS],
+            separators=(",", ":"), default=str,
+        ).encode("utf-8")
+        result[stamp] = hashlib.sha256(encoded).hexdigest()
+    return result
+
+
+def has_overlapping_kline_revision(previous: dict[str, str], current: dict[str, str]) -> bool:
+    """Return true only when an already-seen bar changes across snapshots."""
+    return any(previous[stamp] != current[stamp]
+               for stamp in previous.keys() & current.keys())
 
 
 class ProtocolEvidence:
@@ -48,6 +81,12 @@ class ProtocolEvidence:
         self._post_initial_lags: list[int] = []
         self.post_initial_future_timestamp_count = 0
         self.post_initial_lag_truncated = False
+        self.reconnect_attempts = 0
+        self.reconnect_successes = 0
+        self.planned_rotations = 0
+        self.kline_snapshots = 0
+        self.kline_digest_changes = 0
+        self.kline_read_errors = 0
 
     def consume(self, frame: Any, *, received_at_ms: int | None = None) -> None:
         if received_at_ms is None:
@@ -184,6 +223,12 @@ class ProtocolEvidence:
             "unknown_symbol_count": self.unknown_symbol_count,
             "protocol_error_frames": self.protocol_error_frames,
             "invalid_frames": self.invalid_frames,
+            "reconnect_attempts": self.reconnect_attempts,
+            "reconnect_successes": self.reconnect_successes,
+            "planned_rotations": self.planned_rotations,
+            "kline_snapshots": self.kline_snapshots,
+            "kline_digest_changes": self.kline_digest_changes,
+            "kline_read_errors": self.kline_read_errors,
             "post_initial_update_not_proven_live": True,
             "continuous_feed_qualified": False,
             "source_arbiter_admission": "BLOCKED",
@@ -194,8 +239,10 @@ class ProtocolEvidence:
         }
 
 
-async def observe_socket(ws: Any, evidence: ProtocolEvidence, seconds: int) -> None:
-    if seconds not in (10, 15, 30, 60):
+async def observe_socket(
+    ws: Any, evidence: ProtocolEvidence, seconds: int, on_tick: Any = None,
+) -> None:
+    if type(seconds) is not int or not 1 <= seconds <= 14400:
         raise ValueError("unsupported bounded duration")
     await ws.send(json.dumps({
         "op": "subscribe", "channel": "quotes",
@@ -204,26 +251,28 @@ async def observe_socket(ws: Any, evidence: ProtocolEvidence, seconds: int) -> N
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:
-            raw = await asyncio.wait_for(
-                ws.recv(), timeout=max(0.001, deadline - time.monotonic())
-            )
+            raw = await asyncio.wait_for(ws.recv(), timeout=min(
+                1.0, max(0.001, deadline - time.monotonic())
+            ))
         except asyncio.TimeoutError:
-            # Only the deadline-reached timeout constitutes a full window.
-            evidence.window_status = (
-                "COMPLETED" if time.monotonic() >= deadline - 0.02
-                else "TERMINATED_EARLY"
-            )
-            return
+            if time.monotonic() >= deadline - 0.02:
+                evidence.window_status = "COMPLETED"
+                return
+            if on_tick is not None:
+                await on_tick()
+            continue
         except (EOFError, ConnectionError):
             evidence.window_status = "TERMINATED_EARLY"
             return
         evidence.consume(raw)
+        if on_tick is not None:
+            await on_tick()
     evidence.window_status = "COMPLETED"
 
 
 async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str) -> dict[str, Any]:
     evidence = ProtocolEvidence(symbols)
-    if seconds not in (10, 15, 30, 60) or not key or not key.strip():
+    if type(seconds) is not int or not 10 <= seconds <= 14400 or not key or not key.strip():
         raise ValueError("invalid probe parameters")
     try:
         import websockets
@@ -232,26 +281,97 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
         result["failure_class"] = "REALTIME_TRANSPORT_MISSING"
         return result
     endpoint = ENDPOINT + "?api_key=" + quote(key, safe="")
-    try:
-        # Exactly one attempt: 401/403 must not retry.
-        async with websockets.connect(
-            endpoint, ping_interval=20, ping_timeout=10, open_timeout=5,
-            max_size=16 * 1024 * 1024, compression="deflate",
-        ) as ws:
-            await observe_socket(ws, evidence, seconds)
-            return evidence.summary(ws_handshake=True)
-    except Exception as exc:
-        # Never use str/repr or log raw WebSocket exceptions: can contain key.
-        result = evidence.summary(ws_handshake=False)
-        status = getattr(exc, "status_code", None)
-        response = getattr(exc, "response", None)
-        if type(getattr(response, "status_code", None)) is int:
-            status = response.status_code
-        result["failure_class"] = (
-            "AUTH_DENIED" if status in (401, 403)
-            else "NETWORK_OR_PROTOCOL_UNVERIFIED"
-        )
-        return result
+    deadline = time.monotonic() + seconds
+    backoff = 1
+    handshake = False
+    cn_tz = ZoneInfo("Asia/Shanghai")
+    checkpoints = {
+        "PRE_CLOSE": datetime(2026, 10, 16, 14, 55, tzinfo=cn_tz),
+        "POST_CLOSE": datetime(2026, 10, 16, 15, 2, tzinfo=cn_tz),
+        "POST_CLOSE_65M": datetime(2026, 10, 16, 16, 5, tzinfo=cn_tz),
+        "POST_CLOSE_80M": datetime(2026, 10, 16, 16, 20, tzinfo=cn_tz),
+    }
+    completed_checkpoints: set[str] = set()
+    bar_fingerprints: dict[tuple[str, str], dict[str, str]] = {}
+    client = None
+
+    def snapshot_batch(label: str) -> tuple[int, int, int]:
+        from tickflow import TickFlow
+        nonlocal client
+        if client is None:
+            client = TickFlow(api_key=key, timeout=8.0, max_retries=0)
+        rows = changes = errors = 0
+        for symbol in symbols:
+            for period in ("5m", "15m", "60m", "1d"):
+                try:
+                    data = client.klines.get(
+                        symbol, period=period, count=20,
+                        adjust="none", as_dataframe=False,
+                    )
+                    key_tuple = (symbol, period)
+                    current = kline_fingerprints(data)
+                    previous = bar_fingerprints.get(key_tuple, {})
+                    if has_overlapping_kline_revision(previous, current):
+                        changes += 1
+                    bar_fingerprints[key_tuple] = current
+                    rows += 1
+                except Exception:
+                    errors += 1
+        return rows, changes, errors
+
+    async def maybe_snapshot() -> None:
+        now = datetime.now(cn_tz)
+        for label, due in checkpoints.items():
+            if label not in completed_checkpoints and now >= due:
+                completed_checkpoints.add(label)
+                rows, changes, errors = await asyncio.to_thread(snapshot_batch, label)
+                evidence.kline_snapshots += rows
+                evidence.kline_digest_changes += changes
+                evidence.kline_read_errors += errors
+    while time.monotonic() < deadline:
+        try:
+            evidence.ack_verified = False
+            async with websockets.connect(
+                endpoint, ping_interval=20, ping_timeout=10, open_timeout=5,
+                max_size=16 * 1024 * 1024, compression="deflate",
+            ) as ws:
+                if handshake:
+                    evidence.reconnect_successes += 1
+                handshake = True
+                backoff = 1
+                session_seconds = min(900, max(1, int(deadline - time.monotonic())))
+                await observe_socket(ws, evidence, session_seconds, maybe_snapshot)
+                if time.monotonic() < deadline:
+                    evidence.reconnect_attempts += 1
+                    if evidence.window_status == "COMPLETED":
+                        evidence.planned_rotations += 1
+                    else:
+                        await asyncio.sleep(min(backoff, max(0, deadline - time.monotonic())))
+                        backoff = min(30, backoff * 2)
+        except Exception as exc:
+            # Never use str/repr or log raw WebSocket exceptions: can contain key.
+            status = getattr(exc, "status_code", None)
+            response = getattr(exc, "response", None)
+            if type(getattr(response, "status_code", None)) is int:
+                status = response.status_code
+            if status in (401, 403):
+                evidence.window_status = "TERMINATED_EARLY"
+                result = evidence.summary(ws_handshake=handshake)
+                result["failure_class"] = "AUTH_DENIED"
+                return result
+            if time.monotonic() < deadline:
+                evidence.window_status = "TERMINATED_EARLY"
+                evidence.reconnect_attempts += 1
+                await asyncio.sleep(min(backoff, max(0, deadline - time.monotonic())))
+                backoff = min(30, backoff * 2)
+    evidence.window_status = "COMPLETED"
+    result = evidence.summary(ws_handshake=handshake)
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
+    return result
 
 
 def main() -> int:

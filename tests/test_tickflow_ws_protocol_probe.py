@@ -8,10 +8,38 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.tickflow_ws_protocol_probe import (
-    ProtocolEvidence, observe_socket, run_protocol_probe, main,
+    ProtocolEvidence, has_overlapping_kline_revision, kline_fingerprints,
+    observe_socket, run_protocol_probe, main,
 )
 
 SYMS = ("159611.SZ", "518880.SH")
+
+
+def test_kline_fingerprint_compares_overlapping_bars_not_new_rows():
+    first = {
+        "timestamp": [1, 2], "open": [1.0, 2.0], "high": [1.1, 2.1],
+        "low": [0.9, 1.9], "close": [1.0, 2.0], "volume": [10, 20],
+        "amount": [100, 200],
+    }
+    later = {key: list(values) for key, values in first.items()}
+    for key, value in {
+        "timestamp": 3, "open": 3.0, "high": 3.1, "low": 2.9,
+        "close": 3.0, "volume": 30, "amount": 300,
+    }.items():
+        later[key].append(value)
+    first_fp = kline_fingerprints(first)
+    assert not has_overlapping_kline_revision(first_fp, kline_fingerprints(later))
+    later["close"][1] = 2.01
+    assert has_overlapping_kline_revision(first_fp, kline_fingerprints(later))
+
+
+def test_kline_fingerprint_rejects_inconsistent_column_lengths():
+    data = {key: [1] for key in (
+        "timestamp", "open", "high", "low", "close", "volume", "amount",
+    )}
+    data["close"].append(1.0)
+    with pytest.raises(ValueError):
+        kline_fingerprints(data)
 
 
 def test_ack_initial_snapshot_and_advanced_timestamp_do_not_auto_promote():
