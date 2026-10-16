@@ -189,3 +189,77 @@ def audit_tickflow_bar_stability(
         "STABLE_AFTER_MATURITY_NOT_VENDOR_FINAL",
         same=True, fingerprint=d1,
     )
+
+
+def audit_tickflow_5m_15m_reconciliation(
+    snapshot: Mapping[str, Any],
+    *,
+    symbol: str,
+    label: str,
+    now_utc: datetime,
+) -> dict:
+    """Validate three 5m rows against one 15m vendor row in ONE cache version.
+
+    Cross-period OHLCVA consistency is useful integrity evidence but does not
+    certify candle finality, exchange rights, source latency or trading.
+    """
+    verdict = _result("MULTITF_NOT_VERIFIED")
+    if (
+        not isinstance(snapshot, Mapping) or symbol not in SYMBOLS
+        or type(now_utc) is not datetime or now_utc.tzinfo is None
+        or now_utc.utcoffset() is None or not isinstance(label, str)
+    ):
+        return _result("INVALID_INPUT")
+    try:
+        boundary = datetime.strptime(label, "%Y-%m-%d %H:%M").replace(
+            tzinfo=CN,
+        )
+    except (ValueError, TypeError):
+        return _result("INVALID_LABEL")
+    if boundary.strftime("%H:%M") not in _LABEL_END["15m"]:
+        return _result("INVALID_LABEL")
+    now = now_utc.astimezone(timezone.utc)
+    if boundary.astimezone(timezone.utc) > now - timedelta(
+        seconds=_GRACE_SECONDS,
+    ):
+        return _result("BOUNDARY_NOT_MATURE")
+    observed = _time(snapshot.get("observed_at_utc"))
+    if (
+        observed is None or observed > now
+        or not 0 <= (now - observed).total_seconds() <= _SOURCE_AGE_LIMIT
+        or not isinstance(snapshot.get("repo_sha"), str)
+        or not _SHA.fullmatch(snapshot["repo_sha"])
+        or snapshot.get("schema") != SCHEMA
+        or snapshot.get("provider") != _SOURCE
+        or snapshot.get("status") != "PASS_RESEARCH_ONLY"
+        or snapshot.get("research_only") is not True
+        or snapshot.get("radar_admission") != "BLOCKED"
+        or snapshot.get("source_arbiter_admission") != "BLOCKED"
+        or snapshot.get("canonical_write_authorized") is not False
+        or snapshot.get("live_trade") is not False
+        or type(snapshot.get("sequence")) is not int
+        or snapshot["sequence"] < 1
+    ):
+        return _result("SOURCE_PROVENANCE_INVALID")
+    bar = _row(snapshot, symbol, "15m", label)
+    previous = tuple(
+        (boundary - timedelta(minutes=offset)).strftime("%Y-%m-%d %H:%M")
+        for offset in (10, 5, 0)
+    )
+    five = [_row(snapshot, symbol, "5m", k) for k in previous]
+    if bar is None or any(row is None for row in five):
+        return _result("RECONCILIATION_ROWS_MISSING_OR_UNSAFE")
+    aggregated = {
+        "open": five[0]["open"], "high": max(x["high"] for x in five),
+        "low": min(x["low"] for x in five), "close": five[2]["close"],
+        "volume": sum(x["volume"] for x in five),
+    }
+    if any(abs(bar[field] - agg) > (
+        1e-8 if field == "volume" else 1e-5
+    ) for field, agg in aggregated.items()):
+        return _result("OHLCV_DIVERGENCE")
+    if any(row.get("amount") is None for row in (bar, *five)):
+        return _result("OHLCV_MATCH_AMOUNT_NOT_AVAILABLE")
+    if abs(bar["amount"] - sum(row["amount"] for row in five)) > 1e-5:
+        return _result("AMOUNT_DIVERGENCE")
+    return _result("OHLCVA_AGGREGATION_RESEARCH_MATCH")
