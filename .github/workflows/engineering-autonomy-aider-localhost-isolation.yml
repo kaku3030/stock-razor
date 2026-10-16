@@ -7,6 +7,7 @@ on:
       - 'scripts/engineering_autonomy/Dockerfile.aider-loopback'
       - 'scripts/engineering_autonomy/aider_isolation_docker_smoke.py'
       - 'scripts/engineering_autonomy/aider_two_server_proxy_smoke.py'
+      - 'scripts/engineering_autonomy/aider_segmented_network_smoke.py'
 
 permissions:
   contents: read
@@ -73,3 +74,48 @@ jobs:
             --entrypoint python \
             stock-razor-aider-localhost-test:one-shot \
             /opt/aider_two_server_proxy_smoke.py
+      - name: Verify network-separated Aider to gateway to fake provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="stock-razor-aider-localhost-test:one-shot"
+          for mode in success http503; do
+            AGENT_NET="sr-agent-$GITHUB_RUN_ID-$mode"
+            PROVIDER_NET="sr-provider-$GITHUB_RUN_ID-$mode"
+            PROVIDER="sr-fake-$GITHUB_RUN_ID-$mode"
+            GATEWAY="sr-gate-$GITHUB_RUN_ID-$mode"
+            cleanup() {
+              docker rm -f "$GATEWAY" "$PROVIDER" >/dev/null 2>&1 || true
+              docker network rm "$AGENT_NET" "$PROVIDER_NET" >/dev/null 2>&1 || true
+            }
+            trap cleanup EXIT
+            # Docker bridge --internal supplies no external Internet route.
+            docker network create --internal "$AGENT_NET" >/dev/null
+            docker network create --internal "$PROVIDER_NET" >/dev/null
+            docker run --detach --name "$PROVIDER" \
+              --network "$PROVIDER_NET" --network-alias fake-provider \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 96 --memory 768m --tmpfs /tmp:rw,nosuid,size=50m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py provider --mode "$mode" >/dev/null
+            docker run --detach --name "$GATEWAY" \
+              --network "$AGENT_NET" --network-alias fake-gateway \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 96 --memory 768m --tmpfs /tmp:rw,nosuid,size=50m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py gateway >/dev/null
+            # Only gateway can see both isolated networks.
+            docker network connect "$PROVIDER_NET" "$GATEWAY"
+            PROVIDER_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROVIDER")"
+            echo "SEGMENTED_TEST_START=$mode"
+            docker run --rm \
+              --network "$AGENT_NET" \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 128 --memory 1536m --cpus 1 \
+              --tmpfs /tmp:rw,nosuid,size=160m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py client \
+              --mode "$mode" --provider-ip "$PROVIDER_IP"
+            cleanup
+            trap - EXIT
+          done
