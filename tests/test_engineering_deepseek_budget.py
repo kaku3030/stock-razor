@@ -232,6 +232,7 @@ def test_discord_manual_delivery_uses_existing_secret(monkeypatch, capsys):
         return "ALERT_SENT"
 
     monkeypatch.setattr(alerts, "send_discord", fake_send)
+    monkeypatch.delenv("DISCORD_RADAR_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", webhook)
     monkeypatch.setenv("STOCK_RAZOR_DISCORD_USER_ID", "")
     monkeypatch.setenv("STOCK_RAZOR_DISCORD_WEBHOOK_URL", "wrong-legacy-value")
@@ -257,6 +258,7 @@ def test_manual_discord_delivery_remains_opt_in_and_scheduled_balance_only():
     assert "github.event_name == 'workflow_dispatch' && inputs.test_discord_delivery == true" in workflow
     assert workflow.count("python -m engineering_autonomy.deepseek_budget_discord --test-delivery") == 1
     assert "DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}" in workflow
+    assert workflow.count("DISCORD_RADAR_WEBHOOK_URL: ${{ secrets.DISCORD_RADAR_WEBHOOK_URL }}") == 2
     assert "STOCK_RAZOR_DISCORD_WEBHOOK_URL" not in workflow
     assert "secrets.DEEPSEEK_API_KEY" not in workflow.split(
         "- name: Send one explicitly requested Discord delivery test", 1
@@ -269,6 +271,7 @@ def test_discord_error_categories_do_not_emit_sensitive_exception_text(monkeypat
     import urllib.error
 
     webhook = "https://discord.com/api/webhooks/123456789012345678/abcDEF01234567890123"
+    monkeypatch.delenv("DISCORD_RADAR_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", webhook)
     monkeypatch.setattr(sys, "argv", ["deepseek_budget_discord", "--test-delivery"])
 
@@ -291,3 +294,58 @@ def test_discord_error_categories_do_not_emit_sensitive_exception_text(monkeypat
         assert webhook not in line
         assert "secret" not in line
         assert "sensitive" not in line
+
+
+def test_budget_discord_existing_channel_priority_and_failover():
+    import urllib.error
+
+    primary = "https://discord.com/api/webhooks/111111111111111111/abcDEF01234567890123"
+    secondary = "https://discord.com/api/webhooks/222222222222222222/abcDEF01234567890123"
+    env = {"DISCORD_RADAR_WEBHOOK_URL": primary, "DISCORD_WEBHOOK_URL": secondary}
+    observed = []
+
+    def send(status, url, user_id):
+        observed.append((status, url, user_id))
+        if url == primary:
+            raise urllib.error.HTTPError(url, 403, "sensitive", None, None)
+        return "ALERT_SENT"
+
+    assert alerts.send_with_fallback("TEST", env, "", sender=send) == "ALERT_SENT_FALLBACK"
+    assert observed == [("TEST", primary, ""), ("TEST", secondary, "")]
+
+    observed.clear()
+    env["DISCORD_WEBHOOK_URL"] = primary
+    assert alerts.send_with_fallback("TEST", env, "", sender=lambda *_: "ALERT_SENT") == "ALERT_SENT"
+    assert observed == []
+
+
+def test_budget_discord_healthy_and_unconfigured_send_nothing():
+    def must_not_send(*_):
+        raise AssertionError("healthy or missing webhook must not send")
+
+    assert alerts.send_with_fallback("OK", {"DISCORD_WEBHOOK_URL": "x"}, sender=must_not_send) == "HEALTHY_NO_ALERT"
+    assert alerts.send_with_fallback("TEST", {}, sender=must_not_send) == "CHANNEL_NOT_CONFIGURED"
+
+
+def test_budget_discord_all_approved_channels_failing_remains_failed_closed(monkeypatch, capsys):
+    import sys
+    import urllib.error
+
+    first = "https://discord.com/api/webhooks/111111111111111111/abcDEF01234567890123"
+    second = "https://discord.com/api/webhooks/222222222222222222/abcDEF01234567890123"
+    monkeypatch.setenv("DISCORD_RADAR_WEBHOOK_URL", first)
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", second)
+    monkeypatch.setattr(sys, "argv", ["deepseek_budget_discord", "--test-delivery"])
+
+    attempts = []
+    def failing(status, url, user_id):
+        attempts.append(url)
+        raise urllib.error.HTTPError(url, 403, "do not log me", None, None)
+
+    monkeypatch.setattr(alerts, "send_discord", failing)
+    assert alerts.main() == 2
+    output = capsys.readouterr().out
+    assert attempts == [first, second]
+    assert "BUDGET_ALERT=FAILED_CLOSED;CATEGORY=DISCORD_HTTP_403" in output
+    assert first not in output and second not in output
+    assert "do not log me" not in output
