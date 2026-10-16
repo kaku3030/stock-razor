@@ -142,6 +142,8 @@ def audit_tickflow_bar_stability(
         return _result("INVALID_LABEL")
     if boundary.strftime("%H:%M") not in _LABEL_END[timeframe]:
         return _result("INVALID_LABEL")
+    if boundary.weekday() >= 5:
+        return _result("NON_TRADING_WEEKDAY")
     now = now_utc.astimezone(timezone.utc)
     if boundary.astimezone(timezone.utc) > now - timedelta(seconds=_GRACE_SECONDS):
         return _result("BOUNDARY_NOT_MATURE")
@@ -184,6 +186,8 @@ def audit_tickflow_bar_stability(
     new_row = _row(second, symbol, timeframe, label)
     if old_row is None or new_row is None:
         return _result("BAR_NOT_OBSERVED_OR_UNSAFE")
+    if old_row.get("amount") is None or new_row.get("amount") is None:
+        return _result("AMOUNT_NOT_AVAILABLE_FOR_STABILITY")
     d0, d1 = _digest(old_row), _digest(new_row)
     if d0 != d1:
         return _result("ROW_MUTATED_AFTER_MATURITY")
@@ -221,6 +225,8 @@ def audit_tickflow_5m_15m_reconciliation(
         return _result("INVALID_LABEL")
     if boundary.strftime("%H:%M") not in _LABEL_END["15m"]:
         return _result("INVALID_LABEL")
+    if boundary.weekday() >= 5:
+        return _result("NON_TRADING_WEEKDAY")
     now = now_utc.astimezone(timezone.utc)
     if boundary.astimezone(timezone.utc) > now - timedelta(
         seconds=_GRACE_SECONDS,
@@ -244,6 +250,10 @@ def audit_tickflow_5m_15m_reconciliation(
         or snapshot["sequence"] < 1
     ):
         return _result("SOURCE_PROVENANCE_INVALID")
+    if observed < boundary.astimezone(timezone.utc) + timedelta(
+        seconds=_GRACE_SECONDS,
+    ):
+        return _result("SOURCE_OBSERVED_BEFORE_MATURITY")
     bar = _row(snapshot, symbol, "15m", label)
     previous = tuple(
         (boundary - timedelta(minutes=offset)).strftime("%Y-%m-%d %H:%M")
