@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 云端 TickFlow Premium 缓存从旧的两标的/两周期默认范围扩展为四个持仓 ETF 的 1m/5m/15m/60m/1d 研究矩阵；MCP 批量读取和 AWS 审计同步覆盖，仍保持闭合、当前性与 Radar/交易准入未验证。
 - [改进] TickFlow 本机只读审计与云端 WebSocket/K线探针统一覆盖持仓四 ETF（159611、159209、512730、159363）的 1m/5m/15m/60m/1d 矩阵；研究通过仍不提升最终闭合、实时连续性或 Radar/交易准入。
 - [改进] 云端每日分析在已配置 TickFlow Key 时默认将 TickFlow 置于 A 股日线、实时行情和指数名称路由首位，失败后仍按既有 fallback 降级。
 - [改进] 为 CN TickFlow 研究 worker 增加默认关闭的官方 WebSocket quotes 只读证据观察层，并将其安全投影到 Radar 研究缓存；不改变实时连续性、K 线闭合或 Radar 准入。
@@ -32,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] OpenD 收盘末根分钟线仅以完整390分钟历史网格作受限补齐，保留历史来源和闭合未验证状态；失败最多30分钟后重试一次。
 - [修复] Paper 现金预留按意图隔离，模拟成交批次先校验身份、限价、资金及持仓再记账，覆盖重启与部分成交回归。
 - [改进] Paper 半小时调度审计须具备48个独立配置时段，仅报告配置状态，实际调度执行仍需运行证据。
-- [性能] TickFlow AWS研究Worker盘中最小轮询间隔降至15秒；按每周期8次K线请求计算，单Worker上限约32次/分钟，失败与非交易时段退避保持不变，账号共享额度仍待核验。
+- [性能] TickFlow AWS研究Worker盘中最小轮询间隔降至15秒；四持仓五周期每轮最多20次K线请求，失败与非交易时段退避保持不变，账号共享额度仍待核验。
 - [修复] OpenD 聚合K线仅在全部源分钟成交额完整且推导VWAP位于该K线价格区间内时发布VWAP；越界或部分成交额均降级并阻断信号。
 - [改进] TickFlow 历史缓存拒收增加固定枚举诊断；AWS 审计仅导出白名单原因，不暴露行情值且维持 fail-closed。
 - [监控] AWS TickFlow 两ETF 5m/15m/60m SSM+MCP 每整点/半点只读审计，Windows 本地独立半小时凭据安全取数；仅公开脱敏状态，不开放交易准入。

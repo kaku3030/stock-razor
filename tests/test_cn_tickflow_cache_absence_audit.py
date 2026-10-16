@@ -64,11 +64,11 @@ def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
     from data_provider.cn_tickflow_research_cache import MAX_BYTES
 
     # Auditor used to impose a smaller 150 KB limit and falsely report
-    # NO_VALID_CACHE for a legitimate 150-350 KB private snapshot.
-    assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
+    # NO_VALID_CACHE for a legitimate bounded private snapshot.
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 600_000
 
 
-@pytest.mark.parametrize("symbol_index", [0, 1])
+@pytest.mark.parametrize("symbol_index", [0, 1, 2, 3])
 @pytest.mark.parametrize("period", ["15M", "60M", "5M", "1D"])
 @pytest.mark.parametrize("action", ["FETCH", "NORMALIZE"])
 def test_worker_all_requested_failure_stages_are_safely_classified(
@@ -81,7 +81,7 @@ def test_worker_all_requested_failure_stages_are_safely_classified(
 
 
 @pytest.mark.parametrize("malicious", [
-    None, 0, True, {}, "S0_1M_FETCH", "S2_5M_FETCH",
+    None, 0, True, {}, "S0_1M_FETCH", "S4_5M_FETCH",
     "S0_5M_FETCH\\nAPI_KEY=DO_NOT_ECHO", "S1_1D_NORMALIZE_SECRET",
 ])
 def test_worker_failure_stage_projection_is_enum_only(malicious):
@@ -154,7 +154,7 @@ def test_private_tickflow_writer_enforces_same_limit_as_audit_and_reader():
     import inspect
 
     source = inspect.getsource(atomic_publish)
-    assert audit.MAX_FILE_BYTES == MAX_BYTES == 350_000
+    assert audit.MAX_FILE_BYTES == MAX_BYTES == 600_000
     assert 'len(encoded.encode("utf-8"))>MAX_BYTES' in source
     assert source.index("len(encoded.encode") < source.index("parent.mkdir")
 
@@ -341,7 +341,7 @@ def test_combined_cloud_audit_and_nonmutating_vendor_float_research_only(tmp_pat
 
     class Klines:
         def get(self, symbol, *, period, count, as_dataframe, adjust):
-            assert symbol in ("159611.SZ", "518880.SH")
+            assert symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
             assert period in ("15m", "60m")
             assert count in (96, 24) and as_dataframe is False and adjust == "none"
             return raw_frame(period, symbol)

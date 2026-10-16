@@ -18,10 +18,13 @@ EASTMONEY_FILE=Path("/run/stock-razor-cn-eastmoney/latest-observation.json")
 MCP_PY=Path("/opt/stock-razor-mcp/venv/bin/python")
 WORKER_UNIT="stock-razor-cn-tickflow-research.service"
 MCP_UNIT="stock-razor-mcp.service"
-# Must match cn_tickflow_research_cache.MAX_BYTES (writer/read-cache 350 KB).
-MAX_FILE_BYTES=350_000
+# Must match cn_tickflow_research_cache.MAX_BYTES (writer/read-cache 600 KB).
+MAX_FILE_BYTES=600_000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
+HOLDINGS=("159611.SZ","159209.SZ","512730.SH","159363.SZ")
+LIVE_PERIODS=("1m","5m","15m","60m")
+RESEARCH_PERIODS=("1m","5m","15m","60m","1d")
 
 def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: datetime) -> dict:
     """Export no bars, prices, raw timestamps or provider credentials."""
@@ -41,11 +44,11 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         "same_session_vendor_float_rows_bucket":"UNKNOWN",
         "retained_bar_count_bucket":"UNKNOWN",
     }
-    if timeframe not in ("5m","15m","60m") or not isinstance(frame,dict):
+    if timeframe not in RESEARCH_PERIODS or not isinstance(frame,dict):
         return base
     rows=frame.get("rows")
     quarantined=frame.get("quarantined_unverified_rows_count")
-    row_cap=144 if timeframe=="5m" else 96
+    row_cap={"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}[timeframe]
     if (not isinstance(rows,list) or not 4<=len(rows)<=row_cap
             or type(quarantined) is not int or not 0<=quarantined<=row_cap):
         return base
@@ -218,7 +221,7 @@ def safe_failure_stage(stage: object) -> str:
     """
     allowed={
         f"S{i}_{period}_{action}"
-        for i in range(2)
+        for i in range(len(HOLDINGS))
         for period in ("15M", "60M", "5M", "1D")
         for action in ("FETCH", "NORMALIZE")
     }
@@ -767,8 +770,8 @@ def sample():
                 data,reference,now_utc=datetime.now(timezone.utc)
             )
             # Sanitize private, price-bearing cache *before* result leaves EC2.
-            for symbol in ("159611.SZ","518880.SH"):
-                for period in ("5m","15m","60m"):
+            for symbol in HOLDINGS:
+                for period in RESEARCH_PERIODS:
                     try:
                         frame=data["symbols"][symbol][period]
                     except (KeyError,TypeError):
@@ -817,8 +820,8 @@ def sample():
     sys.path.insert(0,str(WORKER_REPO))
     try:
         from data_provider.cn_tickflow_research_cache import read_cn_tickflow_research_data
-        for symbol in ("159611.SZ","518880.SH"):
-            for period in ("15m","60m"):
+        for symbol in HOLDINGS:
+            for period in LIVE_PERIODS:
                 observation=read_cn_tickflow_research_data(symbol,period,limit=2)
                 state=observation.get("status")
                 if state not in WHITELIST: state="INVALID_CACHE"
@@ -837,28 +840,29 @@ def sample():
                         else "UNKNOWN"
                     ),
                 }
-        # Supplementary 5m read uses only the already-written private cache.
-        # It never feeds legacy four 15m/60m acceptance predicates.
-        for symbol in ("159611.SZ","518880.SH"):
-            obs=read_cn_tickflow_research_data(
-                symbol,"5m",limit=2,research_mode="session_progress")
-            state=obs.get("status")
-            if state not in WHITELIST:
-                state="INVALID_CACHE"
-            result["supplemental_5m_reader"][symbol.replace(".","_")]={
-                "state":state,
-                "finality_unproven":obs.get("bar_finality")=="NOT_VERIFIED",
-                "radar_blocked":obs.get("radar_admission")=="BLOCKED",
-                "rows":len(obs.get("rows",[]))
-                    if state=="PASS_RESEARCH_ONLY" else 0,
-            }
+        # The complete matrix is read from the already-written private cache.
+        # It never grants currentness, closure or Radar admission.
+        for symbol in HOLDINGS:
+            for period in LIVE_PERIODS:
+                obs=read_cn_tickflow_research_data(
+                    symbol,period,limit=2,research_mode="session_progress")
+                state=obs.get("status")
+                if state not in WHITELIST:
+                    state="INVALID_CACHE"
+                result["supplemental_5m_reader"][symbol.replace(".","_")+"_"+period]={
+                    "state":state,
+                    "finality_unproven":obs.get("bar_finality")=="NOT_VERIFIED",
+                    "radar_blocked":obs.get("radar_admission")=="BLOCKED",
+                    "rows":len(obs.get("rows",[]))
+                        if state=="PASS_RESEARCH_ONLY" else 0,
+                }
         result["all_four_readonly_requests_ok"]=all(
             x["state"]=="PASS_RESEARCH_ONLY" and x["rows"]>0
             and x["radar_blocked"] and x["finality_unproven"]
             for x in result["per_period_observation"].values()
-        ) and len(result["per_period_observation"])==4
-        for symbol in ("159611.SZ","518880.SH"):
-            for period in ("15m","60m"):
+        ) and len(result["per_period_observation"])==len(HOLDINGS)*len(LIVE_PERIODS)
+        for symbol in HOLDINGS:
+            for period in RESEARCH_PERIODS:
                 hist=read_cn_tickflow_research_data(
                     symbol,period,limit=2,research_mode="historical_only",
                 )
@@ -891,7 +895,7 @@ def sample():
                     "rows":len(hist.get("rows",[])) if hstatus=="PASS_HISTORICAL_ONLY" else 0,
                 }
         result["all_four_historical_requests_ok"]=(
-            len(result["historical_period_observation"])==4
+            len(result["historical_period_observation"])==len(HOLDINGS)*len(RESEARCH_PERIODS)
             and all(
                 h["state"]=="PASS_HISTORICAL_ONLY"
                 and h["rows"]>0

@@ -23,7 +23,7 @@ def _handler(*, status="PASS_HISTORICAL_ONLY", misalign=False):
             "radar_admission":"BLOCKED","source_arbiter_admission":"BLOCKED",
             "bar_finality":"NOT_VERIFIED","live_trade":False,
             "provider_requests":0,"repo_sha":"b"*40,
-            "sequence":5+int(misalign and symbol=="518880.SH" and timeframe=="60m"),
+            "sequence":5+int(misalign and symbol=="159209.SZ" and timeframe=="60m"),
             "source_age_seconds":30.2,
             "last_bar_end_label_age_seconds":500.0,
             "expected_grid_progress":"DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY",
@@ -54,14 +54,14 @@ def test_fast_returns_bounded_native_ohlcv_and_quality_not_live_admission():
     assert fast["provider"]=="TICKFLOW_PREMIUM"
     assert fast["read_scope"]=="CLOUD_MCP_LOCAL_CACHE_NOT_CHATGPT_RTT"
     assert fast["read_ms"]>=0
-    assert fast["frame_count"]==4
+    assert fast["frame_count"]==8
     assert fast["repo_sha"]=="b"*40 and fast["sequence"]==5
     assert fast["research_only"] is True and fast["provider_requests"]==0
     assert fast["live_trade"] is False and fast["radar_admission"]=="BLOCKED"
     assert fast["bar_finality"]=="NOT_VERIFIED"
     assert fast["source_arbiter_admission"]=="BLOCKED"
     assert fast["can_confirm_signal"] is False
-    assert set(fast["symbols"])=={"159611.SZ","518880.SH"}
+    assert set(fast["symbols"])=={"159611.SZ","159209.SZ","512730.SH","159363.SZ"}
     assert all(set(v)=={"15m","60m"} for v in fast["symbols"].values())
     for frames in fast["symbols"].values():
         for row in frames.values():
@@ -71,7 +71,7 @@ def test_fast_returns_bounded_native_ohlcv_and_quality_not_live_admission():
             assert row["is_partial_bar"] is True
             assert row["bar_finality"]=="NOT_VERIFIED"
             assert row["expected_grid_progress"]=="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
-    assert len(calls)==4
+    assert len(calls)==8
     assert all(call[2:]==(1,"historical_only") for call in calls)
     full=h("TICKFLOW:BATCH",limit=1)
     assert len(json.dumps(fast,separators=(",",":")))<len(json.dumps(full,separators=(",",":")))

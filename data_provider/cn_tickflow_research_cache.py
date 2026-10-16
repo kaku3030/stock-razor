@@ -15,11 +15,18 @@ from typing import Any
 CN = ZoneInfo("Asia/Shanghai")
 SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
-SYMBOLS = ("159611.SZ", "518880.SH")
-TIMEFRAMES = ("15m", "60m")
-MAX_BYTES = 350_000
+SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+TIMEFRAMES = ("1m", "5m", "15m", "60m", "1d")
+# Four holdings × five periods requires a larger bounded private envelope;
+# this remains a hard reader/writer limit and is not public market-data output.
+MAX_BYTES = 600_000
 MAX_AGE_SECONDS = 180
 _LABEL_END = {
+    "1m": frozenset(
+        f"{minute//60:02d}:{minute%60:02d}"
+        for minute in (*range(9*60+31, 11*60+31),
+                       *range(13*60+1, 15*60+1))
+    ),
     "15m": frozenset(("09:45","10:00","10:15","10:30","10:45","11:00",
        "11:15","11:30","13:15","13:30","13:45","14:00","14:15",
        "14:30","14:45","15:00")),
@@ -32,7 +39,7 @@ _LABEL_END = {
     "1d": frozenset(("00:00",)),
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
-_ALLOWED_PERIODS = {"15m":96,"60m":24,"5m":144,"1d":40}
+_ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
 _SOURCE = "TICKFLOW_PREMIUM"
 
 def _timestamp(value: object) -> datetime:
@@ -451,7 +458,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             or timeframe not in _ALLOWED_PERIODS
             or research_mode not in ("session_progress","historical_only")
             or (timeframe=="1d" and research_mode!="historical_only")
-            or type(limit)!=int or not 1<=limit<=144):
+            or type(limit)!=int or not 1<=limit<=240):
         return {**base,"status":"INVALID_REQUEST"}
     try:
         with open(path,"rb") as f:

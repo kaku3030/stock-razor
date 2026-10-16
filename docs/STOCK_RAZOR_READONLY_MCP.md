@@ -211,14 +211,15 @@ The original `TICKFLOW:<symbol>` remains historical-only; ordinary
 symbols stay on their explicit legacy provider route. `1d` is
 deliberately invalid for `session_progress`.
 
-### Fast four-frame cloud TickFlow research read
+### Fast cloud TickFlow research read
 
 The already-connected ChatGPT `get_cn_market_data` tool also accepts
-`symbol="TICKFLOW:BATCH"` with `limit=1..24`. The `timeframe` parameter
-is ignored for this exact literal; the result contains 159611.SZ and
-518880.SH, 15m and 60m each, in one remote MCP round trip. It makes **zero
-provider requests**. Every frame uses the same historical-only TickFlow
-private cache reader. The batch requires all four calls to pass and their
+`symbol="TICKFLOW:BATCH"` with `limit=1..24`, or `symbol="TICKFLOW:FULL"`
+with `limit=1..240`. The `timeframe` parameter is ignored for these exact
+literals. BATCH returns the four held ETFs' 15m and 60m frames; FULL returns
+the four held ETFs' 1m/5m/15m/60m/1d frames, in one remote MCP round trip.
+It makes **zero provider requests**. Every frame uses the same historical-only
+TickFlow private cache reader. The batch requires every requested frame to pass and its
 `repo_sha` and `sequence` to match; stale/misaligned results never return a
 partial price-bearing batch. Ordinary `get_cn_market_data("159611.SZ",...)`
 retains the original provider.
@@ -232,8 +233,8 @@ completed bar; check each frame's `expected_grid_progress`.
 
 For routine read-only watchlist refreshes, use the already connected
 `get_cn_market_data(symbol="TICKFLOW:FAST", limit=1)` action. It reads
-exactly one native 15m and 60m historical OHLCV row for each of the two
-fixed ETFs (159611.SZ and 518880.SH) through the validated four-frame
+exactly one native 15m and 60m historical OHLCV row for each of the four
+held ETFs through the validated batch
 `TICKFLOW:BATCH` cache reader, retaining source SHA and sequence alignment.
 It returns compact native `t/o/h/l/c/v/a` values, amount availability,
 OHLC float-validation status, session grid progression and explicit
@@ -249,11 +250,9 @@ is needed. This is not a replacement for D1/5m or a validated live WS feed.
 
 ### Single-call full TickFlow multi-timeframe research
 
-Once the bounded 5m/D1 cloud research worker and this MCP revision are
-deployed, existing ChatGPT `get_cn_market_data(symbol="TICKFLOW:FULL",
-limit=40)` returns two fixed ETFs `159611.SZ` and `518880.SH`,
-each with 5m, 15m, 60m and 1d historical native rows in **one**
-cloud MCP tool call. Eight frame reads must share a single cache SHA
+The ChatGPT `get_cn_market_data(symbol="TICKFLOW:FULL", limit=40)` route
+returns the four held ETFs, each with 1m, 5m, 15m, 60m and 1d historical
+native rows in **one** cloud MCP tool call. Twenty frame reads must share a single cache SHA
 and sequence and all pass; any stale/misaligned frame rejects the whole
 batch without leaking partial prices. This API never contacts TickFlow
 directly, never claims provider bar finality, and does not authorize
