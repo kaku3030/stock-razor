@@ -82,7 +82,7 @@ for row in rows:
     symbol, market, asset_type = row[0], row[6], row[7]
     if (market == "CN" and asset_type == "stock" and row[8] is True
             and isinstance(symbol, str)
-            and re.fullmatch(r"[0-9]{6}\\.(?:SH|SZ)", symbol)):
+            and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)):
         symbols.append(symbol)
 symbols = list(dict.fromkeys(symbols))[:200]
 if len(symbols) != 200:
