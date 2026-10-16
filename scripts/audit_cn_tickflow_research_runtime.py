@@ -225,6 +225,7 @@ def safe_failure_stage(stage: object) -> str:
         for period in ("15M", "60M", "5M", "1D")
         for action in ("FETCH", "NORMALIZE")
     }
+    allowed.update({"S4_WS_SUMMARY", "S4_CACHE_PUBLISH"})
     return stage if isinstance(stage, str) and stage in allowed else "UNKNOWN"
 
 
@@ -808,6 +809,7 @@ def sample():
                 "VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
                 "OHLCVA_NONPOSITIVE","OHLCVA_HIGH_LT_BODY","OHLCVA_LOW_GT_BODY",
                 "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE",
+                "CACHE_SIZE_EXCEEDED",
             }
             result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
             precision=data.get("failure_ohlc_float_gap_bucket")

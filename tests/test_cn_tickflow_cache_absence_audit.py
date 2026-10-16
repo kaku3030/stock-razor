@@ -80,6 +80,11 @@ def test_worker_all_requested_failure_stages_are_safely_classified(
     assert audit.safe_failure_stage(stage) == stage
 
 
+@pytest.mark.parametrize("stage", ["S4_WS_SUMMARY", "S4_CACHE_PUBLISH"])
+def test_worker_publish_and_websocket_failure_stages_are_safe(stage):
+    assert audit.safe_failure_stage(stage) == stage
+
+
 @pytest.mark.parametrize("malicious", [
     None, 0, True, {}, "S0_1M_FETCH", "S4_5M_FETCH",
     "S0_5M_FETCH\\nAPI_KEY=DO_NOT_ECHO", "S1_1D_NORMALIZE_SECRET",
