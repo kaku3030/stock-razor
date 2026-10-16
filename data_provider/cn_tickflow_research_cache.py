@@ -574,6 +574,53 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                 "ohlc_validation":tolerance})
     except (KeyError,ValueError,TypeError,OverflowError):
         return invalid_cache(reject_reason)
+    # Optional two-poll research witness. Never treat it as provider
+    # finality; reject malformed metadata rather than laundering claims.
+    witness=raw.get("bar_stability_witness")
+    witness_summary=None
+    if witness is not None:
+        reasons={
+            "STABLE_TWO_POLLS","NO_PRIOR_POLL","INVALID_INPUT",
+            "INVALID_LABEL","NEXT_GRID_LABEL_UNAVAILABLE",
+            "NEXT_GRID_NOT_MATURED","UNTRUSTED_RESEARCH_SNAPSHOT",
+            "INVALID_SOURCE_SHA","INVALID_POLL_IDENTITY",
+            "SOURCE_SHA_CHANGED","INDEPENDENT_POLL_NOT_PROVEN",
+            "LATEST_SOURCE_STALE_OR_FUTURE","POLL_PRECEDES_BAR_GRID",
+            "CLOSED_GRID_DATA_INCOMPLETE","BAR_REVISED_BETWEEN_POLLS",
+        }
+        if not isinstance(witness,dict):
+            return invalid_cache("BAR_STABILITY_WITNESS_INVALID")
+        reason=witness.get("reason")
+        stable=reason=="STABLE_TWO_POLLS"
+        status=("STABLE_AFTER_NEXT_LABEL_RESEARCH_ONLY"
+                if stable else "BLOCKED")
+        gap=witness.get("poll_gap_seconds")
+        label=witness.get("bar_end_label")
+        if (reason not in reasons or witness.get("status")!=status
+                or witness.get("schema") !=
+                    "stock_razor_tickflow_close_witness_research_v0_1"
+                or witness.get("bar_label_stability") != (
+                    "REPEATED_OHLCVA_RESEARCH_ONLY"
+                    if stable else "NOT_VERIFIED")
+                or witness.get("provider_bar_finality")!="NOT_VERIFIED"
+                or witness.get("exchange_bar_finality")!="NOT_VERIFIED"
+                or witness.get("trading_session_calendar")!="NOT_VERIFIED"
+                or witness.get("radar_admission")!="BLOCKED"
+                or witness.get("source_arbiter_admission")!="BLOCKED"
+                or witness.get("paper_auto_ready") is not False
+                or witness.get("live_trade") is not False
+                or witness.get("provider_requests") != 0
+                or not isinstance(label,str)
+                or label not in {item["label"] for item in safe}
+                or (stable and (type(gap) not in (int,float)
+                    or not isfinite(gap) or not 15<=gap<=180))
+                or (not stable and gap is not None)):
+            return invalid_cache("BAR_STABILITY_WITNESS_INVALID")
+        witness_summary={
+            "bar_end_label":label,"status":status,"reason":reason,
+            "poll_gap_seconds":gap,"provider_bar_finality":"NOT_VERIFIED",
+            "exchange_bar_finality":"NOT_VERIFIED","radar_admission":"BLOCKED",
+        }
     # Rows are bounded by the collector contract (<=144); retain the whole
     # verified label grid for session continuity, then trim public output.
     validated_labels = {item["label"] for item in safe}
@@ -627,6 +674,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "max_age_seconds":max_age,
             "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
             "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            **({"bar_stability_witness":witness_summary}
+               if witness_summary is not None else {}),
             "ohlc_precision_scope":(
                 "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
                 else "STRICT"
@@ -644,6 +693,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "max_age_seconds":max_age,
         "sequence":obj.get("sequence"),"source_age_seconds":round(age,2),
         "symbol":symbol,"timeframe":timeframe,"rows":safe,
+            **({"bar_stability_witness":witness_summary}
+               if witness_summary is not None else {}),
         "ohlc_precision_scope":(
             "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY" if tolerated_rows
             else "STRICT"
