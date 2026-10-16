@@ -48,7 +48,13 @@ offline fixture tests only.
    from the Aider child.
 2. Prove the **provider-recognized** input token count with a validated
    tokenizer or an independent provider preflight. Claimed counts here do not
-   satisfy that requirement; unknown counts must fail closed.
+   satisfy that requirement; unknown counts must fail closed. DeepSeek's
+   official token-usage docs state that its downloadable *offline tokenizer*
+   only estimates usage and provider response usage is authoritative:
+   https://api-docs.deepseek.com/quick_start/token_usage/ .
+   In particular, comparing a local string length or a tokenizer estimate
+   to 20,000 is not an invoice-grade hard cap. A complete wire-level guard
+   must account for roles, message formatting, and any internal tool prompts.
 3. Enforce remaining `max_tokens` **at the actual HTTP request boundary**,
    including any tool use, hidden retries, internal probes and multiple SDK
    paths. Reject unexpected model aliases and mutable thinking configurations.
@@ -59,7 +65,11 @@ offline fixture tests only.
 4. Obtain independently verified **provider-side** CNY 5 hard-cost protection
    or an auditable, conservative pricing/currency maximum supported by an
    upstream enforced spend limit. Neither a GitHub variable nor a balance
-   GET proves such a cap. Provider prices can change.
+   GET proves such a cap. Provider prices can change. The official public
+   Flash pricing page currently presents **USD/token** quotes, whereas this
+   project's one-shot limit is specified in **CNY**; conversion and the
+   authoritative charged currency cannot be inferred from a static price
+   table: https://api-docs.deepseek.com/quick_start/pricing/ .
 5. Verify official before/after balance, provider usage and the exact cloud
    deployment SHA in one isolated one-shot canary; retain sanitized evidence.
 6. Only after independently reviewed checks pass, propose a **separate**
