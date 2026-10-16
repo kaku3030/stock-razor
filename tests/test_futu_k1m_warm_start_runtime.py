@@ -26,7 +26,8 @@ def _session(day: str, symbol: str):
                 "low": price - 0.2,
                 "close": price + 0.1,
                 "volume": 1000 + index,
-                "turnover": 100000 + index,
+                # Keep synthetic source VWAP inside the declared OHLC range.
+                "turnover": (price + 0.1) * (1000 + index),
             }
         )
     return rows
