@@ -179,3 +179,66 @@ def test_no_invented_source_finality_on_replay_or_identical_rows():
     witness = _audit(second, same)
     assert witness["provider_bar_finality"] == "NOT_VERIFIED"
     assert witness["status"] == "BLOCKED"
+
+
+def test_collector_attaches_readable_witness_without_trading_finality(tmp_path):
+    from data_provider.tickflow_bar_close_witness import (
+        attach_research_stability_witness,
+    )
+    from data_provider.cn_tickflow_research_cache import (
+        atomic_publish, read_cn_tickflow_research_data,
+    )
+
+    first, second = _pair()
+    yesterday = [_bar("2026-10-15 14:45"), _bar("2026-10-15 15:00")]
+    first["symbols"][SYMBOL]["15m"]["rows"] = (
+        yesterday + first["symbols"][SYMBOL]["15m"]["rows"]
+    )
+    second["symbols"][SYMBOL]["15m"]["rows"] = (
+        deepcopy(yesterday) + second["symbols"][SYMBOL]["15m"]["rows"]
+    )
+    attach_research_stability_witness(second, first, now_utc=NOW)
+    witness = second["symbols"][SYMBOL]["15m"]["bar_stability_witness"]
+    assert witness["status"] == "STABLE_AFTER_NEXT_LABEL_RESEARCH_ONLY"
+    assert witness["bar_end_label"] == BAR
+
+    path = tmp_path / "research.json"
+    atomic_publish(str(path), second)
+    report = read_cn_tickflow_research_data(
+        SYMBOL, "15m", 4, path=str(path), now_utc=NOW,
+    )
+    assert report["status"] == "PASS_RESEARCH_ONLY"
+    assert report["bar_stability_witness"]["status"] == (
+        "STABLE_AFTER_NEXT_LABEL_RESEARCH_ONLY"
+    )
+    assert report["bar_stability_witness"]["provider_bar_finality"] == (
+        "NOT_VERIFIED"
+    )
+    assert report["bar_finality"] == "NOT_VERIFIED"
+    assert report["radar_admission"] == "BLOCKED"
+    assert report["provider_requests"] == 0
+
+    # An injected false "FINAL" is rejected as a poisoned cache, not promoted.
+    second["symbols"][SYMBOL]["15m"]["bar_stability_witness"][
+        "provider_bar_finality"
+    ] = "PROVEN"
+    atomic_publish(str(path), second)
+    poisoned = read_cn_tickflow_research_data(
+        SYMBOL, "15m", 4, path=str(path), now_utc=NOW,
+    )
+    assert poisoned["status"] == "INVALID_CACHE"
+    assert poisoned["cache_rejection_reason"] == (
+        "BAR_STABILITY_WITNESS_INVALID"
+    )
+
+
+def test_first_collector_poll_never_invents_previous_stability():
+    from data_provider.tickflow_bar_close_witness import (
+        attach_research_stability_witness,
+    )
+    first, second = _pair()
+    attach_research_stability_witness(second, None, now_utc=NOW)
+    witness = second["symbols"][SYMBOL]["15m"]["bar_stability_witness"]
+    assert witness["status"] == "BLOCKED"
+    assert witness["reason"] == "NO_PRIOR_POLL"
+    assert witness["provider_bar_finality"] == "NOT_VERIFIED"
