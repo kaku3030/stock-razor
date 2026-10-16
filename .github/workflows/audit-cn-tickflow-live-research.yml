@@ -116,12 +116,12 @@ jobs:
           import json,sys
           d=json.load(sys.stdin)
           assert d.get("schema")=="stock_razor_tickflow_aws_research_acceptance_v0_1"
-          assert d.get("source_arbiter_admission")=="BLOCKED"
-          assert d.get("radar_admission")=="BLOCKED"
-          assert d.get("live_trade")=="NO"
-          assert d.get("canonical_write")=="NO"
-          assert d.get("exchange_finality")=="NOT_VERIFIED"
-          assert d.get("cross_provider_parity")=="NOT_VERIFIED"
+          assert d.get("source_arbiter_admission")=="BLOCKED", repr(d.get("source_arbiter_admission"))
+          assert d.get("radar_admission")=="BLOCKED", repr(d.get("radar_admission"))
+          assert d.get("live_trade")=="NO", repr(d.get("live_trade"))
+          assert d.get("canonical_write")=="NO", repr(d.get("canonical_write"))
+          assert d.get("exchange_finality")=="NOT_VERIFIED", repr(d.get("exchange_finality"))
+          assert d.get("cross_provider_parity")=="NOT_VERIFIED", repr(d.get("cross_provider_parity"))
           assert type(d.get("sequence_advanced")) is bool
           reference=d.get("tencent_independent_shadow")
           keys=("159611_SZ_15m","159611_SZ_60m","518880_SH_15m","518880_SH_60m")
