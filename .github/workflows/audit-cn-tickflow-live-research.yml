@@ -94,7 +94,7 @@ jobs:
           trap 'rm -rf "\$scratch"' EXIT
           printf '%s' '$bundle' | base64 -d | gzip -d > "\$scratch/observe.py"
           printf '%s  %s\n' '$hash' "\$scratch/observe.py" | sha256sum -c - >/dev/null
-          python3 "\$scratch/observe.py" --interval 65
+          python3 "\$scratch/observe.py" --interval 65 | gzip -n -9 | base64 -w0
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 19000
           params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
@@ -111,8 +111,8 @@ jobs:
             echo "SSM_PRIVATE_DETAILS_WITHHELD=YES"
             exit 1
           fi
-          raw="$(aws ssm get-command-invocation --command-id "$cid" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
-          printf '%s' "$raw" | python3 -c '
+          encoded="$(aws ssm get-command-invocation --command-id "$cid" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text)"
+          printf '%s' "$encoded" | base64 -d | gzip -d | python3 -c '
           import json,sys
           d=json.load(sys.stdin)
           assert d.get("schema")=="stock_razor_tickflow_aws_research_acceptance_v0_1"
