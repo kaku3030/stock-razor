@@ -117,6 +117,15 @@ def test_two_independent_polls_and_next_bar_only_prove_research_stability():
     (lambda f, s: s["symbols"][SYMBOL]["15m"]["rows"][0].update(
         amount="secret",
     ), "CLOSED_GRID_DATA_INCOMPLETE"),
+    (lambda f, s: s["symbols"][SYMBOL]["15m"]["rows"][0].update(
+        high=1.0,
+    ), "CLOSED_GRID_DATA_INCOMPLETE"),
+    (lambda f, s: s["symbols"][SYMBOL]["15m"]["rows"][0].update(
+        high=10 ** 1000,
+    ), "CLOSED_GRID_DATA_INCOMPLETE"),
+    (lambda f, s: s["symbols"][SYMBOL]["15m"]["rows"][0].update(
+        amount_availability="SDK_OMITTED",
+    ), "BAR_REVISED_BETWEEN_POLLS"),
 ])
 def test_fails_closed_for_revised_stale_untrusted_and_malformed_evidence(
     modify, reason,
