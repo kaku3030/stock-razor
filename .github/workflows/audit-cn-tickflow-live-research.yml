@@ -289,7 +289,7 @@ jobs:
                   assert _v.get("same_session_vendor_float_rows_bucket") in allowed_bucket, ("same_session_vendor_float_rows_bucket",_v.get("same_session_vendor_float_rows_bucket"))
                   assert _v.get("retained_bar_count_bucket") in allowed_rows, ("retained_bar_count_bucket",_v.get("retained_bar_count_bucket"))
               supp=d[when].get("supplemental_5m_reader")
-              assert isinstance(supp,dict) and set(supp).issubset(set(periods))
+              assert isinstance(supp,dict) and set(supp).issubset(set(historical_periods))
               for observed in supp.values():
                   assert isinstance(observed,dict)
                   assert observed.get("state") in states
