@@ -276,3 +276,109 @@ def audit_tickflow_5m_15m_reconciliation(
     if abs(bar["amount"] - sum(row["amount"] for row in five)) > 1e-5:
         return _result("AMOUNT_DIVERGENCE")
     return _result("OHLCVA_AGGREGATION_RESEARCH_MATCH")
+
+
+def audit_tickflow_vendor_successor_close(
+    snapshot: Mapping[str, Any],
+    *,
+    symbol: str,
+    timeframe: str,
+    label: str,
+    now_utc: datetime,
+) -> dict:
+    """Apply TickFlow's written 2026-10-13 operational close rule.
+
+    Per provider support: timestamp is BAR_END; once the next candle forms,
+    the preceding candle can be regarded as closed. The provider DOES NOT
+    supply is_final / immutable close, and may revise bars ~1h after 15:00.
+    This strict cache-only adapter waits until the successor's BAR_END is
+    actually visible (more conservative than detecting its formation).
+    """
+    def result(status: str, *, closed: bool = False) -> dict:
+        risk = "NOT_EVALUATED"
+        if closed:
+            sh_now = now_utc.astimezone(CN)
+            # Provider states post-close amendments can occur around 1h
+            # after 15:00; this is a risk label, NOT a hard correction cutoff.
+            risk = (
+                "WITHIN_APPROX_POSTCLOSE_CORRECTION_WINDOW"
+                if sh_now.date() == boundary.date()
+                and (sh_now.hour, sh_now.minute) < (16, 0)
+                else "AFTER_APPROX_WINDOW_NOT_IMMUTABLE"
+            )
+        return {
+            **_result(status),
+            "provider_operational_closed_research_only": closed,
+            "closure_rule": "TICKFLOW_SUPPORT_2026_10_13_SUCCESSOR_KLINE",
+            "provider_finality_attestation": "NO_IS_FINAL_FIELD",
+            "postclose_revision_risk": risk,
+            "bar_finality": "NOT_VERIFIED",
+            "exchange_bar_finality": "NOT_VERIFIED",
+            "radar_admission": "BLOCKED",
+            "source_arbiter_admission": "BLOCKED",
+            "live_trade": False,
+        }
+
+    if (
+        not isinstance(snapshot, Mapping)
+        or symbol not in SYMBOLS
+        or timeframe not in _PERIODS
+        or not isinstance(label, str)
+        or type(now_utc) is not datetime
+        or now_utc.tzinfo is None
+        or now_utc.utcoffset() is None
+    ):
+        return result("INVALID_INPUT")
+    try:
+        boundary = datetime.strptime(label, "%Y-%m-%d %H:%M").replace(tzinfo=CN)
+    except (ValueError, TypeError):
+        return result("INVALID_LABEL")
+    clock = boundary.strftime("%H:%M")
+    grid = sorted(_LABEL_END[timeframe])
+    if clock not in grid or boundary.weekday() >= 5:
+        return result("NO_VALID_CN_TRADING_GRID")
+    position = grid.index(clock)
+    if position + 1 >= len(grid):
+        # The session's final bar requires a distinct end-of-day
+        # correction/stability policy. Never invent a future successor.
+        return result("END_OF_SESSION_NO_SUCCESSOR")
+    next_clock = grid[position + 1]
+    successor = boundary.replace(
+        hour=int(next_clock[:2]), minute=int(next_clock[3:]),
+    )
+    now = now_utc.astimezone(timezone.utc)
+    source_time = _time(snapshot.get("observed_at_utc"))
+    if (
+        source_time is None
+        or successor.astimezone(timezone.utc) > source_time
+        or source_time > now
+        or not 0 <= (now - source_time).total_seconds() <= _SOURCE_AGE_LIMIT
+    ):
+        return result("SUCCESSOR_NOT_MATURE_IN_SOURCE")
+    if (
+        snapshot.get("schema") != SCHEMA
+        or snapshot.get("provider") != _SOURCE
+        or snapshot.get("status") != "PASS_RESEARCH_ONLY"
+        or snapshot.get("research_only") is not True
+        or snapshot.get("radar_admission") != "BLOCKED"
+        or snapshot.get("source_arbiter_admission") != "BLOCKED"
+        or snapshot.get("live_trade") is not False
+        or snapshot.get("canonical_write_authorized") is not False
+        or not isinstance(snapshot.get("repo_sha"), str)
+        or _SHA.fullmatch(snapshot["repo_sha"]) is None
+        or type(snapshot.get("sequence")) is not int
+        or snapshot["sequence"] < 1
+    ):
+        return result("SOURCE_PROVENANCE_INVALID")
+    target = _row(snapshot, symbol, timeframe, label)
+    later = _row(
+        snapshot, symbol, timeframe, successor.strftime("%Y-%m-%d %H:%M"),
+    )
+    if target is None:
+        return result("TARGET_ROW_MISSING_OR_UNSAFE")
+    if later is None:
+        return result("NEXT_KLINE_NOT_OBSERVED")
+    # Successor present under the SAME vetted TickFlow observation only.
+    # This permits an operational-close label for research, never a
+    # signed exchange finality assertion or promotion to trading.
+    return result("PROVIDER_RULE_CLOSED_REVISION_POSSIBLE", closed=True)
