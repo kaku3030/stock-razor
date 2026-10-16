@@ -115,6 +115,10 @@ jobs:
           printf '%s' "$encoded" | base64 -d | gzip -d | python3 -c '
           import json,sys
           d=json.load(sys.stdin)
+          print("TICKFLOW_AUDIT_SAFETY="+json.dumps({k:d.get(k) for k in (
+              "source_arbiter_admission","radar_admission","live_trade",
+              "canonical_write","exchange_finality","cross_provider_parity")},
+              sort_keys=True))
           assert d.get("schema")=="stock_razor_tickflow_aws_research_acceptance_v0_1"
           assert d.get("source_arbiter_admission")=="BLOCKED", repr(d.get("source_arbiter_admission"))
           assert d.get("radar_admission")=="BLOCKED", repr(d.get("radar_admission"))
