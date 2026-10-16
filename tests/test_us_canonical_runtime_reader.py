@@ -387,3 +387,55 @@ def test_postclose_mcp_rejects_yesterday_repair_as_current_session(tmp_path):
     out = read_us_livefeed_health(status, snapshot, now_utc=NOW)
     assert out["postclose_reconciliation"]["status"] == "INVALID_EVIDENCE"
     assert out["radar_admission"] == "BLOCKED"
+
+
+
+def test_livefeed_health_realtime_evidence_requires_fresh_provenanced_source(tmp_path):
+    fresh = _snapshot(emitted_at=NOW - timedelta(seconds=2))
+    fresh["latest_source_timestamp_utc"] = (
+        NOW - timedelta(seconds=10)
+    ).isoformat()
+    status = _write(tmp_path / "status.json", _heartbeat())
+    snapshot = _write(tmp_path / "snapshot.json", fresh)
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert result["status"] == "HEALTHY"
+    assert result["canonical_snapshot_status"] == "PASS"
+    assert result["realtime_delivery_evidence"] is True
+
+    # Current heartbeats and export time cannot make a stale provider bar live.
+    fresh["latest_source_timestamp_utc"] = (
+        NOW - timedelta(minutes=10)
+    ).isoformat()
+    _write(tmp_path / "snapshot.json", fresh)
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+    assert result["status"] == "HEALTHY"
+    assert result["canonical_snapshot_status"] == "STALE"
+    assert result["canonical_snapshot_age_seconds"] == 600
+    assert result["realtime_delivery_evidence"] is False
+    assert result["radar_admission"] == "BLOCKED"
+
+
+def test_realtime_evidence_rejects_unverified_source_identity(tmp_path):
+    status = _write(tmp_path / "status.json", _heartbeat())
+    snapshot = tmp_path / "snapshot.json"
+    payload = _snapshot()
+    payload["latest_source_timestamp_utc"] = (
+        NOW - timedelta(seconds=5)
+    ).isoformat()
+    for changed_field in ("repo_sha", "runtime_instance_id"):
+        corrupted = dict(payload)
+        corrupted[changed_field] = (
+            "other-run" if changed_field == "runtime_instance_id" else "b" * 40
+        )
+        _write(snapshot, corrupted)
+        result = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
+        assert result["status"] == "HEALTHY"
+        assert result["canonical_snapshot_status"] == "PASS"
+        assert result["realtime_delivery_evidence"] is False
+        assert result["radar_admission"] == "BLOCKED"
+
+    # Legacy snapshots without source-time provenance cannot establish fresh bars.
+    _write(snapshot, _snapshot())
+    unknown = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
+    assert unknown["status"] == "HEALTHY"
+    assert unknown["realtime_delivery_evidence"] is False

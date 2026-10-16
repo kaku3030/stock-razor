@@ -377,6 +377,23 @@ def read_us_livefeed_health(
             }
     healthy = heartbeat_fresh and controller_connected and export_pass
     status = "HEALTHY" if healthy else ("STALE" if not heartbeat_fresh else "DEGRADED")
+    # Operational heartbeat and provider market evidence are independent.
+    # A live service cannot certify realtime bars by heartbeat alone.
+    source_identity_matched = (
+        snapshot is not None
+        and bool(snapshot_meta.get("repo_sha"))
+        and snapshot_meta.get("repo_sha") == heartbeat.get("repo_sha")
+        and bool(snapshot_meta.get("runtime_instance_id"))
+        and snapshot_meta.get("runtime_instance_id") == heartbeat.get("runtime_instance_id")
+    )
+    live_source_evidence = (
+        healthy
+        and source_identity_matched
+        and snapshot_meta.get("status") == "PASS"
+        and isinstance(snapshot.get("latest_source_timestamp_utc"), str)
+        and heartbeat.get("delivery_mode") == "REALTIME"
+        and snapshot_meta.get("delivery_mode") == "REALTIME"
+    )
     return _latency_payload(started_at, {
         "ok": healthy,
         "status": status,
@@ -410,8 +427,10 @@ def read_us_livefeed_health(
         "heartbeat_cache_hit": heartbeat_cache_hit,
         "canonical_snapshot_cache_hit": snapshot_meta.get("source_cache_hit"),
         "cache_counts": cache_counts,
-        "realtime_delivery_evidence": (
-            heartbeat_fresh and heartbeat.get("delivery_mode") == "REALTIME"
+        "realtime_delivery_evidence": bool(live_source_evidence),
+        "realtime_evidence_scope": (
+            "SOURCE_RECENCY_AND_RUNTIME_MATCH_NOT_PER_SYMBOL"
+            if live_source_evidence else "NOT_VERIFIED"
         ),
         "bar_closure_proven": heartbeat.get("bar_closure") == "PROVEN",
         "radar_admission": "BLOCKED",
