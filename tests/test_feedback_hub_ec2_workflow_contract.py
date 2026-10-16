@@ -26,6 +26,13 @@ def test_read_only_probe_does_not_claim_persistence():
         "scripts/audit_feedback_hub_ec2_readonly.py"
     ).read_text(encoding="utf-8")
     assert "FEEDBACK_HUB_CROSS_RUN_PERSISTENCE=NOT_VERIFIED" in code
+    for label in (
+        "FEEDBACK_HUB_OPEN_P0", "FEEDBACK_HUB_OPEN_P1",
+        "FEEDBACK_HUB_AUDIT_COUNT", "FEEDBACK_HUB_AUDIT_TAIL_DIGEST",
+    ):
+        assert label in code
+    assert 're.fullmatch(r"[0-9a-f]{16}",witness)' in code
+    assert 'type(value) is int and 0 <= value <= 10000000' in code
     assert "FEEDBACK_HUB_PRODUCERS=NOT_VERIFIED" in code
     assert "TRADING_AUTHORITY=NO" in code
     assert "ssm send-command" in code
