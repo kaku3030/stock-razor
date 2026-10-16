@@ -18,7 +18,7 @@ SCHEMA = "stock_razor_feedback_hub_ec2_readonly_v1"
 MAX_DB_BYTES = 64 * 1024 * 1024
 MAX_PATH_CHARS = 240
 PATH_RE = re.compile(r"^/[A-Za-z0-9_./-]+$")
-EPHEMERAL = frozenset({"tmpfs", "ramfs", "devtmpfs", "overlay", "aufs", "squashfs"})
+DISK_BACKING_CANDIDATES = frozenset({"ext4", "xfs", "btrfs", "zfs"})
 
 
 def _path_allowed(raw: str) -> Path | None:
@@ -57,7 +57,7 @@ def _mount_class(path: Path, mountinfo: str) -> str:
             continue
         if len(mount) > best[0]:
             best = (len(mount), right[0].lower())
-    if best[0] < 0 or best[1] in EPHEMERAL:
+    if best[0] < 0 or best[1] not in DISK_BACKING_CANDIDATES:
         return "EPHEMERAL_OR_UNKNOWN"
     return "NON_VOLATILE_TYPE_OBSERVED_NOT_PROVEN"
 
