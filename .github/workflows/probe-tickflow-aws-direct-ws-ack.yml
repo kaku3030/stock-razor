@@ -25,6 +25,7 @@ on:
           - "7200"
           - "9000"
           - "14160"
+          - "16800"
 
 permissions:
   id-token: write
@@ -68,7 +69,7 @@ jobs:
             echo 'TICKFLOW_WS_MAIN_MOVED_ABORT' >&2
             exit 2
           }
-          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160)$ ]]
+          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]
           test "$RADAR_ADMISSION" = BLOCKED
           test "$SOURCE_ARBITER_ADMISSION" = BLOCKED
           test "$LIVE_TRADE" = NO
@@ -96,7 +97,7 @@ jobs:
           WS_SECONDS: ${{ inputs.ws_seconds }}
         run: |
           set -euo pipefail
-          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160)$ ]]
+          [[ "$WS_SECONDS" =~ ^(10|15|30|60|900|3600|7200|9000|14160|16800)$ ]]
           revision="$(git rev-parse HEAD)"
           [[ "$revision" == "$GITHUB_SHA" ]]
           bootstrap_hash="$(sha256sum ops/aws/run_tickflow_premium_probe.sh | cut -d' ' -f1)"

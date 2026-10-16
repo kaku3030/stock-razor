@@ -242,7 +242,7 @@ class ProtocolEvidence:
 async def observe_socket(
     ws: Any, evidence: ProtocolEvidence, seconds: int, on_tick: Any = None,
 ) -> None:
-    if type(seconds) is not int or not 1 <= seconds <= 14400:
+    if type(seconds) is not int or not 1 <= seconds <= 16800:
         raise ValueError("unsupported bounded duration")
     await ws.send(json.dumps({
         "op": "subscribe", "channel": "quotes",
@@ -272,7 +272,7 @@ async def observe_socket(
 
 async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str) -> dict[str, Any]:
     evidence = ProtocolEvidence(symbols)
-    if type(seconds) is not int or not 10 <= seconds <= 14400 or not key or not key.strip():
+    if type(seconds) is not int or not 10 <= seconds <= 16800 or not key or not key.strip():
         raise ValueError("invalid probe parameters")
     try:
         import websockets
@@ -285,11 +285,14 @@ async def run_protocol_probe(symbols: tuple[str, ...], seconds: int, *, key: str
     backoff = 1
     handshake = False
     cn_tz = ZoneInfo("Asia/Shanghai")
+    run_day = datetime.now(cn_tz).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
     checkpoints = {
-        "PRE_CLOSE": datetime(2026, 10, 16, 14, 55, tzinfo=cn_tz),
-        "POST_CLOSE": datetime(2026, 10, 16, 15, 2, tzinfo=cn_tz),
-        "POST_CLOSE_65M": datetime(2026, 10, 16, 16, 5, tzinfo=cn_tz),
-        "POST_CLOSE_80M": datetime(2026, 10, 16, 16, 20, tzinfo=cn_tz),
+        "PRE_CLOSE": run_day.replace(hour=14, minute=55),
+        "POST_CLOSE": run_day.replace(hour=15, minute=2),
+        "POST_CLOSE_65M": run_day.replace(hour=16, minute=5),
+        "POST_CLOSE_80M": run_day.replace(hour=16, minute=20),
     }
     completed_checkpoints: set[str] = set()
     bar_fingerprints: dict[tuple[str, str], dict[str, str]] = {}
