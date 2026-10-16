@@ -46,6 +46,8 @@ def _safe_json(value: Mapping[str, object], action: str | None = None) -> dict[s
                    "US.CIEN", "US.AAOI", "US.LITE", "US.GLDM"}
         kinds = {"QUOTE", "ORDER_BOOK", "TICKER", "K_1M", "K_5M",
                  "K_15M", "K_30M", "K_60M", "K_DAY", "RT_DATA"}
+        if type(value.get("quota_verified")) is bool:
+            result["quota_verified"] = value["quota_verified"]
         for key in ("subscribed_tracked", "unsubscribed_tracked"):
             raw_codes = value.get(key)
             if isinstance(raw_codes, list) and len(raw_codes) <= len(tracked):
