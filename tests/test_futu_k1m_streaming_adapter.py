@@ -310,3 +310,87 @@ def test_callback_latency_diagnostics_measure_processing_without_promoting_deliv
     assert diagnostics["provider_callback_latency_ms_max"] == pytest.approx(5.0)
     assert diagnostics["provider_callback_latency_ms_mean"] == pytest.approx(5.0)
     assert events[0].delivery_mode is DeliveryMode.UNKNOWN
+
+
+def test_all_session_reaches_sdk_and_callback_preserves_semantic_identity():
+    """OpenD Session.ALL must reach the SDK, not just the manager metadata."""
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", symbols, subtypes, subscribe_push, kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0,
+        CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    events = []
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1",
+        controller_generation=lambda: 1,
+    )
+    requested = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    adapter.register_event_sink(events.append)
+    adapter.start()
+    adapter.subscribe_stream(requested)
+    assert ctx.calls == [
+        ("sub", ["US.XLV"], ["K_1M"], True, {"session": "ALL"}),
+    ]
+    ctx.handler.on_recv_rsp(Frame([{
+        "code": "US.XLV", "time_key": "2026-10-16 08:01:00",
+        "close": 160.12,
+    }]))
+    assert events[-1].event_kind is ProviderEventKind.DATA
+    assert events[-1].semantic_stream_key == requested
+    assert events[-1].delivery_mode is DeliveryMode.UNKNOWN
+    assert events[-1].diagnostic_fields["bar_closure"] == "UNPROVEN"
+
+
+def test_session_all_missing_sdk_support_fails_before_provider_request():
+    ctx = Context()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, FT, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    with pytest.raises(ValueError, match="Session.ALL"):
+        adapter.subscribe_stream(all_key)
+    assert ctx.calls == []
+
+
+def test_mixed_us_quote_sessions_and_overnight_only_fail_without_mutation():
+    class SessionContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.calls.append(("sub", symbols, subtypes, kwargs))
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0,
+        CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"),
+        Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = SessionContext()
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="r1", controller_generation=lambda: 1,
+    )
+    adapter.register_event_sink(lambda event: None)
+    adapter.start()
+    all_key = SemanticStreamKey(
+        "futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL",
+    )
+    overnight_only = SemanticStreamKey(
+        "futu", "us", "US.VRTX", "K_1M", "1m", session_mode="OVERNIGHT",
+    )
+    with pytest.raises(ValueError, match="session"):
+        adapter.subscribe_stream(overnight_only)
+    with pytest.raises(ValueError, match="mixed"):
+        adapter.subscribe_streams((key("US.AMD"), all_key))
+    assert ctx.calls == []
