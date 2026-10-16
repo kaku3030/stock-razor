@@ -38,6 +38,7 @@ jobs:
       - name: Notify DeepSeek recharge state through Discord (no DeepSeek secret)
         if: always()
         env:
+          DISCORD_RADAR_WEBHOOK_URL: ${{ secrets.DISCORD_RADAR_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
         shell: bash
@@ -48,6 +49,7 @@ jobs:
       - name: Send one explicitly requested Discord delivery test
         if: github.event_name == 'workflow_dispatch' && inputs.test_discord_delivery == true
         env:
+          DISCORD_RADAR_WEBHOOK_URL: ${{ secrets.DISCORD_RADAR_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           STOCK_RAZOR_DISCORD_USER_ID: ${{ vars.STOCK_RAZOR_DISCORD_USER_ID }}
         shell: bash
