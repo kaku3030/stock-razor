@@ -122,8 +122,8 @@ jobs:
               sort_keys=True)+" shadow_keys="+
               json.dumps(sorted((d.get("tencent_independent_shadow") or {}).keys()))+
               " frame_keys="+json.dumps({when:sorted((d.get(when,{}).get(
-                  "source_frame_progress") or {}).keys()) for when in ("before","after")}))
-              +" frame_value_types="+json.dumps({when:sorted({type(value).__name__ for value in (
+                  "source_frame_progress") or {}).keys()) for when in ("before","after")}))+
+              " frame_value_types="+json.dumps({when:sorted({type(value).__name__ for value in (
                   d.get(when,{}).get("source_frame_progress") or {}).values()}) for when in ("before","after")}))
           assert d.get("schema")=="stock_razor_tickflow_aws_research_acceptance_v0_1"
           assert d.get("source_arbiter_admission")=="BLOCKED", repr(d.get("source_arbiter_admission"))
