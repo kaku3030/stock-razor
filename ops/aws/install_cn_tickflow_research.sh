@@ -77,12 +77,12 @@ path = sys.argv[1]
 rows = json.load(open(path, encoding="utf-8"))
 symbols = []
 for row in rows:
-    if not isinstance(row, list) or len(row) < 8:
+    if not isinstance(row, list) or len(row) < 9:
         continue
     symbol, market, asset_type = row[0], row[6], row[7]
     if (market == "CN" and asset_type == "stock" and row[8] is True
             and isinstance(symbol, str)
-            and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)):
+            and re.fullmatch(r"[0-9]{6}\\.(?:SH|SZ)", symbol)):
         symbols.append(symbol)
 symbols = list(dict.fromkeys(symbols))[:200]
 if len(symbols) != 200:
@@ -147,4 +147,3 @@ echo "CN_TICKFLOW_SERVICE_MUTATION=APPLIED"
 echo "SOURCE_ARBITER_ADMISSION=BLOCKED"
 echo "RADAR_ADMISSION=BLOCKED"
 echo "LIVE_TRADE=NO"
-
