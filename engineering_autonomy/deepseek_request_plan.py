@@ -65,6 +65,8 @@ class OfflineRequestPlan:
     output_tokens_reserved: int = 0
     _history: list[dict[str, object]] = field(default_factory=list, repr=False)
     _seen_envelopes: set[str] = field(default_factory=set, repr=False)
+    _claims: dict[str, tuple[int, int]] = field(default_factory=dict, repr=False)
+    _dispatched: set[str] = field(default_factory=set, repr=False)
     _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     def reserve(
@@ -114,6 +116,7 @@ class OfflineRequestPlan:
             self.input_tokens_claimed += claimed_input_tokens
             self.output_tokens_reserved += max_tokens
             self._seen_envelopes.add(fingerprint)
+            self._claims[fingerprint] = (claimed_input_tokens, max_tokens)
             self._history.append({
                 "request": self.requests_reserved,
                 "claimed_input_tokens": claimed_input_tokens,
@@ -124,6 +127,23 @@ class OfflineRequestPlan:
         # Only a future transport that sends these exact bytes can claim
         # on-wire enforcement; this offline planner does not send anything.
         return wire_payload
+
+    def claim_loopback_dispatch(self, sealed_bytes: bytes) -> tuple[int, int]:
+        """Atomic one-shot claim for the separately isolated mock transport.
+
+        Even failed HTTP attempts spend their claim. This is per-process state,
+        not an upstream API firewall or cross-run billing ledger.
+        """
+        if type(sealed_bytes) is not bytes:
+            raise RequestPlanDenied("not a sealed request")
+        digest = hashlib.sha256(sealed_bytes).hexdigest()
+        with self._lock:
+            if digest not in self._seen_envelopes:
+                raise RequestPlanDenied("request bytes were not admitted")
+            if digest in self._dispatched:
+                raise RequestPlanDenied("request dispatch replay denied")
+            self._dispatched.add(digest)
+            return self._claims[digest]
 
     def sanitized_summary(self) -> dict[str, int | str]:
         with self._lock:
