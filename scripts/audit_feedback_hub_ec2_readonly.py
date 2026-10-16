@@ -21,6 +21,11 @@ PATH_RE = re.compile(r"^/[A-Za-z0-9_./-]+$")
 DISK_BACKING_CANDIDATES = frozenset({"ext4", "xfs", "btrfs", "zfs"})
 
 
+def _has_symlink_component(path: Path) -> bool:
+    """Reject a symlink anywhere between / and the requested SQLite file."""
+    return any(component.is_symlink() for component in (path, *path.parents))
+
+
 def _path_allowed(raw: str) -> Path | None:
     if (not isinstance(raw, str) or len(raw) > MAX_PATH_CHARS
             or PATH_RE.fullmatch(raw) is None):
@@ -29,11 +34,9 @@ def _path_allowed(raw: str) -> Path | None:
     if ".." in path.parts:
         return None
     try:
-        # A symlink in any parent can silently redirect the requested
-        # storage authority. Reject that alias before following the path.
-        for component in (path, *path.parents):
-            if component.is_symlink():
-                return None
+        # Do not allow a parent symlink to redirect storage authority.
+        if _has_symlink_component(path):
+            return None
         resolved = path.resolve(strict=True)
         if not resolved.is_file() or resolved.stat().st_size > MAX_DB_BYTES:
             return None
