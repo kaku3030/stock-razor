@@ -207,6 +207,30 @@ class TestDiscordSender(unittest.TestCase):
         self.assertNotIn(webhook_url, logged)
         self.assertIn("400", logged)
 
+    @mock.patch("src.notification_sender.discord_sender.time.sleep")
+    @mock.patch("src.notification_sender.discord_sender.logger.error")
+    @mock.patch("src.notification_sender.discord_sender.logger.warning")
+    @mock.patch("src.notification_sender.discord_sender.requests.post")
+    def test_webhook_request_exception_log_redacts_url_but_keeps_error_type(
+        self, mock_post, mock_log_warning, mock_log_error, _mock_sleep
+    ):
+        webhook_url = "https://discord.com/api/webhooks/private-token"
+        exception_text = f"connection failed for {webhook_url}"
+        mock_post.side_effect = requests.exceptions.ConnectionError(exception_text)
+        sender = DiscordSender(_config(discord_webhook_url=webhook_url))
+
+        self.assertFalse(sender.send_to_discord("content"))
+
+        logged = " ".join(
+            str(value)
+            for logger_mock in (mock_log_warning, mock_log_error)
+            for call in logger_mock.call_args_list
+            for value in (*call.args, *call.kwargs.values())
+        )
+        self.assertNotIn(webhook_url, logged)
+        self.assertNotIn(exception_text, logged)
+        self.assertIn("ConnectionError", logged)
+
     @mock.patch("src.notification_sender.discord_sender.requests.post")
     def test_send_bot_success_uses_channel_url(self, mock_post):
         mock_post.return_value = _response(200)
