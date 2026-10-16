@@ -145,7 +145,11 @@ def main() -> int:
                 from tickflow import TickFlow
                 # Do not magnify a 4-request sample into hidden SDK retries
                 # under throttling or expired subscriptions.
-                client=TickFlow(api_key=api_key,timeout=8.0,max_retries=0)
+                # A bounded 200-symbol cloud batch needs a longer single-call
+                # envelope than the four-symbol default, while retries remain
+                # disabled and the outer poll loop still backs off on failure.
+                scan_timeout = 30.0 if len(scan_symbols) > len(SYMBOLS) else 8.0
+                client=TickFlow(api_key=api_key,timeout=scan_timeout,max_retries=0)
             del api_key
     except Exception as exc:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)

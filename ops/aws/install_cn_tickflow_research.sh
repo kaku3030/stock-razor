@@ -80,7 +80,7 @@ for row in rows:
     if not isinstance(row, list) or len(row) < 8:
         continue
     symbol, market, asset_type = row[0], row[6], row[7]
-    if (market == "CN" and asset_type == "stock"
+    if (market == "CN" and asset_type == "stock" and row[8] is True
             and isinstance(symbol, str)
             and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)):
         symbols.append(symbol)
