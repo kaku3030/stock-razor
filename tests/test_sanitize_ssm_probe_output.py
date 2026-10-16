@@ -190,6 +190,6 @@ def test_opend_subscription_projection_rejects_unbounded_or_inconsistent_fields(
     })
     output = "\\n".join(project(raw, "us_opend_subscription_audit"))
     assert "subscription_capacity" not in output
-    assert "subscribed_tracked" not in output
+    assert '"subscribed_tracked"' not in output
     assert "subscription_types" in output
     assert "unsubscribed_tracked" in output
