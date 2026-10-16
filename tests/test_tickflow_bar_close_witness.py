@@ -88,7 +88,7 @@ def test_two_independent_polls_and_next_bar_only_prove_research_stability():
 
 @pytest.mark.parametrize("modify,reason", [
     (lambda f, s: s["symbols"][SYMBOL]["15m"]["rows"][0].update(
-        close=1.055,
+        close=1.0455,
     ), "BAR_REVISED_BETWEEN_POLLS"),
     (lambda f, s: s.update(repo_sha="b" * 40), "SOURCE_SHA_CHANGED"),
     (lambda f, s: s.update(sequence=101), "INDEPENDENT_POLL_NOT_PROVEN"),
