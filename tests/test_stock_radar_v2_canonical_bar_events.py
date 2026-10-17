@@ -281,3 +281,14 @@ def test_unchanged_file_still_rechecks_source_age(tmp_path):
         assert result.status == "BLOCKED"
         assert result.reasons == ("SOURCE_EXPORT_STALE",)
         assert ledger.pending_count() == 2
+
+
+@pytest.mark.parametrize("sequence", [True, 3.5, "3"])
+def test_source_sequence_must_be_an_exact_integer_before_ledger_gate(tmp_path, sequence):
+    body, observed = export()
+    body["sequence"] = sequence
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "BLOCKED"
+        assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
+        assert ledger.pending_count() == 0
