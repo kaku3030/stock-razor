@@ -197,7 +197,7 @@ class RadarBarEventLedger:
 
     def __init__(
         self,
-        database: str | Path = ":memory:",
+        database: str | Path,
         *,
         max_pending: int = 1024,
         max_attempts: int = 5,

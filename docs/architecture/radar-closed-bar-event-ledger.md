@@ -14,7 +14,7 @@ Before the transaction, the candidate must carry explicit `FRESH`, `CONFIRMED`, 
 
 ## Persistence and wake semantics
 
-The insert and capacity check run in one `BEGIN IMMEDIATE` transaction. Default outstanding capacity is 1,024 events; reaching it raises `EventQueueFull` before insert. Consumer claims are serialized across ledger instances and carry a fresh opaque lease token. Expired leases can be reclaimed with the same event idempotency key; retries are limited, and exhausted claims become `DEAD_LETTER`. Acknowledgment requires the current unexpired lease and a receipt ID.
+The database argument is required; callers must explicitly choose a persistent path or opt into `:memory:` for a temporary test. The insert and capacity check run in one `BEGIN IMMEDIATE` transaction. Default outstanding capacity is 1,024 events; reaching it raises `EventQueueFull` before insert. Consumer claims are serialized across ledger instances and carry a fresh opaque lease token. Expired leases can be reclaimed with the same event idempotency key; retries are limited, and exhausted claims become `DEAD_LETTER`. Acknowledgment requires the current unexpired lease and a receipt ID.
 
 This is **at-least-once wake delivery** across a crash after downstream acceptance but before acknowledgment. A future AI/event consumer must pass the unchanged `idempotency_key` to its own durable dedupe boundary; this ledger alone cannot prove exactly-once model invocation. The persisted candidate is committed before the consumer can claim it. Provider requests, AI calls, Discord sends, orders, and admission changes are outside this module.
 
