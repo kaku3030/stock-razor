@@ -68,25 +68,28 @@ git -C "$ROOT/repo" checkout --detach "$REPO_REF" >/dev/null 2>&1
 [[ "$(git -C "$ROOT/repo" rev-parse HEAD)" == "$REPO_REF" ]]
 if [[ ! -x "$ROOT/venv/bin/python" ]]; then python3 -m venv "$ROOT/venv"; fi
 if [[ "$TICKFLOW_RESEARCH_SYMBOLS" == AUTO_200 ]]; then
-  TICKFLOW_RESEARCH_SYMBOLS="$("$ROOT/venv/bin/python" - "$ROOT/repo/apps/dsa-web/public/stocks.index.json" <<'PY'
+  TICKFLOW_RESEARCH_SYMBOLS="$(PYTHONPATH="$ROOT/repo" "$ROOT/venv/bin/python" - "$ROOT/repo/apps/dsa-web/public/stocks.index.json" <<'PY'
 import json
 import re
 import sys
 
+from data_provider.cn_tickflow_research_cache import MAX_SCAN_SYMBOLS, SYMBOLS
+
 path = sys.argv[1]
 rows = json.load(open(path, encoding="utf-8"))
-symbols = []
+# Reserve the shared baseline before filling bounded active-stock candidates.
+symbols = list(SYMBOLS)
 for row in rows:
-    if not isinstance(row, list) or len(row) < 8:
+    if not isinstance(row, list) or len(row) < 9:
         continue
     symbol, market, asset_type = row[0], row[6], row[7]
-    if (market == "CN" and asset_type == "stock"
+    if (market == "CN" and asset_type == "stock" and row[8] is True
             and isinstance(symbol, str)
             and re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)):
         symbols.append(symbol)
-symbols = list(dict.fromkeys(symbols))[:200]
-if len(symbols) != 200:
-    raise SystemExit("CN stock index has fewer than 200 valid symbols")
+symbols = list(dict.fromkeys(symbols))[:MAX_SCAN_SYMBOLS]
+if len(symbols) != MAX_SCAN_SYMBOLS:
+    raise SystemExit("CN stock index cannot fill scan after reserving baseline")
 print(",".join(symbols))
 PY
 )"
@@ -147,4 +150,3 @@ echo "CN_TICKFLOW_SERVICE_MUTATION=APPLIED"
 echo "SOURCE_ARBITER_ADMISSION=BLOCKED"
 echo "RADAR_ADMISSION=BLOCKED"
 echo "LIVE_TRADE=NO"
-
