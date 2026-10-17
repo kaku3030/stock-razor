@@ -53,6 +53,9 @@ def test_system_contract_command_propagates_failure_before_any_promotion(tmp_pat
     assert set(args) >= {
         "tests/test_market_data_quality_invariants.py",
         "tests/test_cn_tickflow_research_cache.py",
+        "tests/test_futu_k1m_streaming_adapter.py",
+        "tests/test_futu_k1m_history.py",
+        "tests/test_futu_research_aggregation_gates.py",
         "tests/test_futu_k1m_closure_pipeline.py",
         "tests/test_us_canonical_runtime_reader.py",
         "tests/test_closed_bar_paper_replay.py",

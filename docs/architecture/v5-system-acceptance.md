@@ -46,7 +46,7 @@
 | --- | --- |
 | Bar/Quote、来源混合、缺分钟、未闭合与时间戳新鲜度 / A/B/C | test_market_data_adapter.py、test_market_data_quality_invariants.py、test_alpaca_data_quality_invariants.py |
 | 五周期、finite/重复/未来时间、旧数据不能借心跳变新、研究容差不证明 finality / A | test_cn_tickflow_research_cache.py |
-| forming→closed 写入边界、乱序/队列溢出、session/currentness / B | test_futu_k1m_closure_pipeline.py、test_futu_k1m_currentness.py |
+| forming→closed 写入边界、乱序/队列溢出、session/currentness / B | test_futu_k1m_streaming_adapter.py、test_futu_k1m_closure_pipeline.py、test_futu_k1m_currentness.py、test_futu_k1m_history.py、test_futu_research_aggregation_gates.py |
 | 云端只读 cache 的安全字段、SHA/新鲜度与闭合证据 / B/F | test_us_canonical_runtime_reader.py |
 | UNKNOWN 准入阻断、因果时间、订单幂等与 PIT/费用/滑点 / D | test_paper_execution_admission.py、test_closed_bar_paper_replay.py |
 | 通知路由、去重标识、失败及脱敏 / C/F | test_stock_radar_v2_runtime_notifications.py |

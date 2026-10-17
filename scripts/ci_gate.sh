@@ -28,6 +28,9 @@ system_contract_checks() {
     tests/test_market_data_quality_invariants.py \
     tests/test_alpaca_data_quality_invariants.py \
     tests/test_cn_tickflow_research_cache.py \
+    tests/test_futu_k1m_streaming_adapter.py \
+    tests/test_futu_k1m_history.py \
+    tests/test_futu_research_aggregation_gates.py \
     tests/test_futu_k1m_closure_pipeline.py \
     tests/test_futu_k1m_currentness.py \
     tests/test_us_canonical_runtime_reader.py \
