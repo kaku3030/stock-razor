@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
@@ -18,6 +18,10 @@ from data_provider.market_data_adapter import (
 from src.services.live_feed.canonical_snapshot_export import SCHEMA
 from src.services.live_feed.futu_k1m_currentness import REGULAR_MARKET_STATES
 from src.services.realtime_market_data import MarketDataSnapshot
+from src.services.stock_radar_v2.bar_event_ledger import RadarBarEventLedger
+from src.services.stock_radar_v2.canonical_bar_events import (
+    CanonicalBarEventIngressResult, record_canonical_closed_bars,
+)
 from src.services.stock_radar_v2.options_context_reader import RadarOptionsContext
 from src.services.stock_radar_v2.technical_state import (
     StockRadarTechnicalState,
@@ -84,6 +88,7 @@ class CanonicalRadarEvaluation:
     source_live_trade: bool | None
     symbols: tuple[CanonicalRadarSymbolResult, ...] = ()
     reasons: tuple[str, ...] = ()
+    bar_event_ingress: CanonicalBarEventIngressResult | None = None
     research_only: bool = field(default=True, init=False)
     can_confirm_signal: bool = field(default=False, init=False)
 
@@ -163,6 +168,7 @@ class CanonicalRadarEvaluation:
             "research_only": self.research_only,
             "can_confirm_signal": self.can_confirm_signal,
             "admission_diagnostics": self.admission_diagnostics(),
+            "bar_event_ingress": self.bar_event_ingress.to_dict() if self.bar_event_ingress else None,
         }
 
 
@@ -315,10 +321,9 @@ def load_canonical_snapshot_payload(payload: object) -> CanonicalSnapshotSource:
     runtime_instance_id = str(payload.get("runtime_instance_id") or "").strip()
     if not runtime_instance_id:
         raise CanonicalSnapshotContractError("runtime_instance_id is required")
-    try:
-        sequence = int(payload["sequence"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise CanonicalSnapshotContractError("sequence must be an integer") from exc
+    sequence = payload.get("sequence")
+    if isinstance(sequence, bool) or not isinstance(sequence, int):
+        raise CanonicalSnapshotContractError("sequence must be an integer")
     if sequence <= 0:
         raise CanonicalSnapshotContractError("sequence must be positive")
     emitted_at = _parse_time(payload.get("emitted_at_utc"), field_name="emitted_at_utc")
@@ -415,6 +420,16 @@ class CanonicalSnapshotRadarEvaluator:
         self._max_future_skew_seconds = max_future_skew_seconds
         self._now = now
 
+    def observation_time(self) -> datetime:
+        now = self._now()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("now() must return a timezone-aware datetime")
+        return now.astimezone(timezone.utc)
+
+    @property
+    def max_active_age_seconds(self) -> int:
+        return self._max_active_age_seconds
+
     def evaluate_file(
         self,
         path: str | Path,
@@ -453,10 +468,7 @@ class CanonicalSnapshotRadarEvaluator:
     ) -> CanonicalRadarEvaluation | None:
         if expected_repo_sha is not None and source.repo_sha != expected_repo_sha.lower():
             return self._blocked(source, "SOURCE_REPO_SHA_MISMATCH")
-        now = self._now()
-        if now.tzinfo is None or now.utcoffset() is None:
-            raise ValueError("now() must return a timezone-aware datetime")
-        now_utc = now.astimezone(timezone.utc)
+        now_utc = self.observation_time()
         signed_age_seconds = (now_utc - source.emitted_at).total_seconds()
         if signed_age_seconds < -self._max_future_skew_seconds:
             return self._blocked(source, "SOURCE_EXPORT_FROM_FUTURE")
@@ -545,12 +557,14 @@ class CanonicalSnapshotRadarWorker:
         *,
         expected_repo_sha: str,
         evaluator: CanonicalSnapshotRadarEvaluator | None = None,
+        event_ledger: RadarBarEventLedger | None = None,
     ) -> None:
         normalized_sha = str(expected_repo_sha).strip().lower()
         if len(normalized_sha) != 40 or any(ch not in "0123456789abcdef" for ch in normalized_sha):
             raise ValueError("expected_repo_sha must be an exact 40-character git SHA")
         self._expected_repo_sha = normalized_sha
         self._evaluator = evaluator or CanonicalSnapshotRadarEvaluator()
+        self._event_ledger = event_ledger
         self._last_runtime_instance_id: str | None = None
         self._last_sequence: int | None = None
         self._last_successful_evaluation: CanonicalRadarEvaluation | None = None
@@ -603,6 +617,8 @@ class CanonicalSnapshotRadarWorker:
             source_live_trade=source.live_trade,
             symbols=refreshed_symbols,
             reasons=("SOURCE_SEQUENCE_UNCHANGED",),
+            bar_event_ingress=(CanonicalBarEventIngressResult("UNCHANGED")
+                               if self._event_ledger is not None else None),
         )
 
     def poll_file(
@@ -664,6 +680,15 @@ class CanonicalSnapshotRadarWorker:
             daily_frames=daily_frames,
             options_contexts=options_contexts,
         )
+        if evaluation.status == "PASS" and self._event_ledger is not None:
+            ingress = record_canonical_closed_bars(
+                source, self._event_ledger, observed_at=self._evaluator.observation_time(),
+                max_age_seconds=self._evaluator.max_active_age_seconds,
+            )
+            evaluation = replace(evaluation, bar_event_ingress=ingress)
+            if ingress.status == "BLOCKED":
+                # Do not cache/advance a source whose events are not durably recorded.
+                return replace(evaluation, status="BLOCKED", reasons=(*evaluation.reasons, *ingress.reasons))
         if evaluation.status == "PASS":
             self._last_runtime_instance_id = source.runtime_instance_id
             self._last_sequence = source.sequence
