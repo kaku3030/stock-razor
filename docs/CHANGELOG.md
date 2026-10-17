@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Feedback Hub 当前主线集成校验必要表字段，预检增加只读超期/损坏租约计数，避免把存储 READY 或有效租约误报为 AI 持续运行。
 - [改进] 美股只读 Radar systemd worker 增加 90 秒 systemd watchdog 心跳与 notify 启动协议，卡死时自动重启；云端验收检查服务类型与 watchdog 配置，交易及 Radar 准入保持关闭。
 - [修复] 美股云端研究简报仅在市场与 Radar 来源身份一致且相差一根序列时，进行最多两次、每次50毫秒间隔的本地快照重新读取；仍坚持精确序列匹配与行情有效性，并保持所有交易门禁关闭。
 - [修复] Paper AWS SSM 只读验收区分命令执行成功与运行时真实核验；缺失服务、SHA、关闭门禁心跳或新鲜度证据时工作流明确失败，仍不证明模拟成交或 L2 准入。
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 为 CN TickFlow 研究 worker 增加默认关闭的官方 WebSocket quotes 只读证据观察层，并将其安全投影到 Radar 研究缓存；不改变实时连续性、K 线闭合或 Radar 准入。
 - [研究/验收] TickFlow 分钟K线新增双快照时间到期与OHLCV稳定性只读证据审计，严格与供应商最终闭合分离；未取得TickFlow最终确认契约前不允许开启Radar或交易门禁。
 - [修复] Paper SSM 只读验收拒绝未来时间戳的心跳文件作为新鲜状态，保持运行时未知及所有交易门禁阻断。
+- [修复] Feedback Hub 证据入库改为字段白名单、嵌套深度与数量限制、敏感文本及原始行情/账户字段拒绝，并统一状态、计数、时延类型契约；未经审核的生产者数据继续阻断。
 - [修复] OpenD canonical 快照区分发布心跳与最新行情源时间戳；运行时可持续推进只读快照序列，同时 MCP 仍按真实 K 线源时间判定新鲜度，避免缓存停滞或心跳刷新掩盖旧数据。
 - [修复] TickFlow 暂时性网络超时按15至300秒有界退避恢复，成功后重置；鉴权、限流及数据错误仍保留300秒退避，周末900秒，失败缓存不冒充有效行情。
 - [修复] Context Manager 使用跨进程写入锁避免事件版本冲突；显式恢复仅修正经校验的连续重复版本，先保留0600原始备份，不改变任何交易门禁。
