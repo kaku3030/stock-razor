@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+
+- [新功能] 闭合行情账本增加默认关闭的研究 AI 消费回执：调用前持久占位、结果先保存后 ACK、重启去重、持久调用上限；超时及未知结果阻断重试，继续关闭信号与交易门禁。
 - [修复] OpenAI 用量与 Costs 采用各自有效的每日桶上限，保留完整账单窗口及分页阻断；Aider 有 Token 但零估价时费用标记未知，监控恶意大载荷回归兼容 Windows。
 
 - [新功能] 现有 canonical Radar 轮询器可显式接入持久闭合行情账本：严格校验 US OpenD 正常交易时段、闭合网格、新鲜度和成交额，写入失败保留源序列重试；仅记录研究观察，默认关闭，不启用 AI、通知或交易。

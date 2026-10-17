@@ -192,6 +192,29 @@ class WakeClaim:
     attempt: int
 
 
+class AIWakeBlocked(RuntimeError):
+    """Bounded denial reason before any model invocation."""
+
+
+@dataclass(frozen=True)
+class AIWakeRecord:
+    idempotency_key: str
+    request_id: str
+    status: str
+    started_at: str
+    deadline_at: str
+    result: Mapping[str, Any] | None
+    usage: Mapping[str, Any] | None
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class AIWakeReservation:
+    record: AIWakeRecord
+    created: bool
+    invocation_token: str | None = field(default=None, repr=False)
+
+
 class RadarBarEventLedger:
     """SQLite-backed bounded inbox/outbox for qualified research candidates."""
 
@@ -228,6 +251,18 @@ class RadarBarEventLedger:
                 lease_owner TEXT,
                 lease_expires_at TEXT,
                 wake_receipt_id TEXT
+            );
+            CREATE TABLE IF NOT EXISTS stock_radar_ai_wake (
+                idempotency_key TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL CHECK(status IN ('STARTED','SUCCEEDED','UNKNOWN')),
+                invocation_token TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                deadline_at TEXT NOT NULL,
+                result_json TEXT,
+                usage_json TEXT,
+                reason TEXT,
+                FOREIGN KEY(idempotency_key) REFERENCES stock_radar_bar_event_ledger(idempotency_key)
             );
             CREATE INDEX IF NOT EXISTS ix_stock_radar_bar_event_queue
                 ON stock_radar_bar_event_ledger(status, created_at, event_id);
@@ -448,6 +483,148 @@ class RadarBarEventLedger:
             except Exception:
                 connection.rollback()
                 raise
+
+    @staticmethod
+    def _ai_wake(row: sqlite3.Row) -> AIWakeRecord:
+        return AIWakeRecord(
+            idempotency_key=str(row["idempotency_key"]), request_id=str(row["request_id"]),
+            status=str(row["status"]), started_at=str(row["started_at"]),
+            deadline_at=str(row["deadline_at"]),
+            result=json.loads(row["result_json"]) if row["result_json"] else None,
+            usage=json.loads(row["usage_json"]) if row["usage_json"] else None,
+            reason=str(row["reason"]) if row["reason"] else None,
+        )
+
+    def get_ai_wake(self, idempotency_key: str, *, now: datetime | None = None) -> AIWakeRecord:
+        timestamp = _aware_utc("now", now or datetime.now(timezone.utc)).isoformat()
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE stock_radar_ai_wake SET status='UNKNOWN', reason='AI_DEADLINE_EXPIRED' "
+                "WHERE idempotency_key=? AND status='STARTED' AND deadline_at<=?",
+                (idempotency_key, timestamp),
+            )
+            row = self._connection.execute(
+                "SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (idempotency_key,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(idempotency_key)
+        return self._ai_wake(row)
+
+    def begin_ai_wake(
+        self, claim: WakeClaim, *, now: datetime, timeout_seconds: int, max_calls: int,
+    ) -> AIWakeReservation:
+        """Commit one invocation intent under the current event lease and DB budget.
+
+        STARTED is never retried automatically: a lost process/response cannot
+        prove that the external provider did not execute or charge the request.
+        """
+        if not isinstance(claim, WakeClaim):
+            raise TypeError("claim must be WakeClaim")
+        for name, value, bound in (("timeout_seconds", timeout_seconds, 60), ("max_calls", max_calls, 100)):
+            if type(value) is not int or not 1 <= value <= bound:
+                raise ValueError(f"{name} outside bounds")
+        observed = _aware_utc("now", now)
+        timestamp = observed.isoformat()
+        key = claim.event.idempotency_key
+        with self._lock:
+            db = self._connection
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                event = db.execute(
+                    "SELECT * FROM stock_radar_bar_event_ledger WHERE idempotency_key=?", (key,),
+                ).fetchone()
+                if (event is None or event["status"] != "CLAIMED"
+                        or event["lease_owner"] != claim.lease_token or event["lease_expires_at"] <= timestamp):
+                    raise PermissionError("current unexpired event lease is required")
+                db.execute(
+                    "UPDATE stock_radar_ai_wake SET status='UNKNOWN', reason='AI_DEADLINE_EXPIRED' "
+                    "WHERE status='STARTED' AND deadline_at<=?", (timestamp,),
+                )
+                existing = db.execute("SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (key,)).fetchone()
+                if existing is not None:
+                    db.commit()
+                    return AIWakeReservation(self._ai_wake(existing), False)
+                unresolved = db.execute("SELECT 1 FROM stock_radar_ai_wake WHERE status IN ('STARTED','UNKNOWN') LIMIT 1").fetchone()
+                if unresolved:
+                    # Keep expiry -> UNKNOWN evidence even when new dispatch is denied.
+                    db.commit()
+                    raise AIWakeBlocked("AI_UNRESOLVED_INVOCATION")
+                count = db.execute("SELECT COUNT(*) FROM stock_radar_ai_wake").fetchone()[0]
+                if count >= max_calls:
+                    raise AIWakeBlocked("AI_CALL_BUDGET_EXHAUSTED")
+                request_id = hashlib.sha256(("research-ai-v1|" + key).encode("utf-8")).hexdigest()
+                invocation_token = uuid4().hex
+                db.execute(
+                    "INSERT INTO stock_radar_ai_wake "
+                    "(idempotency_key,request_id,status,invocation_token,started_at,deadline_at) "
+                    "VALUES (?,?,'STARTED',?,?,?)",
+                    (key, request_id, invocation_token, timestamp,
+                     (observed + timedelta(seconds=timeout_seconds)).isoformat()),
+                )
+                row = db.execute("SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (key,)).fetchone()
+                db.commit()
+                return AIWakeReservation(self._ai_wake(row), True, invocation_token)
+            except Exception:
+                db.rollback()
+                raise
+
+    def complete_ai_wake(
+        self, idempotency_key: str, *, invocation_token: str,
+        result: Mapping[str, Any], usage: Mapping[str, Any], now: datetime,
+    ) -> AIWakeRecord:
+        _required_token("invocation_token", invocation_token)
+        if (not isinstance(result, Mapping) or set(result) != {"event_id", "assessment", "evidence_fields"}
+                or not isinstance(result["assessment"], str)
+                or result["assessment"] not in {"WATCH", "NO_SIGNAL"}
+                or not isinstance(result["evidence_fields"], list)
+                or not result["evidence_fields"] or len(result["evidence_fields"]) > 7
+                or any(not isinstance(field, str) or field not in {"open", "high", "low", "close", "volume", "turnover", "bar_end_utc"}
+                       for field in result["evidence_fields"])):
+            raise ValueError("invalid research observation result")
+        if (not isinstance(usage, Mapping) or set(usage) != {"prompt_tokens", "completion_tokens", "total_tokens"}
+                or any(type(value) is not int or not 0 <= value <= 2_000_000_000 for value in usage.values())
+                or usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]
+                or usage["total_tokens"] == 0):
+            raise ValueError("invalid provider token usage")
+        result_json, usage_json = _canonical_json(dict(result)), _canonical_json(dict(usage))
+        timestamp = _aware_utc("now", now).isoformat()
+        with self._lock:
+            db = self._connection
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                row = db.execute("SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+                if row is None or row["invocation_token"] != invocation_token:
+                    raise PermissionError("invocation ownership is required")
+                event = db.execute("SELECT event_id FROM stock_radar_bar_event_ledger WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+                if result["event_id"] != event["event_id"]:
+                    raise ValueError("AI result event identity mismatch")
+                if row["status"] == "SUCCEEDED":
+                    if row["result_json"] != result_json or row["usage_json"] != usage_json:
+                        raise ValueError("conflicting AI result")
+                elif row["status"] == "STARTED":
+                    if timestamp < row["started_at"] or row["deadline_at"] <= timestamp:
+                        db.execute("UPDATE stock_radar_ai_wake SET status='UNKNOWN', reason='AI_DEADLINE_EXPIRED' WHERE idempotency_key=?", (idempotency_key,))
+                    else:
+                        db.execute("UPDATE stock_radar_ai_wake SET status='SUCCEEDED',result_json=?,usage_json=? WHERE idempotency_key=?", (result_json, usage_json, idempotency_key))
+                updated = db.execute("SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+                db.commit()
+                return self._ai_wake(updated)
+            except Exception:
+                db.rollback()
+                raise
+
+    def mark_ai_wake_unknown(self, idempotency_key: str, *, invocation_token: str) -> AIWakeRecord:
+        _required_token("invocation_token", invocation_token)
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE stock_radar_ai_wake SET status='UNKNOWN', reason='AI_RESULT_NOT_VERIFIED' "
+                "WHERE idempotency_key=? AND invocation_token=? AND status='STARTED'",
+                (idempotency_key, invocation_token),
+            )
+            row = self._connection.execute("SELECT * FROM stock_radar_ai_wake WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if row is None or row["invocation_token"] != invocation_token:
+                raise PermissionError("invocation ownership is required")
+        return self._ai_wake(row)
 
     def get(self, idempotency_key: str) -> RadarBarEvent:
         with self._lock:
