@@ -13,6 +13,11 @@ from src.services.stock_radar_v2.bar_event_ledger import (
 T0 = datetime(2026, 10, 16, 20, 0, tzinfo=timezone.utc)
 
 
+def test_database_path_must_be_an_explicit_storage_decision():
+    with pytest.raises(TypeError):
+        RadarBarEventLedger()
+
+
 def candidate(**changes):
     values = {
         "provider_id": "OpenD",
