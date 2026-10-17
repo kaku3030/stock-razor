@@ -20,6 +20,12 @@ def queue_file(tmp_path, cost_units=1):
     return path
 
 
+def test_committed_queue_uses_isolated_pytest_commands():
+    tasks = load_queue()
+    assert tasks
+    assert all("--noconftest" in task.command for task in tasks)
+
+
 def test_queue_rejects_unknown_fields(tmp_path):
     path = queue_file(tmp_path)
     data = json.loads(path.read_text())
