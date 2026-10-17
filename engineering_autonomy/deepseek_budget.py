@@ -145,7 +145,10 @@ def summarize_usage(path: Path) -> dict[str, object]:
             if n is not None and (type(n) is not int or n != a + b):
                 raise ValueError("inconsistent token count")
             price = props.get("cost")
-            if type(price) not in (int, float) or not math.isfinite(price) or price < 0:
+            # Aider can report zero when it does not recognize provider pricing.
+            # Keep token counts, but never present that fallback as a verified $0 cost.
+            if (type(price) not in (int, float) or not math.isfinite(price)
+                    or price < 0 or (price == 0 and a + b > 0)):
                 cost_complete = False
             else:
                 estimated_cost += Decimal(str(price))

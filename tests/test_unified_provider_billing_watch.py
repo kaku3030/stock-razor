@@ -45,6 +45,10 @@ def test_aws_cost_explorer_reads_exactly_one_month_and_never_changes_resources()
     _sample("1e500"), _sample("1000000000"),
     _sample().replace(b'"USD"', b'"CNY"'),
     _sample().replace(b'"Estimated": true', b'"Estimated": null'),
+], ids=[
+    "empty", "not-json", "missing-fields", "oversized", "missing-period",
+    "negative", "nan", "infinite", "huge-exponent", "over-limit",
+    "wrong-currency", "unknown-estimate",
 ])
 def test_aws_cost_bad_data_rejected_without_guessing_balance(body):
     with pytest.raises((ValueError, json.JSONDecodeError)):
