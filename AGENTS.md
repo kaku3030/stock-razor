@@ -11,7 +11,7 @@
   - Web 前端改动在 `apps/dsa-web/`
   - 桌面端改动在 `apps/dsa-desktop/`
   - 部署与流水线改动在 `scripts/`、`.github/workflows/`、`docker/`
-- STOCK RAZOR 普通工程任务已有用户持续授权：可按自动化质量门禁执行 `git commit`、`git push`、创建 PR、与最新 `main` 同步和通过后合并，**无需逐次向用户申请人工批准**。创建 Release/tag、增加付费服务、改变敏感凭据/权限、真实交易或解除关键风控门禁，不得由这项普通工程授权推定许可。
+- STOCK RAZOR 普通工程任务已有用户持续授权：可按自动化质量门禁执行 `git commit`、`git push`、创建 PR、与最新 `main` 同步，**无需逐次向用户申请人工批准**。创建 Release/tag、增加付费服务、改变敏感凭据/权限、真实交易或解除关键风控门禁，不得由这项普通工程授权推定许可。
 - commit message 使用英文，不添加 `Co-Authored-By`。
 - 不写死密钥、账号、路径、模型名、端口或环境差异逻辑。
 - 优先复用现有模块、配置入口、脚本和测试，不新增平行实现。
@@ -41,13 +41,14 @@
 - review 反馈后，不接受只在被指出的位置追加局部 patch。作者必须重新检查同一业务语义涉及的所有入口、配置、测试、文档、workflow 和用户可见路径。
 - 如果一个 PR 在多轮 review 后仍持续出现同类契约漂移、重复 fallback、测试绕过真实风险层、PR body 与实际 diff 不一致等问题，维护者可以要求关闭重做，而不是继续逐点 review。
 
-## 1.3 STOCK RAZOR 零人工审批的默认开发与合并契约（2026-10-13 用户再次确认）
+## 1.3 STOCK RAZOR V5.1 自主工程与独立晋级授权（2026-10-17）
 
-- **普通工程自动推进：**开发→隔离测试/自动化 Standards+Spec 审查→PR→与最新 `main` 保持一致→required CI PASS→自动合并；不因缺少人的 Approve、签字、评论、ACK 或“再确认”而暂停。审查是可核验的代码/测试工作，不是人工审批。
-- **GitHub 主分支生效规则（2026-10-13 实际核验）：**仓库 ruleset `Protect main` 已为 `required_approving_review_count=0`、无 `Code Owner` 审核、`require_last_push_approval=false`；必须满足 `backend-gate`、`focused-tests` 和 strict-current-main 规则。仓库可启用 GitHub Auto-Merge，并在非 Draft PR 上按确切 HEAD 与 CI 状态启用；不得因 0 个 Approve 等待人工审核。
+- **普通工程自动推进：**开发→隔离测试/自动化 Standards+Spec 审查→PR→与最新 `main` 保持一致→required CI；常规编程、测试、commit、push、创建 PR 无需逐次确认。V5.1 取代旧的自动合并授权：未经单独授权，不得自动合并 AI 代码、启用 Auto-Merge、部署生产环境、调用未授权的付费模型/API 或执行真实交易。先完成可审阅的代码与验证；CI PASS 不构成晋级授权。
+- **GitHub 主分支生效规则（2026-10-13 实际核验）：**仓库 ruleset `Protect main` 已为 `required_approving_review_count=0`、无 `Code Owner` 审核、`require_last_push_approval=false`；必须满足 `backend-gate`、`focused-tests` 和 strict-current-main 规则。这是质量条件，不是自动合并授权；不得仅凭 0 个 Approve 或绿色检查启用 Auto-Merge 或执行合并。
 - **失败时机器阻断：**CI/安全检查失败、Head 不一致、不能快进、合并冲突或测试/数据质量 UNKNOWN 时**不合并、不伪装 PASS**；自动定位修复并复测，或明确报告工程阻断原因。异常不能以“等待审核人员”作为通用借口。
 - **风险边界不变：**普通 PR 合并不代表部署成功、生产数据源准入、Radar 信号可执行或交易授权。`SOURCE_ARBITER_ADMISSION=BLOCKED`、`RADAR_ADMISSION=BLOCKED`、`PAPER_AUTO_READY=NO`、`LIVE_TRADE=NO`、`TRADE_EXECUTION=NO` 独立生效；任何实盘下单、资金权限/密钥等高风险操作仍须遵守各自独立许可与安全控制，不得借“取消人工审核”绕过。
-- **跨窗口同一约束：**Main Control、ECT、A/US Radar、A/US 交易分析和持仓窗口均须默认使用零人工 PR 审批流程；不能让 Draft PR、内部备注中的 `independent review` 或协作者 ACK 变成新的人工门禁。沟通与同步用于留痕，而非逐次索要批准。
+- **统一主控：**一个工作窗口管理 A–G 七条工程路线。独立任务使用独立 task ID、branch、worktree 和一个 owner；统一主控管理公共接口、依赖关系与集成验收，不能覆盖其他路线未提交代码。生产、调度器、供应商订阅变更串行进入统一集成门禁。
+- **唯一系统验收索引：**[V5.1 需求、所有权与验收矩阵](docs/architecture/v5-system-acceptance.md) 记录七路线职责、现有实现、缺口、依赖与验收证据要求。该文档从属于本文件，不创建第二套治理规则。`./scripts/ci_gate.sh system-contracts` 只证明离线契约，云端、行情和通知送达必须另证。
 
 ## 2. AI 协作资产治理
 

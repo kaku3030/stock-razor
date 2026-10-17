@@ -14,7 +14,12 @@ SHA = "a" * 40
 
 
 def _write(path, payload):
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    # Production publishes immutable snapshots with atomic replacement.
+    # In-place same-size writes can share mtime on Windows and incorrectly
+    # exercise the unchanged-file cache instead of the new payload.
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(temporary, path)
     return str(path)
 
 
@@ -439,3 +444,27 @@ def test_realtime_evidence_rejects_unverified_source_identity(tmp_path):
     unknown = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
     assert unknown["status"] == "HEALTHY"
     assert unknown["realtime_delivery_evidence"] is False
+
+
+def test_atomic_production_export_refreshes_same_size_same_mtime_snapshot(tmp_path):
+    from src.services.live_feed.canonical_snapshot_export import write_canonical_snapshot_export
+
+    payload = _snapshot(emitted_at=NOW - timedelta(seconds=2))
+    payload["latest_source_timestamp_utc"] = (NOW - timedelta(seconds=10)).isoformat()
+    status = _write(tmp_path / "status.json", _heartbeat())
+    path = tmp_path / "snapshot.json"
+    write_canonical_snapshot_export(path, payload)
+    initial = read_us_livefeed_health(status, str(path), now_utc=NOW)
+    assert initial["realtime_delivery_evidence"] is True
+    original = path.stat()
+
+    payload["latest_source_timestamp_utc"] = (NOW - timedelta(minutes=10)).isoformat()
+    write_canonical_snapshot_export(path, payload)
+    # Coarse/preserved metadata must not hide an atomically replaced export.
+    os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert path.stat().st_size == original.st_size
+    result = read_us_livefeed_health(status, str(path), now_utc=NOW)
+    assert result["canonical_snapshot_cache_hit"] is False
+    assert result["canonical_snapshot_status"] == "STALE"
+    assert result["realtime_delivery_evidence"] is False
+    assert result["radar_admission"] == "BLOCKED"
