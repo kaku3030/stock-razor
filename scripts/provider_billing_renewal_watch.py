@@ -54,7 +54,10 @@ def utc_date(value: str | None) -> date | None:
 def _get_json(path: str, admin_key: str, start: int, end: int) -> dict:
     if not admin_key or path not in (COSTS, USAGE):
         raise ValueError("invalid_endpoint_or_key")
-    qs = urllib.parse.urlencode({"start_time": start, "end_time": end, "limit": 35, "bucket_width": "1d"})
+    # Usage allows <=31 daily buckets. Costs keeps 35 to cover a permitted
+    # 31-day credit snapshot plus today without silently truncating a day.
+    limit = 31 if path == USAGE else 35
+    qs = urllib.parse.urlencode({"start_time": start, "end_time": end, "limit": limit, "bucket_width": "1d"})
     req = urllib.request.Request(
         OPENAI_API + path + "?" + qs,
         headers={"Authorization": "Bearer " + admin_key, "Accept": "application/json"},

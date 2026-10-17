@@ -291,3 +291,16 @@ def test_discord_error_categories_do_not_emit_sensitive_exception_text(monkeypat
         assert webhook not in line
         assert "secret" not in line
         assert "sensitive" not in line
+
+
+def test_unpriced_nonzero_usage_keeps_tokens_but_cost_unknown(tmp_path):
+    f = tmp_path / "aider-unpriced.jsonl"
+    f.write_text(json.dumps({"event": "message_send", "properties": {
+        "prompt_tokens": 8842, "completion_tokens": 4727,
+        "total_tokens": 13569, "cost": 0}}), encoding="utf-8")
+    result = b.summarize_usage(f)
+    assert result == {
+        "status": "OBSERVED", "requests": 1, "input_tokens": 8842,
+        "output_tokens": 4727, "total_tokens": 13569,
+        "estimated_cost_usd": None,
+    }
