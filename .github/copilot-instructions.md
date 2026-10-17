@@ -11,7 +11,8 @@ If any instruction in this file conflicts with `AGENTS.md`, follow `AGENTS.md`.
   - Web: `apps/dsa-web/`
   - Desktop: `apps/dsa-desktop/`
   - Deployment/workflows: `scripts/`, `.github/workflows/`, `docker/`
-- Do not run `git commit`, `git tag`, or `git push` without explicit user confirmation.
+- Ordinary engineering has standing authorization for isolated edits, tests, commits, pushes and PR creation. Under V5.1, do not self-merge AI code, enable Auto-Merge, deploy production, add paid calls, create tags/releases or execute real trades without separate authorization. Green CI is not that authorization.
+- Follow the single A–G ownership/acceptance index in `docs/architecture/v5-system-acceptance.md`; the main control owns shared interfaces and integration. Offline contract checks never prove cloud/live readiness.
 - Before creating/updating PRs, PR review, or issue analysis, refresh the latest code baseline with `git fetch --all --prune`; if the worktree is clean and the current branch can fast-forward, run `git pull --ff-only`. If local changes, conflicts, missing upstream, or non-fast-forward history make that unsafe, do not stash/reset/overwrite local state; analyze against fetched remote refs or record the baseline gap before proceeding.
 - PR titles should use `<type>: <change summary>` such as `fix: 修复大盘分析历史记录丢失`; use `fix`/`feat`/`refactor`/`docs`/`chore`/`test`/`ci` where possible, and avoid `[codex]`, `codex`, `autocode`, `copilot`, or other tool/agent source prefixes. Treat this as process guidance and do not use title format mismatches as a hard review blocker.
 - Do not hardcode secrets, accounts, ports, model names, absolute environment-specific paths, or environment-specific branches.

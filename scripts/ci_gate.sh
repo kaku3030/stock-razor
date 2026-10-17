@@ -21,6 +21,25 @@ deterministic_checks() {
   ./scripts/test.sh yfinance
 }
 
+system_contract_checks() {
+  echo "==> backend-gate: V5.1 offline system contracts (not cloud acceptance)"
+  python -X utf8 -m pytest -q -m "not network" --timeout=120 -o timeout_method=thread \
+    tests/test_market_data_adapter.py \
+    tests/test_market_data_quality_invariants.py \
+    tests/test_alpaca_data_quality_invariants.py \
+    tests/test_cn_tickflow_research_cache.py \
+    tests/test_futu_k1m_closure_pipeline.py \
+    tests/test_futu_k1m_currentness.py \
+    tests/test_us_canonical_runtime_reader.py \
+    tests/test_paper_execution_admission.py \
+    tests/test_closed_bar_paper_replay.py \
+    tests/test_stock_radar_v2_runtime_notifications.py \
+    tests/test_cloud_runtime_evidence.py \
+    tests/test_engineering_autonomy_loop.py \
+    tests/test_engineering_deepseek_budget.py \
+    tests/test_provider_billing_renewal_watch.py
+}
+
 offline_test_suite() {
   echo "==> backend-gate: offline test suite"
   # ``--timeout=120`` hard-fails any single test that runs longer than two
@@ -67,6 +86,7 @@ run_all() {
   syntax_check
   flake8_checks
   deterministic_checks
+  system_contract_checks
   offline_test_suite
   echo "==> backend-gate: all checks passed"
 }
@@ -86,11 +106,14 @@ case "$phase" in
   deterministic)
     deterministic_checks
     ;;
+  system-contracts)
+    system_contract_checks
+    ;;
   offline-tests)
     offline_test_suite
     ;;
   *)
-    echo "Usage: $0 [all|syntax|flake8|deterministic|offline-tests]" >&2
+    echo "Usage: $0 [all|syntax|flake8|deterministic|system-contracts|offline-tests]" >&2
     exit 2
     ;;
 esac

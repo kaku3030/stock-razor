@@ -196,6 +196,8 @@ def test_backend_filter_covers_mixed_changes_and_shared_web_assets() -> None:
 
     assert backend_filter_step["with"]["predicate-quantifier"] == "every"
     assert outputs(["docs/CHANGELOG.md"]) == (True, False, False, False)
+    assert outputs(["AGENTS.md"]) == (True, False, False, False)
+    assert outputs(["docs/architecture/v5-system-acceptance.md"])[0] is True
     assert outputs(["docs/architecture/api_spec.json"])[0] is True
     assert outputs(["docs/alerts.md"])[0] is True
     assert outputs(["tests/fixtures/notification_reports/aggregate_report.md"])[0] is True
@@ -236,3 +238,23 @@ def test_research_capture_workflow_records_tri_state_and_keeps_downstream_blocke
     assert "capture_evidence.json" in record_step["run"]
     assert "CAPTURED_NOT_APPROVED" not in record_step["run"]
     assert all("if" not in steps[i] for i in range(rs_index, len(steps)) if steps[i].get("name") != "Upload universe captures")
+
+
+def test_system_contract_stage_cannot_be_skipped_or_ignored_in_backend_ci() -> None:
+    ci = _workflow(".github/workflows/ci.yml")
+    job = ci["jobs"]["backend-tests"]
+    steps = job["steps"]
+    contract_index = next(
+        i for i, step in enumerate(steps)
+        if step.get("run") == "./scripts/ci_gate.sh system-contracts"
+    )
+    offline_index = next(
+        i for i, step in enumerate(steps)
+        if step.get("run") == "./scripts/ci_gate.sh offline-tests"
+    )
+    step = steps[contract_index]
+    assert contract_index < offline_index
+    assert step["if"] == "matrix.shard == 1"
+    assert job.get("continue-on-error", "false") == "false"
+    assert step.get("continue-on-error", "false") == "false"
+    assert "1" in job["strategy"]["matrix"]["shard"]

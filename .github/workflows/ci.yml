@@ -29,7 +29,7 @@ jobs:
             backend_contract_assets:
               # These docs and fixtures are executable contracts consumed by
               # offline backend tests, so Markdown/docs-only changes still run them.
-              - '{THIRD_PARTY_NOTICES.md,docs/CHANGELOG.md,docs/INDEX.md,docs/INDEX_EN.md,docs/DEPLOY.md,docs/DEPLOY_EN.md,docs/alerts.md,docs/analysis-context-pack.md,docs/decision-signals.md,docs/full-guide.md,docs/full-guide_EN.md,docs/notifications.md,docs/architecture/**,docs/docker/zeabur-deployment.md,tests/fixtures/**}'
+              - '{AGENTS.md,THIRD_PARTY_NOTICES.md,docs/CHANGELOG.md,docs/INDEX.md,docs/INDEX_EN.md,docs/DEPLOY.md,docs/DEPLOY_EN.md,docs/alerts.md,docs/analysis-context-pack.md,docs/decision-signals.md,docs/full-guide.md,docs/full-guide_EN.md,docs/notifications.md,docs/architecture/**,docs/docker/zeabur-deployment.md,tests/fixtures/**}'
             backend_web_contract:
               # Public assets are shared runtime inputs: Python loaders and
               # packaged deployments may consume them outside the Web app.
@@ -124,6 +124,9 @@ jobs:
       - name: ✅ Local deterministic checks
         if: matrix.shard == 1
         run: ./scripts/ci_gate.sh deterministic
+      - name: ✅ V5.1 offline system contracts
+        if: matrix.shard == 1
+        run: ./scripts/ci_gate.sh system-contracts
       - name: ✅ Offline test suite shard ${{ matrix.shard }}/3
         env:
           PYTEST_SPLITS: '3'
