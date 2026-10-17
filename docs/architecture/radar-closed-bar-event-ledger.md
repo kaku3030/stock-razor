@@ -1,6 +1,6 @@
 # Radar closed-bar event ledger
 
-Task `V51-C-CLOSED-BAR-EVENT-LEDGER-20261017` adds a bounded SQLite inbox for already-qualified, research-only signal candidates. It reuses the existing Stock Radar notification types and data-quality vocabulary; it does not create another Radar engine, AI executor, or notification transport.
+Task `V51-C-CLOSED-BAR-EVENT-LEDGER-20261017` adds a bounded SQLite inbox for already-qualified, research-only signal candidates. It follows the existing Stock Radar data-quality vocabulary; it does not create another Radar engine, AI executor, or notification transport.
 
 ## Event identity and admission
 
@@ -10,7 +10,7 @@ The unique event key is:
 
 The ledger additionally derives a stable bar ID from provider, symbol, timeframe, and provider bar-end time. Same-key/same-facts replay returns the original event. Same-key/different-facts replay raises a conflict and preserves the original row. Receipt time, process instance, and source sequence are retained only as first-observation provenance so an identical bar delivered again after a worker restart does not become a second event.
 
-Before the transaction, the candidate must carry explicit `FRESH`, `CONFIRMED`, and `PASS` attestations from the caller's canonical source/session/freshness gate. The ledger independently checks IANA timezone validity; timezone-aware timestamps; closed and complete state; finite, positive, internally consistent OHLC; finite nonnegative volume/turnover; source/runtime identity; source SHA; evidence size and sensitive fields. This component does **not** calculate market-aware freshness thresholds, prove a provider's finality contract, or infer session state. Missing or unknown upstream attestations block.
+Before the transaction, the candidate must carry explicit `FRESH`, `CONFIRMED`, and `PASS` attestations from the caller's canonical source/session/freshness gate. The ledger independently checks IANA timezone validity; timezone-aware timestamps; closed and complete state; finite, positive, internally consistent OHLC; finite nonnegative volume/turnover; source/runtime identity; source SHA; evidence size and sensitive fields. This component does **not** calculate market-aware freshness thresholds, prove a provider's finality contract, or infer session state. Missing or unknown upstream attestations block. Both closure flags are required constructor inputs. Nested evidence is validated as a detached JSON snapshot, and persistence always uses that snapshot; subsequent caller mutations cannot rewrite the validated facts or inject sensitive evidence.
 
 ## Persistence and wake semantics
 

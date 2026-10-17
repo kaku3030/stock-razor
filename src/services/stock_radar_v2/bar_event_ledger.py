@@ -15,7 +15,7 @@ import re
 import sqlite3
 import threading
 from uuid import uuid4
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -59,8 +59,9 @@ class ClosedBarEventCandidate:
     rule_revision: str
     signal_kind: str
     evidence: Mapping[str, Any]
-    is_closed: bool = True
-    is_complete: bool = True
+    is_closed: bool
+    is_complete: bool
+    _evidence_json: str = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         for name in ("provider_id", "symbol", "session_id", "source_runtime_id",
@@ -99,10 +100,14 @@ class ClosedBarEventCandidate:
         _finite_number("turnover", self.turnover, minimum=0)
         if not isinstance(self.evidence, Mapping):
             raise ValueError("candidate evidence must be an object")
-        _validate_evidence(dict(self.evidence))
         encoded = json.dumps(dict(self.evidence), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(encoded.encode("utf-8")) > _MAX_PAYLOAD_BYTES:
             raise ValueError("candidate evidence exceeds bounded payload size")
+        snapshot = json.loads(encoded)
+        _validate_evidence(snapshot)
+        object.__setattr__(self, "_evidence_json", encoded)
+        object.__setattr__(self, "evidence", snapshot)
+        object.__setattr__(self, "quality_flags", tuple(self.quality_flags))
 
     @property
     def idempotency_key(self) -> str:
@@ -146,7 +151,7 @@ class ClosedBarEventCandidate:
             "rule_id": self.rule_id,
             "rule_revision": self.rule_revision,
             "signal_kind": self.signal_kind,
-            "evidence": dict(self.evidence),
+            "evidence": json.loads(self._evidence_json),
             "research_only": True,
             "radar_admission": "BLOCKED",
             "live_trade": False,
