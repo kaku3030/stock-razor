@@ -37,7 +37,8 @@ def row(
         "low": 99,
         "close": close,
         "volume": volume,
-        "turnover": 1000,
+        # Keep provider-derived VWAP inside this synthetic source bar.
+        "turnover": close * volume,
     }
 
 

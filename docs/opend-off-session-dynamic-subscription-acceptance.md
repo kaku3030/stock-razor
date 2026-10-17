@@ -1,6 +1,6 @@
 # OpenD dynamic subscription: closed-session acceptance matrix
 
-**Scope:** US 1-minute K-line subscription control plane, proposed in PR #812.
+**Scope:** US 1-minute K-line subscription control plane and ingress quality.
 The market being closed is **not itself a reason to deny** a subscription
 request. Provider connectivity, a current entitled account, the OpenD SDK,
 instance quota, rate limits and the selected quote session are independent
@@ -12,7 +12,7 @@ US K-line options include `extended_time` and `session=Session.ALL`;
 `Session.OVERNIGHT` by itself is not allowed for US quotes. The provider
 documentation cautions to wait at least one minute before unsubscribing.
 `is_first_push=True` can replay cached data, including after reconnect.
-In this unmerged PR, the Python Futu K_1M adapter now explicitly passes
+The Python Futu K_1M adapter explicitly passes
 `session=Session.ALL` for `session_mode="ALL"`, and preserves that exact
 semantic stream key for subsequent callbacks. It rejects missing SDK
 `Session.ALL` support and unsupported `OVERNIGHT`-only requests. The
@@ -66,7 +66,7 @@ https://openapi.futunn.com/futu-api-doc/en/quote/query-subscription.html
    `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO` and
    `TRADE_EXECUTION=NO`.
 
-## What PR #812 tests today
+## Offline coverage and cloud verification
 
 Offline fake adapter tests verify that the manager does not unnecessarily
 gate the control plane on wall-clock session phase, *while still requiring*
@@ -88,9 +88,39 @@ or a broker-authoritative subscription. Both the SDK query and
 integrated into the cloud owner. Actual provider-side read-after-write and
 live 1m K-lines remain independent P0 gates.
 
-The existing cloud runtime is a different SHA from PR #812, which is open
-and not deployed. A green CI cannot qualify cloud operations.
+The existing cloud runtime must be checked against the exact candidate SHA.
+A green CI cannot qualify cloud operations.
 
 Off-session **preparation** is useful and should happen before the market
 opens. Real closed-bar and first live K-line acceptance remains a separate
 market-time requirement.
+
+
+## Subscription first-push ACK boundary
+
+The official subscribe API defaults to cached first pushes. A callback can reach
+this adapter before the synchronous subscribe call returns. An ALL-session
+candidate must keep its requested SemanticStreamKey through that race, instead
+of being relabelled as the default session and rejected by the desired registry.
+
+The adapter records pending intent before the existing SDK call, captures
+immutable events with their original receive/provider timestamps, and holds at
+most 1024 events for the pending batch. Only a successful SDK ACK releases them
+in arrival order. Rejection, exception or overflow drops that pending buffer
+and raises explicitly; the manager still treats an ambiguous provider mutation
+as UNKNOWN. Previously acknowledged streams remain owned. A short lock protects
+binding and ordered release; no lock is held across the SDK RPC. No second
+context, extra subscribe RPC or global unsubscribe is introduced.
+
+The additive diagnostic subscription_acknowledged_at_receive is false for an
+immediate first push captured before ACK. Releasing that event after ACK does
+not upgrade it to REALTIME, closed, current or provider-session verified. The
+existing cloud owner still uses fixed CODES and a read-only candidate preview;
+this fix is not dynamic-manager activation or a reconnect/live acceptance pass.
+
+Both historical and live minute conversion also reject source VWAP outside the
+minute OHLC range (using the existing aggregate tolerance). They suppress the
+unusable amount, attach VWAP_OUTSIDE_BAR_RANGE and block signal permission,
+without altering prices/volume or inventing replacement turnover. The aggregate
+VWAP/partial-turnover gates remain in force. This reuses the source guard from
+PR #870; the older aggregate guard from #769 is already present in main.
