@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+
+- [新功能] 现有 canonical Radar 轮询器可显式接入持久闭合行情账本：严格校验 US OpenD 正常交易时段、闭合网格、新鲜度和成交额，写入失败保留源序列重试；仅记录研究观察，默认关闭，不启用 AI、通知或交易。
 - [新功能] 增加隔离的闭合K线候选事件 SQLite 账本：按 provider/symbol/timeframe/bar_end/rule revision/signal kind 稳定去重，校验闭合、完整、已确认时段、明确新鲜度、有限OHLCV与来源身份；事务写入后才允许受租约保护的下游唤醒，队列满、冲突、过期重试均显式失败或进入死信。该 seam 尚未接入 Radar/AI/通知运行时，不代表云端验收或准入。
 - [改进] 美股只读 Radar systemd worker 增加 90 秒 systemd watchdog 心跳与 notify 启动协议，卡死时自动重启；云端验收检查服务类型与 watchdog 配置，交易及 Radar 准入保持关闭。
 - [修复] 美股云端研究简报仅在市场与 Radar 来源身份一致且相差一根序列时，进行最多两次、每次50毫秒间隔的本地快照重新读取；仍坚持精确序列匹配与行情有效性，并保持所有交易门禁关闭。
