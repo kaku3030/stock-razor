@@ -77,3 +77,29 @@ wallet amount, key, and raw response never enter public Actions logs.
 
 Safety: no auto-run of the Coding V1.1 workflow, no AI PR auto-merge, no
 deployment/IAM change, and no live trading permissions.
+
+
+## OpenAI daily buckets and unknown pricing
+
+The existing read-only billing client uses endpoint-specific daily limits:
+Usage Completions requests at most 31 buckets; Costs retains the existing 35
+bucket limit so a permitted 31-day-old credit snapshot plus today can fit.
+No pagination/retry loop or extra provider requests are added. A has_more
+response still fails closed as incomplete_page instead of publishing a partial
+spend total. This adapts PR #799 without reducing the Costs coverage window.
+
+Official contracts (checked 2026-10-17):
+- https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/completions
+- https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs
+
+Aider cost=0 with positive token usage is treated as unverified pricing: token
+counts remain OBSERVED while estimated_cost_usd is null/UNKNOWN. Known positive
+estimates remain estimates; neither estimate nor token counts certify billed
+cost or an actual wallet balance. This reuses the conservative fix from #808.
+OpenAI exact prepaid balance remains UNKNOWN, and AWS Cost Explorer remains
+opt-in; this change neither queries either service nor enables a schedule.
+
+Offline regression also assigns short IDs to malformed/oversized AWS fixtures.
+The original 140 KB pytest ID exceeded the Windows per-environment-variable
+limit through PYTEST_CURRENT_TEST before the test could run. The original bad
+payload and fail-closed assertions are retained.

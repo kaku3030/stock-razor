@@ -1,0 +1,53 @@
+# Radar closed-bar event ledger
+
+Task `V51-C-CLOSED-BAR-EVENT-LEDGER-20261017` adds a bounded SQLite inbox for already-qualified, research-only signal candidates. It follows the existing Stock Radar data-quality vocabulary; it does not create another Radar engine, AI executor, or notification transport.
+
+## Event identity and admission
+
+The unique event key is:
+
+`provider|symbol|timeframe|bar_end_utc|rule_id|rule_revision|signal_kind`
+
+The ledger additionally derives a stable bar ID from provider, symbol, timeframe, and provider bar-end time. Same-key/same-facts replay returns the original event. Same-key/different-facts replay raises a conflict and preserves the original row. Receipt time, process instance, and source sequence are retained only as first-observation provenance so an identical bar delivered again after a worker restart does not become a second event.
+
+Before the transaction, the candidate must carry explicit `FRESH`, `CONFIRMED`, and `PASS` attestations from the caller's canonical source/session/freshness gate. The ledger independently checks IANA timezone validity; timezone-aware timestamps; closed and complete state; finite, positive, internally consistent OHLC; finite nonnegative volume/turnover; source/runtime identity; source SHA; evidence size and sensitive fields. This component does **not** calculate market-aware freshness thresholds, prove a provider's finality contract, or infer session state. Missing or unknown upstream attestations block. Both closure flags are required constructor inputs. Nested evidence is validated as a detached JSON snapshot, and persistence always uses that snapshot; subsequent caller mutations cannot rewrite the validated facts or inject sensitive evidence.
+
+## Persistence and wake semantics
+
+The database argument is required; callers must explicitly choose a persistent path or opt into `:memory:` for a temporary test. The insert and capacity check run in one `BEGIN IMMEDIATE` transaction. Default outstanding capacity is 1,024 events; reaching it raises `EventQueueFull` before insert. Consumer claims are serialized across ledger instances and carry a fresh opaque lease token. Expired leases can be reclaimed with the same event idempotency key; retries are limited, and exhausted claims become `DEAD_LETTER`. Acknowledgment requires the current unexpired lease and a receipt ID.
+
+This is **at-least-once wake delivery** across a crash after downstream acceptance but before acknowledgment. A future AI/event consumer must pass the unchanged `idempotency_key` to its own durable dedupe boundary; this ledger alone cannot prove exactly-once model invocation. The persisted candidate is committed before the consumer can claim it. Provider requests, AI calls, Discord sends, orders, and admission changes are outside this module.
+
+## Optional canonical poller integration
+
+Task `V51-C-CANONICAL-EVENT-INGRESS-20261017` connects the existing `CanonicalSnapshotRadarWorker` to this ledger through its optional `event_ledger` constructor argument. The caller owns and closes the ledger. Without injection, the worker opens no database and retains its existing research-only behavior. No scheduler, environment setting, deployment, model call or notification sink is activated.
+
+After the existing exact-SHA and sequence preflight, `canonical_bar_events.py` requires realtime delivery, proven closure, a regular OpenD US session, an independently confirmed active exchange-calendar phase, fresh export/snapshot/source-minute times, normal unflagged health, native turnover, no fallback, and the existing current-session 15m/1h closed-grid qualification. Missing calendars and unknown states fail closed. It records only the latest closed 15m/1h bucket when that bucket ended within the evaluator's active-age budget (default 120 seconds). It never reclassifies an old hourly bucket as a new event because a heartbeat or source sequence changed. Session-grid warmup before the first complete hour, pre/postmarket and the exact/post-close phase remain blocked in this initial adapter; D1 and on-demand 5m intake are not implemented.
+
+These events use `rule_id=canonical_closed_bar`, `rule_revision=1`, and `signal_kind=closed_bar_observation`. They are facts for later research evaluation, not strategy entry/exit candidates or a completed D1/1h/15m decision. Changing runtime instance, export sequence or observation time does not change their immutable payload.
+
+All candidates are validated before the first insert. Each bar then uses the ledger's existing committed transaction. A storage/capacity/conflict failure returns bounded diagnostic codes and prevents the worker's successful source watermark/file cache from advancing. Already committed bars remain durable; same-source retry dedupes them and retries the rest. This is per-bar durability, not an atomic multi-symbol batch. A backlog that outlives the freshness window is blocked, not silently replayed as current; durable historical catch-up policy and production alerting are still required.
+
+The additive `bar_event_ingress` output is `null` when disabled; otherwise it reports status, new/duplicate counts and bounded reason codes. Research evaluation success remains separate from signal admission.
+
+## Durable research AI consumer
+
+Task `V51-C-AI-RECEIPT-CONSUMER-20261017` adds `RadarAIEventConsumer.poll_once()` at the existing ledger boundary. The caller must explicitly inject an existing `GenerationBackend`, expected source SHA and worker identity, and set `enabled=True`. Default consumption is disabled, including event claims. No backend is constructed from credentials or environment; no runtime launcher/scheduler is changed. The current analyzer's automatic retries/fallbacks are not admitted as a verified single-request transport.
+
+The same SQLite database now holds `stock_radar_ai_wake`, keyed by the original event idempotency key. Under a current event lease, one transaction checks the persistent call cap, prevents parallel/unresolved dispatch, and commits `STARTED` with a stable request ID and unique ownership token **before** calling `generate()`. A replay never starts a second consumer invocation for that key. A known result is validated and committed as `SUCCEEDED` **before** the event receipt is acknowledged. A crash between result persistence and ACK recovers that saved receipt after lease expiry without another model invocation, even if the original event is now old.
+
+A crash/timeout after `STARTED`, a late result, malformed output, invalid/missing token evidence, or an uncertain storage outcome is `UNKNOWN`. No automatic model retry is safe because provider execution/charging may already have happened. Expired STARTED requests become UNKNOWN on read/reservation. Any STARTED/UNKNOWN request blocks new dispatches in that database, even for other bars. Resolving an uncertain provider request requires future evidence-based reconciliation; no reset/retry escape hatch is added here.
+
+The request accepts only fresh OpenD canonical closed-bar observations matching the expected source SHA. The prompt contains a fixed bounded selection of facts, not arbitrary event evidence. Output must be exactly the unchanged event ID, `assessment=WATCH|NO_SIGNAL`, and nonempty evidence field names chosen from OHLCV/turnover/bar-end facts. Extra fields, entry/exit/order instructions and invented evidence fields are rejected. Raw model text, exceptions, model metadata and secret fields are not persisted. Token evidence reuses `src.llm.usage` normalization and requires complete nonnegative consistent counts. Token counts are not official currency charges: cost status stays UNKNOWN.
+
+Limits are conservative and constructor-bound: one total committed invocation by default (at most 100), 10-second request deadline (at most 60), 512 requested output tokens (at most 2,048), bounded prompt/output bytes, and event age no more than 120 seconds. The call cap survives process restart and is not a per-process counter or an automatically renewed budget. Generation timeout/output limits are forwarded through the shared backend contract; the consumer does not kill a stuck synchronous backend. The unique durable intent prevents redispatch while it is stuck, but physical provider request counts, hard timeout/cancellation, fallback/retry suppression, provider-enforced monetary limits and independent runtime liveness must still be verified before production enablement. This implements at-most-once consumer dispatch, not a claim of exactly-once provider billing, guaranteed execution, or unattended service completion.
+
+The table is additive and created idempotently in the existing database. Existing event rows/lease semantics are preserved. Roll back by disabling the optional consumer/reverting code while retaining receipt rows; deleting/recreating receipt storage would destroy dedupe and budget evidence. AI wake delivery to a live model, Discord dispatch, source/Radar/paper/trading admission and AWS restart/recovery remain NOT_VERIFIED.
+
+## Current acceptance status
+
+- Offline tests cover reject cases, duplicate replay after reopen, conflicting bar facts, capacity overflow, two-connection concurrent claims, lease expiry/recovery, retry exhaustion, dead letter, and acknowledgment ownership.
+- Exporter → canonical poller → persistent SQLite/consumer claim is verified with offline fixtures, including reopen/replay, stale/future/invalid facts, full queues and real SQLite transaction failure/retry.
+- The optional intake/consumer are not enabled in a runtime launcher or AWS. Exporter → poller → reopened SQLite → offline GenerationBackend → durable result/ACK is covered; no live model or Discord sink is wired.
+- `RADAR_ADMISSION=BLOCKED`, `SOURCE_ARBITER_ADMISSION=BLOCKED`, `PAPER_AUTO_READY=NO`, and `LIVE_TRADE=NO` remain required.
+- Local and CI tests prove code behavior only. Exact-main integration, actual AWS persistence/restart, AI dedupe, notification receipt, and cloud closed-bar evidence remain `NOT_VERIFIED`.
