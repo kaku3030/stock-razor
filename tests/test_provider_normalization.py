@@ -4,8 +4,11 @@ from data_provider.live_feed_types import DeliveryMode, ProviderEventKind, Seman
 from data_provider.provider_normalization import (
     CanonicalProgress,
     compare_progress,
+    normalize_eastmoney_observation,
     normalize_eastmoney_quote,
     normalize_opend_callback,
+    normalize_opend_kline_callback,
+    normalize_opend_quote_callback,
 )
 
 
@@ -63,4 +66,35 @@ def test_eastmoney_normalization_does_not_promote_api_row_to_realtime():
         semantic_stream_key=SemanticStreamKey("eastmoney", "CN", "600519", "BAR", timeframe="1d"),
     )
     assert event.delivery_mode is DeliveryMode.UNKNOWN
+    assert event.payload["entitlement"] == "UNKNOWN"
+
+
+def test_opend_kline_push_keeps_delivery_unknown_and_uses_time_key_progress():
+    event = normalize_opend_kline_callback(
+        raw={"time_key": "2026-10-03T01:00:00+00:00"},
+        runtime_instance_id="r1", controller_generation=0, observed_at_utc=NOW,
+        semantic_stream_key=KEY,
+    )
+    assert event.delivery_mode is DeliveryMode.UNKNOWN
+    assert event.progress_identity_candidate is not None
+
+
+def test_opend_quote_push_does_not_manufacture_progress_identity():
+    event = normalize_opend_quote_callback(
+        raw={"data_time": "2026-10-03T01:00:00+00:00", "last_price": 100.0},
+        runtime_instance_id="r1", controller_generation=0, observed_at_utc=NOW,
+        semantic_stream_key=KEY,
+    )
+    assert event.delivery_mode is DeliveryMode.UNKNOWN
+    assert event.progress_identity_candidate is None
+
+
+def test_eastmoney_observation_remains_unknown_without_independent_delivery_evidence():
+    event = normalize_eastmoney_observation(
+        raw={"timestamp": "2026-10-03T01:00:00+00:00", "price": 1.0},
+        runtime_instance_id="r1", controller_generation=0, observed_at_utc=NOW,
+        semantic_stream_key=SemanticStreamKey("eastmoney", "CN", "600519", "QUOTE"),
+    )
+    assert event.delivery_mode is DeliveryMode.UNKNOWN
+    assert event.payload["phase"] == "OBSERVED"
     assert event.payload["entitlement"] == "UNKNOWN"
