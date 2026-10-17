@@ -292,3 +292,37 @@ def test_source_sequence_must_be_an_exact_integer_before_ledger_gate(tmp_path, s
         assert result.status == "BLOCKED"
         assert result.reasons == ("SOURCE_INVALID:CanonicalSnapshotContractError",)
         assert ledger.pending_count() == 0
+
+
+def test_exporter_to_durable_ai_receipt_offline_vertical_slice(tmp_path):
+    from src.llm.generation_backend import GenerationResult
+    from src.services.stock_radar_v2.ai_event_consumer import RadarAIEventConsumer
+
+    class OfflineBackend:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, generation_config, **kwargs):
+            self.calls += 1
+            facts = json.loads(prompt)
+            return GenerationResult(
+                text=json.dumps({"event_id": facts["event_id"], "assessment": "NO_SIGNAL", "evidence_fields": ["close"]}),
+                model="offline", provider="offline", backend="offline",
+                usage={"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50},
+            )
+
+    body, observed = export(count=75)
+    database, backend = tmp_path / "events.sqlite", OfflineBackend()
+    with RadarBarEventLedger(database) as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.bar_event_ingress.created_count == 1
+    # Reopen the actual persisted queue before the model seam is dispatched.
+    with RadarBarEventLedger(database) as ledger:
+        result = RadarAIEventConsumer(
+            ledger, backend=backend, expected_source_sha=SHA, worker_id="offline-research",
+            enabled=True, now=lambda: observed,
+        ).poll_once()
+        assert result.status == "COMPLETED"
+        assert ledger.pending_count() == 0
+        assert backend.calls == 1
+        assert result.to_dict()["live_trade"] is False
