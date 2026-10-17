@@ -91,3 +91,11 @@ def test_poll_loop_resets_network_backoff_after_success_and_closes_sdk(monkeypat
     assert [p["status"] for p in published] == ["BLOCKED","BLOCKED","PASS_RESEARCH_ONLY","BLOCKED","PASS_RESEARCH_ONLY"]
     assert all(p["radar_admission"]=="BLOCKED" and not p["live_trade"] for p in published if p["status"]=="BLOCKED")
     assert closed == [True]
+
+
+def test_private_batch_error_message_is_never_projected_as_reason():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+
+    error = ValueError("api_key=DO_NOT_ECHO provider body")
+    error._tickflow_stage = "BATCH_1M_FETCH"
+    assert _normalize_rejection_reason(error) == "NOT_APPLICABLE"
