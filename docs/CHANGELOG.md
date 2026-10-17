@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
 - [修复] TickFlow AUTO_200 在总量上限内保留基础 ETF 观察集，仅填充活跃股票；批量采集失败保留固定阶段与原因枚举，审计覆盖全部五周期及 200 标的边界。
 
 - [新功能] 闭合行情账本增加默认关闭的研究 AI 消费回执：调用前持久占位、结果先保存后 ACK、重启去重、持久调用上限；超时及未知结果阻断重试，继续关闭信号与交易门禁。

@@ -37,7 +37,8 @@ def add_minutes(svc, symbol="US.AMD", count=30):
         end = start + timedelta(minutes=1)
         minute = FormingMinuteBar(
             symbol, end.astimezone(timezone(timedelta(hours=-4))).replace(tzinfo=None),
-            100+i*.1, 101+i*.1, 99+i*.1, 100.5+i*.1, 100+i, 10000+i, True,
+            100+i*.1, 101+i*.1, 99+i*.1, 100.5+i*.1, 100+i,
+            (100.5+i*.1)*(100+i), True,
         )
         svc.ingest(closed_futu_minute_to_bar(minute, received_at=end + timedelta(seconds=2)))
 

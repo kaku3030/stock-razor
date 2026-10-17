@@ -221,6 +221,14 @@ def _to_historical_bar(
         flags.append("INVALID_OHLC")
     if row.volume < 0:
         flags.append("NEGATIVE_VOLUME")
+    # Futu turnover is the numerator for the derived VWAP used by the
+    # aggregate builder. Reject an economically impossible source-minute
+    # numerator before it can contaminate a complete 5m/15m bar.
+    if row.turnover is not None and row.volume > 0:
+        source_vwap = row.turnover / row.volume
+        tolerance = max(1e-6, max(abs(row.low), abs(row.high)) * 1e-6)
+        if not row.low - tolerance <= source_vwap <= row.high + tolerance:
+            flags.append("VWAP_OUTSIDE_BAR_RANGE")
 
     # Historical facts are intentionally not currentness evidence. Timestamp
     # semantics are proven, while continuity/cross-check remain conservative
@@ -248,7 +256,7 @@ def _to_historical_bar(
         low=row.low,
         close=row.close,
         volume=row.volume,
-        amount=row.turnover,
+        amount=(None if "VWAP_OUTSIDE_BAR_RANGE" in flags else row.turnover),
         provider="futu",
         source_timestamp=row.interval_end,
         received_at=observed,

@@ -39,3 +39,23 @@ def test_missing_source_minute_stays_incomplete_and_watch_only():
     assert not bar.is_complete and "MISSING_BAR" in bar.quality_flags
     assert bar.health.score == 79
     assert bar.health.signal_permission is SignalPermission.WATCH_ONLY
+
+
+def test_opposite_invalid_source_vwaps_cannot_cancel_into_a_healthy_aggregate():
+    service = RealtimeMarketDataService(Adapter(), max_minutes=60)
+    for index in range(15):
+        end = START + timedelta(minutes=index + 1)
+        # Native per-minute VWAP 120 and 80 are both impossible for 99..101,
+        # but the old aggregate-only check saw their average as exactly 100.
+        amount = 1200 if index == 0 else 800 if index == 1 else 1000
+        minute = FormingMinuteBar(
+            "US.AMD", end, 100, 101, 99, 100.5, 10, amount, True,
+        )
+        service.ingest(closed_futu_minute_to_bar(
+            minute, received_at=end + timedelta(seconds=2),
+        ))
+    aggregate = service.snapshot("US.AMD", as_of=START + timedelta(minutes=15)).bars_15m[0]
+    assert aggregate.is_closed and aggregate.is_complete
+    assert aggregate.health.signal_permission is SignalPermission.BLOCKED
+    assert "VWAP_OUTSIDE_BAR_RANGE" in aggregate.quality_flags
+    assert aggregate.amount is None and aggregate.vwap is None

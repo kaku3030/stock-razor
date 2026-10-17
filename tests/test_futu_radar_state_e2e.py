@@ -21,7 +21,13 @@ def test_opend_snapshot_reaches_radar_but_cannot_confirm_signal():
     for i in range(60):
         bar_start=START+timedelta(minutes=i)
         time_key=bar_start+timedelta(minutes=1)
-        minute=FormingMinuteBar("US.AMD",time_key,100+i*.1,101+i*.1,99+i*.1,100.5+i*.1,100+i,10000+i,True)
+        close = 100.5 + i * 0.1
+        volume = 100 + i
+        # Keep synthetic source VWAP inside the declared OHLC range.
+        minute = FormingMinuteBar(
+            "US.AMD", time_key, 100 + i * 0.1, 101 + i * 0.1,
+            99 + i * 0.1, close, volume, close * volume, True,
+        )
         service.ingest(closed_futu_minute_to_bar(minute,received_at=time_key+timedelta(seconds=5)))
     snap=service.snapshot("US.AMD",as_of=START+timedelta(minutes=60))
     daily=pd.DataFrame({"date":pd.date_range("2026-07-01",periods=80,freq="D"),"open":[100+i*.2 for i in range(80)],"high":[101+i*.2 for i in range(80)],"low":[99+i*.2 for i in range(80)],"close":[100.5+i*.2 for i in range(80)],"volume":[1000+i for i in range(80)]})

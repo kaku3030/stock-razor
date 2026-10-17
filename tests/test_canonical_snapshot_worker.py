@@ -55,7 +55,8 @@ def add_minutes(svc, *, count=90, symbol="US.AMD"):
             low=99.0 + index * 0.1,
             close=100.5 + index * 0.1,
             volume=1000.0 + index,
-            turnover=100000.0 + index,
+            # Keep synthetic provider VWAP inside this minute's OHLC range.
+            turnover=(100.5 + index * 0.1) * (1000.0 + index),
             is_closed=True,
         )
         svc.ingest(
