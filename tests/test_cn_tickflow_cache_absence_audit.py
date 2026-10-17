@@ -68,13 +68,13 @@ def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
     assert audit.MAX_FILE_BYTES == MAX_BYTES == 64_000_000
 
 
-@pytest.mark.parametrize("symbol_index", [0, 1, 2, 3])
-@pytest.mark.parametrize("period", ["15M", "60M", "5M", "1D"])
+@pytest.mark.parametrize("symbol_index", [0, 1, 2, 3, 199])
+@pytest.mark.parametrize("period", ["1M", "15M", "60M", "5M", "1D"])
 @pytest.mark.parametrize("action", ["FETCH", "NORMALIZE"])
 def test_worker_all_requested_failure_stages_are_safely_classified(
     symbol_index, period, action,
 ):
-    # AWS worker include_supplemental=True requests all four timeframes;
+    # AWS worker include_supplemental=True requests all five timeframes;
     # 5m/1d outages must not disappear into UNKNOWN in the public audit.
     stage = f"S{symbol_index}_{period}_{action}"
     assert audit.safe_failure_stage(stage) == stage
@@ -86,7 +86,7 @@ def test_worker_publish_and_websocket_failure_stages_are_safe(stage):
 
 
 @pytest.mark.parametrize("malicious", [
-    None, 0, True, {}, "S0_1M_FETCH", "S4_5M_FETCH",
+    None, 0, True, {}, "S0_2M_FETCH", "S200_5M_FETCH",
     "S0_5M_FETCH\\nAPI_KEY=DO_NOT_ECHO", "S1_1D_NORMALIZE_SECRET",
 ])
 def test_worker_failure_stage_projection_is_enum_only(malicious):
@@ -413,3 +413,13 @@ def test_cloud_precision_projection_enums_are_static_and_price_free():
     assert got["vendor_float_rows_bucket"]=="UNKNOWN"
     assert got["same_session_vendor_float_rows_bucket"]=="UNKNOWN"
     assert "12345_DO_NOT_LEAK" not in repr(got)
+
+
+@pytest.mark.parametrize("stage", ["BATCH_1M_FETCH", "BATCH_1D_FETCH", "S199_1M_NORMALIZE"])
+def test_expanded_scan_failure_stages_remain_observable(stage):
+    assert audit.safe_failure_stage(stage) == stage
+
+
+@pytest.mark.parametrize("stage", ["S200_1M_FETCH", "BATCH_PRIVATE_FETCH", "BATCH_1M_FETCH api_key=PRIVATE"])
+def test_expanded_scan_failure_stages_reject_outside_contract(stage):
+    assert audit.safe_failure_stage(stage) == "UNKNOWN"

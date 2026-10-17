@@ -213,7 +213,7 @@ def blocked_status(failure_class: object) -> str:
 
 
 def safe_failure_stage(stage: object) -> str:
-    """Mirror the worker's bounded per-symbol 15m/60m/5m/1d stage set.
+    """Mirror the worker's bounded batch and per-symbol research stage set.
 
     Supplemental 5m/1d are requested by the deployed worker even though the
     admission audit only qualifies 15m/60m. Do not silently erase their
@@ -221,11 +221,13 @@ def safe_failure_stage(stage: object) -> str:
     """
     allowed={
         f"S{i}_{period}_{action}"
-        for i in range(len(HOLDINGS))
-        for period in ("15M", "60M", "5M", "1D")
+        for i in range(200)  # Same hard ceiling as the research collector.
+        for period in ("1M", "15M", "60M", "5M", "1D")
         for action in ("FETCH", "NORMALIZE")
     }
     allowed.update({"S4_WS_SUMMARY", "S4_CACHE_PUBLISH"})
+    allowed.update(f"BATCH_{period}_FETCH"
+                   for period in ("1M", "5M", "15M", "60M", "1D"))
     return stage if isinstance(stage, str) and stage in allowed else "UNKNOWN"
 
 
@@ -809,7 +811,7 @@ def sample():
                 "VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
                 "OHLCVA_NONPOSITIVE","OHLCVA_HIGH_LT_BODY","OHLCVA_LOW_GT_BODY",
                 "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE",
-                "CACHE_SIZE_EXCEEDED",
+                "CACHE_SIZE_EXCEEDED", "BATCH_SHAPE_INVALID", "BATCH_SYMBOL_MISSING",
             }
             result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
             precision=data.get("failure_ohlc_float_gap_bucket")

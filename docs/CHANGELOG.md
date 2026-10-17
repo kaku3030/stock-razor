@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [修复] Feedback Hub 当前主线集成校验必要表字段，预检增加只读超期/损坏租约计数，避免把存储 READY 或有效租约误报为 AI 持续运行。
+- [修复] TickFlow AUTO_200 在总量上限内保留基础 ETF 观察集，仅填充活跃股票；批量采集失败保留固定阶段与原因枚举，审计覆盖全部五周期及 200 标的边界。
 - [改进] 美股只读 Radar systemd worker 增加 90 秒 systemd watchdog 心跳与 notify 启动协议，卡死时自动重启；云端验收检查服务类型与 watchdog 配置，交易及 Radar 准入保持关闭。
 - [修复] 美股云端研究简报仅在市场与 Radar 来源身份一致且相差一根序列时，进行最多两次、每次50毫秒间隔的本地快照重新读取；仍坚持精确序列匹配与行情有效性，并保持所有交易门禁关闭。
 - [修复] Paper AWS SSM 只读验收区分命令执行成功与运行时真实核验；缺失服务、SHA、关闭门禁心跳或新鲜度证据时工作流明确失败，仍不证明模拟成交或 L2 准入。

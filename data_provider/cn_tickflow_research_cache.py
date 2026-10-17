@@ -66,22 +66,28 @@ class _BatchKlinesFacade:
                  batch_size: int) -> None:
         self._frames: dict[tuple[str, str], Any] = {}
         for period, count in periods.items():
-            method = (client.klines.batch if period == "1d"
-                      else client.klines.intraday_batch)
-            kwargs = {
-                "period": period, "count": count, "as_dataframe": False,
-                "show_progress": False, "max_workers": 5,
-                "batch_size": batch_size,
-            }
-            if period == "1d":
-                kwargs["adjust"] = "none"
-            result = method(list(symbols), **kwargs)
-            if not isinstance(result, dict):
-                raise ValueError("batch SDK shape invalid")
-            for symbol in symbols:
-                if symbol not in result:
-                    raise ValueError("batch SDK symbol missing")
-                self._frames[(symbol, period)] = result[symbol]
+            try:
+                method = (client.klines.batch if period == "1d"
+                          else client.klines.intraday_batch)
+                kwargs = {
+                    "period": period, "count": count, "as_dataframe": False,
+                    "show_progress": False, "max_workers": 5,
+                    "batch_size": batch_size,
+                }
+                if period == "1d":
+                    kwargs["adjust"] = "none"
+                result = method(list(symbols), **kwargs)
+                if not isinstance(result, dict):
+                    raise ValueError("batch SDK shape invalid")
+                for symbol in symbols:
+                    if symbol not in result:
+                        raise ValueError("batch SDK symbol missing")
+                    self._frames[(symbol, period)] = result[symbol]
+            except Exception as exc:
+                # Batch errors occur before the per-symbol normalization loop.
+                # Preserve a finite local stage without exposing provider text.
+                exc._tickflow_stage = f"BATCH_{period.upper()}_FETCH"
+                raise
 
     def get(self, symbol: str, *, period: str, count: int,
             adjust: str, as_dataframe: bool) -> Any:
