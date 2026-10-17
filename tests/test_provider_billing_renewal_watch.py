@@ -234,3 +234,54 @@ def test_cloud_workflow_uses_module_entrypoint_for_repo_root_imports():
     )
     assert result.returncode == 0
     assert "PROVIDER_BILLING_WATCH=DRY_RUN_PASS" in result.stdout
+
+
+@pytest.mark.parametrize("path,days", [(USAGE, 31), (COSTS, 32)])
+def test_admin_daily_request_obeys_endpoint_limit_without_truncating_cost_snapshot(monkeypatch, path, days):
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import math
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def read(self, _limit):
+            return json.dumps(self.payload).encode()
+
+    def official_shape(request, timeout):
+        parsed = urllib.parse.urlparse(request.full_url)
+        query = urllib.parse.parse_qs(parsed.query)
+        limit = int(query["limit"][0])
+        maximum = 31 if parsed.path.endswith(USAGE) else 180
+        if limit > maximum:
+            raise urllib.error.HTTPError(request.full_url, 400, "invalid limit", {}, None)
+        needed = math.ceil((int(query["end_time"][0])-int(query["start_time"][0]))/86400)
+        return Response({"data": [], "has_more": limit < needed})
+
+    monkeypatch.setattr(urllib.request, "urlopen", official_shape)
+    assert _get_json(path, "fake-admin-credential", 1, 1 + days*86400) == {
+        "data": [], "has_more": False,
+    }
+
+
+def test_real_reader_rejects_incomplete_page_without_retry_or_partial_total(monkeypatch):
+    import urllib.request
+    calls = []
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self, _limit):
+            return b'{"data":[],"has_more":true,"next_page":"private-cursor"}'
+    def truncated(request, timeout):
+        calls.append(request)
+        return Response()
+    monkeypatch.setattr(urllib.request, "urlopen", truncated)
+    with pytest.raises(ValueError, match="^incomplete_page$"):
+        _get_json(COSTS, "fake-admin-credential", 1, 2)
+    assert len(calls) == 1
