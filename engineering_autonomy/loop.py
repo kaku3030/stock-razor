@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Any
 
+from engineering_autonomy.feedback_hub import FeedbackHub, FeedbackHubError
+
 SCHEMA_VERSION = 1
 ALLOWED_COMMANDS = {
     "quality-check": (
@@ -37,6 +39,7 @@ DEFAULT_QUEUE = Path("engineering_autonomy/queue.json")
 DEFAULT_STATE = Path("engineering_autonomy/state.json")
 STOP_FILE = Path("engineering_autonomy/STOP")
 
+
 @dataclass(frozen=True)
 class Task:
     id: str
@@ -45,10 +48,12 @@ class Task:
     max_attempts: int
     cost_units: int
 
+
 def _bounded_text(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value or len(value) > 160:
         raise ValueError(f"{field} must be a short non-empty string")
     return value
+
 
 def load_queue(path: Path = DEFAULT_QUEUE) -> list[Task]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -87,6 +92,7 @@ def load_queue(path: Path = DEFAULT_QUEUE) -> list[Task]:
         result.append(Task(task_id, kind, tuple(command), attempts, cost))
     return result
 
+
 def _queue_fingerprint(queue: list[Task]) -> str:
     canonical = [
         [task.id, task.kind, list(task.command), task.max_attempts, task.cost_units]
@@ -108,6 +114,7 @@ def _initial_state(queue: list[Task]) -> dict[str, Any]:
         "spent_cost_units": 0,
         "updated_at_epoch": 0,
     }
+
 
 def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
     if not path.exists():
@@ -157,6 +164,7 @@ def load_state(path: Path, queue: list[Task]) -> dict[str, Any]:
         raise ValueError("incomplete queue cannot be marked PASS")
     return state
 
+
 def save_state(path: Path, state: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
@@ -166,8 +174,10 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
         temporary = Path(handle.name)
     temporary.replace(path)
 
+
 def stop_requested(stop_file: Path = STOP_FILE) -> bool:
     return os.environ.get("AUTONOMY_STOP", "").lower() == "true" or stop_file.exists()
+
 
 def run_queue(
     queue_path: Path = DEFAULT_QUEUE,
@@ -176,11 +186,26 @@ def run_queue(
     max_runtime_seconds: int = MAX_RUNTIME_SECONDS,
     executor: Callable[[Task], int] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    feedback_path: Path | None = None,
 ) -> dict[str, Any]:
     if type(budget_units) is not int or not 1 <= budget_units <= MAX_COST_UNITS:
         raise ValueError("budget_units is outside bounds")
     if type(max_runtime_seconds) is not int or not 1 <= max_runtime_seconds <= MAX_RUNTIME_SECONDS:
         raise ValueError("max_runtime_seconds is outside bounds")
+    # The feedback station must be an explicitly supplied persistent path.
+    # Never fall back to a local queue-directory database.
+    if feedback_path is None:
+        raise FeedbackHubError("persistent feedback_path is required")
+    # This is deliberately before checkpoint recovery or task execution.  A
+    # missing/corrupt feedback station must stop the mainline rather than let
+    # it silently proceed with stale priorities.
+    feedback = FeedbackHub(feedback_path, require_existing=True)
+    try:
+        feedback.preflight()
+    except FeedbackHubError:
+        feedback.close()
+        raise
+    feedback.close()
     queue = load_queue(queue_path)
     state = load_state(state_path, queue)
     if state["status"] in {"PASS", "BLOCKED"}:
@@ -231,16 +256,20 @@ def run_queue(
             return checkpoint("BLOCKED")
     return checkpoint("PASS")
 
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--queue", type=Path, default=DEFAULT_QUEUE)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--budget-units", type=int, default=MAX_COST_UNITS)
     parser.add_argument("--max-runtime-seconds", type=int, default=MAX_RUNTIME_SECONDS)
+    parser.add_argument("--feedback-db", type=Path, required=True)
     args = parser.parse_args()
-    state = run_queue(args.queue, args.state, args.budget_units, args.max_runtime_seconds)
+    state = run_queue(args.queue, args.state, args.budget_units, args.max_runtime_seconds,
+                      feedback_path=args.feedback_db)
     print(json.dumps(state, sort_keys=True))
     return 0 if state["status"] == "PASS" else 2
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
