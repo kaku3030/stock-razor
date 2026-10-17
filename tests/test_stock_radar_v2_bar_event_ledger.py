@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from dataclasses import fields
 
 import pytest
 
@@ -38,9 +39,40 @@ def candidate(**changes):
         "rule_revision": "v1",
         "signal_kind": "candidate",
         "evidence": {"signal_state": "research_candidate"},
+        "is_closed": True,
+        "is_complete": True,
     }
     values.update(changes)
     return ClosedBarEventCandidate(**values)
+
+
+@pytest.mark.parametrize("missing", ["is_closed", "is_complete"])
+def test_closed_and_complete_attestations_are_required(missing):
+    original = candidate()
+    values = {item.name: getattr(original, item.name) for item in fields(original) if item.init}
+    values.pop(missing)
+    with pytest.raises(TypeError):
+        ClosedBarEventCandidate(**values)
+
+
+def test_candidate_evidence_is_snapshotted_before_external_mutation(tmp_path):
+    evidence = {"technical": {"reason": "qualified"}}
+    original = candidate(evidence=evidence)
+    evidence["technical"]["api_key"] = "must-not-persist"
+    original.evidence["technical"]["reason"] = "changed-after-validation"
+    with RadarBarEventLedger(tmp_path / "immutable.sqlite") as ledger:
+        saved = ledger.record(original)
+    assert saved.event.payload["evidence"] == {"technical": {"reason": "qualified"}}
+
+
+def test_candidate_quality_flags_do_not_follow_a_mutable_input(tmp_path):
+    flags = []
+    original = candidate(quality_flags=flags)
+    flags.append("MISSING_BAR")
+    with RadarBarEventLedger(tmp_path / "immutable-flags.sqlite") as ledger:
+        saved = ledger.record(original)
+    assert original.quality_flags == ()
+    assert saved.event.payload["quality_flags"] == []
 
 
 def test_event_identity_is_stable_and_contains_governed_signal_dimensions():
