@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
 - [修复] OpenAI 用量与 Costs 采用各自有效的每日桶上限，保留完整账单窗口及分页阻断；Aider 有 Token 但零估价时费用标记未知，监控恶意大载荷回归兼容 Windows。
 - [新增/研究] 增加隔离的闭合K线候选事件 SQLite 账本：按 provider/symbol/timeframe/bar_end/rule revision/signal kind 稳定去重，校验闭合、完整、已确认时段、明确新鲜度、有限OHLCV与来源身份；事务写入后才允许受租约保护的下游唤醒，队列满、冲突、过期重试均显式失败或进入死信。该 seam 尚未接入 Radar/AI/通知运行时，不代表云端验收或准入。
+
+- [新功能] 闭合行情账本增加默认关闭的研究 AI 消费回执：调用前持久占位、结果先保存后 ACK、重启去重、持久调用上限；超时及未知结果阻断重试，继续关闭信号与交易门禁。
 - [修复] OpenAI 用量与 Costs 采用各自有效的每日桶上限，保留完整账单窗口及分页阻断；Aider 有 Token 但零估价时费用标记未知，监控恶意大载荷回归兼容 Windows。
 
 - [新功能] 现有 canonical Radar 轮询器可显式接入持久闭合行情账本：严格校验 US OpenD 正常交易时段、闭合网格、新鲜度和成交额，写入失败保留源序列重试；仅记录研究观察，默认关闭，不启用 AI、通知或交易。
