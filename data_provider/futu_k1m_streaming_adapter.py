@@ -7,6 +7,7 @@ REALTIME delivery, bar closure, or LIVE qualification.
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -66,6 +67,11 @@ class FutuK1MStreamingAdapter:
         # Keep the active semantic key so US Session.ALL callbacks map to
         # the desired registry entry rather than a false default-session key.
         self._subscribed_keys_by_symbol: dict[str, SemanticStreamKey] = {}
+        self._subscription_lock = threading.RLock()
+        self._subscription_in_progress = False
+        self._pending_keys_by_symbol: dict[str, SemanticStreamKey] = {}
+        self._pending_subscription_events: list[ProviderEvent] = []
+        self._pending_subscription_overflow = False
 
     def register_event_sink(self, sink: Callable[[ProviderEvent], None]) -> None:
         if not callable(sink):
@@ -177,42 +183,63 @@ class FutuK1MStreamingAdapter:
             if session_all is None:
                 raise ValueError("OpenD SDK Session.ALL is unavailable")
             kwargs["session"] = session_all
-        ret, data = self._ctx.subscribe(
-            [key.symbol for key in unique],
-            [self._ft.SubType.K_1M],
-            subscribe_push=True,
-            **kwargs,
-        )
-        self._last_subscribe_result = {"ret": ret, "data": str(data)[:300]}
-        if self._transport_connected_evidence:
-            accepted = ret == self._ft.RET_OK
-            for key in unique:
-                self._emit(
-                    ProviderEvent(
-                        runtime_instance_id=self._runtime_instance_id,
-                        provider_id="futu",
-                        controller_generation=int(self._controller_generation()),
-                        observed_at_utc=self._now_utc(),
-                        observed_at_monotonic=self._monotonic(),
-                        event_kind=ProviderEventKind.SUBSCRIPTION_RESULT,
-                        semantic_stream_key=key,
-                        provider_context_id=self._context_id,
-                        payload=freeze_normalized_payload({"accepted": accepted}),
-                        delivery_mode=DeliveryMode.UNKNOWN,
-                        provenance="OPEND_SUBSCRIBE_RETURN",
-                        diagnostic_fields=freeze_normalized_payload(
-                            {
-                                "administrative_only": True,
-                                "subscribe_ret": ret,
-                                "detail": str(data)[:300],
-                            }
-                        ),
+        with self._subscription_lock:
+            if self._subscription_in_progress:
+                raise RuntimeError("OpenD subscription already in progress")
+            self._subscription_in_progress = True
+            self._pending_keys_by_symbol.update((key.symbol, key) for key in unique)
+        try:
+            ret, data = self._ctx.subscribe(
+                [key.symbol for key in unique],
+                [self._ft.SubType.K_1M],
+                subscribe_push=True,
+                **kwargs,
+            )
+            self._last_subscribe_result = {"ret": ret, "data": str(data)[:300]}
+            if self._transport_connected_evidence:
+                accepted = ret == self._ft.RET_OK
+                for key in unique:
+                    self._emit(
+                        ProviderEvent(
+                            runtime_instance_id=self._runtime_instance_id,
+                            provider_id="futu",
+                            controller_generation=int(self._controller_generation()),
+                            observed_at_utc=self._now_utc(),
+                            observed_at_monotonic=self._monotonic(),
+                            event_kind=ProviderEventKind.SUBSCRIPTION_RESULT,
+                            semantic_stream_key=key,
+                            provider_context_id=self._context_id,
+                            payload=freeze_normalized_payload({"accepted": accepted}),
+                            delivery_mode=DeliveryMode.UNKNOWN,
+                            provenance="OPEND_SUBSCRIBE_RETURN",
+                            diagnostic_fields=freeze_normalized_payload(
+                                {
+                                    "administrative_only": True,
+                                    "subscribe_ret": ret,
+                                    "detail": str(data)[:300],
+                                }
+                            ),
+                        )
                     )
-                )
-        if ret != self._ft.RET_OK:
-            raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
-        for key in unique:
-            self._subscribed_keys_by_symbol[key.symbol] = key
+            if ret != self._ft.RET_OK:
+                raise RuntimeError("OpenD K_1M subscribe rejected: " + str(data)[:300])
+            with self._subscription_lock:
+                if self._pending_subscription_overflow:
+                    raise RuntimeError("OpenD pending first-push buffer overflow")
+                for key in unique:
+                    self._subscribed_keys_by_symbol[key.symbol] = key
+                # Flush only after successful SDK ACK, in arrival order. The lock
+                # prevents a concurrent newer callback overtaking buffered rows.
+                for event in self._pending_subscription_events:
+                    self._emit(event)
+                self._pending_keys_by_symbol.clear()
+                self._pending_subscription_events.clear()
+        finally:
+            with self._subscription_lock:
+                self._pending_keys_by_symbol.clear()
+                self._pending_subscription_events.clear()
+                self._pending_subscription_overflow = False
+                self._subscription_in_progress = False
 
     def inspect_current_connection_subscriptions(
         self, keys: tuple[SemanticStreamKey, ...],
@@ -327,51 +354,66 @@ class FutuK1MStreamingAdapter:
         self._subscribed_keys_by_symbol.pop(key.symbol, None)
 
     def _emit_row(self, row: dict) -> None:
-        symbol = str(row.get("code") or "").strip()
-        raw_time = str(row.get("time_key") or "").strip() or None
-        if not symbol.startswith("US."):
-            self._emit_error("unexpected non-US K_1M symbol")
+        with self._subscription_lock:
+            symbol = str(row.get("code") or "").strip()
+            raw_time = str(row.get("time_key") or "").strip() or None
+            if not symbol.startswith("US."):
+                self._emit_error("unexpected non-US K_1M symbol")
+                return
+            key = self._subscribed_keys_by_symbol.get(symbol)
+            subscription_acknowledged = key is not None
+            if key is None:
+                key = self._pending_keys_by_symbol.get(symbol)
+            if key is None:
+                # Unsolicited pushes remain unqualified, without session proof.
+                key = SemanticStreamKey(
+                    provider_id="futu",
+                    market="us",
+                    symbol=symbol,
+                    stream_type="K_1M",
+                    timeframe="1m",
+                )
+            # US time_key progress semantics are intentionally NOT promoted from
+            # the older HK evidence set. Preserve the raw value as evidence only.
+            payload = freeze_normalized_payload(
+                {
+                    name: row.get(name)
+                    for name in ("code", "time_key", "open", "close", "high", "low", "volume", "turnover")
+                    if name in row
+                }
+            )
+            self._publish_subscription_row(
+                ProviderEvent(
+                    runtime_instance_id=self._runtime_instance_id,
+                    provider_id="futu",
+                    controller_generation=int(self._controller_generation()),
+                    observed_at_utc=self._now_utc(),
+                    observed_at_monotonic=self._monotonic(),
+                    event_kind=ProviderEventKind.DATA,
+                    semantic_stream_key=key,
+                    provider_context_id=self._context_id,
+                    payload=payload,
+                    provider_timestamp_raw=raw_time,
+                    delivery_mode=DeliveryMode.UNKNOWN,
+                    progress_identity_candidate=None,
+                    provenance="PUSH",
+                    diagnostic_fields=freeze_normalized_payload(
+                        {"semantic_scope": "US_K1M_PUSH", "bar_state": "FORMING_OR_UNKNOWN",
+                            "subscription_acknowledged_at_receive": subscription_acknowledged, "bar_closure": "UNPROVEN", "same_time_key_may_update": True}
+                    ),
+                )
+            )
+
+    def _publish_subscription_row(self, event: ProviderEvent) -> None:
+        # Called under _subscription_lock. A failed/partial subscribe must
+        # never publish its cached first pushes as successfully owned data.
+        if event.semantic_stream_key.symbol in self._pending_keys_by_symbol:
+            if len(self._pending_subscription_events) >= 1024:
+                self._pending_subscription_overflow = True
+            else:
+                self._pending_subscription_events.append(event)
             return
-        key = self._subscribed_keys_by_symbol.get(symbol)
-        if key is None:
-            # A push before subscription ACK cannot establish a session
-            # identity. Preserve it only as unqualified evidence.
-            key = SemanticStreamKey(
-                provider_id="futu",
-                market="us",
-                symbol=symbol,
-                stream_type="K_1M",
-                timeframe="1m",
-            )
-        # US time_key progress semantics are intentionally NOT promoted from
-        # the older HK evidence set. Preserve the raw value as evidence only.
-        payload = freeze_normalized_payload(
-            {
-                name: row.get(name)
-                for name in ("code", "time_key", "open", "close", "high", "low", "volume", "turnover")
-                if name in row
-            }
-        )
-        self._emit(
-            ProviderEvent(
-                runtime_instance_id=self._runtime_instance_id,
-                provider_id="futu",
-                controller_generation=int(self._controller_generation()),
-                observed_at_utc=self._now_utc(),
-                observed_at_monotonic=self._monotonic(),
-                event_kind=ProviderEventKind.DATA,
-                semantic_stream_key=key,
-                provider_context_id=self._context_id,
-                payload=payload,
-                provider_timestamp_raw=raw_time,
-                delivery_mode=DeliveryMode.UNKNOWN,
-                progress_identity_candidate=None,
-                provenance="PUSH",
-                diagnostic_fields=freeze_normalized_payload(
-                    {"semantic_scope": "US_K1M_PUSH", "bar_state": "FORMING_OR_UNKNOWN", "bar_closure": "UNPROVEN", "same_time_key_may_update": True}
-                ),
-            )
-        )
+        self._emit(event)
 
     def _emit_error(self, message: str) -> None:
         self._emit(
