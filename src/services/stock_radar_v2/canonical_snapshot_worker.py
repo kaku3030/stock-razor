@@ -321,10 +321,9 @@ def load_canonical_snapshot_payload(payload: object) -> CanonicalSnapshotSource:
     runtime_instance_id = str(payload.get("runtime_instance_id") or "").strip()
     if not runtime_instance_id:
         raise CanonicalSnapshotContractError("runtime_instance_id is required")
-    try:
-        sequence = int(payload["sequence"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise CanonicalSnapshotContractError("sequence must be an integer") from exc
+    sequence = payload.get("sequence")
+    if isinstance(sequence, bool) or not isinstance(sequence, int):
+        raise CanonicalSnapshotContractError("sequence must be an integer")
     if sequence <= 0:
         raise CanonicalSnapshotContractError("sequence must be positive")
     emitted_at = _parse_time(payload.get("emitted_at_utc"), field_name="emitted_at_utc")
