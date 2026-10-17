@@ -1,0 +1,60 @@
+name: Reboot Fixed SSM Target
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  reboot:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: reboot-ssm-target-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify fixed target before reboot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --query 'Reservations[0].Instances[0].InstanceId' --output text)" = "$TARGET_INSTANCE_ID"
+          state="$(aws ec2 describe-instances --instance-ids "$TARGET_INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text)"
+          test "$state" = "running"
+          echo "TARGET_INSTANCE_ID=$TARGET_INSTANCE_ID"
+          echo "PRE_REBOOT_STATE=$state"
+          aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].{PingStatus:PingStatus,LastPingDateTime:LastPingDateTime,AgentVersion:AgentVersion}' --output json
+
+      - name: Reboot fixed EC2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ec2 reboot-instances --instance-ids "$TARGET_INSTANCE_ID"
+          echo "EC2_REBOOT_REQUESTED=YES"
+          echo "TARGET_INSTANCE_ID=$TARGET_INSTANCE_ID"
+          echo "LIVE_TRADE=NO"
+
+      - name: Observe SSM recovery
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in {1..18}; do
+            sleep 10
+            status="$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
+            echo "SSM_RECOVERY_ATTEMPT=$attempt STATUS=$status"
+            if [[ "$status" == "Online" ]]; then
+              aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query 'InstanceInformationList[0].{PingStatus:PingStatus,LastPingDateTime:LastPingDateTime,AgentVersion:AgentVersion}' --output json
+              echo "SSM_RECOVERY=PASS"
+              echo "LIVE_TRADE=NO"
+              exit 0
+            fi
+          done
+          echo "SSM_RECOVERY=NOT_VERIFIED"
+          echo "LIVE_TRADE=NO"
+          exit 1
