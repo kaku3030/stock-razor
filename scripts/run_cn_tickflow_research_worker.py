@@ -47,6 +47,13 @@ _NORMALIZE_REJECTION_REASON = {
 
 def _normalize_rejection_reason(error: Exception) -> str:
     stage=getattr(error, "_tickflow_stage", "")
+    if type(error) is ValueError and stage in {
+            f"BATCH_{period}_FETCH"
+            for period in ("1M", "5M", "15M", "60M", "1D")}:
+        return {
+            "batch SDK shape invalid": "BATCH_SHAPE_INVALID",
+            "batch SDK symbol missing": "BATCH_SYMBOL_MISSING",
+        }.get(str(error), "NOT_APPLICABLE")
     if (type(error) is ValueError and stage == "S4_CACHE_PUBLISH"
             and str(error) == "private research cache exceeds bounded bytes"):
         return "CACHE_SIZE_EXCEEDED"
@@ -145,7 +152,11 @@ def main() -> int:
                 from tickflow import TickFlow
                 # Do not magnify a 4-request sample into hidden SDK retries
                 # under throttling or expired subscriptions.
-                client=TickFlow(api_key=api_key,timeout=8.0,max_retries=0)
+                # A bounded 200-symbol cloud batch needs a longer single-call
+                # envelope than the four-symbol default, while retries remain
+                # disabled and the outer poll loop still backs off on failure.
+                scan_timeout = 30.0 if len(scan_symbols) > len(SYMBOLS) else 8.0
+                client=TickFlow(api_key=api_key,timeout=scan_timeout,max_retries=0)
             del api_key
     except Exception as exc:
         print("TICKFLOW_RESEARCH_BOOT=BLOCKED:"+type(exc).__name__,flush=True)
@@ -205,6 +216,9 @@ def main() -> int:
                     "failure_stage":(
                         getattr(exc,"_tickflow_stage","UNKNOWN")
                         if getattr(exc,"_tickflow_stage","UNKNOWN") in {
+                            "S4_WS_SUMMARY", "S4_CACHE_PUBLISH",
+                            *[f"BATCH_{period}_FETCH"
+                              for period in ("1M", "5M", "15M", "60M", "1D")],
                             *[f"S{i}_{period}_{action}"
                               for i in range(len(scan_symbols))
                               for period in ("1M","5M","15M","60M","1D")
