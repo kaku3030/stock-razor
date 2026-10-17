@@ -35,6 +35,7 @@ system_contract_checks() {
     tests/test_closed_bar_paper_replay.py \
     tests/test_stock_radar_v2_runtime_notifications.py \
     tests/test_cloud_runtime_evidence.py \
+    tests/test_engineering_autonomy.py \
     tests/test_engineering_autonomy_loop.py \
     tests/test_engineering_deepseek_budget.py \
     tests/test_provider_billing_renewal_watch.py

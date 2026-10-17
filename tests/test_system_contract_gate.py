@@ -58,6 +58,7 @@ def test_system_contract_command_propagates_failure_before_any_promotion(tmp_pat
         "tests/test_closed_bar_paper_replay.py",
         "tests/test_paper_execution_admission.py",
         "tests/test_cloud_runtime_evidence.py",
+        "tests/test_engineering_autonomy.py",
         "tests/test_engineering_autonomy_loop.py",
         "tests/test_provider_billing_renewal_watch.py",
     }

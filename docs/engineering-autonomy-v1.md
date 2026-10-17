@@ -15,6 +15,11 @@ work. It is deliberately not a general-purpose coding agent.
 - A future code-changing recipe must be added as a separately reviewed task
   definition with its own focused tests and path/command allowlist.
 - Untrusted PR, issue, commit, and model text is not used as instructions.
+- Under V5.1 the workflow ends after creating the PR. It does not enable
+  Auto-Merge or merge its own output. Required CI success, an enabled scheduler
+  and a configured App token do not authorize merge or deployment.
+- System ownership and acceptance evidence are indexed in
+  [the V5.1 matrix](architecture/v5-system-acceptance.md).
 
 ## Required external configuration
 
@@ -25,8 +30,9 @@ accepted because its events do not reliably trigger the required PR checks.
 
 The current repository inspection did not verify the presence of that App
 credential or a model API. Therefore the implementation can be merged and
-tested now, but unattended mutation/merge remains `BLOCKED` until those
-runtime prerequisites are independently verified.
+tested offline, but unattended branch/PR creation remains `NOT_VERIFIED` until
+those runtime prerequisites are independently verified. Self-merge and
+production deployment remain blocked without separate authorization.
 
 ## Run evidence
 

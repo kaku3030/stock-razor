@@ -58,3 +58,21 @@ def test_record_is_sanitized_and_chains_previous_run(tmp_path):
 def test_record_status_is_fail_closed(status):
     with pytest.raises(ValueError):
         build_record("100", "a" * 40, "record-run", None, status, "reason")
+
+
+def test_autonomy_workflows_do_not_execute_self_merge():
+    from pathlib import Path
+    import re
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    forbidden = re.compile(
+        r"gh\s+pr\s+merge|enablePullRequestAutoMerge|pulls\.merge|/pulls/[^\s]+/merge"
+    )
+    for path in (root / ".github/workflows").glob("engineering-autonomy*.yml"):
+        workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        for job in workflow["jobs"].values():
+            for step in job.get("steps", []):
+                assert not forbidden.search(step.get("run", "")), (
+                    f"V5.1 forbids self-merge: {path.name}: {step.get('name')}"
+                )

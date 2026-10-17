@@ -51,7 +51,7 @@
 | UNKNOWN 准入阻断、因果时间、订单幂等与 PIT/费用/滑点 / D | test_paper_execution_admission.py、test_closed_bar_paper_replay.py |
 | 通知路由、去重标识、失败及脱敏 / C/F | test_stock_radar_v2_runtime_notifications.py |
 | 外部观测与电脑关闭窗口，禁止自证、代次变化和证据不足 / C/G | test_cloud_runtime_evidence.py |
-| 队列白名单、重试/检查点、停止与预算 / E | test_engineering_autonomy_loop.py、test_engineering_deepseek_budget.py |
+| 队列白名单、重试/检查点、停止与预算 / E | test_engineering_autonomy.py（禁止 workflow self-merge）、test_engineering_autonomy_loop.py、test_engineering_deepseek_budget.py |
 | 账单缺失/非法/部分响应、估算不能冒充余额、通知失败回退 / G | test_provider_billing_renewal_watch.py |
 
 此入口是回归集合，不是七路线全部目标的自动认证。只有 offline contracts PASS 可以从本阶段得出；主线 CI、部署、cloud-live、持续调度和 Discord 实际送达各自独立记录。新增功能的准入测试须补进同一入口，不通过删除失败用例或放宽数据校验换取绿色。
@@ -75,6 +75,6 @@
 | C | NOT_VERIFIED：本地 Radar/通知测试不证明 AWS 30m 持续运行或 Discord 用户侧送达 | 记录已校准窗口内 scheduler run IDs、端到端提醒与独立 PC-off 观察 |
 | D | NOT_VERIFIED：离线 PIT fixture 已有；最近 US research capture 因非有限 close fail-closed | 取得合格且可追踪的近两周数据；费用/滑点/PIT/OOS 可复现实验 |
 | E/F | NOT_VERIFIED：[#873](https://github.com/kaku3030/stock-razor/pull/873) Feedback Hub preflight/租约审计尚未合并；队列测试不能证明持续 AI 编程或云端数据库可达 | 单一任务从反馈→修复→PR/CI→授权集成/部署→云端复验闭环；持久化 ingress 与 worker 进度证据 |
-| G | PARTIAL EVIDENCE：[账单监控 38858227886](https://github.com/kaku3030/stock-razor/actions/runs/38858227886) 记录 ALERT_DISPATCHED，仅证明应用 dispatch，非当前余额或用户侧收件；OpenAI 实际 prepaid 余额 UNKNOWN；AWS 付费 Cost Explorer 默认关闭 | 独立 liveness/stuck-task 与 stale-evidence 告警，续期/预算可追踪，最终通知回执单独验证 |
+| G | NOT_VERIFIED（部分证据）：[账单监控 38858227886](https://github.com/kaku3030/stock-razor/actions/runs/38858227886) 记录 ALERT_DISPATCHED，仅证明应用 dispatch，非当前余额或用户侧收件；OpenAI 实际 prepaid 余额 UNKNOWN；AWS 付费 Cost Explorer 默认关闭 | 独立 liveness/stuck-task 与 stale-evidence 告警，续期/预算可追踪，最终通知回执单独验证 |
 
 关键路径是 A/B 合格云端行情 → C 30m 调度/分析 → 可核验主动提醒与恢复。F 统一版本和证据，G 独立监督。D/E 的离线实验与保护机制可并行推进，不阻塞 P0。已提交 PR 或 CI 通过不能关闭实际云端故障。
