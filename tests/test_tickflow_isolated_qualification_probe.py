@@ -640,3 +640,16 @@ def test_cli_unexpected_failure_emits_only_exception_class(monkeypatch, capsys):
     assert result["failure_class"] == "RuntimeError"
     assert "DO_NOT_LEAK_PROVIDER_DETAIL" not in output
 
+def test_probe_can_run_without_optional_python_dotenv(monkeypatch):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def missing_dotenv(name, *args, **kwargs):
+        if name == "dotenv":
+            raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_dotenv)
+    assert probe._load_optional_env_file(".env") is False
+
