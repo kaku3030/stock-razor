@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Read-only AWS OpenD native K-line depth/latency qualification; no subscriptions.
 
-Requires existing K-line entitlement and pre-existing subscriptions.
+Requires existing K-line entitlement and subscriptions owned by this connection.
+Subscriptions discovered on another connection cannot qualify this caller.
 Never calls subscribe/unsubscribe, history quotas, market orders or any setters.
 Prints only allowlisted aggregate measurements (no provider prices or errors).
 """
@@ -94,6 +95,9 @@ def main():
         "max_calls": MAX_CALLS,
         "results": [],
         "connection": "NOT_VERIFIED",
+        "subscription_scope": "CURRENT_CONNECTION",
+        "status": "BLOCKED",
+        "call_count": 0,
     }
     ctx = None
     import futu as ft
@@ -102,7 +106,7 @@ def main():
         try:
             with redirect_stdout(sink), redirect_stderr(sink):
                 ctx = ft.OpenQuoteContext(host="127.0.0.1", port=11111)
-                ret, subscriptions = ctx.query_subscription(is_all_conn=True)
+                ret, subscriptions = ctx.query_subscription(is_all_conn=False)
             result["connection"] = "PASS"
             if ret != ft.RET_OK or not isinstance(subscriptions, dict):
                 result["subscription_discovery"] = "BLOCKED"
