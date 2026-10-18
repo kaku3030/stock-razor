@@ -142,7 +142,12 @@ PY
       systemctl is-enabled "$service"
       systemctl is-active "$service"
       test "$(systemctl show "$service" -p Type --value)" = "notify"
-      test "$(systemctl show "$service" -p WatchdogUSec --value)" = "90000000"
+      # systemctl formats duration properties despite their USec suffix;
+      # 90 seconds is normally displayed as "1min 30s", not raw usec.
+      case "$(systemctl show "$service" -p WatchdogUSec --value)" in
+        '1min 30s'|90s) ;;
+        *) echo US_RADAR_WATCHDOG_DURATION_MISMATCH >&2; exit 1 ;;
+      esac
       test "$(systemctl show "$service" -p PrivateNetwork --value)" = "yes"
       test "$(systemctl show "$service" -p NoNewPrivileges --value)" = "yes"
       if [ "$expected_events" = true ]; then

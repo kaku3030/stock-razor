@@ -81,3 +81,43 @@ def test_real_verifier_preserves_data_and_safety_gates(tmp_path, case, passes):
         env={**os.environ, "CLOSED_BAR_EVENTS_ENABLED": enabled}, text=True,
         capture_output=True, timeout=5)
     assert (result.returncode == 0) is passes, result.stderr
+
+
+@pytest.mark.parametrize("watchdog,passes", [
+    ("1min 30s", True), ("90s", True), ("0", False),
+    ("90000000", False), ("1min", False), ("2min", False),
+])
+def test_full_shell_verifier_checks_formatted_watchdog(tmp_path, watchdog, passes):
+    """Exercise shell acceptance too: the embedded Python is insufficient."""
+    status = tmp_path / "heartbeat.json"
+    status.write_text(json.dumps(payload()))
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    systemctl = commands / "systemctl"
+    systemctl.write_text("""#!/usr/bin/env bash
+case "$1" in
+  is-active) echo active ;;
+  is-enabled) echo enabled ;;
+  show)
+    case "$4" in
+      Type) echo notify ;;
+      WatchdogUSec) printf '%s\\n' "$TEST_WATCHDOG" ;;
+      PrivateNetwork|NoNewPrivileges) echo yes ;;
+      StateDirectory) echo stock-razor-us-radar ;;
+      StateDirectoryMode) echo 0700 ;;
+      *) exit 2 ;;
+    esac ;;
+  *) exit 2 ;;
+esac
+""")
+    systemctl.chmod(0o755)
+    script = Path("ops/aws/verify_us_radar_worker.sh").read_text()
+    script = script.replace("/run/stock-razor-us-radar/latest-research-state.json", str(status))
+    script = script.replace("/opt/stock-razor-us-radar/venv/bin/python", sys.executable)
+    result = subprocess.run(["bash", "-s", "--", SHA, SHA, "true"], input=script,
+        env={**os.environ, "PATH": str(commands) + os.pathsep + os.environ["PATH"],
+            "TEST_WATCHDOG": watchdog}, text=True, capture_output=True, timeout=5)
+    assert (result.returncode == 0) is passes, result.stderr
+    assert ("US_RADAR_WORKER_VERIFY=PASS" in result.stdout) is passes
+    if not passes:
+        assert "US_RADAR_WATCHDOG_DURATION_MISMATCH" in result.stderr

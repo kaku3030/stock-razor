@@ -191,3 +191,10 @@ also accepts the precise `BAR_EVENT_SOURCE_NOT_QUALIFIED` block only when the
 source remains unqualified, the ingress is explicitly blocked, and it created
 and duplicated zero events. Queue types, source SHA and all safety checks still
 apply. This verifies fail-closed service behavior, not market-data qualification.
+
+The verifier also requires the existing 90-second service watchdog. `systemctl
+show ... -p WatchdogUSec --value` formats this duration as `1min 30s` (or
+`90s`); the property suffix does not make its display a raw microsecond integer.
+Zero, other durations and a unitless `90000000` fail verification. The full shell
+acceptance path is tested in addition to the embedded heartbeat checks. See
+[systemd's property formatter](https://github.com/systemd/systemd/blob/v255/src/shared/bus-print-properties.c).
