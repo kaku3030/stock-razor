@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from tools.research.dual_market_strategy_v11 import (
-    CANDIDATES, state_path, state_returns,
+    CANDIDATES, _episodes, nav_ledger, state_path, state_returns,
 )
 
 
@@ -35,3 +35,35 @@ def test_returns_include_costs_and_state_trace():
     assert len(returns) == len(turnover) == len(states)
     assert turnover.iloc[0] == 1.0
     assert set(states).issubset({"RISK_ON", "NEUTRAL", "DEFENSIVE"})
+
+
+def test_episode_boundaries_use_previous_observed_row_not_calendar_day():
+    dates = pd.DatetimeIndex(["2024-03-08 16:00", "2024-03-11 16:00",
+                              "2024-03-12 16:00", "2024-03-15 16:00",
+                              "2024-03-18 16:00"],
+                             tz="America/New_York")
+    states = pd.Series(["NEUTRAL", "RISK_ON", "RISK_ON", "DEFENSIVE", "DEFENSIVE"], index=dates)
+    turnover = pd.Series(0.0, index=dates)
+    returns = pd.Series([0.0, 0.01, -0.02, 0.03, -0.01], index=dates)
+    episodes = _episodes(states, turnover, returns)
+    assert episodes[["start", "end", "days"]].to_dict("records") == [
+        {"start": "2024-03-08", "end": "2024-03-08", "days": 1},
+        {"start": "2024-03-11", "end": "2024-03-12", "days": 2},
+        {"start": "2024-03-15", "end": "2024-03-18", "days": 2},
+    ]
+    assert pd.to_datetime(episodes["end"]).dt.dayofweek.isin([5, 6]).sum() == 0
+
+    holiday_gap = pd.DatetimeIndex(["2024-01-12", "2024-01-16", "2024-01-17"])
+    holiday_states = pd.Series(["NEUTRAL", "RISK_ON", "DEFENSIVE"], index=holiday_gap)
+    holiday_episodes = _episodes(holiday_states, pd.Series(0.0, index=holiday_gap),
+                                 pd.Series(0.0, index=holiday_gap))
+    assert holiday_episodes.loc[0, "end"] == "2024-01-12"
+
+
+def test_nav_ledger_reconciles_daily_return_and_preserves_unclosed_final_episode():
+    prices = _prices(8)
+    ledger = nav_ledger(prices, CANDIDATES["V10_BASELINE"], 5, 5)
+    realized = ledger["nav"] / ledger["start_nav"] - 1.0
+    assert (realized - ledger["net_return"]).abs().max() < 1e-12
+    assert ledger.index[-1] == prices.index[-1]
+    assert ledger["end_weight_US.SHV"].iloc[-1] >= 0.0

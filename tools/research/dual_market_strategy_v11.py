@@ -88,6 +88,7 @@ def state_returns(prices: pd.DataFrame, cfg: dict, fee_bps: float,
     states = state_path(prices, cfg)
     daily = prices.pct_change().fillna(0.0)
     current = pd.Series(0.0, index=prices.columns)
+    previous_state = None
     cost_rate = (fee_bps + slippage_bps) / 10000.0
     values, turnovers = [], []
     for date, row in daily.iterrows():
@@ -104,16 +105,64 @@ def state_returns(prices: pd.DataFrame, cfg: dict, fee_bps: float,
 def _episodes(states: pd.Series, turnovers: pd.Series,
               returns: pd.Series) -> pd.DataFrame:
     changed = states.ne(states.shift())
-    starts = list(states.index[changed])
+    start_positions = list(np.flatnonzero(changed.to_numpy()))
     rows = []
-    for i, start in enumerate(starts):
-        end = starts[i + 1] - pd.Timedelta(days=1) if i + 1 < len(starts) else states.index[-1]
-        part = returns.loc[start: end]
+    for i, start_position in enumerate(start_positions):
+        end_position = (start_positions[i + 1] - 1
+                        if i + 1 < len(start_positions) else len(states) - 1)
+        start = states.index[start_position]
+        end = states.index[end_position]
+        part = returns.iloc[start_position:end_position + 1]
         rows.append({"start": str(start.date()), "end": str(end.date()),
                      "state": states.loc[start], "days": int(len(part)),
                      "return": float((1 + part).prod() - 1),
                      "entry_turnover": float(turnovers.loc[start])})
     return pd.DataFrame(rows)
+
+
+def nav_ledger_from_states(prices: pd.DataFrame, states: pd.Series,
+                           weights: dict[str, dict[str, float]], fee_bps: float,
+                           slippage_bps: float) -> pd.DataFrame:
+    """Rebuild the daily portfolio from prices, weights, cash and costs."""
+    asset_returns = prices.pct_change().fillna(0.0)
+    current = pd.Series(0.0, index=prices.columns)
+    previous_state = None
+    nav = 1.0
+    cost_rate = (fee_bps + slippage_bps) / 10000.0
+    rows = []
+    for date, daily in asset_returns.iterrows():
+        state = states.loc[date]
+        desired = pd.Series(weights[state], dtype=float).reindex(
+            prices.columns, fill_value=0.0)
+        target = desired if state != previous_state else current
+        turnover = float((target - current).abs().sum())
+        gross_return = float((target * daily).sum())
+        transaction_cost = turnover * cost_rate
+        net_return = gross_return - transaction_cost
+        start_nav = nav
+        nav = start_nav * (1.0 + net_return)
+        end_values = target * (1.0 + daily) * start_nav
+        end_weights = end_values / nav if nav else end_values * 0.0
+        row = {"date": date, "state": state, "start_nav": start_nav,
+               "turnover": turnover, "gross_return": gross_return,
+               "transaction_cost": transaction_cost, "net_return": net_return,
+               "nav": nav, "cash_residual": float(1.0 - target.sum())}
+        row.update({f"price_{symbol}": float(value)
+                    for symbol, value in prices.loc[date].items()})
+        row.update({f"target_weight_{symbol}": float(value)
+                    for symbol, value in target.items()})
+        row.update({f"end_weight_{symbol}": float(value)
+                    for symbol, value in end_weights.items()})
+        rows.append(row)
+        current = end_weights
+        previous_state = state
+    return pd.DataFrame(rows).set_index("date")
+
+
+def nav_ledger(prices: pd.DataFrame, cfg: dict, fee_bps: float,
+               slippage_bps: float) -> pd.DataFrame:
+    return nav_ledger_from_states(prices, state_path(prices, cfg), WEIGHTS,
+                                   fee_bps, slippage_bps)
 
 
 def _scope_rows(name: str, returns: pd.Series, turnover: pd.Series,
