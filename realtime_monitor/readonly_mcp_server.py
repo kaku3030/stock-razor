@@ -334,7 +334,7 @@ def get_historical_bars(
     adjustment: str = "qfq",
     session: str = "RTH",
     limit: int = 100,
-    cursor: int | None = None,
+    cursor: str | None = None,
 ) -> dict:
     """Read bounded historical bars from the persisted cache only."""
     return read_us_historical_bars(
