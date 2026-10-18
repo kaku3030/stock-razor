@@ -21,8 +21,6 @@ import time
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-
-
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
 DEFAULT_SYMBOLS = ("159611.SZ", "518880.SH", "512730.SH")
