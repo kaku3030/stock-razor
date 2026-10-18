@@ -233,7 +233,7 @@ if [[ "$quote_only" == true ]]; then
   probe_args+=(--quote-only)
 fi
 probe_exit=0
-result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)" || probe_exit=$?
+result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>"$stage/probe-stderr")" || probe_exit=$?
 if (( probe_exit != 0 )); then
   # Python emits only a fixed schema and exception class on failure. Do not
   # expose traceback, provider response text, URLs, or command arguments.
@@ -245,6 +245,30 @@ except Exception:
     value=None
 print(value if isinstance(value,str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}",value) else "UNKNOWN")
 ' 2>/dev/null)"
+  if [[ "$failure_class" == UNKNOWN ]]; then
+    # Keep stderr private and inspect only its final exception type. The file
+    # is inside the mode-0700 temporary stage and removed by the EXIT trap.
+    failure_class="$(python3 - "$stage/probe-stderr" <<'PY'
+import os, re, sys
+try:
+    path=sys.argv[1]
+    size=os.path.getsize(path)
+    with open(path,"rb") as handle:
+        handle.seek(max(0,size-16384))
+        tail=handle.read().decode("utf-8","replace")
+except Exception:
+    tail=""
+for line in reversed(tail.splitlines()):
+    line=re.sub(r"\x1b\[[0-9;]*m","",line)
+    match=re.match(r"^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)",line)
+    if match:
+        print(match.group(1))
+        break
+else:
+    print("UNKNOWN")
+PY
+)"
+  fi
   printf 'TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=%s\n' "$failure_class"
   exit "$probe_exit"
 fi
