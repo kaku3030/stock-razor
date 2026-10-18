@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] OpenD 无订阅变更探针仅使用当前连接的订阅，避免借用其他连接状态后产生误导性拒绝；无自有订阅时零 K 线调用并明确阻断。
 - [修复] TickFlow 批量响应漏项时每周期最多对四个缺失符号执行单票补取、每次五周期观察最多二十次；补取失败或超限时继续阻断缓存。
 - [改进] TickFlow 私有研究缓存将封套 schema、provider 与状态不匹配分成固定脱敏错误码，便于云端定位并继续 fail-closed。
 - [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。
