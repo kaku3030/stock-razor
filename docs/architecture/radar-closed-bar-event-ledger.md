@@ -44,6 +44,20 @@ Limits are conservative and constructor-bound: one total committed invocation by
 
 The table is additive and created idempotently in the existing database. Existing event rows/lease semantics are preserved. Roll back by disabling the optional consumer/reverting code while retaining receipt rows; deleting/recreating receipt storage would destroy dedupe and budget evidence. AI wake delivery to a live model, Discord dispatch, source/Radar/paper/trading admission and AWS restart/recovery remain NOT_VERIFIED.
 
+## Optional single-request research transport
+
+Task `V51-C-SINGLE-REQUEST-BACKEND-20261017` supplies `ResearchAIRequestBackend` through the existing `GenerationBackend` interface. Both backend and consumer default to disabled. An authorized runtime caller must supply the provider, model and credential explicitly and inject it into the durable consumer. This change adds no environment setting, credentials, runtime launcher, scheduler, model smoke request, notification or order path.
+
+The fixed worker uses the installed official OpenAI Python SDK for the allowlisted OpenAI/DeepSeek hosts. SDK retries are explicitly zero; HTTP redirects, ambient proxies, SDK debug configuration, streaming generation, tools, arbitrary endpoints, model fallback and extra generation settings are excluded. Each admitted invocation issues one non-streaming chat-completion request, with bounded prompt/output tokens and successful response bytes. Unsupported provider/model behavior fails closed; no compatibility retry occurs. OpenAI receives max_completion_tokens, DeepSeek receives max_tokens. The request identity is for client tracing, not a claim of provider idempotency or exactly-once charging.
+
+A fixed Python module runs the SDK call in a local child process, with credentials passed over stdin and no shell/arbitrary command. The supervising backend accounts for process-start time in the 1–60 second deadline, kills an unfinished child at deadline, and bounds reaping to two additional seconds. Raw provider errors, worker stderr, metadata and credentials are discarded. Only text and three validated token counts cross the result boundary; the consumer separately validates event identity/research schema and persists its receipt before ACK. If process launch, cleanup, provider work, response validation or completion is uncertain, the durable UNKNOWN barrier prevents automatic retry. A parent crash can leave remote/provider work or a local orphan unresolved; this code does not replace an independent service supervisor.
+
+Offline tests exercise the real installed SDK with HTTP MockTransport: 408/409/429/5xx, connection errors and timeouts each make one request; redirects are not followed. They also kill an actual sleeping child, reject incomplete/oversize/token-invalid responses and unsafe configuration, and exercise consumer → SDK transport → persistent receipt → reopen/ACK recovery without repeated dispatch. This is code-level evidence only. No live credentials or model request were used. Provider-enforced monetary limits, actual charges/balances, authorized live-model compatibility, process recovery on AWS, continuous supervision and Discord delivery remain NOT_VERIFIED. Token/call caps are not a currency budget.
+
+Official contracts reviewed: https://github.com/openai/openai-python (SDK retries and timeouts) and https://api-docs.deepseek.com/api/create-chat-completion/ (OpenAI-compatible non-streaming chat and max_tokens). Reused installed SDK and existing generation/ledger/usage contracts; no external implementation copied and no new dependency introduced. The existing analyzer retrying router remains outside this transport.
+
+Rollback: disable the optional consumer/backend and revert the code while retaining ledger receipt/budget rows. No cloud state or database migration is added. All source/Radar/paper/trading gates remain closed.
+
 ## Current acceptance status
 
 - Offline tests cover reject cases, duplicate replay after reopen, conflicting bar facts, capacity overflow, two-connection concurrent claims, lease expiry/recovery, retry exhaustion, dead letter, and acknowledgment ownership.

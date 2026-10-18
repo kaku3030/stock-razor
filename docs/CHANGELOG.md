@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 新增默认关闭的 Radar 单请求研究模型后端：SDK 禁重试、固定子进程硬超时、受限输出与脱敏回执，复用持久化预算及 UNKNOWN 防重放门禁；不启用付费调用或云端运行。
+
 - [新功能] 闭合行情账本增加默认关闭的研究 AI 消费回执：调用前持久占位、结果先保存后 ACK、重启去重、持久调用上限；超时及未知结果阻断重试，继续关闭信号与交易门禁。
 - [修复] OpenAI 用量与 Costs 采用各自有效的每日桶上限，保留完整账单窗口及分页阻断；Aider 有 Token 但零估价时费用标记未知，监控恶意大载荷回归兼容 Windows。
 
