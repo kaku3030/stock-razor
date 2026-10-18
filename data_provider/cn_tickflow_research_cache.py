@@ -43,7 +43,11 @@ _LABEL_END = {
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
 _ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
-_MAX_BATCH_FALLBACKS_PER_OBSERVATION = 4
+# Recover at most four omitted entries per period and twenty per full scan.
+_MAX_BATCH_FALLBACKS_PER_PERIOD = 4
+_MAX_BATCH_FALLBACKS_PER_OBSERVATION = (
+    _MAX_BATCH_FALLBACKS_PER_PERIOD * len(_ALLOWED_PERIODS)
+)
 _SOURCE = "TICKFLOW_PREMIUM"
 
 
@@ -86,7 +90,8 @@ class _BatchKlinesFacade:
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
                 missing = tuple(symbol for symbol in symbols if symbol not in result)
-                if (self._fallback_count + len(missing)
+                if (len(missing) > _MAX_BATCH_FALLBACKS_PER_PERIOD
+                        or self._fallback_count + len(missing)
                         > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
                     raise ValueError("batch SDK symbol missing")
                 # Count attempted calls, including a later provider failure.
