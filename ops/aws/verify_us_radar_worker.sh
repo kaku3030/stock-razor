@@ -3,14 +3,17 @@ set -euo pipefail
 
 expected_worker_sha="${1:?expected worker sha required}"
 expected_source_sha="${2:?expected source sha required}"
+expected_events="${3:-false}"
+case "$expected_events" in true|false) ;; *) exit 2;; esac
 service="stock-razor-us-radar.service"
 status="/run/stock-razor-us-radar/latest-research-state.json"
 python_bin="/opt/stock-razor-us-radar/venv/bin/python"
 
 for _ in $(seq 1 24); do
   if systemctl is-active --quiet "$service" && [[ -s "$status" ]]; then
-    if "$python_bin" - "$status" "$expected_worker_sha" "$expected_source_sha" <<'PY'
+    if CLOSED_BAR_EVENTS_ENABLED="$expected_events" "$python_bin" - "$status" "$expected_worker_sha" "$expected_source_sha" <<'PY'
 import json
+import os
 import sys
 
 status_path, expected_worker_sha, expected_source_sha = sys.argv[1:]
@@ -25,6 +28,14 @@ assert payload.get("research_only") is True
 assert payload.get("can_confirm_signal") is False
 assert payload.get("radar_admission") == "BLOCKED"
 assert payload.get("live_trade") is False
+queue = payload.get("bar_event_queue")
+if os.environ["CLOSED_BAR_EVENTS_ENABLED"] == "true":
+    assert isinstance(queue, dict)
+    for name in ("event_pending", "event_claimed", "event_acknowledged", "event_dead_letter",
+                 "ai_started", "ai_succeeded", "ai_unknown", "ai_expired"):
+        assert type(queue.get(name)) is int and queue[name] >= 0
+else:
+    assert queue is None
 
 radar_analysis_performed = payload.get("radar_analysis_performed")
 radar_analysis_latency_ms = payload.get("radar_analysis_latency_ms")
@@ -122,6 +133,10 @@ PY
       test "$(systemctl show "$service" -p WatchdogUSec --value)" = "90000000"
       test "$(systemctl show "$service" -p PrivateNetwork --value)" = "yes"
       test "$(systemctl show "$service" -p NoNewPrivileges --value)" = "yes"
+      if [ "$expected_events" = true ]; then
+        test "$(systemctl show "$service" -p StateDirectory --value)" = "stock-razor-us-radar"
+        test "$(systemctl show "$service" -p StateDirectoryMode --value)" = "0700"
+      fi
       cat "$status"
       printf '\n'
       echo "US_RADAR_WORKER_VERIFY=PASS"

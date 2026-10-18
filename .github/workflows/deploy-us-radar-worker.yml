@@ -7,6 +7,11 @@ on:
         type: boolean
         required: true
         default: false
+      closed_bar_events_enabled:
+        description: "Opt in to persistent research event collection only (no model invocation)"
+        type: boolean
+        required: false
+        default: false
       expected_main_sha:
         description: "Exact full GitHub main SHA; must equal this workflow run commit"
         type: string
@@ -110,10 +115,12 @@ jobs:
         env:
           REPO_REF: "${{ steps.source.outputs.sha }}"
           SOURCE_REPO_SHA: "${{ steps.canonical.outputs.sha }}"
+          CLOSED_BAR_EVENTS_ENABLED: "${{ inputs.closed_bar_events_enabled && 'true' || 'false' }}"
           INSTALL_SHA: "${{ steps.source.outputs.install_sha }}"
           VERIFY_SHA: "${{ steps.source.outputs.verify_sha }}"
         run: |
           set -euo pipefail
+          case "$CLOSED_BAR_EVENTS_ENABLED" in true|false) ;; *) exit 2;; esac
           [[ "$REPO_REF" =~ ^[a-f0-9]{40}$ ]]
           [[ "$INSTALL_SHA" =~ ^[a-f0-9]{64}$ ]]
           [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
@@ -128,11 +135,11 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_us_radar_worker.sh' -o "\$stage/verify.sh"
           printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null
-          if ! REPO_REF='$REPO_REF' SOURCE_REPO_SHA='$SOURCE_REPO_SHA' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
+          if ! CLOSED_BAR_EVENTS_ENABLED='$CLOSED_BAR_EVENTS_ENABLED' REPO_REF='$REPO_REF' SOURCE_REPO_SHA='$SOURCE_REPO_SHA' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
             echo 'US_RADAR_INSTALL=FAILED' >&2
             exit 1
           fi
-          if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_REPO_SHA' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
+          if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_REPO_SHA' '$CLOSED_BAR_EVENTS_ENABLED' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
             echo 'US_RADAR_ACCEPTANCE=FAILED' >&2
             exit 1
           fi

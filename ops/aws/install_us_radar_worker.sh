@@ -8,6 +8,14 @@ REPO_REF="${REPO_REF:?REPO_REF exact worker commit SHA is required}"
 SOURCE_REPO_SHA="${SOURCE_REPO_SHA:?SOURCE_REPO_SHA exact acquisition commit SHA is required}"
 SOURCE_PATH="${SOURCE_PATH:-/run/stock-razor-us-livefeed/canonical-market-snapshot.json}"
 STATUS_PATH="${STATUS_PATH:-/run/stock-razor-us-radar/latest-research-state.json}"
+CLOSED_BAR_EVENTS_ENABLED="${CLOSED_BAR_EVENTS_ENABLED:-false}"
+EVENT_STATE_DIRECTIVE=""
+case "$CLOSED_BAR_EVENTS_ENABLED" in
+  (true) EVENT_STATE_DIRECTIVE="StateDirectory=stock-razor-us-radar";;
+  (false) ;;
+  (*) echo "CLOSED_BAR_EVENTS_ENABLED must be true or false" >&2; exit 2;;
+esac
+
 OPTIONS_CONTEXT_ENABLED="${OPTIONS_CONTEXT_ENABLED:-false}"
 OPTIONS_CONTEXT_PATH="${OPTIONS_CONTEXT_PATH:-/run/stock-razor-us-options-intelligence/options-intelligence.json}"
 OPTIONS_SOURCE_REPO_SHA="${OPTIONS_SOURCE_REPO_SHA:-}"
@@ -46,8 +54,15 @@ test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"
 if [ ! -x "$INSTALL_ROOT/venv/bin/python" ]; then
   python3 -m venv "$INSTALL_ROOT/venv"
 fi
+calendar_dependencies=()
+if [ "$CLOSED_BAR_EVENTS_ENABLED" = "true" ]; then
+  calendar_dependencies=('exchange-calendars==4.13.2')
+fi
 "$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input \
-  'numpy==1.26.4' 'pandas==2.2.2' 'PyYAML==6.0.2'
+  'numpy==1.26.4' 'pandas==2.2.2' 'PyYAML==6.0.2' "${calendar_dependencies[@]}"
+if [ "$CLOSED_BAR_EVENTS_ENABLED" = "true" ]; then
+  "$INSTALL_ROOT/venv/bin/python" -c 'import exchange_calendars as xcals; xcals.get_calendar("XNYS")'
+fi
 
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from src.services.stock_radar_v2.canonical_snapshot_worker import (
@@ -84,6 +99,7 @@ from src.services.stock_radar_v2.options_context_reader import RadarOptionsConte
 from src.services.stock_radar_v2.technical_state import StockRadarTechnicalStateService
 from src.services.stock_radar_v2.export_latency_ledger import CanonicalExportLatencyLedger
 from src.services.stock_radar_v2.systemd_notify import notify_systemd
+from src.services.stock_radar_v2.ai_consumer_runtime import open_worker_event_ledger
 
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 expected_source_repo_sha = os.environ["STOCK_RAZOR_SOURCE_REPO_SHA"].strip().lower()
@@ -131,9 +147,22 @@ evaluator = CanonicalSnapshotRadarEvaluator(
     max_active_age_seconds=120,
 )
 options_reader = RadarOptionsContextReader(max_age_seconds=120)
+event_mode = os.environ.get("STOCK_RAZOR_CLOSED_BAR_EVENTS_ENABLED", "false")
+if event_mode not in {"true", "false"}:
+    raise ValueError("invalid closed-bar event mode")
+if event_mode == "true":
+    from src.core.trading_calendar import MarketPhase, infer_market_phase
+    if infer_market_phase("us", datetime.now(timezone.utc)) == MarketPhase.UNKNOWN:
+        raise ValueError("EVENT_CALENDAR_NOT_VERIFIED")
+event_ledger = open_worker_event_ledger(
+    enabled=event_mode == "true",
+    state_directory=os.environ.get("STATE_DIRECTORY"),
+    reserved_paths=(status_path, source_path),
+)
 worker = CanonicalSnapshotRadarWorker(
     expected_repo_sha=expected_source_repo_sha,
     evaluator=evaluator,
+    event_ledger=event_ledger,
 )
 cycle = 0
 latency_ledger = CanonicalExportLatencyLedger()
@@ -246,6 +275,7 @@ while True:
             "end_to_end_distribution": "NOT_VERIFIED",
         },
         "evaluation": evaluation_payload,
+        "bar_event_queue": event_ledger.runtime_summary(now=completed_at) if event_ledger is not None else None,
         "research_only": True,
         "can_confirm_signal": False,
         "radar_admission": "BLOCKED",
@@ -307,9 +337,12 @@ Environment=STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH=$SOURCE_PATH
 Environment=STOCK_RAZOR_US_DAILY_HISTORY_PATH=/run/stock-razor-us-livefeed/daily-history.json
 Environment=STOCK_RAZOR_US_RADAR_STATUS_PATH=$STATUS_PATH
 Environment=STOCK_RAZOR_US_RADAR_POLL_SECONDS=0.25
+Environment=STOCK_RAZOR_CLOSED_BAR_EVENTS_ENABLED=$CLOSED_BAR_EVENTS_ENABLED
 Environment=STOCK_RAZOR_OPTIONS_CONTEXT_ENABLED=$OPTIONS_CONTEXT_ENABLED
 Environment=STOCK_RAZOR_OPTIONS_CONTEXT_PATH=$OPTIONS_CONTEXT_PATH
 Environment=STOCK_RAZOR_OPTIONS_SOURCE_REPO_SHA=$OPTIONS_SOURCE_REPO_SHA
+$EVENT_STATE_DIRECTIVE
+StateDirectoryMode=0700
 RuntimeDirectory=stock-razor-us-radar
 RuntimeDirectoryMode=0755
 ExecStart=$INSTALL_ROOT/venv/bin/python $INSTALL_ROOT/run.py
