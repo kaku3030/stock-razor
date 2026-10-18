@@ -195,3 +195,11 @@ def test_premium_probe_reports_only_sanitized_python_failure_class():
 def test_premium_workflow_allowlists_only_validated_probe_failure_class():
     assert r"/^TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=[A-Za-z][A-Za-z0-9_]{0,63}$/ {print; next}" in PREMIUM_WORKFLOW
 
+def test_premium_probe_keeps_python_stderr_private_and_extracts_type_only():
+    premium = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    assert '2>"$stage/probe-stderr"' in premium
+    assert 'size-16384' in premium
+    assert 'r"^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)"' in premium
+    assert 'print(match.group(1))' in premium
+    assert 'print(line)' not in premium
+
