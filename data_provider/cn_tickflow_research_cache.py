@@ -43,7 +43,12 @@ _LABEL_END = {
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
 _ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
+_MAX_BATCH_FALLBACKS_PER_OBSERVATION = 4
 _SOURCE = "TICKFLOW_PREMIUM"
+
+
+class _BatchSymbolFallbackError(RuntimeError):
+    """Provider-free public failure for a missing-symbol recovery attempt."""
 
 
 def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
@@ -65,6 +70,7 @@ class _BatchKlinesFacade:
     def __init__(self, client: Any, symbols: tuple[str, ...], periods: dict[str, int],
                  batch_size: int) -> None:
         self._frames: dict[tuple[str, str], Any] = {}
+        self._fallback_count = 0
         for period, count in periods.items():
             try:
                 method = (client.klines.batch if period == "1d"
@@ -79,14 +85,37 @@ class _BatchKlinesFacade:
                 result = method(list(symbols), **kwargs)
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
+                missing = tuple(symbol for symbol in symbols if symbol not in result)
+                if (self._fallback_count + len(missing)
+                        > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
+                    raise ValueError("batch SDK symbol missing")
+                # Count attempted calls, including a later provider failure.
+                self._fallback_count += len(missing)
                 for symbol in symbols:
-                    if symbol not in result:
-                        raise ValueError("batch SDK symbol missing")
-                    self._frames[(symbol, period)] = result[symbol]
+                    if symbol in result:
+                        frame = result[symbol]
+                    else:
+                        # Recover only a small number of omitted batch entries.
+                        # Larger gaps fail closed to cap provider calls and cost.
+                        try:
+                            frame = client.klines.get(
+                                symbol, period=period, count=count,
+                                as_dataframe=False, adjust="none",
+                            )
+                        except Exception:
+                            failure = _BatchSymbolFallbackError(
+                                "batch symbol fallback failed"
+                            )
+                            failure._tickflow_stage = (
+                                f"BATCH_{period.upper()}_SYMBOL_FALLBACK"
+                            )
+                            raise failure from None
+                    self._frames[(symbol, period)] = frame
             except Exception as exc:
                 # Batch errors occur before the per-symbol normalization loop.
                 # Preserve a finite local stage without exposing provider text.
-                exc._tickflow_stage = f"BATCH_{period.upper()}_FETCH"
+                if not isinstance(exc, _BatchSymbolFallbackError):
+                    exc._tickflow_stage = f"BATCH_{period.upper()}_FETCH"
                 raise
 
     def get(self, symbol: str, *, period: str, count: int,

@@ -47,6 +47,10 @@ _NORMALIZE_REJECTION_REASON = {
 
 def _normalize_rejection_reason(error: Exception) -> str:
     stage=getattr(error, "_tickflow_stage", "")
+    if stage in {
+            f"BATCH_{period}_SYMBOL_FALLBACK"
+            for period in ("1M", "5M", "15M", "60M", "1D")}:
+        return "BATCH_SYMBOL_FALLBACK_FAILED"
     if type(error) is ValueError and stage in {
             f"BATCH_{period}_FETCH"
             for period in ("1M", "5M", "15M", "60M", "1D")}:
