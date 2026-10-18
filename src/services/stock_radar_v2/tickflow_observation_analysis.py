@@ -71,6 +71,10 @@ def evaluate_tickflow_observation_payload(source: dict, *, now_utc: datetime) ->
                   source_arbiter_admission="BLOCKED")
     for item in result["symbols"].values():
         if item.get("status") == "RESEARCH_STATE":
+            if any(warning.endswith("_insufficient_bars")
+                   for period in ("hourly", "intraday")
+                   for warning in item["technical"][period]["quality"]["warnings"]):
+                item["technical"]["risk_flags"].append("tickflow_indicator_history_insufficient")
             item["technical"]["risk_flags"].extend([
                 "tickflow_bar_finality_not_verified", "tickflow_volume_units_not_verified",
                 "tickflow_adjustment_not_verified",

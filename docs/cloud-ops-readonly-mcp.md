@@ -199,6 +199,12 @@ finality/volume units/adjustment NOT_VERIFIED. Vendor operational-close rules
 are not promoted to immutable finality by this bridge. Source runtime UUID is
 NOT_VERIFIED because the collector does not publish one. Current D1 cache depth
 is at most 40 bars: this is not the full long-history/L3 strategy prerequisite.
+The first actual cloud bridge readback contained D1=40, 60m=4 and 15m=16
+rows per baseline symbol. Requested SDK counts are not evidence of returned
+depth. Insufficient-history indicator states retain the caller's partial-bar
+flag, bar count, latest label and explicit warnings; TickFlow also reports
+`tickflow_indicator_history_insufficient`. Operational bridge verification
+does not turn these short histories into qualified multi-timeframe signals.
 
 The TickFlow deployment verifier independently rereads the source SHA, sequence
 and observation time, verifies all four research states and provisional flags,
