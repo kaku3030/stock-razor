@@ -10,13 +10,44 @@ dataset hash and an explicit no-tuning assertion. Cost validation requires
 finite, non-negative `commission_bps` and `slippage_bps` values. Declarations
 alone remain `NOT_VERIFIED`/`UNKNOWN`.
 
-## Minimal research entry
+## Replay Lab execution
 
 ```powershell
-python scripts/vibe_trading_research.py "run Strong Pullback in Replay Lab"
+python scripts/vibe_trading_research.py "compare B0, V0.2, and Strong Pullback in Replay Lab" `
+  --fixture tests/fixtures/strategy_lab/aapl_getdata_12h_recorded_fixture_v1.json `
+  --write work/vibe-replay-report.json
 ```
 
-Supported profiles are `B0`, `V0.2`, and `Strong Pullback`. This entry emits a
-research request bound to the existing Strategy Lab replay engine with
-`execution=NOT_RUN`; it does not claim a replay result without caller-supplied
-events and governed validation evidence.
+The command runs the offline OHLC Replay Lab against an existing immutable
+fixture. The first slice uses explicitly labelled exploratory proxy rules:
+B0 holds from first open to final close, V0.2 buys after a prior up-close, and
+Strong Pullback buys after two declining closes. These are not verified
+canonical strategy specifications. The report marks
+strategy_rule_contract=EXPLORATORY_PROXY_NOT_CANONICAL and
+canonical_strategy_spec=NOT_VERIFIED. It reports gross and
+explicit 0/1/2/5 bps-per-side cost scenarios, and separates six training rows
+from a two-row diagnostic holdout. The
+holdout is hash-bound but not claimed as validated out-of-sample evidence;
+rule pre-registration is NOT_VERIFIED, and the sample is marked
+statistical_power=INSUFFICIENT_SMALL_FIXTURE. Maximum drawdown is
+NOT_COMPUTED because the replay currently records trade returns but no
+intratrade mark-to-market equity path.
+
+Without `--fixture`, the natural-language entry remains a request with
+`execution=NOT_RUN`. Every completed report remains `RESEARCH_ONLY`, with
+`radar_admission=BLOCKED`, `trade_execution=NO`, and no provider, MCP, paper,
+or trading path. The CLI also emits `report_sha256`, calculated over the
+canonical report before that field is added.
+
+Existing local CSV captures can be replayed without provider I/O:
+
+```powershell
+python scripts/vibe_trading_research.py "compare B0, V0.2, and Strong Pullback in Replay Lab" `
+  --csv work/US_QQQ_5m.csv --csv work/US_NVDA_5m.csv --csv work/US_AMD_5m.csv `
+  --write work/vibe-replay-multi-symbol-report.json
+```
+
+CSV inputs must contain strictly ordered `time_key`, `open`, `high`, `low`,
+and `close` columns. The report records each source file hash and source
+metadata. Provider finality remains `UNKNOWN`; unavailable requested symbols
+must remain `NOT_VERIFIED` rather than being synthesized.
