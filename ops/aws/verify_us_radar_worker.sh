@@ -123,6 +123,18 @@ if evaluation.get("status") == "BLOCKED":
         "SOURCE_EXPORT_FROM_FUTURE",
         "SOURCE_SEQUENCE_REGRESSION",
     }
+    if "BAR_EVENT_SOURCE_NOT_QUALIFIED" in reasons:
+        # Operational verification of a correctly blocked research inbox;
+        # this never qualifies source data or authorizes event admission.
+        assert os.environ["CLOSED_BAR_EVENTS_ENABLED"] == "true"
+        assert reasons == {"BAR_EVENT_SOURCE_NOT_QUALIFIED"}
+        assert evaluation.get("source_delivery_mode") != "REALTIME" or evaluation.get("source_bar_closure") != "PROVEN"
+        ingress = evaluation.get("bar_event_ingress") or {}
+        assert ingress.get("status") == "BLOCKED"
+        assert ingress.get("reasons") == ["BAR_EVENT_SOURCE_NOT_QUALIFIED"]
+        for name in ("created_count", "duplicate_count"):
+            assert type(ingress.get(name)) is int and ingress[name] == 0
+        allowed.add("BAR_EVENT_SOURCE_NOT_QUALIFIED")
     assert reasons
     assert reasons.issubset(allowed)
 PY
