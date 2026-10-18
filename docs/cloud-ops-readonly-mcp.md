@@ -170,3 +170,18 @@ introduced.
 
 Revert the isolated MCP tool, read-only reader, test, installer smoke and
 changelog patch. No IAM, database, broker or source migration is involved.
+
+## Guarded CN Radar deployment
+
+`Deploy Read-Only CN Radar Worker` is manual, owner-only and bound to the
+current full main SHA. Set `approve_restart=true` and provide
+`expected_main_sha`; the workflow checks main before AWS credentials and again
+before SSM. Both immutable installer/verifier downloads must match their source
+SHA256 before restart. Installation and full verifier output stay private on EC2;
+public Actions logs contain only fixed deployment/safety markers. Missing proof,
+remote failure or a moved main blocks deployment success. Roll back by dispatching
+a separately reviewed revert on protected main.
+
+This worker still consumes the CN Eastmoney/Tencent observer cache. Updating its
+code version does not establish TickFlow-to-Radar integration, live freshness,
+bar finality or signal admission. `RADAR_ADMISSION=BLOCKED` and `LIVE_TRADE=NO`.
