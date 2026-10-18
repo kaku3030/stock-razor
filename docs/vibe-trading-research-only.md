@@ -29,9 +29,11 @@ explicit 0/1/2/5 bps-per-side cost scenarios, and separates six training rows
 from a two-row diagnostic holdout. The
 holdout is hash-bound but not claimed as validated out-of-sample evidence;
 rule pre-registration is NOT_VERIFIED, and the sample is marked
-statistical_power=INSUFFICIENT_SMALL_FIXTURE. Maximum drawdown is
-NOT_COMPUTED because the replay currently records trade returns but no
-intratrade mark-to-market equity path.
+statistical_power=INSUFFICIENT_SMALL_FIXTURE. Each strategy and cost scenario
+now includes a per-bar equity curve, trade count, net return, and maximum
+drawdown using bar-low/close mark-to-market. The strict walk-forward gate
+records train/holdout hashes, chronological leakage status, and observed
+sample counts; this fixture remains BLOCKED_INSUFFICIENT_SAMPLE.
 
 Without `--fixture`, the natural-language entry remains a request with
 `execution=NOT_RUN`. Every completed report remains `RESEARCH_ONLY`, with

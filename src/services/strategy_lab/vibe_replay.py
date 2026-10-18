@@ -136,21 +136,60 @@ def _trades_for(strategy: str, bars: list[Bar]) -> list[Trade]:
     raise ValueError(f"unsupported strategy: {strategy}")
 
 
-def _metrics(trades: Iterable[Trade], commission_bps: float, slippage_bps: float) -> dict[str, Any]:
+def _holding_flags(strategy: str, bars: list[Bar]) -> list[bool]:
+    if strategy == "b0":
+        return [True] * len(bars)
+    signal = _v02_signal if strategy == "v0.2" else _strong_pullback_signal
+    return [index > 0 and signal(bars, index) for index in range(len(bars))]
+
+
+def _metrics(
+    trades: Iterable[Trade],
+    bars: list[Bar],
+    holding_flags: list[bool],
+    commission_bps: float,
+    slippage_bps: float,
+) -> dict[str, Any]:
     friction = (commission_bps + slippage_bps) / 10000.0
     equity = 1.0
     returns = []
     for trade in trades:
         entry = trade.entry_price * (1.0 + friction)
         exit = trade.exit_price * (1.0 - friction)
-        trade_return = exit / entry - 1.0
-        returns.append(trade_return)
-        equity *= 1.0 + trade_return
+        returns.append(exit / entry - 1.0)
+
+    units = 0.0
+    curve: list[dict[str, Any]] = []
+    previous_holding = False
+    for index, bar in enumerate(bars):
+        holding = holding_flags[index]
+        if holding and not previous_holding:
+            units = equity / (bar.open * (1.0 + friction))
+        elif not holding and previous_holding:
+            equity = units * bar.open * (1.0 - friction)
+            units = 0.0
+        low_equity = units * bar.low if holding else equity
+        if holding:
+            equity = units * bar.close
+        curve.append({"timestamp": bar.timestamp, "equity": equity, "low_equity": low_equity})
+        previous_holding = holding
+    if previous_holding:
+        equity = units * bars[-1].close * (1.0 - friction)
+        curve[-1]["equity"] = equity
+        curve[-1]["low_equity"] = equity
+
+    peak = 1.0
+    max_drawdown = 0.0
+    for point in curve:
+        peak = max(peak, point["equity"])
+        max_drawdown = max(max_drawdown, (peak - point["low_equity"]) / peak)
     return {
         "trade_count": len(returns),
         "total_return": equity - 1.0,
-        "max_drawdown": None,
-        "max_drawdown_status": "NOT_COMPUTED_INTRATRADE_MARK_TO_MARKET_MISSING",
+        "ending_equity": equity,
+        "equity_curve": curve,
+        "max_drawdown": max_drawdown,
+        "max_drawdown_status": "COMPUTED_FROM_BAR_LOW_CLOSE_MARK_TO_MARKET",
         "trade_returns": returns,
         "commission_bps": commission_bps,
         "slippage_bps": slippage_bps,
@@ -166,13 +205,26 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
     if len(train) < 3 or len(holdout) < 2:
         raise ValueError("fixture split must have at least three train and two holdout bars")
     holdout_hash = "sha256:" + _digest([bar.__dict__ for bar in holdout])
+    train_hash = "sha256:" + _digest([bar.__dict__ for bar in train])
 
     def section(sample: list[Bar]) -> dict[str, Any]:
         return {
             strategy: {
-                "gross": _metrics(_trades_for(strategy, sample), 0.0, 0.0),
+                "gross": _metrics(
+                    _trades_for(strategy, sample),
+                    sample,
+                    _holding_flags(strategy, sample),
+                    0.0,
+                    0.0,
+                ),
                 "cost_sensitivity": [
-                    _metrics(_trades_for(strategy, sample), commission, slippage)
+                    _metrics(
+                        _trades_for(strategy, sample),
+                        sample,
+                        _holding_flags(strategy, sample),
+                        commission,
+                        slippage,
+                    )
                     for commission, slippage in COST_SCENARIOS
                 ],
             }
@@ -180,7 +232,7 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
         }
 
     return {
-        "schema_version": "stock-razor-vibe-replay-lab-v0.1",
+        "schema_version": "stock-razor-vibe-replay-lab-v0.4",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
         "strategy_rule_contract": {
@@ -197,8 +249,37 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
         "holdout": section(holdout),
         "oos": {
             "status": "HOLDOUT_REPLAYED_RESEARCH_ONLY",
-            "holdout": {"status": "DIAGNOSTIC_ONLY", "dataset_hash": holdout_hash, "strategy_not_tuned_on_holdout": "NOT_VERIFIED"},
+            "holdout": {
+                "status": "DIAGNOSTIC_ONLY",
+                "dataset_hash": holdout_hash,
+                "strategy_not_tuned_on_holdout": "NOT_VERIFIED",
+            },
             "statistical_power": "INSUFFICIENT_SMALL_FIXTURE",
+        },
+        "walk_forward": {
+            "status": "BLOCKED_INSUFFICIENT_SAMPLE",
+            "split_policy": "CHRONOLOGICAL_TRAIN_THEN_HOLDOUT",
+            "leakage_check": "PASS" if train[-1].timestamp < holdout[0].timestamp else "FAIL",
+            "train": {"rows": len(train), "dataset_hash": train_hash},
+            "holdout": {"rows": len(holdout), "dataset_hash": holdout_hash},
+            "minimum_requirements": {
+                "train_rows": 30,
+                "holdout_rows": 30,
+                "train_trades_per_strategy": 5,
+                "holdout_trades_per_strategy": 5,
+            },
+            "observed": {
+                "train_rows": len(train),
+                "holdout_rows": len(holdout),
+                "train_trades_by_strategy": {
+                    strategy: len(_trades_for(strategy, train)) for strategy in selected
+                },
+                "holdout_trades_by_strategy": {
+                    strategy: len(_trades_for(strategy, holdout)) for strategy in selected
+                },
+            },
+            "parameter_tuning_on_holdout": "NOT_VERIFIED",
+            "oos_claim": "BLOCKED",
         },
         "provenance": {
             "fixture_id": fixture.get("fixture_id", "UNKNOWN"),
@@ -225,7 +306,7 @@ def replay_csv_files(paths: Iterable[str | Path], strategies: Iterable[str] = ST
     if len(set(symbols)) != len(symbols):
         raise ValueError("CSV inputs must contain unique symbols")
     return {
-        "schema_version": "stock-razor-vibe-replay-lab-v0.2",
+        "schema_version": "stock-razor-vibe-replay-lab-v0.4",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
         "strategies": tuple(dict.fromkeys(strategies)),

@@ -19,11 +19,13 @@ def test_replay_uses_real_fixture_with_diagnostic_holdout() -> None:
     assert result["oos"]["holdout"]["strategy_not_tuned_on_holdout"] == "NOT_VERIFIED"
     assert result["provenance"]["fixture_digest"] == fixture["fixture_digest"]
     assert result["provenance"]["holdout_rows"] == 2
-    assert result["holdout"]["b0"]["gross"]["max_drawdown"] is None
-    assert (
-        result["holdout"]["b0"]["gross"]["max_drawdown_status"]
-        == "NOT_COMPUTED_INTRATRADE_MARK_TO_MARKET_MISSING"
-    )
+    assert result["holdout"]["b0"]["gross"]["max_drawdown"] >= 0
+    assert result["holdout"]["b0"]["gross"]["max_drawdown_status"] == "COMPUTED_FROM_BAR_LOW_CLOSE_MARK_TO_MARKET"
+    assert len(result["holdout"]["b0"]["gross"]["equity_curve"]) == 2
+    assert result["walk_forward"]["status"] == "BLOCKED_INSUFFICIENT_SAMPLE"
+    assert result["walk_forward"]["leakage_check"] == "PASS"
+    assert result["walk_forward"]["train"]["dataset_hash"].startswith("sha256:")
+    assert result["walk_forward"]["holdout"]["dataset_hash"].startswith("sha256:")
 
 
 def test_cost_sensitivity_is_explicit_and_safety_stays_closed() -> None:
@@ -51,3 +53,16 @@ def test_csv_replay_preserves_source_hash_and_safety(tmp_path) -> None:
     assert result["symbols"] == ["US.TEST"]
     assert result["inputs"][0]["replay"]["provenance"]["fixture_digest"].startswith("sha256:")
     assert result["safety"]["trade_execution"] == "NO"
+
+
+def test_metrics_include_net_equity_and_drawdown_for_cost_scenarios() -> None:
+    fixture, bars = load_fixture(FIXTURE)
+    result = replay_fixture(fixture, bars, ("b0",))
+    gross = result["train"]["b0"]["gross"]
+    net = result["train"]["b0"]["cost_sensitivity"][2]
+    assert gross["trade_count"] == 1
+    assert gross["ending_equity"] == 1.0 + gross["total_return"]
+    assert len(gross["equity_curve"]) == len(result["provenance"]["train_rows"] * [None])
+    assert net["commission_bps"] == 2.0
+    assert net["slippage_bps"] == 2.0
+    assert net["total_return"] < gross["total_return"]
