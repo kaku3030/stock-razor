@@ -185,3 +185,9 @@ a separately reviewed revert on protected main.
 This worker still consumes the CN Eastmoney/Tencent observer cache. Updating its
 code version does not establish TickFlow-to-Radar integration, live freshness,
 bar finality or signal admission. `RADAR_ADMISSION=BLOCKED` and `LIVE_TRADE=NO`.
+
+For US Radar with research events enabled, operational deployment verification
+also accepts the precise `BAR_EVENT_SOURCE_NOT_QUALIFIED` block only when the
+source remains unqualified, the ingress is explicitly blocked, and it created
+and duplicated zero events. Queue types, source SHA and all safety checks still
+apply. This verifies fail-closed service behavior, not market-data qualification.
