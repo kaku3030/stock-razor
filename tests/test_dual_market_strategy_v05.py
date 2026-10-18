@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from tools.research.dual_market_strategy_v05 import dynamic_tail_weights, metrics, STATIC_STRATEGIES, OFFICIAL_INCEPTION
+from tools.research.dual_market_strategy_v05 import dynamic_tail_weights, metrics, STATIC_STRATEGIES, OFFICIAL_INCEPTION, PHASE_STRATEGIES
 
 
 def test_static_candidates_are_fixed_and_fully_invested():
@@ -29,3 +29,12 @@ def test_coverage_keeps_official_inception_separate_from_provider_readability():
     assert OFFICIAL_INCEPTION["US.SPY"][0] == "1993-01-22"
     assert OFFICIAL_INCEPTION["US.TLT"][0] == "2002-07-22"
     assert OFFICIAL_INCEPTION["US.IEF"][0] == "2002-07-22"
+
+
+def test_phase_candidates_only_add_assets_after_observed_readable_dates():
+    assert PHASE_STRATEGIES["2006_2011_QQQ_SPY_TLT_IEF"]["window"][0] == "2006-10-04"
+    assert "US.BTAL" not in PHASE_STRATEGIES["2006_2011_QQQ_SPY_TLT_IEF"]["weights"]
+    assert PHASE_STRATEGIES["2012_2016_QQQ_BTAL_TLT_IEF"]["window"][0] == "2012-01-06"
+    assert PHASE_STRATEGIES["2017_2019_QQQ_TAIL_BTAL_IEF"]["window"][0] == "2017-04-06"
+    assert PHASE_STRATEGIES["2019_2026_QQQ_DBMF_BTAL_IEF"]["window"][0] == "2019-05-08"
+    assert all(np.isclose(sum(item["weights"].values()), 1.0) for item in PHASE_STRATEGIES.values())

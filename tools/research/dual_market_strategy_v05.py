@@ -27,6 +27,24 @@ STATIC_STRATEGIES = {
     "QQQ_TAIL_IEF_SHV": {"US.QQQ": .35, "US.TAIL": .20, "US.IEF": .25, "US.SHV": .20},
     "QQQ_DBMF_BTAL_SHV": {"US.QQQ": .35, "US.DBMF": .25, "US.BTAL": .20, "US.SHV": .20},
 }
+PHASE_STRATEGIES = {
+    "2006_2011_QQQ_SPY_TLT_IEF": {
+        "window": ("2006-10-04", "2011-12-31"),
+        "weights": {"US.QQQ": .35, "US.SPY": .15, "US.TLT": .30, "US.IEF": .20},
+    },
+    "2012_2016_QQQ_BTAL_TLT_IEF": {
+        "window": ("2012-01-06", "2017-04-05"),
+        "weights": {"US.QQQ": .35, "US.BTAL": .20, "US.TLT": .25, "US.IEF": .20},
+    },
+    "2017_2019_QQQ_TAIL_BTAL_IEF": {
+        "window": ("2017-04-06", "2019-05-07"),
+        "weights": {"US.QQQ": .35, "US.TAIL": .20, "US.BTAL": .20, "US.IEF": .25},
+    },
+    "2019_2026_QQQ_DBMF_BTAL_IEF": {
+        "window": ("2019-05-08", DEFAULT_END),
+        "weights": {"US.QQQ": .35, "US.DBMF": .25, "US.BTAL": .20, "US.IEF": .20},
+    },
+}
 PROXY_PLAN = {
     "US.QQQ": {"pre_inception_proxy": "US.NDX", "reason": "Nasdaq-100 index proxy; not QQQ ETF performance"},
     "US.SPY": {"pre_inception_proxy": "US.SPX", "reason": "S&P 500 index proxy; not SPY ETF performance"},
@@ -74,6 +92,26 @@ def metrics(returns: pd.Series, qqq: pd.Series, turnover: pd.Series, strategy: s
     }
 
 
+def phase_metrics(raw: dict[str, pd.DataFrame], qqq: pd.Series) -> list[dict]:
+    """Evaluate only assets readable throughout each declared real-trading phase."""
+    rows = []
+    for name, phase in PHASE_STRATEGIES.items():
+        selected = phase["weights"]
+        if any(symbol not in raw for symbol in selected):
+            continue
+        prices = strategy_prices(raw, list(selected))
+        start, stop = phase["window"]
+        prices = prices.loc[start:stop]
+        if prices.empty:
+            continue
+        weights = pd.DataFrame(selected, index=prices.index)
+        returns, turnover = build_returns(prices, weights, 5, 5)
+        qret = qqq.reindex(returns.index).pct_change()
+        rows.append(metrics(returns, qret, turnover, name, "PHASE"))
+        rows.extend(metrics(group, qret.reindex(group.index), turnover.reindex(group.index), name, int(year)) for year, group in returns.groupby(returns.index.year))
+    return rows
+
+
 def run(raw: dict[str, pd.DataFrame], output_dir: Path, end: str, errors: dict[str, str]) -> dict[str, str]:
     available = {s: raw[s] for s in ALL_SYMBOLS if s in raw}
     qqq = raw["US.QQQ"].set_index("date")["close"]
@@ -94,6 +132,7 @@ def run(raw: dict[str, pd.DataFrame], output_dir: Path, end: str, errors: dict[s
             rows.append(metrics(part, qret.reindex(part.index), turnover.reindex(part.index), name, segment))
             for year, group in part.groupby(part.index.year):
                 rows.append(metrics(group, qret.reindex(group.index), turnover.reindex(group.index), name, int(year)))
+    rows.extend(phase_metrics(raw, qqq))
     qret = qqq.pct_change()
     zero = pd.Series(0.0, index=qret.index)
     for segment, (start, stop) in SEGMENTS.items():
@@ -109,10 +148,10 @@ def run(raw: dict[str, pd.DataFrame], output_dir: Path, end: str, errors: dict[s
     paths = {k: output_dir / f"{prefix}_{v}" for k, v in {"metrics": "metrics.csv", "coverage": "coverage.csv", "metadata": "metadata.json", "report": "report.md"}.items()}
     pd.DataFrame(rows).to_csv(paths["metrics"], index=False, encoding="utf-8-sig")
     pd.DataFrame(coverage).to_csv(paths["coverage"], index=False, encoding="utf-8-sig")
-    meta = {"generated_at_utc": datetime.now(timezone.utc).isoformat(), "source": "local OpenD only", "endpoint": "127.0.0.1:11111", "query": {"ktype": "K_DAY", "session": "RTH", "autype": "QFQ", "end": end}, "cost": {"fee_bps": 5, "slippage_bps": 5}, "next_day_effective": True, "strategies": definitions, "coverage": coverage, "provider_finality": "UNKNOWN", "timezone_exchange_calendar": "UNKNOWN", "oos_status": "NOT_VERIFIED", "trade_execution": "NO", "radar_admission": "BLOCKED"}
+    meta = {"generated_at_utc": datetime.now(timezone.utc).isoformat(), "source": "local OpenD only", "endpoint": "127.0.0.1:11111", "query": {"ktype": "K_DAY", "session": "RTH", "autype": "QFQ", "end": end}, "cost": {"fee_bps": 5, "slippage_bps": 5}, "next_day_effective": True, "strategies": definitions, "phase_strategies": PHASE_STRATEGIES, "coverage": coverage, "provider_finality": "UNKNOWN", "timezone_exchange_calendar": "UNKNOWN", "oos_status": "NOT_VERIFIED", "trade_execution": "NO", "radar_admission": "BLOCKED"}
     meta["sha256"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (paths["metrics"], paths["coverage"])}
     paths["metadata"].write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    report = ["# STOCK RAZOR Dual-Market Strategy V0.5", "", f"- 正式行情证据：OpenD `127.0.0.1:11111`，`K_DAY/RTH/QFQ`，截止 `{end}`。", "- 静态候选和动态 TAIL 规则在读取数据前固定；调仓权重下一交易日生效；成本固定为 5bp 费用 + 5bp 滑点。", "- 动态 TAIL：过去 60 个已读交易日回撤 <= 8% 或价格低于 200 日均线时，下一交易日提高 TAIL/IEF/SHV 权重。", "- `provider_finality=UNKNOWN`、独立交易日历/时区 `UNKNOWN`、`OOS=NOT_VERIFIED`、`TRADE_EXECUTION=NO`、`RADAR_ADMISSION=BLOCKED`。", "", "## 2000—2026 覆盖方案", "", "coverage.csv` 分开记录官方 ETF 成立日、OpenD 首个可读日和官方来源；本轮没有把两者混为一谈。ETF 上市前不回填。NDX/SPX 本轮无可读数据，不能作为本轮正式 proxy 证据；VIX 只能作为 TAIL 压力背景，不能作为 TAIL 收益 proxy。债券、现金、黄金、DBMF、BTAL、TAIL 的上市前历史没有在本轮构造。", "", "## 文件", ""]
+    report = ["# STOCK RAZOR Dual-Market Strategy V0.5", "", f"- 正式行情证据：OpenD `127.0.0.1:11111`，`K_DAY/RTH/QFQ`，截止 `{end}`。", "- 静态候选和动态 TAIL 规则在读取数据前固定；调仓权重下一交易日生效；成本固定为 5bp 费用 + 5bp 滑点。", "- 分阶段候选严格按 ETF 首个实际可读日切换：2006-10-04 起仅用 QQQ/SPY/TLT/IEF；2012-01-06 起加入 BTAL；2017-04-06 起加入 TAIL；2019-05-08 起加入 DBMF。", "- `provider_finality=UNKNOWN`、独立交易日历/时区 `UNKNOWN`、`OOS=NOT_VERIFIED`、`TRADE_EXECUTION=NO`、`RADAR_ADMISSION=BLOCKED`。", "", "## 2000—2026 覆盖方案", "", "coverage.csv` 分开记录官方 ETF 成立日、OpenD 首个可读日和官方来源；本轮没有把两者混为一谈。ETF 上市前不回填。NDX/SPX 本轮无可读数据，不能作为本轮正式 proxy 证据；VIX 只能作为 TAIL 压力背景，不能作为 TAIL 收益 proxy。债券、现金、黄金、DBMF、BTAL、TAIL 的上市前历史没有在本轮构造。", "", "## 文件", ""]
     report.extend(f"- `{p.name}`" for p in paths.values())
     paths["report"].write_text("\n".join(report) + "\n", encoding="utf-8")
     return {k: str(v) for k, v in paths.items()}
