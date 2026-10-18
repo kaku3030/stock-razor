@@ -309,3 +309,51 @@ def test_worker_skips_validated_unchanged_daily_history_without_admission_upgrad
     assert '"daily_history_load_ms": daily_load_ms' in INSTALLER
     assert '"radar_admission": "BLOCKED"' in INSTALLER
     assert '"live_trade": False' in INSTALLER
+
+
+def test_event_queue_deploy_option_remains_default_off_and_propagates_to_verify():
+    on = yaml.safe_load(WORKFLOW)[True]
+    option = on["workflow_dispatch"]["inputs"]["closed_bar_events_enabled"]
+    assert option["default"] is False and option["type"] == "boolean"
+    assert "CLOSED_BAR_EVENTS_ENABLED='$CLOSED_BAR_EVENTS_ENABLED'" in WORKFLOW
+    assert "'$SOURCE_REPO_SHA' '$CLOSED_BAR_EVENTS_ENABLED'" in WORKFLOW
+    assert "StateDirectory=stock-razor-us-radar" in INSTALLER
+    assert "PrivateNetwork=true" in INSTALLER and "StateDirectoryMode=0700" in INSTALLER
+    assert "UMask=" not in INSTALLER  # Preserve existing MCP heartbeat access.
+    assert "bar_event_queue" in VERIFY
+
+
+def test_extracted_installer_opens_persistent_ledger_and_reopens_it(tmp_path, monkeypatch):
+    from tests.test_stock_radar_v2_ai_event_consumer import NOW, SHA, event
+    from src.services.stock_radar_v2.ai_consumer_runtime import open_worker_event_ledger
+    monkeypatch.setenv("STOCK_RAZOR_WORKER_REPO_SHA", SHA)
+    monkeypatch.setenv("STOCK_RAZOR_SOURCE_REPO_SHA", SHA)
+    monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path))
+    monkeypatch.delenv("NOTIFY_SOCKET", raising=False)
+    marker = "cat >\"$INSTALL_ROOT/run.py\" <<'PY'"
+    prefix = _embedded_source(INSTALLER, marker, "\nPY\n\ncat >/etc/systemd").split("while True:")[0]
+    for mode in ("false", "true"):
+        monkeypatch.setenv("STOCK_RAZOR_CLOSED_BAR_EVENTS_ENABLED", mode)
+        namespace = {}
+        exec(compile(prefix, "installer-prefix", "exec"), namespace)
+        ledger = namespace["event_ledger"]
+        if mode == "false":
+            assert ledger is None and list(tmp_path.iterdir()) == []
+        else:
+            assert namespace["worker"]._event_ledger is ledger
+            ledger.record(event(), recorded_at=NOW)
+            ledger.close()
+    with open_worker_event_ledger(enabled=True, state_directory=tmp_path) as reopened:
+        assert reopened.runtime_summary(now=NOW)["event_pending"] == 1
+
+
+def test_event_ledger_requires_explicit_existing_state_directory(tmp_path):
+    import pytest
+    from src.services.stock_radar_v2.ai_consumer_runtime import open_worker_event_ledger
+    assert open_worker_event_ledger() is None
+    for value in (None, "relative", tmp_path / "missing"):
+        with pytest.raises(ValueError):
+            open_worker_event_ledger(enabled=True, state_directory=value)
+    with pytest.raises(ValueError, match="must not replace"):
+        open_worker_event_ledger(enabled=True, state_directory=tmp_path,
+                                 reserved_paths=(tmp_path / "closed-bar-events.sqlite",))
