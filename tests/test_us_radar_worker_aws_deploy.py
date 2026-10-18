@@ -357,3 +357,23 @@ def test_event_ledger_requires_explicit_existing_state_directory(tmp_path):
     with pytest.raises(ValueError, match="must not replace"):
         open_worker_event_ledger(enabled=True, state_directory=tmp_path,
                                  reserved_paths=(tmp_path / "closed-bar-events.sqlite",))
+
+
+def test_event_collection_declares_existing_calendar_and_blocks_unknown_calendar(tmp_path, monkeypatch):
+    import pytest
+    from src.core import trading_calendar
+    from tests.test_stock_radar_v2_ai_event_consumer import SHA
+    assert "calendar_dependencies=('exchange-calendars==4.13.2')" in INSTALLER
+    assert '"${calendar_dependencies[@]}"' in INSTALLER
+    assert 'xcals.get_calendar("XNYS")' in INSTALLER
+    monkeypatch.setenv("STOCK_RAZOR_WORKER_REPO_SHA", SHA)
+    monkeypatch.setenv("STOCK_RAZOR_SOURCE_REPO_SHA", SHA)
+    monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("STOCK_RAZOR_CLOSED_BAR_EVENTS_ENABLED", "true")
+    monkeypatch.delenv("NOTIFY_SOCKET", raising=False)
+    monkeypatch.setattr(trading_calendar, "infer_market_phase", lambda *a: trading_calendar.MarketPhase.UNKNOWN)
+    marker = "cat >\"$INSTALL_ROOT/run.py\" <<'PY'"
+    prefix = _embedded_source(INSTALLER, marker, "\nPY\n\ncat >/etc/systemd").split("while True:")[0]
+    with pytest.raises(ValueError, match="EVENT_CALENDAR_NOT_VERIFIED"):
+        exec(compile(prefix, "installer-prefix", "exec"), {})
+    assert list(tmp_path.iterdir()) == []

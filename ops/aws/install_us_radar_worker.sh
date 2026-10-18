@@ -54,8 +54,15 @@ test "$(git -C "$INSTALL_ROOT/repo" rev-parse HEAD)" = "$REPO_REF"
 if [ ! -x "$INSTALL_ROOT/venv/bin/python" ]; then
   python3 -m venv "$INSTALL_ROOT/venv"
 fi
+calendar_dependencies=()
+if [ "$CLOSED_BAR_EVENTS_ENABLED" = "true" ]; then
+  calendar_dependencies=('exchange-calendars==4.13.2')
+fi
 "$INSTALL_ROOT/venv/bin/pip" install --disable-pip-version-check --no-input \
-  'numpy==1.26.4' 'pandas==2.2.2' 'PyYAML==6.0.2'
+  'numpy==1.26.4' 'pandas==2.2.2' 'PyYAML==6.0.2' "${calendar_dependencies[@]}"
+if [ "$CLOSED_BAR_EVENTS_ENABLED" = "true" ]; then
+  "$INSTALL_ROOT/venv/bin/python" -c 'import exchange_calendars as xcals; xcals.get_calendar("XNYS")'
+fi
 
 PYTHONPATH="$INSTALL_ROOT/repo" "$INSTALL_ROOT/venv/bin/python" - <<'PY'
 from src.services.stock_radar_v2.canonical_snapshot_worker import (
@@ -143,6 +150,10 @@ options_reader = RadarOptionsContextReader(max_age_seconds=120)
 event_mode = os.environ.get("STOCK_RAZOR_CLOSED_BAR_EVENTS_ENABLED", "false")
 if event_mode not in {"true", "false"}:
     raise ValueError("invalid closed-bar event mode")
+if event_mode == "true":
+    from src.core.trading_calendar import MarketPhase, infer_market_phase
+    if infer_market_phase("us", datetime.now(timezone.utc)) == MarketPhase.UNKNOWN:
+        raise ValueError("EVENT_CALENDAR_NOT_VERIFIED")
 event_ledger = open_worker_event_ledger(
     enabled=event_mode == "true",
     state_directory=os.environ.get("STATE_DIRECTORY"),
