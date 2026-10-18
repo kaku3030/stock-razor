@@ -110,6 +110,7 @@ jobs:
             tests/test_research_priority_transition.py \
             tests/test_research_priority_notifications.py \
             tests/test_stock_radar_v2_ai_event_consumer.py \
+            tests/test_stock_radar_v2_research_ai_backend.py \
             tests/test_stock_radar_v2_bar_event_ledger.py \
             tests/test_stock_radar_v2_canonical_bar_events.py \
             tests/test_canonical_snapshot_worker.py \
