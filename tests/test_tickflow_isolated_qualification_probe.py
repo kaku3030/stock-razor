@@ -619,3 +619,24 @@ def test_nonzero_seconds_on_past_bars_cannot_confirm_end_grid():
     assert grid["complete_end_sessions"]==2
     assert grid["label_convention"]=="INSUFFICIENT"
     assert grid["closure_proven"] is False
+
+
+def test_cli_unexpected_failure_emits_only_exception_class(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setattr(probe.importlib.metadata, "version", lambda _name: "0.1.25")
+
+    def fail_probe(**_kwargs):
+        raise RuntimeError("DO_NOT_LEAK_PROVIDER_DETAIL")
+
+    monkeypatch.setattr(probe, "build_probe", fail_probe)
+    monkeypatch.setattr(sys, "argv", [
+        "probe", "--mode", "premium", "--symbols", "159611.SZ",
+    ])
+    assert probe.main() == 2
+    output = capsys.readouterr().out
+    result = json.loads(output)
+    assert result["setup_state"] == "BLOCKED"
+    assert result["failure_class"] == "RuntimeError"
+    assert "DO_NOT_LEAK_PROVIDER_DETAIL" not in output
+
