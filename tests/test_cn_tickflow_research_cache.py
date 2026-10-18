@@ -796,6 +796,33 @@ def test_historical_cache_rejection_exposes_only_fixed_safe_reason(tmp_path):
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    "field,value,reason",
+    [
+        ("schema", "untrusted-schema", "CACHE_SCHEMA_MISMATCH"),
+        ("provider", "untrusted-provider", "CACHE_PROVIDER_MISMATCH"),
+        ("status", "untrusted-status", "CACHE_STATUS_MISMATCH"),
+    ],
+)
+def test_cache_envelope_rejection_is_specific_bounded_and_fail_closed(
+    tmp_path, field, value, reason,
+):
+    snap = build_observation(FakeClient(), now_utc=NOW, repo_sha="e"*40, sequence=8)
+    snap[field] = value
+    cache = tmp_path / "invalid-envelope.json"
+    atomic_publish(str(cache), snap)
+    result = read_cn_tickflow_research_data(
+        "159611.SZ", "15m", 1, path=str(cache), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert result["status"] == "INVALID_CACHE"
+    assert result["cache_rejection_reason"] == reason
+    assert value not in json.dumps(result)
+    assert result["provider_requests"] == 0
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
 @pytest.mark.parametrize("result,reason", [([], "BATCH_SHAPE_INVALID"), ({}, "BATCH_SYMBOL_MISSING")])
 def test_batch_failure_has_bounded_stage_and_reason_before_symbol_normalization(result, reason):
     from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason

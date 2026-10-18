@@ -554,8 +554,14 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         obj=json.loads(data)
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
-    if not isinstance(obj,dict) or obj.get("schema")!=SCHEMA or obj.get("provider")!=_SOURCE or obj.get("status")!="PASS_RESEARCH_ONLY":
-        return invalid_cache("CACHE_ENVELOPE_INVALID")
+    if not isinstance(obj, dict):
+        return invalid_cache("CACHE_ROOT_INVALID")
+    if obj.get("schema") != SCHEMA:
+        return invalid_cache("CACHE_SCHEMA_MISMATCH")
+    if obj.get("provider") != _SOURCE:
+        return invalid_cache("CACHE_PROVIDER_MISMATCH")
+    if obj.get("status") != "PASS_RESEARCH_ONLY":
+        return invalid_cache("CACHE_STATUS_MISMATCH")
     if not (obj.get("research_only") is True and obj.get("radar_admission")=="BLOCKED" and obj.get("source_arbiter_admission")=="BLOCKED" and obj.get("live_trade") is False and obj.get("canonical_write_authorized") is False and obj.get("can_confirm_signal") is False):
         return invalid_cache("CACHE_SAFETY_FLAGS_INVALID")
     sha=obj.get("repo_sha")
