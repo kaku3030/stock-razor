@@ -21,7 +21,18 @@ import time
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from dotenv import load_dotenv
+
+
+
+def _load_optional_env_file(env_path: str) -> bool:
+    """Load a local .env file when python-dotenv exists; cloud env is primary."""
+    try:
+        from dotenv import load_dotenv
+    except ModuleNotFoundError as exc:
+        if exc.name != "dotenv":
+            raise
+        return False
+    return bool(load_dotenv(env_path, override=False))
 
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
@@ -821,7 +832,7 @@ def build_probe(
 
 def main() -> int:
     env_path = os.getenv("ENV_FILE") or str(Path(__file__).resolve().parents[1] / ".env")
-    load_dotenv(env_path, override=False)
+    _load_optional_env_file(env_path)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode", choices=("metadata", "free", "premium", "premium-contract"),
