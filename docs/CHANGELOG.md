@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] CN Radar 可显式选择现有 TickFlow 缓存，复用同一隔离服务生成四只基线标的的 D1/60m/15m 历史研究状态；独立核对来源版本与时效，保留未闭合及门禁阻断，不新增供应商调用。
+
 - [修复] 美国 Radar 部署验收按 systemctl 的时长显示格式核对 90 秒 watchdog；增加完整 shell 路径回归测试，拒绝关闭、错误时长及无单位原始数字，保持数据和交易门禁关闭。
 - [修复] A股只读 Radar 部署增加 owner/精确 main/显式重启校验、安装与验收脚本双哈希检查，阻止完整 SSM 输出进入公开日志；美股 Radar 部署仅在研究事件零入队且门禁关闭时识别未闭合源的合法阻断。
 - [修复] OpenD 无订阅变更探针仅使用当前连接的订阅，避免借用其他连接状态后产生误导性拒绝；无自有订阅时零 K 线调用并明确阻断。
