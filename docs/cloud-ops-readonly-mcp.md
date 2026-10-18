@@ -182,9 +182,31 @@ public Actions logs contain only fixed deployment/safety markers. Missing proof,
 remote failure or a moved main blocks deployment success. Roll back by dispatching
 a separately reviewed revert on protected main.
 
-This worker still consumes the CN Eastmoney/Tencent observer cache. Updating its
-code version does not establish TickFlow-to-Radar integration, live freshness,
-bar finality or signal admission. `RADAR_ADMISSION=BLOCKED` and `LIVE_TRADE=NO`.
+The workflow's `source_provider` choice defaults to `eastmoney` (the existing
+Eastmoney/Tencent observer). Explicit `tickflow` selects the existing private
+TickFlow cache for **historical research only**, using the same CN Radar service,
+status file, analyzer and `get_cn_market_analysis` readback. The installer binds
+each choice to its fixed cache path and source unit; arbitrary `SOURCE_PATH`
+overrides are no longer used. No SDK, network access, extra polling service or
+provider request is introduced. `RADAR_ADMISSION=BLOCKED` and `LIVE_TRADE=NO`.
+
+TickFlow evaluates only the four existing baseline symbols and cached D1/60m/15m.
+The strict cache reader validates all rows from one bounded atomic snapshot.
+Every poll rechecks source age, including unchanged evaluations; atomic file
+replacement invalidates the compute cache even when sequence metadata repeats.
+Same-day D1 is quarantined. Intraday bars remain partial, currentness UNPROVEN,
+finality/volume units/adjustment NOT_VERIFIED. Vendor operational-close rules
+are not promoted to immutable finality by this bridge. Source runtime UUID is
+NOT_VERIFIED because the collector does not publish one. Current D1 cache depth
+is at most 40 bars: this is not the full long-history/L3 strategy prerequisite.
+
+The TickFlow deployment verifier independently rereads the source SHA, sequence
+and observation time, verifies all four research states and provisional flags,
+and requires the existing network sandbox and closed gates. CI or a fixture
+does not prove deployed integration: dispatch the exact main SHA with the chosen
+provider, then read actual MCP provenance. Roll back the provider choice by
+dispatching protected main with `source_provider=eastmoney`; no source collector,
+subscription, durable market-data store or trading state is modified.
 
 For US Radar with research events enabled, operational deployment verification
 also accepts the precise `BAR_EVENT_SOURCE_NOT_QUALIFIED` block only when the

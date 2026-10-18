@@ -16,9 +16,13 @@ from src.services.a_share_intraday_currentness import (
 from src.services.a_share_intraday_semantics import CN_MARKET_TIMEZONE, TimestampSemantic
 from src.technical.models import TimeframeState
 from src.technical.technical_analyzer import TechnicalAnalyzer
+from data_provider.cn_tickflow_research_cache import (
+    _vendor_etf_tick_lattice_shape_valid, _vendor_ohlc_float_gap_bucket,
+)
 
 
 CN_OBSERVATION_SCHEMA = "stock_razor_cn_eastmoney_observation_v1"
+TICKFLOW_RADAR_INPUT_SCHEMA = "stock_razor_cn_tickflow_radar_input_v0_1"
 CN_RADAR_SCHEMA = "stock_razor_cn_radar_research_v1"
 SUPPORTED_FRAMES = ("1d", "60m", "15m")
 STRUCTURAL_FLAGS = frozenset(
@@ -129,6 +133,13 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
         if high < max(open_, close, low) or low > min(open_, close, high):
             if opening_gap:
                 soft_warnings.append(OPENING_AUCTION_RANGE_GAP)
+            elif (
+                frame.get("provider_used") == "TICKFLOW_PREMIUM"
+                and raw.get("ohlc_validation") == "VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+                and _vendor_ohlc_float_gap_bucket(open_, high, low, close) == "WITHIN_1E_MINUS_5"
+                and _vendor_etf_tick_lattice_shape_valid(open_, high, low, close)
+            ):
+                soft_warnings.append("VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY")
             else:
                 severe.append("INVALID_OHLC")
         if volume < 0:
@@ -168,6 +179,11 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
         "volume_unit": rows[-1].get("volume_unit"),
         "analysis_warnings": list(dict.fromkeys(soft_warnings)),
     }
+    if frame.get("provider_used") == "TICKFLOW_PREMIUM":
+        provenance.update(
+            source_symbol=frame.get("source_symbol"),
+            bar_finality="NOT_VERIFIED", adjustment="NOT_VERIFIED",
+        )
     return pd.DataFrame(records), provenance
 
 
@@ -392,7 +408,7 @@ def evaluate_cn_observation_payload(
 ) -> dict:
     """Evaluate A-share observations while keeping Currentness non-actionable."""
 
-    if payload.get("schema") != CN_OBSERVATION_SCHEMA:
+    if payload.get("schema") not in {CN_OBSERVATION_SCHEMA, TICKFLOW_RADAR_INPUT_SCHEMA}:
         raise CnObservationAnalysisError("unsupported CN observation schema")
     root_timestamp_semantics_proven = payload.get(
         "intraday_timestamp_semantics_proven"
@@ -488,8 +504,8 @@ def evaluate_cn_observation_payload(
                 daily,
                 hourly,
                 intraday,
-                hourly_partial=False,
-                intraday_partial=False,
+                hourly_partial=payload.get("schema") == TICKFLOW_RADAR_INPUT_SCHEMA,
+                intraday_partial=payload.get("schema") == TICKFLOW_RADAR_INPUT_SCHEMA,
             )
             if not currentness_proven:
                 technical.hourly = _mark_intraday_unproven(

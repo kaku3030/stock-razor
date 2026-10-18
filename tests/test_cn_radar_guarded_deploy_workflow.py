@@ -17,7 +17,7 @@ def steps():
 
 
 def run(code, env, *, cwd=None):
-    return subprocess.run(["bash", "-eu", "-c", code], env={**os.environ, **env},
+    return subprocess.run(["bash", "-eu", "-c", code], env={**os.environ, "SOURCE_PROVIDER": "eastmoney", **env},
                           cwd=cwd, text=True, capture_output=True, timeout=5)
 
 
@@ -84,8 +84,8 @@ def test_main_moving_after_oidc_prevents_ssm_dispatch(tmp_path):
 
 @pytest.mark.parametrize("tamper", [None, "install", "verify"])
 def test_both_download_hashes_verify_before_install_and_logs_stay_private(tmp_path, tamper):
-    install = 'touch "$INSTALL_MARKER"\necho PRIVATE_CANARY\n'
-    verify = 'printf "%s\\n" PRIVATE_CANARY enabled active CN_RADAR_WORKER_VERIFY=PASS RADAR_ADMISSION=BLOCKED LIVE_TRADE=NO\n'
+    install = 'test "$SOURCE_PROVIDER" = tickflow\n' + 'touch "$INSTALL_MARKER"\necho PRIVATE_CANARY\n'
+    verify = 'test "$2" = tickflow\n' + 'printf "%s\\n" PRIVATE_CANARY enabled active CN_RADAR_WORKER_VERIFY=PASS RADAR_ADMISSION=BLOCKED LIVE_TRADE=NO\n'
     install_path = tmp_path / "install-source"
     verify_path = tmp_path / "verify-source"
     install_path.write_text(install)

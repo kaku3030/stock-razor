@@ -7,6 +7,14 @@ on:
         type: boolean
         required: true
         default: false
+      source_provider:
+        description: "Existing cache used for research analysis (no provider requests)"
+        type: choice
+        required: true
+        default: eastmoney
+        options:
+          - eastmoney
+          - tickflow
       expected_main_sha:
         description: "Full 40-character GitHub main SHA to deploy (must match this workflow run)"
         required: true
@@ -83,12 +91,14 @@ jobs:
         id: deploy
         shell: bash
         env:
+          SOURCE_PROVIDER: ${{ inputs.source_provider }}
           REPO_REF: ${{ steps.source.outputs.sha }}
           INSTALL_SHA: ${{ steps.source.outputs.install_sha }}
           VERIFY_SHA: ${{ steps.source.outputs.verify_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          case "$SOURCE_PROVIDER" in eastmoney|tickflow) ;; *) exit 2;; esac
           [[ "$REPO_REF" =~ ^[a-f0-9]{40}$ ]]
           [[ "$INSTALL_SHA" =~ ^[a-f0-9]{64}$ ]]
           [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
@@ -107,12 +117,12 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"
           printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null
-          if ! REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
+          if ! SOURCE_PROVIDER='$SOURCE_PROVIDER' REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
             echo 'CN_RADAR_INSTALL=FAILED' >&2
             exit 1
           fi
           # Runtime SHA, research-only flags and service sandbox are verified privately.
-          if ! bash "\$stage/verify.sh" '$REPO_REF' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
+          if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_PROVIDER' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
             echo 'CN_RADAR_ACCEPTANCE=FAILED' >&2
             exit 1
           fi

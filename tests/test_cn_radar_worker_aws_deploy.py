@@ -35,7 +35,7 @@ def test_cn_radar_verifier_requires_qualified_bar_end_and_governed_currentness()
     assert 'evaluation.get("status") == "PASS"' in VERIFY
     assert 'item.get("signal_permission") == "record_only"' in VERIFY
     assert 'evaluation.get("intraday_timestamp_semantics_proven") is True' in VERIFY
-    assert 'item.get("intraday_timestamp_semantics_proven") is True' in VERIFY
+    assert 'item.get("intraday_timestamp_semantics_proven") is (not is_tickflow)' in VERIFY
     assert '"cn_intraday_timestamp_semantics_unproven" not in risk_flags' in VERIFY
     assert 'isinstance(evaluation.get("intraday_currentness_proven"), bool)' in VERIFY
     assert 'if item.get("intraday_currentness_proven") is True:' in VERIFY

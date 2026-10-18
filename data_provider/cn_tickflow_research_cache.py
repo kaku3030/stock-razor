@@ -553,7 +553,7 @@ def atomic_publish(path: str, payload: dict) -> None:
 
 def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=30,
              *, path: str=DEFAULT_PATH, now_utc:datetime|None=None,
-             research_mode: str="session_progress") -> dict:
+             research_mode: str="session_progress", observation:dict|None=None) -> dict:
     """Bounded research-only read, with explicitly separate historical mode.
 
     session_progress requires the last due intraday BAR_END label; historical
@@ -581,11 +581,16 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             or type(limit)!=int or not 1<=limit<=240):
         return {**base,"status":"INVALID_REQUEST"}
     try:
-        with open(path,"rb") as f:
-            data=f.read(MAX_BYTES+1)
-        if len(data)>MAX_BYTES:
-            return invalid_cache("CACHE_SIZE_EXCEEDED")
-        obj=json.loads(data)
+        # A worker may validate several frames from one atomically loaded
+        # observation. All provenance/row checks below remain identical.
+        if observation is None:
+            with open(path,"rb") as f:
+                data=f.read(MAX_BYTES+1)
+            if len(data)>MAX_BYTES:
+                return invalid_cache("CACHE_SIZE_EXCEEDED")
+            obj=json.loads(data)
+        else:
+            obj=observation
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
     if not isinstance(obj, dict):
