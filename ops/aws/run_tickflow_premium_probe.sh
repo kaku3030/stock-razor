@@ -259,7 +259,7 @@ try:
 except Exception:
     tail=""
 for line in reversed(tail.splitlines()):
-    line=re.sub(r"\\x1b\\[[0-9;]*m","",line)
+    line=re.sub(r"\x1b\[[0-9;]*m","",line)
     match=re.match(r"^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)",line)
     if match:
         print(match.group(1))
