@@ -22,6 +22,15 @@ MCP_UNIT="stock-razor-mcp.service"
 MAX_FILE_BYTES=64_000_000
 WHITELIST={"PASS_RESEARCH_ONLY","BAR_LABEL_BEHIND_SESSION","STALE","NO_DATA","INVALID_CACHE","INVALID_REQUEST"}
 SHA=re.compile(r"^[0-9a-f]{40}$")
+CACHE_REJECTION_REASONS={
+    "NONE","CACHE_SIZE_EXCEEDED","CACHE_UNREADABLE","CACHE_ENVELOPE_INVALID",
+    "CACHE_SAFETY_FLAGS_INVALID","CACHE_REPO_SHA_INVALID","CACHE_OBSERVED_AT_INVALID",
+    "CACHE_STALE","FRAME_OR_PERIOD_MISSING","BAR_COUNT_INVALID",
+    "FRAME_METADATA_INVALID","BAR_RECORD_INVALID","BAR_LABEL_INVALID",
+    "BAR_TIMESTAMP_INVALID","BAR_TIME_GRID_OR_FUTURE_INVALID","BAR_ORDER_INVALID",
+    "BAR_NUMERIC_VALUE_INVALID","BAR_AMOUNT_INVALID","BAR_OHLC_INVALID",
+    "CACHE_ROOT_INVALID","CACHE_SCHEMA_MISMATCH","CACHE_PROVIDER_MISMATCH","CACHE_STATUS_MISMATCH",
+}
 HOLDINGS=("159611.SZ","159209.SZ","512730.SH","159363.SZ")
 LIVE_PERIODS=("1m","5m","15m","60m")
 RESEARCH_PERIODS=("1m","5m","15m","60m","1d")
@@ -204,6 +213,10 @@ _SAFE_FAILURE_CLASS={
     "IndexError":"INDEX_ERROR",
     "AttributeError":"ATTRIBUTE_ERROR",
 }
+
+def safe_cache_rejection_reason(value: object) -> str:
+    return value if isinstance(value,str) and value in CACHE_REJECTION_REASONS else "UNKNOWN"
+
 
 def blocked_status(failure_class: object) -> str:
     return "BLOCKED_"+_SAFE_FAILURE_CLASS.get(
@@ -713,6 +726,8 @@ def sample():
         "failure_ohlc_float_gap_bucket":"UNKNOWN",
         "cache_private":False,
         "repo_sha_match":False,
+        "worker_source_matches_main":False,
+        "mcp_source_matches_main":False,
         "cache_age_seconds":None,
         "source_frame_progress":{},
         "supplemental_5m_reader":{},
@@ -755,6 +770,11 @@ def sample():
         actual=subprocess.run(["git","-C",str(WORKER_REPO),"rev-parse","HEAD"],
                               capture_output=True,text=True,timeout=5,check=False)
         result["repo_sha_match"]=bool(SHA.fullmatch(repo_sha or "")) and actual.returncode==0 and actual.stdout.strip()==repo_sha
+        expected_main_sha=os.environ.get("STOCK_RAZOR_EXPECTED_MAIN_SHA","")
+        result["worker_source_matches_main"]=(
+            bool(SHA.fullmatch(expected_main_sha)) and actual.returncode==0
+            and actual.stdout.strip()==expected_main_sha
+        )
         seq=data.get("sequence")
         result["sequence"]=seq if type(seq) is int and 0<seq<2**31 else None
         instant=datetime.fromisoformat(data["observed_at_utc"])
@@ -843,6 +863,9 @@ def sample():
                 if state not in WHITELIST: state="INVALID_CACHE"
                 result["per_period_observation"][symbol.replace(".","_")+"_"+period]={
                     "state":state,
+                    "cache_rejection_reason":safe_cache_rejection_reason(
+                        observation.get("cache_rejection_reason","NONE")
+                    ),
                     "rows":len(observation.get("rows",[])) if state=="PASS_RESEARCH_ONLY" else 0,
                     "source_age_seconds":observation.get("source_age_seconds") if state=="PASS_RESEARCH_ONLY" else None,
                     "has_session_progress":observation.get("expected_grid_progress")=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF",
@@ -868,6 +891,9 @@ def sample():
                 result["supplemental_5m_reader"][symbol.replace(".","_")+"_"+period]={
                     "state":state,
                     "finality_unproven":obs.get("bar_finality")=="NOT_VERIFIED",
+                    "cache_rejection_reason":safe_cache_rejection_reason(
+                        obs.get("cache_rejection_reason","NONE")
+                    ),
                     "radar_blocked":obs.get("radar_admission")=="BLOCKED",
                     "rows":len(obs.get("rows",[]))
                         if state=="PASS_RESEARCH_ONLY" else 0,
@@ -890,19 +916,8 @@ def sample():
                     symbol.replace(".","_")+"_"+period
                 ]={
                     "state":hstatus,
-                    "cache_rejection_reason":(
+                    "cache_rejection_reason":safe_cache_rejection_reason(
                         hist.get("cache_rejection_reason","NONE")
-                        if hist.get("cache_rejection_reason") in {
-                            "NONE","CACHE_SIZE_EXCEEDED","CACHE_UNREADABLE",
-                            "CACHE_ENVELOPE_INVALID","CACHE_SAFETY_FLAGS_INVALID",
-                            "CACHE_REPO_SHA_INVALID","CACHE_OBSERVED_AT_INVALID",
-                            "CACHE_STALE","FRAME_OR_PERIOD_MISSING",
-                            "BAR_COUNT_INVALID","FRAME_METADATA_INVALID",
-                            "BAR_RECORD_INVALID","BAR_LABEL_INVALID",
-                            "BAR_TIMESTAMP_INVALID","BAR_TIME_GRID_OR_FUTURE_INVALID",
-                            "BAR_ORDER_INVALID","BAR_NUMERIC_VALUE_INVALID",
-                            "BAR_AMOUNT_INVALID","BAR_OHLC_INVALID",
-                        } else "UNKNOWN"
                     ),
                     "research_only":hist.get("research_only") is True,
                     "currentness_unproven":hist.get("currentness")=="UNPROVEN",
@@ -924,6 +939,13 @@ def sample():
         result["status"]="READER_EXCEPTION"
     # Import/call *deployed MCP app* isolated in its venv without prices.
     if MCP_PY.exists() and MCP_REPO.exists():
+        mcp_head=subprocess.run(["git","-C",str(MCP_REPO),"rev-parse","HEAD"],
+                                capture_output=True,text=True,timeout=5,check=False)
+        expected_main_sha=os.environ.get("STOCK_RAZOR_EXPECTED_MAIN_SHA","")
+        result["mcp_source_matches_main"]=(
+            bool(SHA.fullmatch(expected_main_sha)) and mcp_head.returncode==0
+            and mcp_head.stdout.strip()==expected_main_sha
+        )
         code = """import sys;sys.path.insert(0,'/opt/stock-razor-mcp/repo')
 from realtime_monitor.readonly_mcp_server import get_cn_tickflow_research_data
 r=get_cn_tickflow_research_data('159611.SZ','15m',limit=2)

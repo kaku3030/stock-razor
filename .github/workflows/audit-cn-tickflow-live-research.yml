@@ -94,7 +94,7 @@ jobs:
           trap 'rm -rf "\$scratch"' EXIT
           printf '%s' '$bundle' | base64 -d | gzip -d > "\$scratch/observe.py"
           printf '%s  %s\n' '$hash' "\$scratch/observe.py" | sha256sum -c - >/dev/null
-          python3 "\$scratch/observe.py" --interval 65 | gzip -n -9 | base64 -w0
+          STOCK_RAZOR_EXPECTED_MAIN_SHA='$GITHUB_SHA' python3 "\$scratch/observe.py" --interval 65 | gzip -n -9 | base64 -w0
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 19000
           params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
@@ -325,9 +325,11 @@ jobs:
                   "dominant_quarantine_reason","retained_bar_count_bucket")}
           def compact_reader(value):
               return {k:value.get(k) for k in (
-                  "state","radar_blocked","finality_unproven","rows")}
+                  "state","radar_blocked","finality_unproven","rows",
+                  "cache_rejection_reason")}
           public_keys=("status","failure_class","failure_stage","failure_reason","failure_ohlc_float_gap_bucket",
                        "worker_journal_observation","repo_sha_match",
+                       "worker_source_matches_main","mcp_source_matches_main",
                        "sequence","cache_age_seconds","mcp_cache_consumer",
                        "mcp_historical_consumer","all_four_readonly_requests_ok",
                        "all_four_historical_requests_ok")
@@ -337,13 +339,15 @@ jobs:
                             "source_frame_progress":{p:compact_frame(d["before"]["source_frame_progress"].get(p,{})) for p in historical_periods},
                             "supplemental_5m_reader":{p:compact_reader(d["before"]["supplemental_5m_reader"].get(p,{})) for p in periods},
                             "period_status":{p:d["before"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
-                            "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods}},
+                            "historical_period_status":{p:d["before"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods},
+                            "historical_cache_rejection_reason":{p:d["before"]["historical_period_observation"].get(p,{}).get("cache_rejection_reason","UNKNOWN") for p in historical_periods}},
                   "after":{**{k:d["after"].get(k) for k in public_keys},
                            "independent_price_shadow":{p:d["after"]["independent_price_shadow"].get(p,{}) for p in shadow_periods},
                            "source_frame_progress":{p:compact_frame(d["after"]["source_frame_progress"].get(p,{})) for p in historical_periods},
                            "supplemental_5m_reader":{p:compact_reader(d["after"]["supplemental_5m_reader"].get(p,{})) for p in periods},
                            "period_status":{p:d["after"]["per_period_observation"].get(p,{}).get("state","NO_DATA") for p in periods},
-                           "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods}},
+                           "historical_period_status":{p:d["after"]["historical_period_observation"].get(p,{}).get("state","NO_DATA") for p in historical_periods},
+                           "historical_cache_rejection_reason":{p:d["after"]["historical_period_observation"].get(p,{}).get("cache_rejection_reason","UNKNOWN") for p in historical_periods}},
                   "sequence_advanced":d["sequence_advanced"],
                   "tencent_independent_shadow":d["tencent_independent_shadow"],
                   "historical_research_usable":d["historical_research_usable"],

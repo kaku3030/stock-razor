@@ -270,3 +270,20 @@ def test_qualified_tencent_session_disagreement_driver_and_clock_are_private_enu
     invalid=compare_tencent_qualified_price_rows(tick,ref2,
         qualification_pass=False,session_date="2026-10-13")
     assert invalid["same_session_disagreement_driver"]=="UNKNOWN"
+
+
+def test_cloud_audit_projects_only_safe_cache_reasons_and_main_sha_match():
+    from pathlib import Path
+    from scripts.audit_cn_tickflow_research_runtime import safe_cache_rejection_reason
+    assert safe_cache_rejection_reason("CACHE_SCHEMA_MISMATCH")=="CACHE_SCHEMA_MISMATCH"
+    assert safe_cache_rejection_reason("CACHE_PROVIDER_MISMATCH")=="CACHE_PROVIDER_MISMATCH"
+    assert safe_cache_rejection_reason("API_KEY=secret")=="UNKNOWN"
+    assert safe_cache_rejection_reason(None)=="UNKNOWN"
+    root=Path(__file__).resolve().parent.parent
+    source=(root/"scripts/audit_cn_tickflow_research_runtime.py").read_text(encoding="utf-8")
+    workflow=(root/".github/workflows/audit-cn-tickflow-live-research.yml").read_text(encoding="utf-8")
+    assert "STOCK_RAZOR_EXPECTED_MAIN_SHA" in source
+    assert "worker_source_matches_main" in source and "mcp_source_matches_main" in source
+    assert "worker_source_matches_main" in workflow and "mcp_source_matches_main" in workflow
+    assert "historical_cache_rejection_reason" in workflow
+    assert "CACHE_SCHEMA_MISMATCH" in source
