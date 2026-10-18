@@ -43,7 +43,7 @@ _LABEL_END = {
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
 _ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
-_MAX_BATCH_FALLBACK_SYMBOLS = 4
+_MAX_BATCH_FALLBACKS_PER_OBSERVATION = 4
 _SOURCE = "TICKFLOW_PREMIUM"
 
 
@@ -70,6 +70,7 @@ class _BatchKlinesFacade:
     def __init__(self, client: Any, symbols: tuple[str, ...], periods: dict[str, int],
                  batch_size: int) -> None:
         self._frames: dict[tuple[str, str], Any] = {}
+        self._fallback_count = 0
         for period, count in periods.items():
             try:
                 method = (client.klines.batch if period == "1d"
@@ -85,8 +86,11 @@ class _BatchKlinesFacade:
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
                 missing = tuple(symbol for symbol in symbols if symbol not in result)
-                if len(missing) > _MAX_BATCH_FALLBACK_SYMBOLS:
+                if (self._fallback_count + len(missing)
+                        > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
                     raise ValueError("batch SDK symbol missing")
+                # Count attempted calls, including a later provider failure.
+                self._fallback_count += len(missing)
                 for symbol in symbols:
                     if symbol in result:
                         frame = result[symbol]

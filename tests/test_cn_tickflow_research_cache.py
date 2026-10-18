@@ -150,6 +150,31 @@ def test_batch_missing_symbol_fallback_failure_fails_closed():
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_FALLBACK_FAILED"
 
 
+def test_batch_missing_symbols_across_periods_stay_within_fallback_cap():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+
+    fake=FakeClient()
+    original_intraday=fake.klines.intraday_batch
+    original_daily=fake.klines.batch
+
+    def omit_one(method, symbols, **kwargs):
+        result=method(symbols, **kwargs)
+        result.pop(symbols[0])
+        return result
+
+    fake.klines.intraday_batch=lambda symbols, **kwargs: omit_one(
+        original_intraday,symbols,**kwargs
+    )
+    fake.klines.batch=lambda symbols, **kwargs: omit_one(
+        original_daily,symbols,**kwargs
+    )
+    with pytest.raises(ValueError) as caught:
+        build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
+                          include_supplemental=True,use_batch=True)
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1D_FETCH"
+    assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
+
+
 def test_data_reader_does_not_allow_stale_file_or_promoted_admission(tmp_path):
     dest=tmp_path/"obs.json"
     snap=build_observation(FakeClient(),now_utc=NOW,repo_sha="f"*40,sequence=1)
