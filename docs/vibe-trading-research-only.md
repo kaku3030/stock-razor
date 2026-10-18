@@ -30,3 +30,16 @@ Without `--fixture`, the natural-language entry remains a request with
 `radar_admission=BLOCKED`, `trade_execution=NO`, and no provider, MCP, paper,
 or trading path. The CLI also emits `report_sha256`, calculated over the
 canonical report before that field is added.
+
+Existing local CSV captures can be replayed without provider I/O:
+
+```powershell
+python scripts/vibe_trading_research.py "compare B0, V0.2, and Strong Pullback in Replay Lab" `
+  --csv work/US_QQQ_5m.csv --csv work/US_NVDA_5m.csv --csv work/US_AMD_5m.csv `
+  --write work/vibe-replay-multi-symbol-report.json
+```
+
+CSV inputs must contain strictly ordered `time_key`, `open`, `high`, `low`,
+and `close` columns. The report records each source file hash and source
+metadata. Provider finality remains `UNKNOWN`; unavailable requested symbols
+must remain `NOT_VERIFIED` rather than being synthesized.

@@ -7,10 +7,12 @@ or trading authority.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Iterable
 
 
@@ -57,6 +59,44 @@ def load_fixture(path: str) -> tuple[dict[str, Any], list[Bar]]:
             raise ValueError("fixture contains non-positive or non-finite OHLC")
         bars.append(Bar(timestamp=timestamp, **values))
     return fixture, bars
+
+
+def load_csv(path: str | Path) -> tuple[dict[str, Any], list[Bar]]:
+    source = Path(path)
+    rows: list[dict[str, str]] = []
+    with source.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        required = {"time_key", "open", "high", "low", "close"}
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            raise ValueError("CSV must contain time_key, open, high, low, and close columns")
+        rows = list(reader)
+    bars = []
+    for row in rows:
+        try:
+            values = {key: float(row[key]) for key in ("open", "high", "low", "close")}
+            timestamp = str(row["time_key"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("CSV contains an invalid OHLC row") from exc
+        if not all(math.isfinite(value) and value > 0 for value in values.values()):
+            raise ValueError("CSV contains non-positive or non-finite OHLC")
+        bars.append(Bar(timestamp=timestamp, **values))
+    if len(bars) < 5 or any(left.timestamp >= right.timestamp for left, right in zip(bars, bars[1:])):
+        raise ValueError("CSV must contain at least five strictly ordered OHLC rows")
+    symbol = rows[0].get("symbol") or rows[0].get("code") or "UNKNOWN"
+    return {
+        "fixture_id": source.name,
+        "fixture_digest": "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest(),
+        "rows_digest": "sha256:" + _digest([bar.__dict__ for bar in bars]),
+        "source_query": "EXISTING_LOCAL_CSV",
+        "authority": {
+            "symbol": symbol,
+            "source": rows[0].get("source", "UNKNOWN"),
+            "timezone": rows[0].get("timezone", "UNKNOWN"),
+            "session": rows[0].get("session", "UNKNOWN"),
+            "closed_bar_evidence": rows[0].get("closed_bar_evidence", "UNKNOWN"),
+            "provider_finality": "UNKNOWN",
+        },
+    }, bars
 
 
 def _b0(bars: list[Bar]) -> list[Trade]:
@@ -162,6 +202,33 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
             "source_authority": fixture.get("authority", {}),
             "train_rows": len(train),
             "holdout_rows": len(holdout),
+        },
+        "safety": {"radar_admission": "BLOCKED", "trade_execution": "NO", "paper_auto_ready": False, "paid_service_used": False},
+    }
+
+
+def replay_csv_files(paths: Iterable[str | Path], strategies: Iterable[str] = STRATEGIES) -> dict[str, Any]:
+    inputs = []
+    for path in paths:
+        fixture, bars = load_csv(path)
+        result = replay_fixture(fixture, bars, strategies)
+        inputs.append({"path": str(Path(path)), "symbol": fixture["authority"]["symbol"], "rows": len(bars), "replay": result})
+    if not inputs:
+        raise ValueError("at least one CSV is required")
+    symbols = [item["symbol"] for item in inputs]
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("CSV inputs must contain unique symbols")
+    return {
+        "schema_version": "stock-razor-vibe-replay-lab-v0.2",
+        "status": "RESEARCH_ONLY",
+        "execution": "REPLAY_COMPLETED",
+        "strategies": tuple(dict.fromkeys(strategies)),
+        "symbols": symbols,
+        "inputs": inputs,
+        "limitations": {
+            "statistical_power": "NOT_ESTABLISHED",
+            "provider_finality": "UNKNOWN",
+            "missing_requested_symbols": ["COHR", "TSM"],
         },
         "safety": {"radar_admission": "BLOCKED", "trade_execution": "NO", "paper_auto_ready": False, "paid_service_used": False},
     }

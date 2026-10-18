@@ -12,7 +12,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.services.strategy_lab.vibe_replay import load_fixture, replay_fixture
+from src.services.strategy_lab.vibe_replay import load_fixture, replay_csv_files, replay_fixture
 
 PROFILES = {"b0": "vibe-b0-research-only", "v0.2": "vibe-v0.2-research-only", "strong_pullback": "vibe-strong-pullback-research-only"}
 
@@ -52,10 +52,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("prompt")
     parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--csv", type=Path, action="append")
     parser.add_argument("--write", type=Path)
     args = parser.parse_args()
     result = parse_comparison_request(args.prompt) if "compare" in args.prompt.casefold() else parse_request(args.prompt)
-    if args.fixture:
+    if args.fixture and args.csv:
+        parser.error("--fixture and --csv cannot be combined")
+    if args.csv:
+        strategies = result["profiles"] if "profiles" in result else (result["profile"],)
+        result = {**result, "replay": replay_csv_files(args.csv, strategies), "execution": "REPLAY_COMPLETED"}
+        report_basis = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        result["report_sha256"] = hashlib.sha256(report_basis).hexdigest()
+    elif args.fixture:
         fixture, bars = load_fixture(str(args.fixture))
         strategies = result["profiles"] if "profiles" in result else (result["profile"],)
         result = {**result, "replay": replay_fixture(fixture, bars, strategies), "execution": "REPLAY_COMPLETED"}

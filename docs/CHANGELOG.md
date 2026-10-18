@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] Vibe-Trading Replay Lab 支持显式复用已有本地 OHLC CSV，记录来源哈希并按符号输出成本敏感性；不改变研究、Radar 或交易门禁。
 
 - [修复] 多周期分析在历史不足或空数据分支保留调用方的未闭合标记，短历史仍输出明确不足告警；TickFlow 研究状态新增历史深度不足风险，防止 4 根 1H / 16 根 15m 被误标为非部分 K 线。
 
