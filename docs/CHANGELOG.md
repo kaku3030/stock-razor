@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 增加只读 `get_historical_bars` 缓存读取契约：限定 US 五周期、QFQ/RTH、日期范围、分页和缓存缺失/失效错误；不执行 provider I/O，finality 与 Radar/交易门禁保持 UNKNOWN/BLOCKED。
 - [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
 - [修复] TickFlow AUTO_200 在总量上限内保留基础 ETF 观察集，仅填充活跃股票；批量采集失败保留固定阶段与原因枚举，审计覆盖全部五周期及 200 标的边界。
 
