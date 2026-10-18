@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 - [修复] TickFlow 批量响应漏项时每个观察周期最多对四个缺失符号执行单票补取，补取失败或超限时继续阻断缓存。
+- [新功能] 增加只读 Vibe-Trading 回测产物导入器：仅消费本地 run artifacts，固定 `RESEARCH_ONLY`，缺失 provider finality、成本摩擦与 OOS 证据时保持 UNKNOWN/NOT_VERIFIED，不启动 MCP、不调用付费服务、不执行交易。
 - [改进] TickFlow 私有研究缓存将封套 schema、provider 与状态不匹配分成固定脱敏错误码，便于云端定位并继续 fail-closed。
 - [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。
 - [新功能] 增加只读 `get_historical_bars` 缓存读取契约：限定 US 五周期、QFQ/RTH、日期范围，逐根校验来源元数据、时区、日历、闭合状态、OHLCV 与快照绑定分页；不执行 provider I/O，finality 与 Radar/交易门禁保持 UNKNOWN/BLOCKED。
