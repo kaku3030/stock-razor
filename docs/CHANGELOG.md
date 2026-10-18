@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] OpenD 无订阅变更探针仅使用当前连接的订阅，避免借用其他连接状态后产生误导性拒绝；无自有订阅时零 K 线调用并明确阻断。
 - [修复] TickFlow 批量响应漏项时每周期最多对四个缺失符号执行单票补取、每次五周期观察最多二十次；补取失败或超限时继续阻断缓存。
 - [修复] Vibe-Trading 导入器仅在完整摩擦字段和受治理 holdout 证据存在时通过成本/OOS 验证，并增加 B0/V0.2/Strong Pullback 的只读自然语言研究入口。
+- [新功能] Vibe-Trading 研究入口支持离线 Replay Lab 三策略比较、显式成本敏感性、不可变 fixture 来源哈希与两行受治理 holdout；小样本统计能力仍明确为不足，研究/交易门禁保持关闭。
 - [改进] TickFlow 私有研究缓存将封套 schema、provider 与状态不匹配分成固定脱敏错误码，便于云端定位并继续 fail-closed。
 - [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。
 - [新功能] 增加只读 `get_historical_bars` 缓存读取契约：限定 US 五周期、QFQ/RTH、日期范围，逐根校验来源元数据、时区、日历、闭合状态、OHLCV 与快照绑定分页；不执行 provider I/O，finality 与 Radar/交易门禁保持 UNKNOWN/BLOCKED。
