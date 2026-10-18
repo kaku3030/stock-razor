@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from tools.research.dual_market_strategy_v05 import dynamic_tail_weights, metrics, STATIC_STRATEGIES
+from tools.research.dual_market_strategy_v05 import dynamic_tail_weights, metrics, STATIC_STRATEGIES, OFFICIAL_INCEPTION
 
 
 def test_static_candidates_are_fixed_and_fully_invested():
@@ -22,3 +22,10 @@ def test_metrics_include_pressure_and_turnover_fields():
     result = metrics(pd.Series([.01, -.03, .02], index=index), pd.Series([.02, -.04, -.01], index=index), pd.Series(.1, index=index), "x", 2020)
     assert result["qqq_down_3pct_up_rate"] == 0.0
     assert np.isclose(result["turnover"], 0.3)
+
+
+def test_coverage_keeps_official_inception_separate_from_provider_readability():
+    assert OFFICIAL_INCEPTION["US.QQQ"][0] == "1999-03-10"
+    assert OFFICIAL_INCEPTION["US.SPY"][0] == "1993-01-22"
+    assert OFFICIAL_INCEPTION["US.TLT"][0] == "2002-07-22"
+    assert OFFICIAL_INCEPTION["US.IEF"][0] == "2002-07-22"
