@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -91,6 +93,34 @@ def _validate_rows(rows: object, *, session_dates: set[date], timeframe: str) ->
     return result
 
 
+def _encode_cursor(snapshot_sha256: str, query_sha256: str, offset: int) -> str:
+    payload = {"version": 1, "snapshot_sha256": snapshot_sha256, "query_sha256": query_sha256, "offset": offset}
+    return base64.urlsafe_b64encode(_canonical_json(payload)).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(value: object) -> dict | None:
+    if not isinstance(value, str) or not value or len(value) > 512:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except (ValueError, UnicodeError, TypeError, binascii.Error):
+        return None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"version", "snapshot_sha256", "query_sha256", "offset"}
+        or payload.get("version") != 1
+        or not isinstance(payload.get("snapshot_sha256"), str)
+        or not SOURCE_SHA256_RE.fullmatch(payload["snapshot_sha256"])
+        or not isinstance(payload.get("query_sha256"), str)
+        or not SOURCE_SHA256_RE.fullmatch(payload["query_sha256"])
+        or type(payload.get("offset")) is not int
+        or payload["offset"] < 0
+    ):
+        return None
+    return payload
+
+
 def _cache_path() -> Path:
     return Path(os.environ.get("STOCK_RAZOR_US_HISTORICAL_CACHE_PATH", DEFAULT_CACHE_PATH))
 
@@ -164,19 +194,25 @@ def read_us_historical_bars(
     if validated_rows is None:
         return _blocked("CACHE_INVALID", "HISTORICAL_CACHE_BAR_INVALID", symbol=normalized, timeframe=timeframe, provider_requests=0)
     snapshot_sha256 = _sha256(payload)
+    query_sha256 = _sha256({
+        "symbol": normalized, "start_date": start.isoformat(), "end_date": end.isoformat(),
+        "timeframe": timeframe, "adjustment": adjustment, "session": session, "limit": limit,
+    })
+    selected = [row for row in validated_rows if start <= _parse_date(row["session_date"]) <= end]
     offset = 0
     if cursor is not None:
-        if not isinstance(cursor, str) or ":" not in cursor:
+        decoded_cursor = _decode_cursor(cursor)
+        if decoded_cursor is None:
             return _blocked("INVALID_ARGUMENT", "INVALID_CURSOR")
-        cursor_sha, raw_offset = cursor.rsplit(":", 1)
-        if cursor_sha != snapshot_sha256 or not raw_offset.isdigit():
+        if decoded_cursor["snapshot_sha256"] != snapshot_sha256:
             return _blocked("CACHE_INVALID", "HISTORICAL_CACHE_SNAPSHOT_CHANGED", provider_requests=0)
-        offset = int(raw_offset)
-        if offset < 0 or offset > len(validated_rows):
+        if decoded_cursor["query_sha256"] != query_sha256:
+            return _blocked("INVALID_ARGUMENT", "HISTORICAL_CURSOR_QUERY_MISMATCH")
+        offset = decoded_cursor["offset"]
+        if offset > len(selected):
             return _blocked("INVALID_ARGUMENT", "INVALID_CURSOR")
-    selected = [row for row in validated_rows if start <= _parse_date(row["session_date"]) <= end]
     page = selected[offset : offset + limit]
-    next_cursor = f"{snapshot_sha256}:{offset + len(page)}" if offset + len(page) < len(selected) else None
+    next_cursor = _encode_cursor(snapshot_sha256, query_sha256, offset + len(page)) if offset + len(page) < len(selected) else None
     if not page:
         return _blocked("NO_DATA", "HISTORICAL_CACHE_RANGE_EMPTY", symbol=normalized, timeframe=timeframe, bars=[], next_cursor=None, provider_requests=0)
     return {

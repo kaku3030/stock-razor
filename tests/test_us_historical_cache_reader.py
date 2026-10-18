@@ -45,10 +45,21 @@ def test_rows_are_normalized_and_cursor_is_bound_to_snapshot(tmp_path):
     assert first["status"] == second["status"] == "PASS_HISTORICAL_ONLY"
     assert first["bars"][0]["timestamp"] == "2026-08-03T14:30:00Z"
     assert second["bars"][0]["close"] == 305
-    assert first["next_cursor"].startswith(first["cache_snapshot_sha256"] + ":")
+    assert first["next_cursor"] != first["cache_snapshot_sha256"] + ":1"
     path.write_text(path.read_text(encoding="utf-8").replace('"close": 305', '"close": 304'), encoding="utf-8")
     changed = _read(path, limit=1, cursor=first["next_cursor"])
     assert changed["error"] == "HISTORICAL_CACHE_SNAPSHOT_CHANGED"
+
+
+def test_cursor_rejects_a_different_query_on_the_same_snapshot(tmp_path):
+    path = tmp_path / "history.json"
+    _cache(path)
+    first = _read(path, limit=1)
+    changed_query = read_us_historical_bars(
+        "US.TSLA", start_date="2026-08-04", end_date="2026-08-04",
+        timeframe="1h", limit=1, cursor=first["next_cursor"], path=str(path),
+    )
+    assert changed_query["error"] == "HISTORICAL_CURSOR_QUERY_MISMATCH"
 
 
 def test_missing_fields_and_source_hash_fail_closed(tmp_path):
