@@ -182,3 +182,11 @@ def test_non_free_modes_keep_historical_observation_not_requested():
         sdk_version="test",
     )
     assert result["historical_kline_observation"] == "NOT_REQUESTED"
+
+def test_premium_probe_reports_only_sanitized_python_failure_class():
+    premium = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    assert 'probe_exit=0' in premium
+    assert 'TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=' in premium
+    assert 're.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}",value)' in premium
+    assert '2>/dev/null' in premium
+

@@ -232,7 +232,22 @@ probe_args=(--mode premium --location AWS_TOKYO_SSM_ISOLATE
 if [[ "$quote_only" == true ]]; then
   probe_args+=(--quote-only)
 fi
-result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)"
+probe_exit=0
+result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)" || probe_exit=$?
+if (( probe_exit != 0 )); then
+  # Python emits only a fixed schema and exception class on failure. Do not
+  # expose traceback, provider response text, URLs, or command arguments.
+  failure_class="$(printf '%s\n' "$result" | python3 -c '
+import json, re, sys
+try:
+    value=json.load(sys.stdin).get("failure_class")
+except Exception:
+    value=None
+print(value if isinstance(value,str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}",value) else "UNKNOWN")
+' 2>/dev/null)"
+  printf 'TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=%s\n' "$failure_class"
+  exit "$probe_exit"
+fi
 probe_stage=VALIDATE_RESULT
 printf '%s\n' "$result" | STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH="$root/last-sanitized-probe.json" STOCK_RAZOR_PROBE_REPO_SHA="$revision" TICKFLOW_ONE_QUOTE_SCOPE="$quote_only" python3 -c '
 import json, os, sys, tempfile
