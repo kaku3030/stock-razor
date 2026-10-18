@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。
+- [新功能] 增加只读 `get_historical_bars` 缓存读取契约：限定 US 五周期、QFQ/RTH、日期范围，逐根校验来源元数据、时区、日历、闭合状态、OHLCV 与快照绑定分页；不执行 provider I/O，finality 与 Radar/交易门禁保持 UNKNOWN/BLOCKED。
 
 - [新功能] 默认关闭地接通 US Radar 持久事件队列，增加有界 AI 消费循环、停止与断点回执恢复，以及独立超时/积压/未知状态审计；保留行情服务网络隔离，不启用付费调用或云端服务。
 - [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
