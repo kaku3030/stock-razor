@@ -96,6 +96,60 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert row["currentness"]=="UNPROVEN"
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(row)
 
+def test_batch_missing_symbols_fall_back_only_for_missing_entries():
+    fake=FakeClient()
+    original=fake.klines.intraday_batch
+
+    def partial_batch(symbols, **kwargs):
+        result=original(symbols, **kwargs)
+        if kwargs["period"]=="1m":
+            result.pop("159363.SZ")
+        return result
+
+    fake.klines.intraday_batch=partial_batch
+    snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
+                           include_supplemental=True,use_batch=True)
+    calls=[call for call in fake.klines.calls if call[1]=="1m"]
+    assert len(calls)==5
+    assert sum(call[0]=="159363.SZ" for call in calls)==2
+    assert len(snap["symbols"]["159363.SZ"]["1m"]["rows"])==4
+    assert all(row["bar_finality"]=="NOT_VERIFIED"
+               for row in snap["symbols"]["159363.SZ"]["1m"]["rows"])
+
+
+def test_batch_missing_symbol_fallback_failure_fails_closed():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+
+    fake=FakeClient()
+    original_get=fake.klines.get
+
+    def partial_batch(symbols, **kwargs):
+        result={
+            symbol: original_get(
+                symbol, period=kwargs["period"], count=kwargs["count"],
+                as_dataframe=kwargs["as_dataframe"], adjust="none",
+            )
+            for symbol in symbols
+        }
+        if kwargs["period"]=="1m":
+            result.pop("159363.SZ")
+        return result
+
+    def failing_get(symbol, *, period, count, as_dataframe, adjust):
+        if symbol=="159363.SZ" and period=="1m":
+            raise RuntimeError("provider failure")
+        return original_get(symbol,period=period,count=count,
+                            as_dataframe=as_dataframe,adjust=adjust)
+
+    fake.klines.intraday_batch=partial_batch
+    fake.klines.get=failing_get
+    with pytest.raises(RuntimeError) as caught:
+        build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
+                          include_supplemental=True,use_batch=True)
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_SYMBOL_FALLBACK"
+    assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_FALLBACK_FAILED"
+
+
 def test_data_reader_does_not_allow_stale_file_or_promoted_admission(tmp_path):
     dest=tmp_path/"obs.json"
     snap=build_observation(FakeClient(),now_utc=NOW,repo_sha="f"*40,sequence=1)
@@ -823,14 +877,32 @@ def test_cache_envelope_rejection_is_specific_bounded_and_fail_closed(
     assert result["live_trade"] is False
 
 
-@pytest.mark.parametrize("result,reason", [([], "BATCH_SHAPE_INVALID"), ({}, "BATCH_SYMBOL_MISSING")])
-def test_batch_failure_has_bounded_stage_and_reason_before_symbol_normalization(result, reason):
+def test_batch_failure_has_bounded_stage_and_reason_before_symbol_normalization():
     from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
 
     fake = FakeClient()
-    fake.klines.intraday_batch = lambda *args, **kwargs: result
+    fake.klines.intraday_batch = lambda *args, **kwargs: []
     with pytest.raises(ValueError) as caught:
         build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
                           include_supplemental=True, use_batch=True)
     assert getattr(caught.value, "_tickflow_stage", None) == "BATCH_1M_FETCH"
-    assert _normalize_rejection_reason(caught.value) == reason
+    assert _normalize_rejection_reason(caught.value) == "BATCH_SHAPE_INVALID"
+
+
+def test_batch_missing_symbol_count_over_fallback_cap_fails_closed():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+
+    fake = FakeClient()
+    symbols = tuple(f"00000{index}.SZ" for index in range(1, 7))
+    fake.klines.intraday_batch = lambda requested, **kwargs: {
+        requested[0]: fake.klines.get(
+            requested[0], period=kwargs["period"], count=kwargs["count"],
+            as_dataframe=kwargs["as_dataframe"], adjust="none",
+        )
+    }
+    with pytest.raises(ValueError) as caught:
+        build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
+                          symbols=symbols,allow_scan_symbols=True,
+                          include_supplemental=True,use_batch=True)
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_FETCH"
+    assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
