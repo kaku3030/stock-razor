@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
+- [修复] TickFlow AUTO_200 在总量上限内保留基础 ETF 观察集，仅填充活跃股票；批量采集失败保留固定阶段与原因枚举，审计覆盖全部五周期及 200 标的边界。
 
 - [新功能] 新增默认关闭的 Radar 单请求研究模型后端：SDK 禁重试、固定子进程硬超时、受限输出与脱敏回执，复用持久化预算及 UNKNOWN 防重放门禁；不启用付费调用或云端运行。
 

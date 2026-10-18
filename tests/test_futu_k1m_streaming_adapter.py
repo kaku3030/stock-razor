@@ -542,3 +542,140 @@ def test_missing_or_failed_subscription_query_never_promotes_to_verified():
     blocked = denied.inspect_current_connection_subscriptions((key(),))
     assert blocked["status"] == "BLOCKED"
     assert "Bearer should-not-print" not in str(blocked)
+
+
+@pytest.mark.parametrize("during_start", [True, False])
+@pytest.mark.parametrize("threaded", [True, False])
+def test_synchronous_all_session_first_push_reaches_writer_with_requested_identity(during_start, threaded):
+    class ImmediateContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            assert kwargs == {"session": "ALL"}
+            self.calls.append(("sub", tuple(symbols)))
+            frame = Frame([{
+                "code": symbols[0], "time_key": "2026-10-16 08:01:00", "close": 150,
+            }])
+            if threaded:
+                import threading
+                callback = threading.Thread(target=lambda: self.handler.on_recv_rsp(frame), daemon=True)
+                callback.start()
+                callback.join(timeout=2)
+                assert not callback.is_alive(), "Do not hold the adapter lock across SDK RPC"
+            else:
+                self.handler.on_recv_rsp(frame)
+            return 0, "ok"
+
+    ft = SimpleNamespace(
+        RET_OK=0, CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"), Session=SimpleNamespace(ALL="ALL"),
+    )
+    ctx = ImmediateContext()
+    controller = LiveFeedController(
+        runtime_instance_id="first-push", provider_id="futu",
+        command_executor=FakeProviderCommandExecutor(),
+    )
+    adapter = FutuK1MStreamingAdapter(
+        ctx, ft, runtime_instance_id="first-push",
+        controller_generation=lambda: controller.snapshot().controller_generation,
+        transport_connected_evidence="OPEND_SYNC_CONTEXT_CONSTRUCTION_RETURNED",
+    )
+    bridge = LiveFeedRuntimeBridge(controller, adapter)
+    requested = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL")
+    if during_start:
+        bridge.start((requested,))
+    else:
+        bridge.start((SemanticStreamKey("futu", "us", "US.AMD", "K_1M", "1m", session_mode="ALL"),))
+        controller.drain_applied_data_for_consumer()
+        bridge.subscribe_streams((requested,))
+        bridge.drain()
+    applied = controller.drain_applied_data_for_consumer()
+    assert len(applied) == 1
+    assert applied[0].event.semantic_stream_key == requested
+    assert applied[0].event.delivery_mode is DeliveryMode.UNKNOWN
+    assert applied[0].event.diagnostic_fields["bar_closure"] == "UNPROVEN"
+    assert applied[0].event.diagnostic_fields["subscription_acknowledged_at_receive"] is False
+    assert controller.snapshot().lifecycle_state is not LifecycleState.LIVE
+
+
+@pytest.mark.parametrize("failure", ["reject", "exception", "overflow"])
+def test_failed_first_push_batch_is_not_published_and_keeps_prior_ownership(failure):
+    class PartialContext(Context):
+        outcome = "ok"
+        in_rpc = False
+        def subscribe(self, symbols, subtypes, subscribe_push, **kwargs):
+            self.in_rpc = True
+            try:
+                count = 1100 if self.outcome == "overflow" else 1
+                for _ in range(count):
+                    self.handler.on_recv_rsp(Frame([{
+                        "code": symbols[0], "time_key": "2026-10-16 08:01:00", "close": 150,
+                    }]))
+                if self.outcome == "exception":
+                    raise RuntimeError("transport outcome unknown")
+                return (-1, "rejected") if self.outcome == "reject" else (0, "ok")
+            finally:
+                self.in_rpc = False
+
+    ctx = PartialContext()
+    ft = SimpleNamespace(
+        RET_OK=0, CurKlineHandlerBase=BaseHandler,
+        SubType=SimpleNamespace(K_1M="K_1M"), Session=SimpleNamespace(ALL="ALL"),
+    )
+    events = []
+    def sink(event):
+        if event.event_kind is ProviderEventKind.DATA:
+            assert ctx.in_rpc is False, "First pushes must wait for subscribe return"
+        events.append(event)
+    adapter = FutuK1MStreamingAdapter(ctx, ft, runtime_instance_id="batch", controller_generation=lambda: 1)
+    adapter.register_event_sink(sink)
+    adapter.start()
+    baseline = SemanticStreamKey("futu", "us", "US.AMD", "K_1M", "1m", session_mode="ALL")
+    requested = SemanticStreamKey("futu", "us", "US.XLV", "K_1M", "1m", session_mode="ALL")
+    adapter.subscribe_stream(baseline)
+    assert len(events) == 1
+    events.clear()
+    ctx.outcome = failure
+    with pytest.raises(RuntimeError):
+        adapter.subscribe_stream(requested)
+    assert not [e for e in events if e.event_kind is ProviderEventKind.DATA]
+
+    # Prior ownership survives; the failed pending identity must not survive.
+    ctx.handler.on_recv_rsp(Frame([{"code": "US.AMD", "time_key": "2026-10-16 08:02:00"}]))
+    assert events[-1].semantic_stream_key == baseline
+    assert events[-1].diagnostic_fields["subscription_acknowledged_at_receive"] is True
+    ctx.handler.on_recv_rsp(Frame([{"code": "US.XLV", "time_key": "2026-10-16 08:02:00"}]))
+    assert events[-1].semantic_stream_key.session_mode is None
+    assert events[-1].diagnostic_fields["subscription_acknowledged_at_receive"] is False
+    ctx.outcome = "ok"
+    adapter.subscribe_stream(requested)
+    assert events[-1].semantic_stream_key == requested
+    assert events[-1].delivery_mode is DeliveryMode.UNKNOWN
+
+
+def test_buffered_first_pushes_cannot_be_overtaken_by_concurrent_post_ack_push():
+    import threading
+    class BurstContext(Context):
+        def subscribe(self, symbols, subtypes, subscribe_push):
+            self.handler.on_recv_rsp(Frame([
+                {"code": symbols[0], "time_key": "first"},
+                {"code": symbols[0], "time_key": "second"},
+            ]))
+            return 0, "ok"
+    ctx = BurstContext()
+    events = []
+    workers = []
+    def sink(event):
+        events.append(event)
+        if event.provider_timestamp_raw == "first":
+            worker = threading.Thread(target=lambda: ctx.handler.on_recv_rsp(
+                Frame([{"code": "US.AAPL", "time_key": "third"}])
+            ), daemon=True)
+            workers.append(worker)
+            worker.start()
+    adapter = FutuK1MStreamingAdapter(ctx, FT, runtime_instance_id="ordered", controller_generation=lambda: 1)
+    adapter.register_event_sink(sink)
+    adapter.start()
+    adapter.subscribe_stream(key())
+    for worker in workers:
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+    assert [e.provider_timestamp_raw for e in events] == ["first", "second", "third"]

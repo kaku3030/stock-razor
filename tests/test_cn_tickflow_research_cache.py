@@ -794,3 +794,16 @@ def test_historical_cache_rejection_exposes_only_fixed_safe_reason(tmp_path):
     assert result["live_trade"] is False
     assert "1.5" not in json.dumps(result)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("result,reason", [([], "BATCH_SHAPE_INVALID"), ({}, "BATCH_SYMBOL_MISSING")])
+def test_batch_failure_has_bounded_stage_and_reason_before_symbol_normalization(result, reason):
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+
+    fake = FakeClient()
+    fake.klines.intraday_batch = lambda *args, **kwargs: result
+    with pytest.raises(ValueError) as caught:
+        build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
+                          include_supplemental=True, use_batch=True)
+    assert getattr(caught.value, "_tickflow_stage", None) == "BATCH_1M_FETCH"
+    assert _normalize_rejection_reason(caught.value) == reason

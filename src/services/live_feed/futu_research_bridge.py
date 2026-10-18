@@ -62,6 +62,15 @@ def closed_futu_minute_to_bar(minute: FormingMinuteBar, *, received_at):
     else:
         freshness = 1
 
+    # Reject an impossible source-minute turnover/VWAP before aggregation.
+    # This keeps a bad provider numerator from being summed into a complete
+    # higher-timeframe bar and makes the quality failure explicit.
+    if minute.turnover is not None and minute.volume > 0:
+        source_vwap = minute.turnover / minute.volume
+        tolerance = max(1e-6, max(abs(minute.low), abs(minute.high)) * 1e-6)
+        if not minute.low - tolerance <= source_vwap <= minute.high + tolerance:
+            flags.append("VWAP_OUTSIDE_BAR_RANGE")
+
     # Timestamp semantics are now a proven provider fact. Continuity and
     # provider cross-check remain deliberately conservative here; they are
     # qualified independently by the runtime evidence layers.
@@ -88,7 +97,7 @@ def closed_futu_minute_to_bar(minute: FormingMinuteBar, *, received_at):
         low=minute.low,
         close=minute.close,
         volume=minute.volume,
-        amount=minute.turnover,
+        amount=(None if "VWAP_OUTSIDE_BAR_RANGE" in flags else minute.turnover),
         provider="futu",
         source_timestamp=end,
         received_at=received,

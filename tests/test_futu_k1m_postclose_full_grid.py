@@ -24,7 +24,8 @@ def _session(day: str):
             "low": 99.9 + i / 100,
             "close": 100.2 + i / 100,
             "volume": 1000 + i,
-            "turnover": 100000.0 + i,
+            # Model valid minute VWAP near close for every synthetic row.
+            "turnover": (100.2 + i / 100) * (1000 + i),
         }
         for i in range(390)
     ]

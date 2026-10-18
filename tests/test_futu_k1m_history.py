@@ -320,3 +320,18 @@ def test_empty_history_is_safe_and_non_promoting():
     assert result.radar_admission == "BLOCKED"
     assert result.live_trade is False
     assert result.can_promote is False
+
+
+def test_impossible_source_minute_vwap_is_flagged_and_amount_suppressed():
+    result = normalize_futu_k1m_history_rows(
+        [
+            row("2026-10-06 09:31:00", volume=10.0, turnover=1200.0),
+            row("2026-10-06 09:32:00"),
+        ],
+        received_at=RECEIVED,
+        expected_symbol="US.AMD",
+    )
+    bar = result.bars[0]
+    assert "VWAP_OUTSIDE_BAR_RANGE" in bar.quality_flags
+    assert bar.amount is None
+    assert bar.health.signal_permission.value == "blocked"
