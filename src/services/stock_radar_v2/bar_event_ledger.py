@@ -229,6 +229,7 @@ class RadarBarEventLedger:
             raise ValueError("max_pending must be positive")
         if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
             raise ValueError("max_attempts must be positive")
+        self._database_path = None if str(database) == ":memory:" else Path(database).resolve()
         self._max_pending = int(max_pending)
         self._max_attempts = int(max_attempts)
         self._lock = threading.RLock()
@@ -635,6 +636,25 @@ class RadarBarEventLedger:
         if row is None:
             raise KeyError(idempotency_key)
         return self._event(row)
+
+    @property
+    def database_path(self) -> Path | None:
+        return self._database_path
+
+    def runtime_summary(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """One read-only snapshot; no payloads, lease/intent changes or provider I/O."""
+        stamp = _aware_utc("now", now or datetime.now(timezone.utc)).isoformat()
+        event_states = {"event_pending": "PENDING", "event_claimed": "CLAIMED",
+                        "event_acknowledged": "ACKNOWLEDGED", "event_dead_letter": "DEAD_LETTER"}
+        ai_states = {"ai_started": "STARTED", "ai_succeeded": "SUCCEEDED", "ai_unknown": "UNKNOWN"}
+        columns = [f"(SELECT COUNT(*) FROM stock_radar_bar_event_ledger WHERE status='{state}') AS {name}"
+                   for name, state in event_states.items()]
+        columns += [f"(SELECT COUNT(*) FROM stock_radar_ai_wake WHERE status='{state}') AS {name}"
+                    for name, state in ai_states.items()]
+        columns += ["(SELECT COUNT(*) FROM stock_radar_ai_wake WHERE status='STARTED' AND deadline_at<=?) AS ai_expired",
+                    "(SELECT MIN(created_at) FROM stock_radar_bar_event_ledger WHERE status IN ('PENDING','CLAIMED')) AS oldest_pending_at"]
+        with self._lock:
+            return dict(self._connection.execute("SELECT " + ",".join(columns), (stamp,)).fetchone())
 
     def pending_count(self) -> int:
         with self._lock:

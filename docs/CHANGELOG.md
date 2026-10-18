@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+
+- [新功能] 默认关闭地接通 US Radar 持久事件队列，增加有界 AI 消费循环、停止与断点回执恢复，以及独立超时/积压/未知状态审计；保留行情服务网络隔离，不启用付费调用或云端服务。
 - [修复] OpenD 缓存首包等待订阅 ACK 后按完整 session 身份、有界顺序发布；拒绝/异常/溢出不发布待定批次，并收敛历史与实时源分钟 VWAP 越界阻断。
 - [修复] TickFlow AUTO_200 在总量上限内保留基础 ETF 观察集，仅填充活跃股票；批量采集失败保留固定阶段与原因枚举，审计覆盖全部五周期及 200 标的边界。
 
