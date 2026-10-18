@@ -17,6 +17,7 @@ from data_provider.us_canonical_runtime_reader import (
     read_us_market_bars,
     read_us_market_snapshots,
 )
+from data_provider.us_historical_cache_reader import read_us_historical_bars
 from data_provider.us_radar_runtime_reader import read_us_radar_analysis
 from data_provider.us_fast_research_brief import read_us_fast_research_brief, read_us_quick_scan
 from src.services.context_manager import default_store
@@ -322,6 +323,30 @@ def get_market_bars(
 ) -> dict:
     """Return bounded canonical US bars from the cloud-local snapshot."""
     return read_us_market_bars(symbol, timeframe=timeframe, limit=limit)
+
+
+@mcp.tool()
+def get_historical_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    timeframe: str = "1h",
+    adjustment: str = "qfq",
+    session: str = "RTH",
+    limit: int = 100,
+    cursor: str | None = None,
+) -> dict:
+    """Read bounded historical bars from the persisted cache only."""
+    return read_us_historical_bars(
+        symbol,
+        start_date=start_date,
+        end_date=end_date,
+        timeframe=timeframe,
+        adjustment=adjustment,
+        session=session,
+        limit=limit,
+        cursor=cursor,
+    )
 
 
 if __name__ == "__main__":
