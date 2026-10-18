@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 多周期分析在历史不足或空数据分支保留调用方的未闭合标记，短历史仍输出明确不足告警；TickFlow 研究状态新增历史深度不足风险，防止 4 根 1H / 16 根 15m 被误标为非部分 K 线。
+
 - [新功能] CN Radar 可显式选择现有 TickFlow 缓存，复用同一隔离服务生成四只基线标的的 D1/60m/15m 历史研究状态；独立核对来源版本与时效，保留未闭合及门禁阻断，不新增供应商调用。
 
 - [修复] 美国 Radar 部署验收按 systemctl 的时长显示格式核对 90 秒 watchdog；增加完整 shell 路径回归测试，拒绝关闭、错误时长及无单位原始数字，保持数据和交易门禁关闭。

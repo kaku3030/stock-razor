@@ -42,8 +42,14 @@ def observation(now=NOW):
             "research_only": True, "live_trade": False}
 
 
-def test_real_cache_to_radar_retains_provenance_and_partial_bars(monkeypatch):
+@pytest.mark.parametrize("short_history", [False, True])
+def test_real_cache_to_radar_retains_provenance_and_partial_bars(monkeypatch, short_history):
     source = observation()
+    if short_history:
+        # Actual first AWS cache: requested depth is not returned coverage.
+        for frames in source["symbols"].values():
+            frames["60m"]["rows"] = frames["60m"]["rows"][-4:]
+            frames["15m"]["rows"] = frames["15m"]["rows"][-16:]
     original = copy.deepcopy(source)
     def no_io(*args, **kwargs):
         raise AssertionError("cache adapter must not perform I/O")
@@ -65,6 +71,9 @@ def test_real_cache_to_radar_retains_provenance_and_partial_bars(monkeypatch):
             assert frame["bar_finality"] == "NOT_VERIFIED"
         assert item["technical"]["hourly"]["quality"]["is_partial_bar"] is True
         assert item["technical"]["intraday"]["quality"]["is_partial_bar"] is True
+        if short_history:
+            assert "1h_insufficient_bars" in item["technical"]["hourly"]["quality"]["warnings"]
+            assert "tickflow_indicator_history_insufficient" in item["technical"]["risk_flags"]
 
 
 @pytest.mark.parametrize("case", ["unsafe", "provider", "schema", "sequence", "stale",
@@ -144,7 +153,7 @@ def test_actual_deployment_verifier_independently_reads_source(tmp_path, case, p
     status_path = tmp_path / "status.json"
     status_path.write_text(json.dumps(heartbeat))
     code = Path("ops/aws/verify_cn_radar_worker.sh").read_text().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
-    code = code.replace("/run/stock-razor-cn-tickflow/latest-research-observation.json", str(source_path))
+    code = code.replace("/run/stock-razor-cn-tickflow/latest-research-observation.json", source_path.as_posix())
     result = subprocess.run([sys.executable, "-", str(status_path), "b" * 40, "tickflow"],
         input=code, text=True, capture_output=True, timeout=5)
     assert (result.returncode == 0) is passes, result.stderr

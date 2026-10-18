@@ -21,13 +21,21 @@ def analyze_timeframe(
     is_partial_bar: bool = False,
 ) -> TimeframeState:
     if df is None or df.empty:
-        return TimeframeState(timeframe=timeframe, quality=DataQuality(warnings=[f"{timeframe}_data_missing"]))
+        return TimeframeState(timeframe=timeframe, quality=DataQuality(
+            is_partial_bar=is_partial_bar, warnings=[f"{timeframe}_data_missing"],
+        ))
     table = calculate_indicators(df, include_vwap=include_vwap)
     if len(table) < 20:
         return TimeframeState(
             timeframe=timeframe,
             confidence=min(len(table) / 40, 0.45),
-            quality=DataQuality(status="partial", bars=len(table), warnings=[f"{timeframe}_insufficient_bars"]),
+            quality=DataQuality(
+                status="partial", bars=len(table), is_partial_bar=is_partial_bar,
+                as_of=str(table.iloc[-1].get("date")) if "date" in table.columns else None,
+                warnings=[f"{timeframe}_insufficient_bars"] + (
+                    [f"{timeframe}_partial_bar"] if is_partial_bar else []
+                ),
+            ),
         )
 
     latest = table.iloc[-1]
