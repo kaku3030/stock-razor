@@ -54,6 +54,17 @@ def recovery_days(returns: pd.Series) -> float:
     return float(wealth.index.get_loc(recovered.index[0]) - wealth.index.get_loc(trough)) if not recovered.empty else math.nan
 
 
+def low_drawdown_weights(index: pd.DatetimeIndex, qqq: pd.Series) -> pd.DataFrame:
+    """Fixed 200-day trend/8% drawdown exit, lagged one bar."""
+    price = qqq.reindex(index).ffill()
+    peak = price.rolling(60, min_periods=60).max()
+    defensive = ((price < price.rolling(200, min_periods=200).mean()) |
+                 (price / peak - 1.0 <= -0.08)).shift(1).fillna(False)
+    weights = pd.DataFrame({"US.QQQ": .20, "US.IEF": .40, "US.TLT": .40}, index=index)
+    weights.loc[defensive.astype(bool), ["US.QQQ", "US.IEF", "US.TLT"]] = [.0, .60, .40]
+    return weights
+
+
 def metric_row(name: str, returns: pd.Series, qqq_returns: pd.Series, turnover: pd.Series,
                scope: str, cost_label: str) -> dict:
     returns = returns.dropna()
@@ -92,7 +103,8 @@ def evaluate(raw: dict[str, pd.DataFrame], output_dir: Path, end: str,
         if any(symbol not in raw for symbol in definition):
             continue
         prices = strategy_prices(raw, list(definition))
-        weights = pd.DataFrame(definition, index=prices.index)
+        weights = (low_drawdown_weights(prices.index, qqq) if name == "A_LOW_DRAWDOWN"
+                   else pd.DataFrame(definition, index=prices.index))
         for fee, slippage, label in COSTS:
             returns, turnover = build_returns(prices, weights, fee, slippage)
             qqq_returns = qqq.reindex(returns.index).pct_change()
