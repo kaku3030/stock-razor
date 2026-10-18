@@ -19,11 +19,19 @@ python scripts/vibe_trading_research.py "compare B0, V0.2, and Strong Pullback i
 ```
 
 The command runs the offline OHLC Replay Lab against an existing immutable
-fixture. It compares `B0`, `V0.2`, and `Strong Pullback`, reports gross and
+fixture. The first slice uses explicitly labelled exploratory proxy rules:
+B0 holds from first open to final close, V0.2 buys after a prior up-close, and
+Strong Pullback buys after two declining closes. These are not verified
+canonical strategy specifications. The report marks
+strategy_rule_contract=EXPLORATORY_PROXY_NOT_CANONICAL and
+canonical_strategy_spec=NOT_VERIFIED. It reports gross and
 explicit 0/1/2/5 bps-per-side cost scenarios, and separates six training rows
-from a two-row governed holdout. The holdout is hashed and marked
-`strategy_not_tuned_on_holdout=true`; the small fixture is also marked
-`statistical_power=INSUFFICIENT_SMALL_FIXTURE`.
+from a two-row diagnostic holdout. The
+holdout is hash-bound but not claimed as validated out-of-sample evidence;
+rule pre-registration is NOT_VERIFIED, and the sample is marked
+statistical_power=INSUFFICIENT_SMALL_FIXTURE. Maximum drawdown is
+NOT_COMPUTED because the replay currently records trade returns but no
+intratrade mark-to-market equity path.
 
 Without `--fixture`, the natural-language entry remains a request with
 `execution=NOT_RUN`. Every completed report remains `RESEARCH_ONLY`, with

@@ -139,8 +139,6 @@ def _trades_for(strategy: str, bars: list[Bar]) -> list[Trade]:
 def _metrics(trades: Iterable[Trade], commission_bps: float, slippage_bps: float) -> dict[str, Any]:
     friction = (commission_bps + slippage_bps) / 10000.0
     equity = 1.0
-    peak = 1.0
-    max_drawdown = 0.0
     returns = []
     for trade in trades:
         entry = trade.entry_price * (1.0 + friction)
@@ -148,12 +146,11 @@ def _metrics(trades: Iterable[Trade], commission_bps: float, slippage_bps: float
         trade_return = exit / entry - 1.0
         returns.append(trade_return)
         equity *= 1.0 + trade_return
-        peak = max(peak, equity)
-        max_drawdown = min(max_drawdown, equity / peak - 1.0)
     return {
         "trade_count": len(returns),
         "total_return": equity - 1.0,
-        "max_drawdown": max_drawdown,
+        "max_drawdown": None,
+        "max_drawdown_status": "NOT_COMPUTED_INTRATRADE_MARK_TO_MARKET_MISSING",
         "trade_returns": returns,
         "commission_bps": commission_bps,
         "slippage_bps": slippage_bps,
@@ -186,12 +183,21 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
         "schema_version": "stock-razor-vibe-replay-lab-v0.1",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
+        "strategy_rule_contract": {
+            "status": "EXPLORATORY_PROXY_NOT_CANONICAL",
+            "canonical_strategy_spec": "NOT_VERIFIED",
+            "definitions": {
+                "b0": "buy first bar open and hold through final bar close",
+                "v0.2": "enter next bar open after prior close rises versus preceding close",
+                "strong_pullback": "enter next bar open after two consecutive declining closes",
+            },
+        },
         "strategies": selected,
         "train": section(train),
         "holdout": section(holdout),
         "oos": {
-            "status": "OOS_VALIDATED",
-            "holdout": {"status": "GOVERNED", "dataset_hash": holdout_hash, "strategy_not_tuned_on_holdout": True},
+            "status": "HOLDOUT_REPLAYED_RESEARCH_ONLY",
+            "holdout": {"status": "DIAGNOSTIC_ONLY", "dataset_hash": holdout_hash, "strategy_not_tuned_on_holdout": "NOT_VERIFIED"},
             "statistical_power": "INSUFFICIENT_SMALL_FIXTURE",
         },
         "provenance": {

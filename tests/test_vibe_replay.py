@@ -7,16 +7,23 @@ from src.services.strategy_lab.vibe_replay import STRATEGIES, load_fixture, repl
 FIXTURE = "tests/fixtures/strategy_lab/aapl_getdata_12h_recorded_fixture_v1.json"
 
 
-def test_replay_uses_real_fixture_with_governed_holdout() -> None:
+def test_replay_uses_real_fixture_with_diagnostic_holdout() -> None:
     fixture, bars = load_fixture(FIXTURE)
     result = replay_fixture(fixture, bars)
     assert tuple(result["strategies"]) == STRATEGIES
     assert result["execution"] == "REPLAY_COMPLETED"
-    assert result["oos"]["status"] == "OOS_VALIDATED"
-    assert result["oos"]["holdout"]["status"] == "GOVERNED"
-    assert result["oos"]["holdout"]["strategy_not_tuned_on_holdout"] is True
+    assert result["strategy_rule_contract"]["status"] == "EXPLORATORY_PROXY_NOT_CANONICAL"
+    assert result["strategy_rule_contract"]["canonical_strategy_spec"] == "NOT_VERIFIED"
+    assert result["oos"]["status"] == "HOLDOUT_REPLAYED_RESEARCH_ONLY"
+    assert result["oos"]["holdout"]["status"] == "DIAGNOSTIC_ONLY"
+    assert result["oos"]["holdout"]["strategy_not_tuned_on_holdout"] == "NOT_VERIFIED"
     assert result["provenance"]["fixture_digest"] == fixture["fixture_digest"]
     assert result["provenance"]["holdout_rows"] == 2
+    assert result["holdout"]["b0"]["gross"]["max_drawdown"] is None
+    assert (
+        result["holdout"]["b0"]["gross"]["max_drawdown_status"]
+        == "NOT_COMPUTED_INTRATRADE_MARK_TO_MARKET_MISSING"
+    )
 
 
 def test_cost_sensitivity_is_explicit_and_safety_stays_closed() -> None:
