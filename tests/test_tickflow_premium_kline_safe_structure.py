@@ -166,7 +166,7 @@ def test_public_workflow_reprojects_kline_schema_only_as_bounded_enums():
     wf = WORKFLOW.read_text(encoding="utf-8")
     assert 'if name in ("kline_15m","kline_60m"):' in wf
     assert 'if name in ("kline_batch_15m","kline_batch_60m"):' in wf
-    assert 'record["batch_symbol_row_counts"]' in wf
+    assert '("batch_symbol_row_counts","batch_symbol_row_counts")' in wf
     assert 'record["provider_live_qualified"]=False' in wf
     assert 'record["bar_range_structure"]' in wf
     assert 'record["timestamp_order"]' in wf
