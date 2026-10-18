@@ -852,6 +852,17 @@ def main() -> int:
             "live_trade": False,
             "can_confirm_signal": False,
         }
+    except Exception as exc:
+        # Preserve only the exception class for private-wrapper diagnostics.
+        # Arbitrary SDK/provider text can contain credentials or response data.
+        result = {
+            "schema": "stock_razor_tickflow_isolated_probe_v0_1",
+            "setup_state": "BLOCKED",
+            "failure_class": type(exc).__name__,
+            "radar_admission": "BLOCKED",
+            "live_trade": False,
+            "can_confirm_signal": False,
+        }
     print(json.dumps(result, ensure_ascii=True, sort_keys=True))
     return 0 if result.get("setup_state") != "BLOCKED" else 2
 
