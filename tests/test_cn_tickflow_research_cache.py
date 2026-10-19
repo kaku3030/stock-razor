@@ -931,3 +931,14 @@ def test_batch_missing_symbol_count_over_fallback_cap_fails_closed():
                           include_supplemental=True,use_batch=True)
     assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_FETCH"
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
+
+
+def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
+    base=frame("60m")
+    columns=("timestamp","open","high","low","close","volume","amount")
+    too_few={key:base[key].tolist()[:3] for key in columns}
+    too_many={key:(base[key].tolist()*7)[:25] for key in columns}
+    with pytest.raises(ValueError,match="insufficient history"):
+        normalize_bars(too_few,"60m",now_utc=NOW)
+    with pytest.raises(ValueError,match="history exceeds configured bound"):
+        normalize_bars(too_many,"60m",now_utc=NOW)
