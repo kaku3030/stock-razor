@@ -10,6 +10,11 @@ query the available legacy read-only MCP surface with
 `get_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])` or
 `get_cn_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`.
 
+For a newly seen or previously similar error, also consult current-main
+`associations.json` and run `python scripts/self_improvement_recall.py
+--query "<sanitized symptom>"` before recommending a duplicate probe.
+Use related cases as hypothesis, never a confirmed current failure cause.
+
 Treat the response as evidence only. Preserve per-domain `UNKNOWN`, `EXPIRED`,
 `UNVERIFIED`, and `BLOCKED` states; never infer CI, deployment, provider access,
 Radar qualification, paper readiness, or trading readiness from transport success.
