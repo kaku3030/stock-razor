@@ -102,3 +102,14 @@ def test_cli_registry_check_and_status(capsys):
     assert gate.main(["--status"]) == 0
     status = json.loads(capsys.readouterr().out)
     assert any(x["id"] == "CN-002" for x in status["records"])
+
+
+def test_vendor_ticker_and_endpoint_dot_signatures_are_valid():
+    registry = gate.load_registry()
+    ticker = gate.classify(registry, signature="Tencent fallback observed for 518880.SH",
+                           sha=SHA, previous_sha=SHA)
+    assert ticker["action"] == "STOP_DUPLICATE"
+    assert ticker["failure_ids"] == ["CN-002"]
+    endpoint = gate.classify(registry, signature="KLINES.GET wrongly used INTRADAY",
+                             sha=SHA, previous_sha=SHA)
+    assert endpoint["failure_ids"] == ["CN-003"]
