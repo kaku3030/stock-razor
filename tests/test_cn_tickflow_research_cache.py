@@ -77,11 +77,11 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert snap["radar_admission"]=="BLOCKED"
     assert snap["canonical_write_authorized"] is False
     assert snap["live_trade"] is False
-    assert len(fake.klines.calls)==8
-    assert [x[2] for x in fake.klines.calls]==[96,24]*4
+    assert len(fake.klines.calls)==10
+    assert [x[2] for x in fake.klines.calls]==[96,24]*5
     assert all(x[3] is False and x[4]=="none" for x in fake.klines.calls)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(snap)
-    for sym in ("159611.SZ","159209.SZ","512730.SH","159363.SZ"):
+    for sym in ("159611.SZ","159209.SZ","518880.SH","512730.SH","159363.SZ"):
         for period in ("15m","60m"):
             bars=snap["symbols"][sym][period]["rows"]
             assert len(bars)==len(TIMES[period])
@@ -110,7 +110,7 @@ def test_batch_missing_symbols_fall_back_only_for_missing_entries():
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
     calls=[call for call in fake.klines.calls if call[1]=="1m"]
-    assert len(calls)==5
+    assert len(calls)==6
     assert sum(call[0]=="159363.SZ" for call in calls)==2
     assert len(snap["symbols"]["159363.SZ"]["1m"]["rows"])==4
     assert all(row["bar_finality"]=="NOT_VERIFIED"

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] TickFlow A股观察集合保留159611.SZ与159209.SZ持仓优先，并加入非持仓518880.SH，覆盖本地与云端五周期只读观察。
 - [修复] TickFlow 批量响应漏项时每个观察周期最多对四个缺失符号执行单票补取，补取失败或超限时继续阻断缓存。
 - [改进] TickFlow 私有研究缓存将封套 schema、provider 与状态不匹配分成固定脱敏错误码，便于云端定位并继续 fail-closed。
 - [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。

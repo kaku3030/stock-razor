@@ -52,19 +52,19 @@ def test_5m_day_grid_is_exact_regular_session_48():
 def test_all_held_etfs_and_five_periods_are_requested_in_one_snapshot(tmp_path):
     client=Client()
     old=build_observation(client,now_utc=POSTCLOSE,repo_sha=SHA,sequence=1)
-    assert len(client.klines.calls)==8
+    assert len(client.klines.calls)==10
     assert all(set(frames)=={"15m","60m"} for frames in old["symbols"].values())
     client.klines.calls.clear()
     got=build_observation(client,now_utc=POSTCLOSE,repo_sha=SHA,sequence=2,
                           include_supplemental=True)
-    assert len(client.klines.calls)==20
+    assert len(client.klines.calls)==25
     assert [x[1:3] for x in client.klines.calls[:5]] == [
         ("1m",240),("5m",144),("15m",96),("60m",24),("1d",40)]
     assert all(x[3:]==("none",False) for x in client.klines.calls)
     p=tmp_path/"cache.json"
     atomic_publish(str(p),got)
     assert p.stat().st_size<MAX_BYTES
-    for symbol in ("159611.SZ","159209.SZ","512730.SH","159363.SZ"):
+    for symbol in ("159611.SZ","159209.SZ","518880.SH","512730.SH","159363.SZ"):
         for period,n in (("5m",48),("1d",6)):
             resp=read_cn_tickflow_research_data(
                 symbol,period,limit=144,path=str(p),now_utc=POSTCLOSE,
