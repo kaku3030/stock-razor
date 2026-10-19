@@ -226,3 +226,30 @@ show ... -p WatchdogUSec --value` formats this duration as `1min 30s` (or
 Zero, other durations and a unitless `90000000` fail verification. The full shell
 acceptance path is tested in addition to the embedded heartbeat checks. See
 [systemd's property formatter](https://github.com/systemd/systemd/blob/v255/src/shared/bus-print-properties.c).
+
+
+## US OpenD 15-minute cloud research digest (2026-10-19)
+
+The dedicated `.github/workflows/us-opend-15m-research-notify.yml` runs a best-effort
+GitHub Actions cron every 15 minutes in the US-market UTC window and checks the
+pinned XNYS exchange calendar before any AWS OIDC/SSM action. It reads the existing
+EC2 OpenD LiveFeed heartbeat and canonical bar cache plus the US Radar research
+heartbeat. It never calls the provider or a paid model, changes subscriptions,
+restarts services or places orders. The runner sends its bounded Chinese research
+summary only to the existing `DISCORD_RADAR_WEBHOOK_URL` GitHub Actions secret.
+
+The report distinguishes D1 historical research (Radar state) from 1H/15m cache
+readbacks. Source age uses last actual K-line timestamp, not the refreshed
+heartbeat. Any missing, old, non-OpenD, provisional, unhealthy, version-mismatched
+or non-final bars produce `BLOCKED` and no confirmed trade signal. This is
+read-only research monitoring, not qualified L3 Radar admission.
+
+Manual dispatch defaults to `dry_run=true`, so it validates the path without
+Discord notification. Scheduled runs notify during exchange sessions only;
+concurrent runs are serialized and manual reruns do not double-send. GitHub cron
+may start late or skip, so this is **not** a guaranteed clock-exact 15-minute
+SLA. Receipt must be independently verified from Actions and Discord, and a
+matching source-deployed SHA must be proven separately from a passing workflow.
+If the webhook secret is missing/invalid, the notification step fails closed.
+Rollback: revert/disable the dedicated workflow; existing LiveFeed/Radar workers
+are unchanged. The separate ChatGPT hourly automation is unaffected.
