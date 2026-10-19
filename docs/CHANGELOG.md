@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] A 股与美股快报模块增加 V4.1 Main Control 适配入口，强制复用双端五周期契约；缺少端点证据时 fail closed，不触发行情请求或开启交易门禁。
 - [新功能] 增加 STOCK RAZOR V4.1 双端五周期报告的 fail-closed 契约验证、精确行情一致性、时延字段审计与稳定反馈去重键；仅研究输出，不开放 Radar/Paper/交易门禁。
 - [改进] Vibe-Trading Replay Lab V0.6 将 CSV 数据审计绑定到 Replay 报告并支持 JSON/Markdown 输出；fixture 仅标记为 `FIXTURE_SMOKE`，未验证证据继续阻断历史回放资格与 OOS 声明。
 - [改进] Vibe-Trading Replay Lab V0.5 增加离线 OHLCV 数据血缘、时间戳、质量、closure、provider finality、新鲜度与 replay eligibility 的 fail-closed 审计报告；UNKNOWN 不升级为 PASS。
