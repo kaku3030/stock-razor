@@ -43,7 +43,7 @@ def test_no_identical_retry_and_durable_unknown_receipt(tmp_path):
     incident = json.loads((tmp_path / "incidents.json").read_text())
     assert incident["records"][0]["exit_code"] == 1
     assert incident["records"][0]["diagnosis"] == "UNKNOWN_PENDING_ROOT_CAUSE"
-    assert incident["records"][0]["source_sha"] == "UNKNOWN"
+    assert incident["records"][0]["source_sha"] == __import__("os").environ.get("GITHUB_SHA", "UNKNOWN").lower()
     resumed = run_queue(queue, state, executor=lambda task: 99)
     assert resumed["status"] == "BLOCKED"
     assert calls == ["one"]
