@@ -62,6 +62,20 @@ Every new, unfamiliar or slightly similar technical error MUST trigger associati
 
 `ai-governance` validates historical association case IDs and mapping structure on every PR. The tool is deterministic and offline: rapid recall, not LLM retraining or proof of production readiness. Read-only help: `docs/architecture/stock-razor-associative-error-memory.md`.
 
+## Real-time project event context (V1.4)
+
+For any new STOCK RAZOR discussion about **trading, Radar, US OpenD, CN TickFlow, strategy/replay, risk, positions or project engineering**, first perform **proactive topical retrieval without waiting for the user to ask you to synchronize**:
+
+1. Identify topics with `python scripts/stock_razor_fast_sync.py --route "<sanitized first relevant user utterance>"` (or equivalent in connected GitHub cloud-only ChatGPT). For an established project window, `--stock-razor-window` makes a plain "继续" cause recovery.
+2. Concurrently get exact current GitHub main SHA + same-ref AGENTS/SKILL/registry/associations, read the two existing STOCK RAZOR MCP `__CONTEXT_MANAGER_STATE__` sentinels, and inspect the latest **OWNER-issued** `STOCK_RAZOR_SYNC_V1` comments on GitHub PR #924. Match **topic**, `source_sha`, published time and evidence URL. The event is a project decision/status, not live bar, position or trade permission.
+3. If topic state is older than a known main/deployment/provider change, or a domain is missing/expired, show `STALE` / `SYNC_NOT_VERIFIED`, investigate the newly available evidence, do not reuse an older claim.
+4. Following a material **new project decision**, issue change or confirmed PR/deployment, publish a compact owner-authenticated `STOCK_RAZOR_SYNC_V1` comment to #924 using the canonical five-field envelope. The new `issue_comment` workflow archives it to existing AWS Context Manager through a constrained SSM call, without writing provider secrets or personal trading data.
+5. Verify each stage independently: comment published, GitHub Actions workflow triggered, AWS SSM `RECORDED`, MCP context readback, new ChatGPT window actual first-message auto-fetch. Successful merge/CI alone does NOT prove any of the latter.
+
+Only publish project-level non-sensitive messages. **Never publish positions, private account identifiers, personal chat transcripts, API credentials, trade execution instructions or raw provider payloads to GitHub comments.** Do not manufacture a claim that dormant chats automatically receive changes. 
+
+Canonical reference: `docs/architecture/stock-razor-fast-cross-window-sync.md`.
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
