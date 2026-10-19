@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 增加 STOCK RAZOR Self-Improvement V1.0 仓库级跨窗口技能、当前 main 共享故障签名登记、相同 SHA/错误重复尝试阻断工具和必须经过的 ai-governance 检查；只对读取 GitHub 最新主线的工作窗口生效，不能主动向未打开的独立聊天推送新规则，亦不改变交易安全门禁。
+
 - [新功能] 美股云端 OpenD 增加 GitHub XNYS 日历约束的 15 分钟研究级缓存审计与 Discord Radar 摘要通知：只读现有 15m/1H K线与 Radar D1 研究状态，严格阻断过期、未闭合、异常和来源不一致，不开启任何交易门禁；实际 GitHub 调度精度与 Discord 到达率仍待云端验收。
 
 - [改进] Vibe-Trading historical capture preserves the Yahoo Chart raw payload hash and audits timezone/DST, XNYS calendar, source manifest, bar closure, and provider finality separately; missing evidence continues to block historical replay eligibility.
