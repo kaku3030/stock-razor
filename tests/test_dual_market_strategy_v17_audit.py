@@ -23,3 +23,18 @@ def test_summary_exposes_monthly_positive_rate_denominator():
     result = _summary(strategy, qqq, "X", "daily")
     assert result["n_periods"] == 4
     assert result["positive_period_rate"] == pytest.approx(0.5)
+
+
+def test_monthly_cagr_uses_twelve_periods_per_year():
+    index = pd.date_range("2024-01-31", periods=12, freq="ME")
+    strategy = pd.Series([0.01] * 12, index=index)
+    qqq = pd.Series([0.0] * 12, index=index)
+    result = _summary(strategy, qqq, "X", "monthly")
+    assert result["cagr"] == pytest.approx((1.01 ** 12) - 1.0)
+
+
+def test_summary_rejects_unknown_frequency():
+    index = pd.date_range("2024-01-02", periods=1, freq="B")
+    values = pd.Series([0.01], index=index)
+    with pytest.raises(ValueError, match="unsupported summary frequency"):
+        _summary(values, values, "X", "weekly")
