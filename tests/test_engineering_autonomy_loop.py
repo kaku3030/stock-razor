@@ -29,19 +29,24 @@ def test_queue_rejects_unknown_fields(tmp_path):
         load_queue(path)
 
 
-def test_retry_and_checkpoint_then_resume(tmp_path):
+def test_no_identical_retry_and_durable_unknown_receipt(tmp_path):
     queue = queue_file(tmp_path)
     state = tmp_path / "state.json"
     calls = []
     codes = iter([1, 0])
     result = run_queue(queue, state, executor=lambda task: (calls.append(task.id), next(codes))[1])
-    assert result["status"] == "PASS"
-    assert calls == ["one", "one"]
+    assert result["status"] == "BLOCKED"
+    assert calls == ["one"]
     persisted = json.loads(state.read_text())
-    assert persisted["attempts"]["one"] == 2
+    assert persisted["attempts"]["one"] == 1
+    assert persisted["failed"] == ["one"]
+    incident = json.loads((tmp_path / "incidents.json").read_text())
+    assert incident["records"][0]["exit_code"] == 1
+    assert incident["records"][0]["diagnosis"] == "UNKNOWN_PENDING_ROOT_CAUSE"
+    assert incident["records"][0]["source_sha"] == "UNKNOWN"
     resumed = run_queue(queue, state, executor=lambda task: 99)
-    assert resumed["status"] == "PASS"
-    assert resumed["completed"] == ["one"]
+    assert resumed["status"] == "BLOCKED"
+    assert calls == ["one"]
 
 
 def test_cost_budget_blocks_before_execution(tmp_path):
@@ -116,8 +121,10 @@ def test_default_executor_deadline_is_enforced(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loop.subprocess, "run", timeout_run)
     result = run_queue(queue, state, max_runtime_seconds=4)
-    assert result["status"] == "STOPPED"
+    assert result["status"] == "BLOCKED"
     assert result["spent_cost_units"] == 1
+    incident = json.loads((tmp_path / "incidents.json").read_text())
+    assert incident["records"][0]["exit_code"] == -124
     assert called and 0 < called[0] <= 4
 
 
