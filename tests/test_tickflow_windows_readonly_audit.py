@@ -248,11 +248,12 @@ def test_fetch_frame_uses_the_correct_tickflow_endpoint(timeframe):
         return fetch
 
     client = SimpleNamespace(klines=SimpleNamespace(
-        get=record("historical"), intraday=record("intraday"),
+        get=record("get"), intraday=record("intraday"),
     ))
     assert audit.fetch_frame(client, "159611.SZ", timeframe) is expected_frame
 
-    expected_endpoint = "historical" if timeframe == "1d" else "intraday"
+    expected_endpoint = "get" if timeframe == "1d" else "intraday"
+    assert audit.provider_endpoint_for(timeframe) == expected_endpoint
     expected_kwargs = {
         "period": timeframe,
         "count": audit.PERIOD_COUNTS[timeframe],

@@ -66,19 +66,24 @@ CN = ZoneInfo("Asia/Shanghai")
 CRED_TARGET = "StockRazor/TickFlow/APIKey"
 
 
-def fetch_frame(client: object, symbol: str, timeframe: str) -> object:
-    """Fetch current-session minute bars or historical daily bars by contract."""
+def provider_endpoint_for(timeframe: str) -> str:
+    """Return the TickFlow klines endpoint selected for a supported timeframe."""
     if timeframe not in PERIOD_COUNTS:
         raise ValueError("unsupported timeframe")
-    if timeframe == "1d":
-        return client.klines.get(
-            symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
-            as_dataframe=False, adjust="none",
-        )
-    return client.klines.intraday(
-        symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
-        as_dataframe=False,
-    )
+    return "get" if timeframe == "1d" else "intraday"
+
+
+def fetch_frame(client: object, symbol: str, timeframe: str) -> object:
+    """Fetch current-session minute bars or historical daily bars by contract."""
+    endpoint = provider_endpoint_for(timeframe)
+    kwargs = {
+        "period": timeframe,
+        "count": PERIOD_COUNTS[timeframe],
+        "as_dataframe": False,
+    }
+    if endpoint == "get":
+        kwargs["adjust"] = "none"
+    return getattr(client.klines, endpoint)(symbol, **kwargs)
 
 
 def read_windows_credential() -> str:
@@ -291,6 +296,7 @@ def main() -> int:
                     "symbol": symbol, "timeframe": timeframe,
                     "request_ms": round((time.perf_counter() - start) * 1000, 2),
                     "data_source": "TICKFLOW_PREMIUM_DESKTOP_READONLY",
+                    "provider_endpoint": f"klines.{provider_endpoint_for(timeframe)}",
                     "provider_requests": 1,
                     "trading_admission": "BLOCKED", "live_trade": False,
                 })
