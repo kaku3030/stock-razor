@@ -135,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     command = parser.add_mutually_exclusive_group(required=True)
     command.add_argument("--check-registry", action="store_true")
     command.add_argument("--status", action="store_true")
+    command.add_argument("--brief", action="store_true")
     command.add_argument("--signature", type=str)
     parser.add_argument("--sha")
     parser.add_argument("--previous-sha")
@@ -143,6 +144,23 @@ def main(argv: list[str] | None = None) -> int:
         registry = load_registry()
         if args.check_registry:
             result = {"status": "PASS", "schema": SCHEMA, "records": len(registry["records"])}
+        elif args.brief:
+            # Fast startup fingerprint: bounded data, no raw logs or probes.
+            rows = registry["records"]
+            result = {
+                "status": "OBSERVED",
+                "schema": SCHEMA,
+                "revision": registry["last_reconciled_utc"],
+                "count": len(rows),
+                "open": sum(r["status"] == "OPEN" for r in rows),
+                "mitigated": sum(r["status"] == "MITIGATED" for r in rows),
+                "resolved": sum(r["status"] == "RESOLVED" for r in rows),
+                "p0": [r["id"] for r in rows if r["severity"] == "P0"
+                       and r["status"] != "RESOLVED"],
+                "duplicate_retry_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE",
+                "gate": "RESEARCH_ONLY",
+                "cross_chat_delivery": "NOT_VERIFIED",
+            }
         elif args.status:
             result = {"status": "OBSERVED", "schema": SCHEMA, "last_reconciled_utc":
                       registry["last_reconciled_utc"], "records":
