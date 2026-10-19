@@ -42,7 +42,23 @@ def _utc(value: Any) -> datetime | None:
 
 
 def _finite(value: Any) -> bool:
-    return type(value) in (int, float) and math.isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
+def _valid_symbol(value: Any, market: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().upper()
+    if market == "CN":
+        return bool(_CN_SYMBOL.fullmatch(normalized))
+    if market == "US":
+        return bool(_US_SYMBOL.fullmatch(normalized))
+    return False
 
 
 def _bar_errors(
@@ -261,11 +277,7 @@ def build_report(
     if market not in MARKET_PROVIDER:
         errors.append("MARKET_NOT_SUPPORTED")
     normalized_symbol = symbol.strip().upper() if isinstance(symbol, str) else ""
-    symbol_valid = (
-        bool(_CN_SYMBOL.fullmatch(normalized_symbol)) if market == "CN"
-        else bool(_US_SYMBOL.fullmatch(normalized_symbol)) if market == "US"
-        else False
-    )
+    symbol_valid = _valid_symbol(normalized_symbol, market)
     if not symbol_valid:
         errors.append("SYMBOL_INVALID")
     if market in MARKET_PROVIDER:
@@ -311,16 +323,26 @@ def build_report(
 
     holdings_state = "VERIFIED" if isinstance(holdings, list) and holdings and all(
         isinstance(item, dict) and item.get("verification") == "VERIFIED"
+        and _valid_symbol(item.get("symbol"), market)
+        and _finite(item.get("quantity")) and item["quantity"] >= 0
         and isinstance(item.get("quantity_as_of_utc"), str)
-        and _utc(item["quantity_as_of_utc"]) is not None for item in holdings
+        and _utc(item["quantity_as_of_utc"]) is not None
+        and isinstance(item.get("source"), str) and _SAFE_ENDPOINT.fullmatch(item["source"])
+        for item in holdings
     ) else "USER_REPORTED_OR_UNKNOWN"
     safe_holdings = []
     if isinstance(holdings, list):
         for item in holdings:
             if isinstance(item, dict):
-                safe_holdings.append({key: item.get(key) for key in (
-                    "symbol", "quantity", "quantity_as_of_utc", "verification", "source"
-                )})
+                stamp = _utc(item.get("quantity_as_of_utc"))
+                source = item.get("source")
+                safe_holdings.append({
+                    "symbol": item["symbol"].strip().upper() if _valid_symbol(item.get("symbol"), market) else "UNKNOWN",
+                    "quantity": float(item["quantity"]) if _finite(item.get("quantity")) and item["quantity"] >= 0 else None,
+                    "quantity_as_of_utc": stamp.isoformat() if stamp else "UNKNOWN",
+                    "verification": "VERIFIED" if item.get("verification") == "VERIFIED" else "USER_REPORTED_OR_UNKNOWN",
+                    "source": source if isinstance(source, str) and _SAFE_ENDPOINT.fullmatch(source) else "UNKNOWN",
+                })
 
     accepted = not errors
     candidates = opportunities if accepted and isinstance(opportunities, list) else []

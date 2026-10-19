@@ -55,7 +55,7 @@ def _evidence(market="US"):
 def test_valid_dual_endpoint_five_timeframe_report_is_research_only(market):
     report = _build_report(
         market, "600000" if market == "CN" else "AAPL", _evidence(market),
-        holdings=[{"symbol": "AAPL", "quantity": 10, "quantity_as_of_utc": NOW.isoformat(), "verification": "VERIFIED", "source": "portfolio_snapshot"}],
+        holdings=[{"symbol": "600000" if market == "CN" else "AAPL", "quantity": 10, "quantity_as_of_utc": NOW.isoformat(), "verification": "VERIFIED", "source": "portfolio_snapshot"}],
         opportunities=[{"symbol": "AAPL", "rank": 1}],
         conditional_plans=[{"symbol": "AAPL", "entry_condition": "reclaim"}],
         timings=TIMINGS,
@@ -64,6 +64,7 @@ def test_valid_dual_endpoint_five_timeframe_report_is_research_only(market):
     assert report["timeframes"] == list(TIMEFRAMES)
     assert report["provider"] == ("TickFlow" if market == "CN" else "OpenD")
     assert list(report["holdings"]) == ["status", "items"]
+    assert report["holdings"]["status"] == "VERIFIED"
     assert report["opportunities"] and report["conditional_plans"]
     assert report["execution"] == "NONE"
     assert report["safety"]["live_trade"] is False
@@ -136,6 +137,18 @@ def test_malformed_bar_container_blocks_without_raising():
 def test_empty_holdings_are_not_misreported_as_verified():
     report = _build_report("US", "AAPL", _evidence(), holdings=[], timings=TIMINGS)
     assert report["holdings"]["status"] == "USER_REPORTED_OR_UNKNOWN"
+
+
+def test_malicious_holding_values_do_not_crash_or_echo():
+    report = _build_report(
+        "US", "AAPL", _evidence(), timings=TIMINGS,
+        holdings=[{"symbol": "api_key=PRIVATE", "quantity": 10**1000,
+                   "quantity_as_of_utc": "not-a-time", "verification": "VERIFIED",
+                   "source": "secret=SHOULD_NOT_ECHO"}],
+    )
+    assert report["holdings"]["status"] == "USER_REPORTED_OR_UNKNOWN"
+    assert "SHOULD_NOT_ECHO" not in repr(report)
+    assert "PRIVATE" not in repr(report)
 
 
 @pytest.mark.parametrize("timings", [None, {}, {**TIMINGS, "end_to_end_ms": -1}, {**TIMINGS, "windows_fetch_ms": float("nan")}])
