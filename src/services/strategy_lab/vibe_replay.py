@@ -198,7 +198,14 @@ def _metrics(
     }
 
 
-def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterable[str] = STRATEGIES) -> dict[str, Any]:
+def replay_fixture(
+    fixture: dict[str, Any],
+    bars: list[Bar],
+    strategies: Iterable[str] = STRATEGIES,
+    *,
+    input_kind: str = "FIXTURE_SMOKE",
+    data_audit: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     selected = tuple(dict.fromkeys(strategies))
     if not selected or any(strategy not in STRATEGIES for strategy in selected):
         raise ValueError("strategies must be selected from B0, V0.2, Strong Pullback")
@@ -237,8 +244,8 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
         "schema_version": "stock-razor-vibe-replay-lab-v0.6",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
-        "input_kind": "FIXTURE_SMOKE",
-        "data_audit": {
+        "input_kind": input_kind,
+        "data_audit": data_audit or {
             "status": "NOT_VERIFIED",
             "historical_replay_eligibility": "BLOCKED",
             "reason": "fixture input is for interface smoke only; source evidence is not a historical-data qualification",
@@ -307,7 +314,17 @@ def replay_csv_files(paths: Iterable[str | Path], strategies: Iterable[str] = ST
     for path in paths:
         audit = audit_csv(path)
         fixture, bars = load_csv(path)
-        result = replay_fixture(fixture, bars, strategies)
+        result = replay_fixture(
+            fixture,
+            bars,
+            strategies,
+            input_kind="HISTORICAL_CSV",
+            data_audit={
+                "status": audit["historical_replay"]["eligibility"],
+                "historical_replay_eligibility": audit["historical_replay"]["eligibility"],
+                "freshness_is_not_eligibility": True,
+            },
+        )
         inputs.append({
             "path": str(Path(path)),
             "symbol": fixture["authority"]["symbol"],

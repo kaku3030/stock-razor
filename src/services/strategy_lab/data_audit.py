@@ -5,9 +5,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 REQUIRED_COLUMNS = {
@@ -45,6 +47,15 @@ def _status(values: list[str], verified: str, unknown: str = "UNKNOWN") -> str:
 def audit_csv(path: str | Path, *, now: datetime | None = None) -> dict[str, Any]:
     source = Path(path)
     raw = source.read_bytes()
+    manifest_path = source.with_suffix(source.suffix + ".manifest.json")
+    manifest: dict[str, Any] = {}
+    if manifest_path.is_file():
+        try:
+            loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                manifest = loaded
+        except (OSError, json.JSONDecodeError):
+            manifest = {}
     with source.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         fields = set(reader.fieldnames or ())
@@ -59,12 +70,14 @@ def audit_csv(path: str | Path, *, now: datetime | None = None) -> dict[str, Any
     finality: list[str] = []
     closure: list[str] = []
     calendars: list[str] = []
+    timezones: list[str] = []
     for index, row in enumerate(rows, start=2):
         symbols.append(row.get("symbol", ""))
         sources.append(row.get("source", ""))
         finality.append(row.get("provider_finality", "UNKNOWN"))
         closure.append(row.get("closed_bar_evidence", "UNKNOWN"))
         calendars.append(row.get("calendar", ""))
+        timezones.append(row.get("timezone", ""))
         try:
             timestamps.append(_parse_timestamp(row["time_key"]))
             values = {key: float(row[key]) for key in ("open", "high", "low", "close", "volume")}
@@ -92,17 +105,46 @@ def audit_csv(path: str | Path, *, now: datetime | None = None) -> dict[str, Any
     chronology = structural and duplicate_timestamps == 0 and out_of_order == 0
     lineage = structural and all(symbols) and all(sources)
     timezone_status = "PASS" if structural and timestamps else "UNKNOWN"
-    calendar_status = "PASS" if structural and all(calendars) else "NOT_VERIFIED"
+    dst_status = "UNKNOWN"
+    if structural and timestamps and timezones and all(timezones) and len(set(timezones)) == 1:
+        try:
+            zone = ZoneInfo(timezones[0])
+            dst_status = "PASS" if all(timestamp.astimezone(zone).tzinfo == zone for timestamp in timestamps) else "FAIL"
+        except Exception:
+            dst_status = "UNKNOWN"
+    calendar_status = "NOT_VERIFIED"
+    if structural and calendars and len(set(calendars)) == 1 and calendars[0] == "XNYS":
+        try:
+            import exchange_calendars as xcals
+            sessions = xcals.get_calendar("XNYS").sessions_in_range(
+                min(timestamp.date() for timestamp in timestamps),
+                max(timestamp.date() for timestamp in timestamps),
+            )
+            observed_dates = {timestamp.date().isoformat() for timestamp in timestamps}
+            calendar_status = "PASS" if observed_dates.issubset({item.date().isoformat() for item in sessions}) else "FAIL"
+        except Exception:
+            calendar_status = "UNKNOWN"
     finality_status = _status(finality, "VERIFIED")
     closure_status = _status(closure, "VERIFIED")
+    raw_payload_hash = manifest.get("raw_payload_sha256")
+    raw_payload_path = manifest.get("raw_payload_path")
+    payload_status = "UNKNOWN"
+    if isinstance(raw_payload_hash, str) and re.fullmatch(r"[0-9a-f]{64}", raw_payload_hash) and isinstance(raw_payload_path, str):
+        candidate = Path(raw_payload_path)
+        if not candidate.is_absolute():
+            candidate = source.parent / candidate
+        if candidate.is_file():
+            observed_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            payload_status = "PASS" if observed_hash == raw_payload_hash else "FAIL"
     replay_eligibility = (
         "PASS"
         if chronology and lineage and timezone_status == "PASS" and calendar_status == "PASS"
-        and finality_status == "PASS" and closure_status == "PASS"
+        and dst_status == "PASS" and finality_status == "PASS" and closure_status == "PASS"
+        and payload_status == "PASS"
         else "BLOCKED"
     )
     return {
-        "schema_version": "stock-razor-vibe-data-audit-v0.5",
+        "schema_version": "stock-razor-vibe-data-audit-v0.6",
         "status": "RESEARCH_ONLY",
         "path": str(source),
         "symbol": symbols[0] if symbols and len(set(symbols)) == 1 else "MIXED_OR_UNKNOWN",
@@ -116,7 +158,7 @@ def audit_csv(path: str | Path, *, now: datetime | None = None) -> dict[str, Any
             "parse_errors": parse_errors,
             "ohlcv_error_rows": ohlcv_errors,
             "timezone": timezone_status,
-            "dst": "NOT_VERIFIED",
+            "dst": dst_status,
             "trading_calendar": calendar_status,
             "chronology": "PASS" if chronology else "FAIL",
             "duplicate_timestamps": duplicate_timestamps,
@@ -124,6 +166,8 @@ def audit_csv(path: str | Path, *, now: datetime | None = None) -> dict[str, Any
             "bar_closure": closure_status,
             "provider_finality": finality_status,
             "source_lineage": "PASS" if lineage else "UNKNOWN",
+            "raw_payload_hash": payload_status,
+            "manifest": "PASS" if manifest else "UNKNOWN",
             "freshness": freshness,
             "age_seconds": age_seconds,
         },
