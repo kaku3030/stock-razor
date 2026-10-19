@@ -19,7 +19,8 @@ VALID_STATES = {"OPEN", "MITIGATED", "RESOLVED"}
 VALID_SEVERITIES = {"P0", "P1", "P2"}
 SHA = re.compile(r"^[0-9a-f]{40}$")
 IDENT = re.compile(r"^[A-Z]{2,5}-[0-9]{3}$")
-TOKEN = re.compile(r"^[A-Z0-9_]{2,64}$")
+# Real error signatures include dotted tickers/endpoints (518880.SH, KLINES.GET).
+TOKEN = re.compile(r"^[A-Z0-9_.]{2,64}$")
 GITHUB = "https://github.com/kaku3030/stock-razor/"
 
 
