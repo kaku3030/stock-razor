@@ -81,6 +81,21 @@ def test_partial_intraday_60m_rows_are_qualified_without_finality_claim():
     assert answer["returned_rows"] == 2
     assert answer["due_count"] == answer["due_labels_present"] == 2
     assert answer["exchange_bar_finality"] == "NOT_VERIFIED"
+    assert answer["bar_timestamp_semantics"] == "BAR_END"
+    assert answer["successor_closed_rows"] == 1
+    assert answer["latest_bar_closure"] == "NO_SUCCESSOR_UNCONFIRMED"
+    assert answer["post_close_revision_status"] == "NOT_RECHECKED"
+
+
+def test_reordered_rows_do_not_produce_successor_closure_evidence():
+    c = compact([
+        "2026-10-14 14:00", "2026-10-14 14:30",
+        "2026-10-14 14:15", "2026-10-15 09:45",
+    ])
+    answer = audit.assess_compact(c, "15m", clock("2026-10-15 09:47"))
+    assert answer["reordered_or_duplicate_rows"] == 1
+    assert answer["successor_closed_rows"] == 0
+    assert answer["latest_bar_closure"] == "SEQUENCE_INVALID"
 
 
 def test_daily_date_never_promoted_to_today_closed_bar():
@@ -308,3 +323,4 @@ def test_fetch_frame_rejects_unknown_timeframe_before_provider_call():
     ))
     with pytest.raises(ValueError, match="unsupported timeframe"):
         audit.fetch_frame(client, "159611.SZ", "2m")
+
