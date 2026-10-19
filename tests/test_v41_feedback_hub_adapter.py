@@ -46,7 +46,9 @@ def test_no_defect_report_does_not_write_to_feedback_hub():
     hub = FakeHub()
     report = _blocked("US", "AAPL")
     report["status"] = "PASS_RESEARCH_ONLY"
+    report["data_acceptance"] = "PASS"
     report["feedback"]["status"] = "NO_DEFECT"
+    report["feedback"]["reasons"] = []
     assert submit_report_feedback(report, hub) is None
     assert hub.calls == []
 
