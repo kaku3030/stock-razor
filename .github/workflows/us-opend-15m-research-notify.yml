@@ -1,0 +1,152 @@
+name: US OpenD 15m Cloud Research Digest to Discord
+on:
+  schedule:
+    # UTC covers both US EDT/EST; XNYS calendar gates actual market minutes.
+    - cron: '*/15 13-21 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Do not deliver to Discord; validate report path only
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: us-opend-15m-research-discord
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    if: >-
+      github.repository == 'kaku3030/stock-razor' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' || github.actor == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AWS_REGION: ap-northeast-1
+      TARGET_INSTANCE_ID: i-01738342af3efac72
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check immutable main and XNYS session before AWS OIDC
+        id: session
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          python -m py_compile scripts/us_opend_15m_digest.py
+          python -m pip -q install 'exchange-calendars==4.13.2'
+          if python - <<'PY'
+          from datetime import datetime, timezone
+          import exchange_calendars
+          calendar = exchange_calendars.get_calendar('XNYS')
+          if not calendar.is_open_on_minute(datetime.now(timezone.utc)):
+              raise SystemExit(1)
+          PY
+          then
+            echo 'open=true' >> "$GITHUB_OUTPUT"
+            echo 'US_MARKET_SESSION=OPEN'
+          else
+            echo 'open=false' >> "$GITHUB_OUTPUT"
+            echo 'US_MARKET_SESSION=CLOSED_OR_UNKNOWN'
+          fi
+      - name: Assume existing AWS read-only operations role
+        if: steps.session.outputs.open == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::888425712426:role/StockRazorGitHubOpsRole
+          role-session-name: us-opend-15m-digest-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Read existing cloud OpenD snapshots and Radar state (no provider request)
+        id: report
+        if: steps.session.outputs.open == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_sha="$(sha256sum scripts/us_opend_15m_digest.py | cut -d' ' -f1)"
+          script_b64="$(gzip -n -9 -c scripts/us_opend_15m_digest.py | base64 -w0)"
+          read -r -d '' remote <<REMOTE || true
+          set -eu
+          umask 077
+          stage=\$(mktemp -d)
+          trap 'rm -rf "\$stage"' EXIT
+          printf '%s' '$script_b64' | base64 -d | gzip -d > "\$stage/report.py"
+          printf '%s  %s\n' '$script_sha' "\$stage/report.py" | sha256sum -c - >/dev/null
+          python3 "\$stage/report.py"
+          REMOTE
+          test "$(printf '%s' "$remote" | wc -c)" -le 11000
+          params="$(jq -cn --arg c "$remote" '{commands:[$c]}')"
+          command_id="$(aws ssm send-command --document-name AWS-RunShellScript \
+            --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" \
+            --timeout-seconds 120 --query Command.CommandId --output text)"
+          state=UNKNOWN
+          for _ in $(seq 1 50); do
+            state="$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$state" in Success|Failed|TimedOut|Cancelled) break;; esac
+            sleep 2
+          done
+          if [ "$state" != 'Success' ]; then
+            echo "US_OPEND_15M_SSM=$state" >&2
+            echo 'SSM_PRIVATE_OUTPUT_WITHHELD=YES' >&2
+            exit 1
+          fi
+          aws ssm get-command-invocation --command-id "$command_id" \
+            --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent \
+            --output text > "$RUNNER_TEMP/us-opend-15m-digest.json"
+          test "$(wc -c < "$RUNNER_TEMP/us-opend-15m-digest.json")" -le 5500
+          python - <<'PY'
+          import json,os
+          with open(os.environ['RUNNER_TEMP']+'/us-opend-15m-digest.json',encoding='utf-8') as f:
+              report=json.load(f)
+          assert report['schema']=='stock_razor_us_opend_15m_digest_v1'
+          assert report['status'] in ('RESEARCH_ONLY','BLOCKED')
+          assert report['research_only'] is True and report['can_confirm_signal'] is False
+          assert report['radar_admission']=='BLOCKED' and report['live_trade'] is False
+          assert isinstance(report['message'],str) and 40 <= len(report['message']) <= 1900
+          print('US_OPEND_15M_DIGEST_SCHEMA=PASS')
+          print('US_OPEND_15M_DATA_STATE='+report['status'])
+          PY
+      - name: Notify via existing Discord Radar webhook
+        if: >-
+          steps.session.outputs.open == 'true' &&
+          steps.report.outcome == 'success' &&
+          (github.event_name == 'schedule' || inputs.dry_run == false) &&
+          github.run_attempt == 1
+        shell: bash
+        env:
+          DISCORD_RADAR_WEBHOOK_URL: ${{ secrets.DISCORD_RADAR_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,urllib.request,urllib.error
+          url=os.environ.get('DISCORD_RADAR_WEBHOOK_URL','').strip()
+          if not url.startswith('https://discord.com/api/webhooks/'):
+              raise SystemExit('DISCORD_RADAR_WEBHOOK_MISSING_OR_INVALID')
+          with open(os.environ['RUNNER_TEMP']+'/us-opend-15m-digest.json',encoding='utf-8') as f:
+              report=json.load(f)
+          body=json.dumps({'content':report['message'],'allowed_mentions':{'parse':[]}},ensure_ascii=False).encode('utf-8')
+          request=urllib.request.Request(url,body,headers={'Content-Type':'application/json','User-Agent':'stock-razor-us-research/1'},method='POST')
+          try:
+              with urllib.request.urlopen(request,timeout=15) as response:
+                  if response.status not in (200,204):
+                      raise SystemExit('DISCORD_RECEIPT_UNKNOWN')
+                  print('DISCORD_RADAR_HTTP_DELIVERY=PASS')
+          except urllib.error.HTTPError as error:
+              print('DISCORD_RADAR_HTTP_DELIVERY=FAILED_HTTP_'+str(error.code))
+              raise SystemExit(1) from None
+          PY
