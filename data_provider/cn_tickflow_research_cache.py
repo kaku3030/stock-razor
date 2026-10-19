@@ -411,7 +411,8 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             "bar_finality": "NOT_VERIFIED",
             "ohlc_validation":ohlc_validation,
         })
-    if len(bars)<4:
+    minimum_bars = 1 if timeframe == "60m" else 4
+    if len(bars)<minimum_bars:
         raise ValueError("no sufficient historical closed-time candidates")
     return bars
 
