@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] Self-Improvement V1.2 自动记录 Engineering Autonomy 未知退出错误的脱敏指纹并阻止同条件下盲目重试，同时在 GitHub CI / Research Radar Tests 失败后通过只读 workflow_run 保存异常任务分类至 30 天 Actions artifact 供跨窗口检索；根因自动修复及永久登记仍须独立证据和受保护主线 PR，交易/付费/通知权限不改变。
+
 - [改进] Self-Improvement V1.1 为跨窗口与工程自主任务新增简短共享错误摘要（`--brief`）及精确主线 SHA 校验；Engineering Autonomy 120m 与 DeepSeek Coding 试点在执行任务/付费模型调用前阻断过期主线和失效错误登记。报告时延仍必须实测，云端实例/数据/通知资格另行验收。
 
 - [新功能] 增加 STOCK RAZOR Self-Improvement V1.0 仓库级跨窗口技能、当前 main 共享故障签名登记、相同 SHA/错误重复尝试阻断工具和必须经过的 ai-governance 检查；只对读取 GitHub 最新主线的工作窗口生效，不能主动向未打开的独立聊天推送新规则，亦不改变交易安全门禁。
