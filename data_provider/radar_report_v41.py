@@ -226,7 +226,7 @@ def build_report(
     elif measured["end_to_end_ms"] < max(measured[key] for key in TIMING_PHASES[:-1]):
         errors.append("END_TO_END_TIMING_INCONSISTENT")
 
-    holdings_state = "VERIFIED" if isinstance(holdings, list) and all(
+    holdings_state = "VERIFIED" if isinstance(holdings, list) and holdings and all(
         isinstance(item, dict) and item.get("verification") == "VERIFIED"
         and isinstance(item.get("quantity_as_of_utc"), str)
         and _utc(item["quantity_as_of_utc"]) is not None for item in holdings

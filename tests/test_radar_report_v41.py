@@ -117,6 +117,11 @@ def test_malformed_bar_container_blocks_without_raising():
     assert "AWS_1m_MISSING" in result["feedback"]["reasons"]
 
 
+def test_empty_holdings_are_not_misreported_as_verified():
+    report = build_report("US", "AAPL", _evidence(), holdings=[], timings=TIMINGS)
+    assert report["holdings"]["status"] == "USER_REPORTED_OR_UNKNOWN"
+
+
 @pytest.mark.parametrize("timings", [None, {}, {**TIMINGS, "end_to_end_ms": -1}, {**TIMINGS, "windows_fetch_ms": float("nan")}])
 def test_unmeasured_or_invalid_phase_timing_blocks_report(timings):
     result = build_report("US", "AAPL", _evidence(), timings=timings)
