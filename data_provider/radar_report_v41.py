@@ -447,3 +447,64 @@ def build_report(
         },
     }
 
+_FEEDBACK_REASON = re.compile(r"^[A-Z][A-Z0-9_]{0,79}$")
+
+
+def submit_report_feedback(report: Any, feedback_hub: Any) -> Any:
+    """Idempotently submit a sanitized V4.1 acceptance defect to Feedback Hub.
+
+    The hub is injected by the caller so this contract has no database or
+    provider dependency. Raw bars, holdings, opportunities, and provider
+    payloads are never copied into the Feedback Hub record.
+    """
+    if not isinstance(report, dict) or report.get("schema") != "stock_razor_unified_radar_report_v4_1":
+        raise ValueError("report is not a V4.1 Main Control report")
+    feedback = report.get("feedback")
+    if not isinstance(feedback, dict):
+        raise ValueError("report feedback contract is missing")
+    status = feedback.get("status")
+    if status == "NO_DEFECT":
+        if report.get("status") != "PASS_RESEARCH_ONLY":
+            raise ValueError("report status conflicts with feedback status")
+        return None
+    if status != "READY_FOR_FEEDBACK_HUB" or report.get("status") != "BLOCKED":
+        raise ValueError("report is not a blocked V4.1 acceptance defect")
+
+    market = report.get("market")
+    symbol = report.get("symbol")
+    reasons = feedback.get("reasons")
+    dedupe_key = feedback.get("dedupe_key")
+    if (
+        market not in MARKET_PROVIDER
+        or not _valid_symbol(symbol, market)
+        or not isinstance(reasons, list)
+        or not reasons
+        or len(reasons) > 120
+        or any(not isinstance(reason, str) or not _FEEDBACK_REASON.fullmatch(reason) for reason in reasons)
+        or not isinstance(dedupe_key, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dedupe_key)
+    ):
+        raise ValueError("report feedback fields are invalid")
+    normalized_reasons = sorted(set(reasons))
+    submit = getattr(feedback_hub, "submit", None)
+    if not callable(submit):
+        raise TypeError("feedback_hub must provide submit()")
+
+    source = "CN_RADAR" if market == "CN" else "US_RADAR"
+    source_ref = f"v41:{market}:{symbol}:{dedupe_key}"
+    evidence = {
+        "status": "BLOCKED",
+        "reason": "V4_1_ACCEPTANCE_DEFECT",
+        "count": len(normalized_reasons),
+        "checks": [{"reason": reason} for reason in normalized_reasons[:40]],
+    }
+    details = ";".join(normalized_reasons[:40])
+    return submit(
+        source=source,
+        priority="P1",
+        title="V4.1 dual-end evidence blocked",
+        details=details,
+        evidence=evidence,
+        source_ref=source_ref,
+        dedupe_key=dedupe_key,
+    )
