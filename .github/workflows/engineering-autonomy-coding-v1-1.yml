@@ -29,6 +29,20 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Fast shared self-improvement gate (before tasks and paid calls)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "kaku3030/stock-razor"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          remote_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test -n "$remote_main" && test "$remote_main" = "$GITHUB_SHA" || {
+            echo "BLOCKED: AUTONOMY_MAIN_MOVED_OR_UNKNOWN" >&2
+            exit 1
+          }
+          python scripts/self_improvement_gate.py --check-registry
+          python scripts/self_improvement_gate.py --brief
       - name: Validate trusted one-shot task
         run: python -m engineering_autonomy.coding_gate prompt --output /tmp/autonomy-prompt.txt
       - name: Skip if any existing PR already claims this ID
