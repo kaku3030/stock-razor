@@ -1,0 +1,23 @@
+name: Round14 Research Artifact Gate
+on:
+  push:
+    branches:
+      - research/round14-cloud-readiness-20261019
+    paths:
+      - "tools/research/round14_artifact_gate.py"
+      - "tests/research/test_round14_artifact_gate.py"
+      - ".github/workflows/round14-research-artifact-gate.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline artifact-gate unit tests
+        run: python -m unittest discover -s tests/research -p test_round14_artifact_gate.py -v
