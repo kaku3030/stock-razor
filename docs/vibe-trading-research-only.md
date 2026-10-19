@@ -10,6 +10,28 @@ dataset hash and an explicit no-tuning assertion. Cost validation requires
 finite, non-negative `commission_bps` and `slippage_bps` values. Declarations
 alone remain `NOT_VERIFIED`/`UNKNOWN`.
 
+## Capturing a public historical sample
+
+For a US daily research capture, `capture_research_eod.py --source yahoo_chart`
+stores the raw Yahoo Chart response hash beside an audit-ready CSV. The capture
+is still `CAPTURED_NOT_APPROVED`: Yahoo does not supply an independent provider
+finality or bar-closure attestation, so Replay Lab keeps historical eligibility
+`BLOCKED` until those fields are separately evidenced.
+
+```powershell
+python scripts/capture_research_eod.py --market us --source yahoo_chart `
+  --symbol AAPL --start 2024-01-01 --end 2026-01-01 `
+  --output work/AAPL_yahoo_daily_2024_2025.csv
+python scripts/vibe_trading_research.py `
+  "compare B0, V0.2, and Strong Pullback in Replay Lab" `
+  --csv work/AAPL_yahoo_daily_2024_2025.csv `
+  --write work/AAPL_yahoo_replay_report.json
+```
+
+The audit separates source-payload provenance, timezone/DST, XNYS session
+membership, chronology, freshness, bar closure, and provider finality. A fresh
+capture is not automatically eligible historical data.
+
 ## Replay Lab execution
 
 ```powershell

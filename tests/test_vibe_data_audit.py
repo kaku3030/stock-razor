@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 
 from src.services.strategy_lab.data_audit import audit_csv
@@ -31,7 +33,7 @@ def test_audit_separates_stale_from_replay_eligibility(tmp_path):
     write_rows(path)
     report = audit_csv(path, now=datetime(2026, 1, 7, tzinfo=timezone.utc))
     assert report["checks"]["freshness"] == "STALE"
-    assert report["historical_replay"]["eligibility"] == "PASS"
+    assert report["historical_replay"]["eligibility"] == "BLOCKED"
     assert report["hashes"]["source_file"].startswith("sha256:")
     assert report["hashes"]["rows"].startswith("sha256:")
 
@@ -52,3 +54,32 @@ def test_duplicate_or_invalid_ohlcv_is_not_silently_repaired(tmp_path):
     assert report["checks"]["ohlcv"] == "FAIL"
     assert report["checks"]["ohlcv_error_rows"]
     assert report["historical_replay"]["eligibility"] == "BLOCKED"
+
+
+def _write_capture(tmp_path, *, verified: bool):
+    path = tmp_path / "AAPL.csv"
+    rows = [
+        ["AAPL", "2024-03-08T16:00:00-05:00", 100, 102, 99, 101, 1000, "test", "America/New_York", "XNYS_REGULAR", "VERIFIED" if verified else "NOT_VERIFIED", "VERIFIED" if verified else "NOT_VERIFIED", "XNYS"],
+        ["AAPL", "2024-03-11T16:00:00-04:00", 101, 103, 100, 102, 1100, "test", "America/New_York", "XNYS_REGULAR", "VERIFIED" if verified else "NOT_VERIFIED", "VERIFIED" if verified else "NOT_VERIFIED", "XNYS"],
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["symbol", "time_key", "open", "high", "low", "close", "volume", "source", "timezone", "session", "closed_bar_evidence", "provider_finality", "calendar"])
+        writer.writerows(rows)
+    raw_path = path.with_suffix(path.suffix + ".raw.json")
+    raw_path.write_bytes(b"raw")
+    path.with_suffix(path.suffix + ".manifest.json").write_text(json.dumps({"raw_payload_sha256": hashlib.sha256(b"raw").hexdigest(), "raw_payload_path": raw_path.name}), encoding="utf-8")
+    return path
+
+
+def test_audit_requires_finality_and_closure(tmp_path):
+    result = audit_csv(_write_capture(tmp_path, verified=False))
+    assert result["checks"]["dst"] == "PASS"
+    assert result["checks"]["trading_calendar"] == "PASS"
+    assert result["checks"]["raw_payload_hash"] == "PASS"
+    assert result["historical_replay"]["eligibility"] == "BLOCKED"
+
+
+def test_audit_can_pass_only_with_explicit_evidence(tmp_path):
+    result = audit_csv(_write_capture(tmp_path, verified=True))
+    assert result["historical_replay"]["eligibility"] == "PASS"
