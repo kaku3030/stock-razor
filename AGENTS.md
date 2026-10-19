@@ -35,6 +35,15 @@
 - **少打扰用户，避免追问已知问题**：只在缺少不可推断的付费、交易、凭据许可或关键输入时询问。不要把同一失败以不同话术重复汇报；每次只报告真正变化的运行 SHA、日志原因、修复/回归证据、剩余阻断及非重复下一步。
 - **现实限制：** 新技能立即对读取当前 GitHub 主线的工程 Agent 生效，并非向未激活的 ChatGPT 旧窗口自动推送，也不改变模型参数；若未取回最新主线必须标记 `SYNC_NOT_VERIFIED`。
 
+## 0.4 V1.4 交易/雷达话题主动快速同步（所有 STOCK RAZOR 窗口）
+
+- **关键词首次触发，不等用户提醒**：任意 STOCK RAZOR 专用窗口、新接管会话中，首次出现“交易、持仓、雷达、A股、美股、OpenD、TickFlow、D1/1H/15m、回测、策略、云端、STOCK RAZOR、Main Control、Feedback Hub”等具体项目话题时，必须立即执行**最新状态预读取**，再根据当前证据回答或操作。可先用 `python scripts/stock_razor_fast_sync.py --route "<脱敏的话题>"` 选择相关领域；关键词匹配属于项目上下文触发，不代表金融建议，也不能从毫无关联的普通聊天臆测用户要求查询个人持仓。
+- **最短两路同步**：① 读取 GitHub 最新 `main` SHA 和同 SHA 的 `AGENTS.md` / Self-Improvement Skill / `failure-registry.json` / `associations.json`；② 读取已有 STOCK RAZOR MCP `get_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])` 和 `get_cn_market_analysis(symbols=["__CONTEXT_MANAGER_STATE__"])`，并查看 GitHub #924 最近 OWNER 发布的 `STOCK_RAZOR_SYNC_V1` 决策事件，按 topic + 时间 + provenance 去重。只读可以并发；无连接直接 `SYNC_NOT_VERIFIED`，绝不假装读到跨窗口新信息。
+- **重要决定立即发表**：在项目讨论中形成新的关键工程优先级、策略研究约束、已验证阻断、正式合并/回滚状态时，普通授权范围内自动向 GitHub PR #924 发布**去敏、简短且附来源证据**的 `STOCK_RAZOR_SYNC_V1` JSON 事件（见 `docs/architecture/stock-razor-fast-cross-window-sync.md`），不等待用户说“同步一下”。新 GitHub `issue_comment` workflow 只接受仓库 OWNER 在 #924 发布的有效事件，经 AWS SSM 追加到**现有** Context Manager；其他随意评论、凭据、用户隐私和未经验证的 PASS 不能进入。
+- **只在变化时同步**：避免对“继续”、无新状态的重复汇报、一般闲聊、账户信息、个人持仓数量与收费/交易口令进行公开事件推送。只同步去敏的项目进展和确定的决策。需要用户私人状态时依赖其授权源，不公开复制到 GitHub。
+- **新窗口第一轮响应**：优先给短报告 `main SHA / 事件时间 / 相关事项 / 未解决阻断 / 下一步`，只读无法验证则注明 `SYNC_NOT_VERIFIED`。Context Manager 最近事件只代表自己的 domain 快照，不等于所有主题同时完整；GitHub OWNER comment 作为可追溯事件源可按 topic 补齐。
+- **速度与权限边界**：目标减少反复询问和重复查询，发布、Actions 排队、AWS 写入、MCP 读回的耗时必须分别测量；GitHub Actions 不是毫秒级推送。无法主动修改未激活的旧 ChatGPT 对话或模型权重；只有新窗口实际触发相关工具读取、并具备连接和这些规则时，才可验证已自动获知。任何实盘交易和密钥权限不受此协议影响。
+
 ## 1. 硬规则
 
 - 遵循现有目录边界：
