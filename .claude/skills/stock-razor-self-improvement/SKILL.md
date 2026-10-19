@@ -84,6 +84,12 @@ On each **material and non-private** project discussion change: publish the esta
 
 All new-window proactive fetching remains a behavior requested of connected windows, not a platform-wide automatically delivered new-chat message. GitHub direct read in seconds is possible; **"instant" is not guaranteed**. Main/ref, source event and time must be verified before claims.
 
+## US OpenD completion-first priority
+
+Default priority: Windows **local OpenD P0 completion** → AWS/cloud OpenD P1 qualification. During actual US trading-session minutes, temporarily prioritize AWS **read-only live verification P0-RTH** (new callback/closed-bar/Radar polling) because this evidence is time-window limited. This does **not** cancel the local P0 completion target or authorize cloud production/trading admission. TickFlow continues in its separate owner lane.
+
+Before a new OpenD implementation or repeat probe, fetch current-main `docs/operations/us-opend-local-first-cloud-acceptance-20261019.md`, check historical failure IDs `US-001` to `US-005`, and reconcile existing PRs #749 (D1) and #851 (subscription readback). Record and report separately `WINDOWS_GATE`, `AWS_GATE`, `BAR_CLOSURE`, `CURRENT_RADAR_POLL`, `DEPLOYED_SHA`, `NEXT_NON_DUPLICATE_STEP`. `HEALTHY` heartbeat never implies finished provider acceptance. Do not confuse Windows port listener with entitlement/current market data.
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
