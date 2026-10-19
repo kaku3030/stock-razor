@@ -65,7 +65,9 @@ jobs:
         if: ${{ inputs.resume_run_id != '' }}
         uses: actions/cache/restore@v4
         with:
-          path: engineering_autonomy/state.json
+          path: |
+            engineering_autonomy/state.json
+            engineering_autonomy/incidents.json
           key: engineering-autonomy-120m-state-${{ inputs.resume_run_id }}
           fail-on-cache-miss: true
       - name: Require exact checkpoint cache hit (reject prefix matches)
@@ -88,8 +90,18 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: engineering_autonomy/state.json
+          path: |
+            engineering_autonomy/state.json
+            engineering_autonomy/incidents.json
           key: engineering-autonomy-120m-state-${{ github.run_id }}
+      - name: Retain sanitized unknown-failure receipt for other project windows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-razor-unknown-incidents-${{ github.run_id }}
+          path: engineering_autonomy/incidents.json
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Require PASS terminal state
         if: steps.run.outcome != 'success'
         run: |
