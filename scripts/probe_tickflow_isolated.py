@@ -845,6 +845,24 @@ def build_probe(
             if period in {"15m", "60m"}:
                 result["operations"][-1]["symbol"] = symbol
         if period in {"15m", "60m"}:
+            intraday_count = 96 if period == "15m" else 24
+            for symbol in symbols:
+                operation = _operation(
+                    "kline_intraday_" + period,
+                    lambda period=period, symbol=symbol, intraday_count=intraday_count: (
+                        client.klines.intraday(
+                            symbol, period=period, count=intraday_count,
+                            as_dataframe=False,
+                        )
+                    ),
+                    summarize=(
+                        lambda value, period=period: _kline_summary(
+                            value, period=period
+                        )
+                    ),
+                )
+                operation["symbol"] = symbol
+                result["operations"].append(operation)
             batch_count = 96 if period == "15m" else 24
             batch_size = min(len(symbols), 100)
             result["operations"].append(
