@@ -37,6 +37,17 @@ OWNER-authenticated, redacted `STOCK_RAZOR_SYNC_V1` comments only as documented 
 `docs/architecture/stock-razor-fast-cross-window-sync.md`; never include private
 portfolio holdings or secrets. Missing actual connected reads = SYNC_NOT_VERIFIED.
 
+## Same-turn direct context pointer
+
+On first relevant STOCK RAZOR topic read the stable fast pointer directly via
+`https://api.github.com/repos/kaku3030/stock-razor/issues/comments/6269031171`.
+Dereference its `latest_discussion_event`, check event timestamp and main SHA,
+then corroborate with the existing US/CN Context Manager. When a *new
+non-sensitive* project decision is made, append one owner `STOCK_RAZOR_SYNC_V1`
+comment in PR #924, update this existing pointer, and direct-read to verify.
+No full/private chat mirroring to a PUBLIC repository, no claimed automatic
+wakeups or instant delivery across dormant conversations.
+
 ## Core Rules
 
 - Respect directory boundaries:
