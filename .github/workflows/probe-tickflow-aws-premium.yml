@@ -196,6 +196,9 @@ jobs:
               name,state=item.get("name"),item.get("operation")
               assert name in names and state in states
               record={"name":name,"operation":state}
+              elapsed=item.get("elapsed_ms")
+              if type(elapsed) in (int,float) and 0 <= elapsed <= 100000000:
+                  record["elapsed_ms"]=round(elapsed,3)
               if name in ("kline_15m","kline_60m"):
                   bar=item.get("bar_range_structure")
                   record["bar_range_structure"]=bar if bar in ("PASS","FAIL","NOT_VERIFIED") else "NOT_VERIFIED"
