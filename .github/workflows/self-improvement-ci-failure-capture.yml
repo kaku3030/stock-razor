@@ -1,0 +1,67 @@
+name: Capture Unknown CI Failures (Read-Only)
+
+"on":
+  workflow_run:
+    workflows: [CI, "Research Radar Tests"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: unknown-ci-receipt-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  receive:
+    if: >-
+      github.repository == 'kaku3030/stock-razor' &&
+      github.event.workflow_run.head_repository.full_name == 'kaku3030/stock-razor' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out' ||
+       github.event.workflow_run.conclusion == 'action_required')
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Validate restricted event and sanitize GitHub job metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN: ${{ github.event.workflow_run.id }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_WORKFLOW: ${{ github.event.workflow_run.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "kaku3030/stock-razor"
+          [[ "$TARGET_RUN" =~ ^[0-9]{1,20}$ ]]
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$TARGET_WORKFLOW" in
+            CI|"Research Radar Tests") ;;
+            *) echo "UNTRUSTED_CI_EVENT=BLOCKED" >&2; exit 2 ;;
+          esac
+          # Never download job logs. The only input is job name + conclusion.
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TARGET_RUN/jobs?per_page=100" \
+            --paginate | jq -s '{jobs:[.[].jobs[] | {name,conclusion}]}' \
+            > "$RUNNER_TEMP/ci-job-metadata.json"
+          python scripts/self_improvement_ci_capture.py \
+            --input "$RUNNER_TEMP/ci-job-metadata.json" \
+            --output "$RUNNER_TEMP/unknown-ci-failures.json" \
+            --workflow "$TARGET_WORKFLOW" \
+            --run-id "$TARGET_RUN" \
+            --head-sha "$TARGET_SHA"
+      - name: Retain safe failure families for future STOCK RAZOR windows
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-razor-unknown-ci-${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/unknown-ci-failures.json
+          if-no-files-found: error
+          retention-days: 30
