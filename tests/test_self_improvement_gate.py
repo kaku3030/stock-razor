@@ -123,3 +123,30 @@ def test_cannot_claim_resolved_without_regression(tmp_path):
     dest.write_text(json.dumps(registry), encoding="utf-8")
     with pytest.raises(gate.RegistryError, match="RESOLVED_WITHOUT_REGRESSION"):
         gate.load_registry(dest)
+
+
+def test_brief_is_bounded_and_does_not_claim_cross_chat_delivery(capsys):
+    assert gate.main(["--brief"]) == 0
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["schema"] == gate.SCHEMA
+    assert packet["count"] >= 13
+    assert packet["duplicate_retry_policy"] == "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    assert packet["cross_chat_delivery"] == "NOT_VERIFIED"
+    assert "US-002" in packet["p0"]
+    assert len(json.dumps(packet)) < 900
+
+
+@pytest.mark.parametrize("file_name,next_step", [
+    ("engineering-autonomy-120m.yml", "Install pinned test dependencies"),
+    ("engineering-autonomy-coding-v1-1.yml", "Validate trusted one-shot task"),
+])
+def test_engineering_workflows_run_fast_gate_before_tasks(file_name, next_step):
+    workflow = (ROOT / ".github" / "workflows" / file_name).read_text(encoding="utf-8")
+    first = workflow.index("name: Fast shared self-improvement gate")
+    assert first < workflow.index(next_step)
+    guard = workflow[first:workflow.index(next_step)]
+    assert "git ls-remote origin refs/heads/main" in guard
+    assert 'test "$remote_main" = "$GITHUB_SHA"' in guard
+    assert "python scripts/self_improvement_gate.py --check-registry" in guard
+    assert "python scripts/self_improvement_gate.py --brief" in guard
+    assert "AUTONOMY_MAIN_MOVED_OR_UNKNOWN" in guard
