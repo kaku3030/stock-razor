@@ -30,6 +30,10 @@ def sample():
                        "timeframes": {"15m": [bar], "1h": [bar]}}
         },
     }
+    # A qualified digest requires all watched symbols to have safe 15m and 1h frames.
+    import copy
+    for name in reporter.SYMBOLS:
+        market["symbols"][name] = copy.deepcopy(market["symbols"]["US.QQQ"])
     radar = {
         "worker_repo_sha": SHA, "expected_source_repo_sha": SHA,
         "poll_status": "PASS", "radar_analysis_performed": True,
