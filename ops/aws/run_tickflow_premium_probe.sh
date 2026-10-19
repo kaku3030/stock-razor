@@ -292,7 +292,7 @@ assert d["canonical_write"] is False and d["order_execution"] is False
 assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "BLOCKED"
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
 assert isinstance(d["operations"],list) and len(d["operations"]) <= 20
-allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
+allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_intraday_15m","kline_intraday_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
 allowed_states={"COMPLETED","NO_EVENTS_OBSERVED","OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
 ops=[]
 for raw in d["operations"]:
@@ -300,6 +300,16 @@ for raw in d["operations"]:
     state=raw.get("operation")
     assert state in allowed_states
     item={"name":raw["name"],"operation":state}
+    if raw["name"] in ("kline_15m","kline_60m"):
+        item["data_scope"]="HISTORICAL"
+    elif raw["name"] in (
+        "kline_intraday_15m","kline_intraday_60m",
+        "kline_batch_15m","kline_batch_60m",
+    ):
+        item["data_scope"]="CURRENT_DAY_INTRADAY"
+    symbol=raw.get("symbol")
+    if symbol in ("159611.SZ","518880.SH"):
+        item["symbol"]=symbol
     for field in ("elapsed_ms","row_count"):
         value=raw.get(field)
         if type(value) in (int,float) and 0 <= value <= 1e8:

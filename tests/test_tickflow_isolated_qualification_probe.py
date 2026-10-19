@@ -10,6 +10,7 @@ from scripts import probe_tickflow_isolated as probe
 class FakeKlines:
     def __init__(self):
         self.batch_calls = []
+        self.intraday_calls = []
 
     def get(self, symbol, *, period, count):
         assert symbol in {"159611.SZ", "518880.SH"}
@@ -25,6 +26,11 @@ class FakeKlines:
             "amount": [1000],
             "api_key": "DO_NOT_LEAK",
         }
+
+    def intraday(self, symbol, *, period, count, as_dataframe):
+        self.intraday_calls.append((symbol, period, count, as_dataframe))
+        assert as_dataframe is False
+        return self.get(symbol, period=period, count=count)
 
     def intraday_batch(self, symbols, **kwargs):
         self.batch_calls.append((list(symbols), dict(kwargs)))
@@ -352,8 +358,10 @@ def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
     names = [x["name"] for x in r["operations"]]
     assert names == [
         "sdk_import", "realtime_quote", "kline_1m", "kline_5m",
-        "kline_15m", "kline_15m", "kline_batch_15m",
-        "kline_30m", "kline_60m", "kline_60m", "kline_batch_60m",
+        "kline_15m", "kline_15m",
+        "kline_intraday_15m", "kline_intraday_15m", "kline_batch_15m",
+        "kline_30m", "kline_60m", "kline_60m",
+        "kline_intraday_60m", "kline_intraday_60m", "kline_batch_60m",
         "five_level_depth",
         "websocket_quote_smoke",
     ]
@@ -384,6 +392,12 @@ def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
         assert summary["symbol_row_counts"] == [1, 1]
         assert summary["symbol_complete_end_sessions"] == [0, 0]
         assert len(summary["symbol_grid_conventions"]) == 2
+    assert fake.klines.intraday_calls == [
+        ("159611.SZ", "15m", 96, False),
+        ("518880.SH", "15m", 96, False),
+        ("159611.SZ", "60m", 24, False),
+        ("518880.SH", "60m", 24, False),
+    ]
     assert len(fake.klines.batch_calls) == 2
     assert [
         (kwargs["period"], kwargs["count"], kwargs["as_dataframe"],
