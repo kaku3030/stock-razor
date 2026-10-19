@@ -457,7 +457,10 @@ def submit_report_feedback(report: Any, feedback_hub: Any) -> Any:
     provider dependency. Raw bars, holdings, opportunities, and provider
     payloads are never copied into the Feedback Hub record.
     """
-    if not isinstance(report, dict) or report.get("schema") != "stock_razor_unified_radar_report_v4_1":
+    if (
+        not isinstance(report, dict)
+        or report.get("schema") != "stock_razor_unified_radar_report_v4_1"
+    ):
         raise ValueError("report is not a V4.1 Main Control report")
     feedback = report.get("feedback")
     if not isinstance(feedback, dict):
@@ -475,12 +478,16 @@ def submit_report_feedback(report: Any, feedback_hub: Any) -> Any:
     reasons = feedback.get("reasons")
     dedupe_key = feedback.get("dedupe_key")
     if (
-        market not in MARKET_PROVIDER
+        not isinstance(market, str)
+        or market not in MARKET_PROVIDER
         or not _valid_symbol(symbol, market)
         or not isinstance(reasons, list)
         or not reasons
         or len(reasons) > 120
-        or any(not isinstance(reason, str) or not _FEEDBACK_REASON.fullmatch(reason) for reason in reasons)
+        or any(
+            not isinstance(reason, str) or not _FEEDBACK_REASON.fullmatch(reason)
+            for reason in reasons
+        )
         or not isinstance(dedupe_key, str)
         or not re.fullmatch(r"[0-9a-f]{64}", dedupe_key)
     ):
