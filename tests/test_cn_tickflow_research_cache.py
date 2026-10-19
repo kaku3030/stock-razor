@@ -939,6 +939,40 @@ def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
     too_few={key:base[key].tolist()[:3] for key in columns}
     too_many={key:(base[key].tolist()*7)[:25] for key in columns}
     with pytest.raises(ValueError,match="insufficient history"):
-        normalize_bars(too_few,"60m",now_utc=NOW)
+        normalize_bars(too_few,"15m",now_utc=NOW)
+    assert len(normalize_bars(too_few,"60m",now_utc=NOW))==3
     with pytest.raises(ValueError,match="history exceeds configured bound"):
         normalize_bars(too_many,"60m",now_utc=NOW)
+
+
+def test_active_60m_partial_intraday_rows_are_readable_without_admission(tmp_path):
+    active=datetime(2026,10,13,3,32,tzinfo=timezone.utc)  # Shanghai 11:32
+    client=FakeClient()
+    original_get=client.klines.get
+
+    def partial_intraday_get(symbol,*,period,count,as_dataframe,adjust):
+        if period=="60m":
+            df=frame("60m","2026-10-13").iloc[:2]
+            return {key:df[key].tolist() for key in
+                    ("timestamp","open","high","low","close","volume","amount")}
+        return original_get(symbol,period=period,count=count,
+                            as_dataframe=as_dataframe,adjust=adjust)
+
+    client.klines.get=partial_intraday_get
+    snapshot=build_observation(client,now_utc=active,repo_sha="f"*40,sequence=1)
+    assert len(snapshot["symbols"]["159611.SZ"]["60m"]["rows"])==2
+    path=tmp_path/"partial-60m.json"
+    atomic_publish(str(path),snapshot)
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","60m",path=str(path),now_utc=active,
+    )
+    assert result["ok"] is True
+    assert len(result["rows"])==2
+    assert result["bar_finality"]=="NOT_VERIFIED"
+    assert result["radar_admission"]=="BLOCKED"
+    assert result["live_trade"] is False
+    historical=read_cn_tickflow_research_data(
+        "159611.SZ","60m",path=str(path),now_utc=active,
+        research_mode="historical_only",
+    )
+    assert historical["status"]=="INVALID_CACHE"
