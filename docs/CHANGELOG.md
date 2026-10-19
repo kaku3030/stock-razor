@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] Self-Improvement V1.3 要求所有 STOCK RAZOR 运行窗口先关联检索已知中英同义故障及邻接案例，再决定是否重试；降低用户重复提醒的需求，但相似症状并不证明相同根因，未知事故必须先脱敏记录、经回归验证后纳入永久记忆。
+
 - [新功能] Self-Improvement V1.2 自动记录 Engineering Autonomy 未知退出错误的脱敏指纹并阻止同条件下盲目重试，同时在 GitHub CI / Research Radar Tests 失败后通过只读 workflow_run 保存异常任务分类至 30 天 Actions artifact 供跨窗口检索；根因自动修复及永久登记仍须独立证据和受保护主线 PR，交易/付费/通知权限不改变。
 
 - [改进] Self-Improvement V1.1 为跨窗口与工程自主任务新增简短共享错误摘要（`--brief`）及精确主线 SHA 校验；Engineering Autonomy 120m 与 DeepSeek Coding 试点在执行任务/付费模型调用前阻断过期主线和失效错误登记。报告时延仍必须实测，云端实例/数据/通知资格另行验收。

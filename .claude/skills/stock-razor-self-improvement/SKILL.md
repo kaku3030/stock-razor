@@ -50,6 +50,18 @@ Run `python scripts/self_improvement_gate.py --signature "<sanitized error excer
 
 Example lookup: `gh run list --repo kaku3030/stock-razor --workflow "Capture Unknown CI Failures (Read-Only)" --limit 20`, then `gh run download <capture-run-id> --repo kaku3030/stock-razor --name stock-razor-unknown-ci-<source-run-id>`. GitHub API/connector readers may use the same run artifact metadata.
 
+## Mandatory associative-memory lookup (V1.3)
+
+Every new, unfamiliar or slightly similar technical error MUST trigger associative lookup **before** repeating a prior API probe, raising a duplicate support question, or drafting a new solution:
+
+1. Read the exact current-main `failure-registry.json` **and** `associations.json` (same ref). Cross-check the currently deployed source SHA and past attempt only if evidence exists.
+2. Run `python scripts/self_improvement_recall.py --query "<sanitized error or symptom>"` locally, or apply the same indexed mapping using the GitHub connector in ChatGPT. This searches Chinese/English aliases and one-hop related previous failure cases; no paid model/provider call.
+3. Read `results[].prior_diagnosis`, `previous_evidence`, `regression_evidence`, `suggested_next_nonduplicate_step` and `related_cases[]` to choose a genuinely different next action. Do **not** infer root cause from related symptoms; historical fixed cases are only evidence for what *might* transfer.
+4. On `UNKNOWN_NEW_CASE_NEEDS_RECEIPT`, capture a sanitized new incident using V1.2, investigate and add the validated case plus future useful aliases/links through normal protected-main CI. No asking the user to repeat the same technical history.
+5. If the same root cause reappears on unchanged SHA/environment, apply `STOP_DUPLICATE`. For a superficially related but different failure, issue a **root-cause comparison**, not a categorical duplicate stop.
+
+`ai-governance` validates historical association case IDs and mapping structure on every PR. The tool is deterministic and offline: rapid recall, not LLM retraining or proof of production readiness. Read-only help: `docs/architecture/stock-razor-associative-error-memory.md`.
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
