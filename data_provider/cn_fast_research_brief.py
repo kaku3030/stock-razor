@@ -226,3 +226,36 @@ def read_cn_quick_scan(
     return finish("RESEARCH_ONLY",
                   reasons=["BAR_FINALITY_UNVERIFIED", "SIGNAL_AND_TRADING_ADMISSION_BLOCKED"],
                   result=output, provenance=source, radar_analysis_ms=radar_ms)
+
+
+
+def build_cn_main_control_report_v41(
+    symbol: str,
+    endpoint_evidence: dict | None = None,
+    *,
+    holdings: list[dict] | None = None,
+    opportunities: list[dict] | None = None,
+    conditional_plans: list[dict] | None = None,
+    timings: dict | None = None,
+    received_at_utc: str | None = None,
+    report_completed_at_utc: str | None = None,
+    feedback_hub: object | None = None,
+) -> dict:
+    """Assemble the V4.1 Main Control report from independent endpoint evidence.
+
+    This adapter performs no provider I/O. Missing or invalid evidence is
+    returned as BLOCKED by the shared V4.1 contract.
+    """
+    from data_provider.radar_report_v41 import build_report
+
+    report = build_report(
+        "CN", symbol, endpoint_evidence, holdings=holdings,
+        opportunities=opportunities, conditional_plans=conditional_plans,
+        timings=timings, received_at_utc=received_at_utc,
+        report_completed_at_utc=report_completed_at_utc,
+    )
+    if feedback_hub is not None:
+        from data_provider.radar_report_v41 import submit_report_feedback
+
+        submit_report_feedback(report, feedback_hub)
+    return report
