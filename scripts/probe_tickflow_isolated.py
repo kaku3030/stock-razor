@@ -21,8 +21,6 @@ import time
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from dotenv import load_dotenv
-
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 PERIODS = ("1m", "5m", "15m", "30m", "60m")
 DEFAULT_SYMBOLS = ("159611.SZ", "518880.SH", "512730.SH")
@@ -34,6 +32,17 @@ PREMIUM_ALLOWED_INTERFACES = (
     "depth",
     "websocket_quotes",
 )
+
+
+def _load_optional_env_file(env_path: str) -> bool:
+    """Load a local .env file when python-dotenv exists; cloud env is primary."""
+    try:
+        from dotenv import load_dotenv
+    except ModuleNotFoundError as exc:
+        if exc.name != "dotenv":
+            raise
+        return False
+    return bool(load_dotenv(env_path, override=False))
 
 
 def validate_symbols(values: list[str]) -> tuple[str, ...]:
@@ -378,6 +387,32 @@ def _kline_summary(value: Any, *, period: str) -> dict[str, Any]:
     }
 
 
+def _batch_kline_summary(value: Any, *, symbols: tuple[str, ...], period: str) -> dict[str, Any]:
+    """Summarize only bounded row counts and grid enums for a batch response."""
+    requested = tuple(symbols)
+    if not isinstance(value, dict):
+        return {
+            "requested_symbol_count": len(requested),
+            "returned_symbol_count": None,
+            "missing_symbol_count": None,
+            "unrequested_symbol_count": None,
+            "symbol_row_counts": [None for _ in requested],
+            "symbol_complete_end_sessions": [None for _ in requested],
+            "symbol_grid_conventions": ["INSUFFICIENT" for _ in requested],
+        }
+    evidence = [_kline_summary(value[symbol], period=period) if symbol in value else None
+                for symbol in requested]
+    grids = [item.get("historical_grid", {}) if isinstance(item, dict) else {}
+             for item in evidence]
+    return {
+        "requested_symbol_count": len(requested),
+        "returned_symbol_count": sum(symbol in value for symbol in requested),
+        "missing_symbol_count": sum(symbol not in value for symbol in requested),
+        "unrequested_symbol_count": sum(symbol not in requested for symbol in value),
+        "symbol_row_counts": [item.get("sample_count") if item else None for item in evidence],
+        "symbol_complete_end_sessions": [grid.get("complete_end_sessions") for grid in grids],
+        "symbol_grid_conventions": [grid.get("label_convention", "INSUFFICIENT") for grid in grids],
+    }
 def evaluate_premium_execution_gate(
     *,
     auth_method: str,
@@ -809,6 +844,26 @@ def build_probe(
             )
             if period in {"15m", "60m"}:
                 result["operations"][-1]["symbol"] = symbol
+        if period in {"15m", "60m"}:
+            batch_count = 96 if period == "15m" else 24
+            batch_size = min(len(symbols), 100)
+            result["operations"].append(
+                _operation(
+                    "kline_batch_" + period,
+                    lambda period=period, batch_count=batch_count, batch_size=batch_size: (
+                        client.klines.intraday_batch(
+                            list(symbols), period=period, count=batch_count,
+                            as_dataframe=False, show_progress=False,
+                            max_workers=5, batch_size=batch_size,
+                        )
+                    ),
+                    summarize=(
+                        lambda value, period=period: _batch_kline_summary(
+                            value, symbols=symbols, period=period
+                        )
+                    ),
+                )
+            )
     result["operations"].append(
         _operation("five_level_depth", lambda: client.depth.get(symbols[0]))
     )
@@ -821,7 +876,7 @@ def build_probe(
 
 def main() -> int:
     env_path = os.getenv("ENV_FILE") or str(Path(__file__).resolve().parents[1] / ".env")
-    load_dotenv(env_path, override=False)
+    _load_optional_env_file(env_path)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode", choices=("metadata", "free", "premium", "premium-contract"),
