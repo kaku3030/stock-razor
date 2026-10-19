@@ -27,14 +27,15 @@ def verify(directory: Path) -> dict:
         findings["required"][name] = p.is_file() and p.stat().st_size > 0
     manifest = directory / "round13_artifact_manifest.sha256"
     listed = set()
+    parse_errors = []
     if manifest.is_file():
         for line in manifest.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             fields = line.split(maxsplit=1)
-            if len(fields) != 2 or len(fields[0]) != 64:
-                findings["hashes"][line] = False
+            if len(fields) != 2 or len(fields[0]) != 64 or any(c not in "0123456789abcdefABCDEF" for c in fields[0]):
+                parse_errors.append(line)
                 continue
             expected, filename = fields
             filename = filename.lstrip("*").replace("\\", "/")
@@ -48,10 +49,11 @@ def verify(directory: Path) -> dict:
                 continue
             actual = hashlib.sha256(target.read_bytes()).hexdigest()
             findings["hashes"][filename] = actual.lower() == expected.lower()
+    findings["manifest_parse_errors"] = parse_errors
     findings["inventory_complete"] = all(findings["required"].values())
     required_hashed = set(REQUIRED) - {"round13_artifact_manifest.sha256"}
     findings["manifest_coverage"] = sorted(required_hashed - listed)
-    findings["manifest_valid"] = (not findings["manifest_coverage"] and bool(findings["hashes"]) and all(findings["hashes"].values()))
+    findings["manifest_valid"] = (not parse_errors and not findings["manifest_coverage"] and bool(findings["hashes"]) and all(findings["hashes"].values()))
     # Even with verified output artifacts, historical OHLC inputs and engine source
     # must be verified independently before any cloud parity claim.
     findings["engine_source_verified"] = False
