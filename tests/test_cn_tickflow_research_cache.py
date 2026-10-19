@@ -168,7 +168,7 @@ def test_batch_missing_symbols_across_periods_use_bounded_fallback_budget():
     )
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
-    assert len(fake.klines.calls)==25
+    assert len(fake.klines.calls)==30
     assert all(
         period in observed
         for observed in snap["symbols"].values()
