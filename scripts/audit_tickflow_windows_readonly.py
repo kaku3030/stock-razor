@@ -172,6 +172,7 @@ def assess_compact(
     duplicate_or_reordered = 0
     same_day_daily_quarantined = 0
     latest_prior_daily_seen = False
+    valid_timestamps = []
     for i in range(count):
         try:
             epoch = float(frame["timestamp"][i])
@@ -180,6 +181,10 @@ def assess_compact(
             if epoch > 1e12:
                 epoch /= 1000
             stamp = datetime.fromtimestamp(epoch, timezone.utc).astimezone(CN)
+            valid_timestamps.append(stamp)
+            if previous is not None and stamp <= previous:
+                duplicate_or_reordered += 1
+            previous = stamp
             nums = [float(frame[k][i]) for k in keys[1:]]
             if (not all(math.isfinite(x) for x in nums)
                 or min(nums[:4]) <= 0 or nums[4] < 0
@@ -187,9 +192,6 @@ def assess_compact(
                 or nums[2] - 0.00001 > min(nums[0], nums[1], nums[3])):
                 invalid_ohlc += 1
                 continue
-            if previous is not None and stamp <= previous:
-                duplicate_or_reordered += 1
-            previous = stamp
             # A tolerance-accepted row is NOT strict OHLC. Earlier local
             # results called this PASS while AWS correctly quarantined the
             # same session's malformed 10:00 bar. Explicitly refuse it
@@ -231,6 +233,15 @@ def assess_compact(
         except (TypeError, ValueError, KeyError, IndexError, OverflowError, OSError):
             invalid_ohlc += 1
 
+    closure_order_valid = duplicate_or_reordered == 0
+    successor_closed_rows = (
+        max(0, len(valid_timestamps) - 1) if closure_order_valid else 0
+    )
+    latest_bar_closure = (
+        "NO_SUCCESSOR_UNCONFIRMED" if valid_timestamps and closure_order_valid
+        else "SEQUENCE_INVALID" if valid_timestamps else "NO_VALID_TIMESTAMP"
+    )
+
     if timeframe == "1d":
         status = (
             "PASS_PRIOR_DAILY_RESEARCH_ONLY"
@@ -246,6 +257,11 @@ def assess_compact(
             "same_session_float_drift_rows": same_session_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
             "suspended_due_labels_expected": suspended_due_labels,
+            "bar_timestamp_semantics": "BAR_END",
+            "successor_closed_rows": successor_closed_rows,
+            "latest_bar_closure": latest_bar_closure,
+            "closure_rule": "A later K-line confirms the preceding K-line is closed",
+            "post_close_revision_status": "NOT_RECHECKED",
             "current_day_d1_finality": "NOT_VERIFIED",
         }
 
@@ -274,6 +290,11 @@ def assess_compact(
         "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
         "same_session_float_drift_rows": same_session_float_drift_rows,
         "reordered_or_duplicate_rows": duplicate_or_reordered,
+        "bar_timestamp_semantics": "BAR_END",
+        "successor_closed_rows": successor_closed_rows,
+        "latest_bar_closure": latest_bar_closure,
+        "closure_rule": "A later K-line confirms the preceding K-line is closed",
+        "post_close_revision_status": "NOT_RECHECKED",
         "exchange_bar_finality": "NOT_VERIFIED",
     }
 
@@ -343,3 +364,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
