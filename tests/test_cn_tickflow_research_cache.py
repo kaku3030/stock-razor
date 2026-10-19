@@ -943,15 +943,15 @@ def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
     too_few={key:base[key].tolist()[:3] for key in columns}
     too_many={key:(base[key].tolist()*7)[:25] for key in columns}
     with pytest.raises(ValueError,match="insufficient history"):
-        normalize_bars(too_few,"60m",now_utc=NOW)
+        normalize_bars(too_few,"15m",now_utc=NOW)
+    assert len(normalize_bars(too_few,"60m",now_utc=NOW))==3
     with pytest.raises(ValueError,match="history exceeds configured bound"):
         normalize_bars(too_many,"60m",now_utc=NOW)
 
 
 @pytest.mark.parametrize("count", [1, 2, 3])
-def test_short_hourly_session_roundtrips_without_claiming_indicator_readiness(tmp_path, count):
-    # Reproduce Oct 19: suspended 159209 has only three hourly bars. One
-    # short valid frame must not poison the whole multi-symbol publication.
+def test_short_hourly_history_is_published_but_not_qualified(tmp_path, count):
+    # Short 60m depth must not poison publication, but cannot qualify history.
     fake = FakeClient()
     get = fake.klines.get
     def short(symbol, **kwargs):
@@ -966,10 +966,8 @@ def test_short_hourly_session_roundtrips_without_claiming_indicator_readiness(tm
     atomic_publish(str(path), snapshot)
     result = read_cn_tickflow_research_data("159209.SZ", "60m", path=str(path),
               now_utc=NOW, research_mode="historical_only")
-    assert result["ok"] is True
-    assert len(result["rows"]) == count
-    assert result["bar_finality"] == "NOT_VERIFIED"
-    assert result["radar_admission"] == "BLOCKED"
+    assert len(snapshot["symbols"]["159209.SZ"]["60m"]["rows"]) == count
+    assert result["status"] == "INVALID_CACHE"
     assert len(snapshot["symbols"]) == 5
 
 
