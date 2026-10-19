@@ -93,7 +93,11 @@ def _bar_errors(
         errors.append("BAR_FRESHNESS_TIMESTAMP_INVALID")
     age = bar.get("age_seconds")
     limit = bar.get("max_age_seconds")
-    if not (_finite(age) and _finite(limit) and age >= 0 and 0 < limit <= MAX_BAR_AGE_SECONDS[timeframe] and age <= limit):
+    valid_age = (
+        _finite(age) and _finite(limit) and age >= 0
+        and 0 < limit <= MAX_BAR_AGE_SECONDS[timeframe] and age <= limit
+    )
+    if not valid_age:
         errors.append("BAR_STALE_OR_FRESHNESS_INVALID")
     elif stamp is not None:
         measured_age = max(0.0, (observed_at - stamp).total_seconds())
@@ -131,7 +135,10 @@ def _endpoint_errors(
     observed_at = _utc(provenance.get("observed_at_utc"))
     if observed_at is None:
         errors.append(f"{name}_OBSERVED_AT_INVALID")
-    elif received_at and report_completed_at and not received_at <= observed_at <= report_completed_at:
+    elif (
+        received_at and report_completed_at
+        and not received_at <= observed_at <= report_completed_at
+    ):
         errors.append(f"{name}_OBSERVATION_OUTSIDE_REPORT_WINDOW")
     latency = provenance.get("request_latency_ms")
     if not (_finite(latency) and latency >= 0):
@@ -190,7 +197,10 @@ def _agreement_errors(evidence: Any) -> list[str]:
             errors.append(f"DUAL_ENDPOINT_{timeframe}_DISAGREEMENT")
     ws, aws_session = windows.get("market_session"), aws.get("market_session")
     if isinstance(ws, dict) and isinstance(aws_session, dict):
-        if any(ws.get(key) != aws_session.get(key) for key in ("state", "timezone", "session_date")):
+        if any(
+            ws.get(key) != aws_session.get(key)
+            for key in ("state", "timezone", "session_date")
+        ):
             errors.append("DUAL_ENDPOINT_SESSION_DISAGREEMENT")
     return errors
 
@@ -211,9 +221,14 @@ def _project_endpoint_evidence(evidence: Any) -> dict:
         bars = endpoint.get("bars")
         bars = bars if isinstance(bars, dict) else {}
         endpoint_provider = endpoint.get("provider")
-        endpoint_provider = endpoint_provider if endpoint_provider in MARKET_PROVIDER.values() else "UNKNOWN"
+        if endpoint_provider not in MARKET_PROVIDER.values():
+            endpoint_provider = "UNKNOWN"
         endpoint_name = provenance.get("endpoint")
-        endpoint_name = endpoint_name if isinstance(endpoint_name, str) and _SAFE_ENDPOINT.fullmatch(endpoint_name) else "UNKNOWN"
+        if not (
+            isinstance(endpoint_name, str)
+            and _SAFE_ENDPOINT.fullmatch(endpoint_name)
+        ):
+            endpoint_name = "UNKNOWN"
         timestamp = _utc(provenance.get("observed_at_utc"))
         repo_sha = provenance.get("repo_sha")
         runtime_sha = provenance.get("runtime_sha")
@@ -233,30 +248,63 @@ def _project_endpoint_evidence(evidence: Any) -> dict:
         projected[name] = {
             "provider": endpoint_provider,
             "endpoint_id": name,
-            "permission_status": "VERIFIED" if endpoint.get("permission_status") == "VERIFIED" else "UNVERIFIED",
+            "permission_status": (
+                "VERIFIED" if endpoint.get("permission_status") == "VERIFIED"
+                else "UNVERIFIED"
+            ),
             "fallback_from": "PRESENT" if endpoint.get("fallback_from") not in (None, "") else None,
-            "market_session": {"state": session_state, "timezone": session_timezone, "session_date": session_date},
+            "market_session": {
+                "state": session_state, "timezone": session_timezone,
+                "session_date": session_date,
+            },
             "provenance": {
                 "endpoint": endpoint_name,
-                "repo_sha": repo_sha if isinstance(repo_sha, str) and _SHA.fullmatch(repo_sha) else "UNKNOWN",
-                "runtime_sha": runtime_sha if isinstance(runtime_sha, str) and _SHA.fullmatch(runtime_sha) else "UNKNOWN",
+                "repo_sha": (
+                    repo_sha if isinstance(repo_sha, str) and _SHA.fullmatch(repo_sha)
+                    else "UNKNOWN"
+                ),
+                "runtime_sha": (
+                    runtime_sha if isinstance(runtime_sha, str) and _SHA.fullmatch(runtime_sha)
+                    else "UNKNOWN"
+                ),
                 "observed_at_utc": timestamp.isoformat() if timestamp else "UNKNOWN",
-                "request_latency_ms": float(provenance["request_latency_ms"]) if _finite(provenance.get("request_latency_ms")) and provenance["request_latency_ms"] >= 0 else None,
+                "request_latency_ms": (
+                    float(provenance["request_latency_ms"])
+                    if _finite(provenance.get("request_latency_ms"))
+                    and provenance["request_latency_ms"] >= 0 else None
+                ),
             },
             "bars": {
-                frame: ({
-                    "bar_end_utc": (_utc(bars[frame].get("bar_end_utc")).isoformat() if _utc(bars[frame].get("bar_end_utc")) else "UNKNOWN"),
-                    **{key: float(bars[frame][key]) if _finite(bars[frame].get(key)) else None for key in ("open", "high", "low", "close", "volume")},
-                    "is_closed": bars[frame].get("is_closed") if type(bars[frame].get("is_closed")) is bool else None,
-                    "continuity": bars[frame].get("continuity") if bars[frame].get("continuity") == "PASS" else "UNKNOWN",
-                    "freshness_checked_at_utc": (_utc(bars[frame].get("freshness_checked_at_utc")).isoformat() if _utc(bars[frame].get("freshness_checked_at_utc")) else "UNKNOWN"),
-                    "age_seconds": float(bars[frame]["age_seconds"]) if _finite(bars[frame].get("age_seconds")) and bars[frame]["age_seconds"] >= 0 else None,
-                    "max_age_seconds": float(bars[frame]["max_age_seconds"]) if _finite(bars[frame].get("max_age_seconds")) and bars[frame]["max_age_seconds"] > 0 else None,
-                } if isinstance(bars.get(frame), dict) else None)
-                for frame in TIMEFRAMES if frame in bars
+                frame: _project_bar(bars.get(frame)) for frame in TIMEFRAMES
+                if frame in bars
             },
         }
     return projected
+
+
+def _project_bar(bar: Any) -> dict | None:
+    if not isinstance(bar, dict):
+        return None
+    bar_stamp = _utc(bar.get("bar_end_utc"))
+    freshness_stamp = _utc(bar.get("freshness_checked_at_utc"))
+    return {
+        "bar_end_utc": bar_stamp.isoformat() if bar_stamp else "UNKNOWN",
+        **{
+            key: float(bar[key]) if _finite(bar.get(key)) else None
+            for key in ("open", "high", "low", "close", "volume")
+        },
+        "is_closed": bar.get("is_closed") if type(bar.get("is_closed")) is bool else None,
+        "continuity": "PASS" if bar.get("continuity") == "PASS" else "UNKNOWN",
+        "freshness_checked_at_utc": freshness_stamp.isoformat() if freshness_stamp else "UNKNOWN",
+        "age_seconds": (
+            float(bar["age_seconds"])
+            if _finite(bar.get("age_seconds")) and bar["age_seconds"] >= 0 else None
+        ),
+        "max_age_seconds": (
+            float(bar["max_age_seconds"])
+            if _finite(bar.get("max_age_seconds")) and bar["max_age_seconds"] > 0 else None
+        ),
+    }
 
 
 def build_report(
@@ -303,7 +351,10 @@ def build_report(
         timings = {}
     for phase in TIMING_PHASES:
         value = timings.get(phase)
-        measured[phase] = round(float(value), 3) if _finite(value) and value >= 0 else "NOT_MEASURED"
+        measured[phase] = (
+            round(float(value), 3)
+            if _finite(value) and value >= 0 else "NOT_MEASURED"
+        )
     if any(measured[key] == "NOT_MEASURED" for key in TIMING_PHASES):
         errors.append("TIMING_FIELDS_INCOMPLETE")
     elif measured["end_to_end_ms"] < max(measured[key] for key in TIMING_PHASES[:-1]):
@@ -318,7 +369,9 @@ def build_report(
         ) > max(10.0, actual_end_to_end_ms * 0.1):
             errors.append("END_TO_END_TIMING_TIMESTAMP_MISMATCH")
     measured["received_at_utc"] = received_at_utc if received_at else "NOT_MEASURED"
-    measured["report_completed_at_utc"] = report_completed_at_utc if report_completed_at else "NOT_MEASURED"
+    measured["report_completed_at_utc"] = (
+        report_completed_at_utc if report_completed_at else "NOT_MEASURED"
+    )
     measured["end_to_end_ms"] = actual_end_to_end_ms
 
     holdings_state = "VERIFIED" if isinstance(holdings, list) and holdings and all(
@@ -337,18 +390,35 @@ def build_report(
                 stamp = _utc(item.get("quantity_as_of_utc"))
                 source = item.get("source")
                 safe_holdings.append({
-                    "symbol": item["symbol"].strip().upper() if _valid_symbol(item.get("symbol"), market) else "UNKNOWN",
-                    "quantity": float(item["quantity"]) if _finite(item.get("quantity")) and item["quantity"] >= 0 else None,
+                    "symbol": (
+                        item["symbol"].strip().upper()
+                        if _valid_symbol(item.get("symbol"), market) else "UNKNOWN"
+                    ),
+                    "quantity": (
+                        float(item["quantity"])
+                        if _finite(item.get("quantity")) and item["quantity"] >= 0
+                        else None
+                    ),
                     "quantity_as_of_utc": stamp.isoformat() if stamp else "UNKNOWN",
-                    "verification": "VERIFIED" if item.get("verification") == "VERIFIED" else "USER_REPORTED_OR_UNKNOWN",
-                    "source": source if isinstance(source, str) and _SAFE_ENDPOINT.fullmatch(source) else "UNKNOWN",
+                    "verification": (
+                        "VERIFIED" if item.get("verification") == "VERIFIED"
+                        else "USER_REPORTED_OR_UNKNOWN"
+                    ),
+                    "source": (
+                        source if isinstance(source, str) and _SAFE_ENDPOINT.fullmatch(source)
+                        else "UNKNOWN"
+                    ),
                 })
 
     accepted = not errors
     candidates = opportunities if accepted and isinstance(opportunities, list) else []
     plans = conditional_plans if accepted and isinstance(conditional_plans, list) else []
     feedback_material = json.dumps(
-        {"market": market, "symbol": normalized_symbol if symbol_valid else "UNKNOWN", "reasons": sorted(set(errors))},
+        {
+            "market": market,
+            "symbol": normalized_symbol if symbol_valid else "UNKNOWN",
+            "reasons": sorted(set(errors)),
+        },
         sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")
     return {

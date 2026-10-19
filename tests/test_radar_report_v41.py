@@ -37,7 +37,11 @@ def _endpoint(market: str, name: str) -> dict:
     return {
         "provider": provider, "endpoint_id": name,
         "permission_status": "VERIFIED", "fallback_from": None,
-        "market_session": {"state": "OPEN", "timezone": "America/New_York" if market == "US" else "Asia/Shanghai", "session_date": "2026-10-19"},
+        "market_session": {
+            "state": "OPEN",
+            "timezone": "America/New_York" if market == "US" else "Asia/Shanghai",
+            "session_date": "2026-10-19",
+        },
         "provenance": {
             "endpoint": f"{name.lower()}_native", "repo_sha": "a" * 40,
             "runtime_sha": "b" * 40, "observed_at_utc": NOW.isoformat(),
@@ -55,7 +59,11 @@ def _evidence(market="US"):
 def test_valid_dual_endpoint_five_timeframe_report_is_research_only(market):
     report = _build_report(
         market, "600000" if market == "CN" else "AAPL", _evidence(market),
-        holdings=[{"symbol": "600000" if market == "CN" else "AAPL", "quantity": 10, "quantity_as_of_utc": NOW.isoformat(), "verification": "VERIFIED", "source": "portfolio_snapshot"}],
+        holdings=[{
+            "symbol": "600000" if market == "CN" else "AAPL",
+            "quantity": 10, "quantity_as_of_utc": NOW.isoformat(),
+            "verification": "VERIFIED", "source": "portfolio_snapshot",
+        }],
         opportunities=[{"symbol": "AAPL", "rank": 1}],
         conditional_plans=[{"symbol": "AAPL", "entry_condition": "reclaim"}],
         timings=TIMINGS,
@@ -151,7 +159,10 @@ def test_malicious_holding_values_do_not_crash_or_echo():
     assert "PRIVATE" not in repr(report)
 
 
-@pytest.mark.parametrize("timings", [None, {}, {**TIMINGS, "end_to_end_ms": -1}, {**TIMINGS, "windows_fetch_ms": float("nan")}])
+@pytest.mark.parametrize(
+    "timings",
+    [None, {}, {**TIMINGS, "end_to_end_ms": -1}, {**TIMINGS, "windows_fetch_ms": float("nan")}],
+)
 def test_unmeasured_or_invalid_phase_timing_blocks_report(timings):
     result = _build_report("US", "AAPL", _evidence(), timings=timings)
     assert result["status"] == "BLOCKED"
