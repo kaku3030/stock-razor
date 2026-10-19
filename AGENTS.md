@@ -52,6 +52,14 @@
 - **防并发覆盖与时效校验**：固定评论为易失最新指针，多个窗口可能同时更新。读取时检查 GitHub `updated_at`、当前主线 SHA、所指事件 URL/时间；若源事件不符或指针落后，就用原始 append-only #924 评论与 Context Manager 判断最新，禁止凭索引文本决定当前行情、下单或权限。
 - **不可承诺聊天主动推送**：未打开的新聊天不会被自动发送旧窗口消息；只有开启并识别相关主题后，主动调用已连接 GitHub/MCP 的聊天才能读到。记录实测写入/直接读回耗时，不保证零延迟。
 
+## 0.6 OpenD 双端完成优先级（主控和 OpenD 窗口共同强制执行）
+
+- **首先真正完成 Windows 本地 OpenD P0，而不是每条路线各做一半。** 本地优先证明已有网关与当前 OpenD 拥有者连接、QOT_RIGHT/权限、1m/5m/15m/1H/D1 五周期、真实闭合/连续性、动态订阅状态和断线恢复；无证据一律 `NOT_VERIFIED`，进程在线或本地端口在监听不代表取价成功。
+- **仅在美股实际开盘时临时置顶 AWS OpenD 实盘取证 P0-RTH**：抓住不可回放的实时 callback、新 1m/15m 闭合和 Radar poll 阻断证据；不改变本地 P0 作为首要*完成目标*。非开盘优先收敛 Windows OpenD，然后做 AWS/OpenD P1 端到端对齐；TickFlow 工作由原有 CN 专线平行维护，不挪用其服务、密钥。
+- **当前阻断请先解根因再探针**：2026-10-19 美股时段 AWS OpenD 有 `REALTIME` 推送，但 `bar_closure=UNPROVEN`，研究简报报 `RADAR_CURRENT_POLL_NOT_VALID`，部署 SHA 与当前 main 不匹配；这些分别验收，不能用连续 HEALTHY 心跳或 CI 绿灯直接宣布完成。
+- **具体待办/验收统一索引**：`docs/operations/us-opend-local-first-cloud-acceptance-20261019.md` 的 L0→L1→L2 和 RTH C0→C1→C2。先利用已有 #749 日线缓存、#851 当前订阅回读等实现，禁止重建重复 PR。所有窗口报告 `local_status`、`cloud_status`、`exact SHA`、`first blocker` 与唯一非重复的下一步。除明确授权外仍 `RADAR_ADMISSION=BLOCKED`、`LIVE_TRADE=NO`。
+- 本条是**工程调度与验收优先级**，不是新行情调用授权、交易授权或允许跳过安全门禁。若新证据改变优先级，须在主线/Context Manager 同步去敏决策，而不是依赖旧聊天中的口头说明。
+
 ## 1. 硬规则
 
 - 遵循现有目录边界：
