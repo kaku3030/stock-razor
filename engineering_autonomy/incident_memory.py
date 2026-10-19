@@ -17,6 +17,7 @@ SCHEMA = "stock-razor-unknown-incident-v1"
 MAX_RECORDS = 128
 MAX_BYTES = 100_000
 SHA = re.compile(r"^[a-f0-9]{40}$")
+QUEUE_SHA = re.compile(r"^[a-f0-9]{64}$")
 SAFE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 
 
@@ -64,7 +65,7 @@ def observe_failure(path, *, task_id, kind, exit_code, queue_sha,
     if (not isinstance(exit_code, int) or isinstance(exit_code, bool)
             or not -255 <= exit_code <= 255):
         raise IncidentMemoryError("EXIT_CODE_INVALID")
-    if not isinstance(queue_sha, str) or not SHA.fullmatch(queue_sha):
+    if not isinstance(queue_sha, str) or not QUEUE_SHA.fullmatch(queue_sha):
         raise IncidentMemoryError("QUEUE_SHA_INVALID")
     if source_sha != "UNKNOWN" and (not isinstance(source_sha, str) or not SHA.fullmatch(source_sha)):
         raise IncidentMemoryError("SOURCE_SHA_INVALID")
