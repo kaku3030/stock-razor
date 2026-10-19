@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-19T11:00:00Z",
+  "last_reconciled_utc": "2026-10-19T11:26:54Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -179,6 +179,20 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/931",
       "regression_evidence": "NOT_VERIFIED",
       "mandatory_action": "Measure last provider bar and push callback, compare against US session time; guard weekend/premarket separately.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-005",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "REGISTRY_SIGNATURE_INVALID"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "The first self-improvement ai-governance run rejected valid TickFlow symbols and endpoint signatures because its token schema forbade '.'; the initial backend-gate failed as a consequence.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/932",
+      "regression_evidence": "tests/test_self_improvement_gate.py",
+      "mandatory_action": "Keep dotted official symbols/endpoints valid and run the real ai-governance script plus focused regression on exact PR head before claiming registry compliance.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
