@@ -113,3 +113,13 @@ def test_vendor_ticker_and_endpoint_dot_signatures_are_valid():
     endpoint = gate.classify(registry, signature="KLINES.GET wrongly used INTRADAY",
                              sha=SHA, previous_sha=SHA)
     assert endpoint["failure_ids"] == ["CN-003"]
+
+
+def test_cannot_claim_resolved_without_regression(tmp_path):
+    registry = copy.deepcopy(gate.load_registry())
+    registry["records"][0]["status"] = "RESOLVED"
+    registry["records"][0]["regression_evidence"] = "NOT_VERIFIED"
+    dest = tmp_path / "unproven.json"
+    dest.write_text(json.dumps(registry), encoding="utf-8")
+    with pytest.raises(gate.RegistryError, match="RESOLVED_WITHOUT_REGRESSION"):
+        gate.load_registry(dest)
