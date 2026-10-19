@@ -76,6 +76,14 @@ Only publish project-level non-sensitive messages. **Never publish positions, pr
 
 Canonical reference: `docs/architecture/stock-razor-fast-cross-window-sync.md`.
 
+## Single-fetch fast project context pointer (V1.4.1)
+
+The first project-related request in a new connected STOCK RAZOR chat should first retrieve `https://api.github.com/repos/kaku3030/stock-razor/issues/comments/6269031171` through the GitHub connector. This is a stable, public, **sanitized** pointer to the most recent project-discussion event, not a separate source of truth. Get latest main SHA + four self-improvement source files at that SHA, then dereference the comment's latest event link and fetch US/CN Context Manager sentinels for corroboration.
+
+On each **material and non-private** project discussion change: publish the established `STOCK_RAZOR_SYNC_V1` #924 owner event, update fixed comment ID `6269031171` (do not create another fast pointer), and read it back. If the pointer cannot be updated, still use the original append-only event; report `FAST_POINTER_STALE` but do not repeat unchanged writes. Do not store full user conversation text, account holdings, raw K-lines, order instructions, or any personal secrets in this public repository. For private information, a separate authenticated/private end-to-end connector would be required; it is **not** achieved by these project files.
+
+All new-window proactive fetching remains a behavior requested of connected windows, not a platform-wide automatically delivered new-chat message. GitHub direct read in seconds is possible; **"instant" is not guaranteed**. Main/ref, source event and time must be verified before claims.
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
