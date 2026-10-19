@@ -22,6 +22,27 @@ GitHub issue_comment workflow validates project, issue #924, commenter is OWNER,
 
 **Privacy:** Never publish specific private holdings, account IDs, order intentions, client personal details, raw K-lines/logs or credentials in GitHub comments. A portfolio query can trigger private read-only state lookup but cannot publish private user data.
 
+## Fast direct pointer (V1.4.1)
+
+Fixed GitHub owner project comment: https://github.com/kaku3030/stock-razor/pull/924#issuecomment-6269031171
+
+Consumers can read the same comment in **one** GET at
+https://api.github.com/repos/kaku3030/stock-razor/issues/comments/6269031171 .
+It points to the latest append-only owner `STOCK_RAZOR_SYNC_V1` project
+event. On a substantive non-sensitive decision the active connected
+window should publish a new event on PR #924, **update this fixed pointer**,
+and fetch the fixed comment again for proof. This direct GitHub path can
+avoid AWS Actions queue for first-read *project context*. It does not
+guarantee instant client-side notifications, automatic tool invocation by
+otherwise unconnected ChatGPT conversations, or full raw chat mirroring.
+
+The repo is **PUBLIC**, so never write personal portfolios, secret keys,
+unredacted user conversation, orders or private documents to this pointer.
+It is a convenience projection, not the authoritative event log. During
+simultaneous updates, validate event timestamp and source SHA and prefer
+the append-only event feed and Context Manager over a stale pointer.
+Report measured GitHub write and read delays independently.
+
 ## Five evidence stages
 
 1. Published: owner GitHub comment ID and created_at.

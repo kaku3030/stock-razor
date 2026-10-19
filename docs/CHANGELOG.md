@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- [修复] TickFlow 盘中研究链路修正 60m 部分时段行数门槛，并按 SDK 路由分钟 K 线至 `klines.intraday`；同步补齐 518880.SH 观察集、缺失批量项诊断、云端部署验收与 Windows 凭据边界回归。K 线闭合、数据质量、Radar 和交易准入仍分别验收，当前运行故障未视为解除。
+- [修复] TickFlow 盘中只对 60m `session_progress` 接受 1–3 根部分时段数据，历史读取仍要求至少 4 根；统一 `klines.intraday` 分钟路由、观察标的与部署来源校验，并在跨窗口故障登记中保留部署后验收状态。闭合度、数据质量与 Radar/交易准入仍独立验收。
+
+- [改进] STOCK RAZOR 跨窗口同步 V1.4.1 新增固定 GitHub 最新讨论索引 `#924/6269031171`，一条直读快速发现当前去敏工程事件，无需浏览整段 PR 历史或等待 AWS Actions 排队；重要讨论由当前连接窗口同步写入 append-only 事件与固定指针并独立验证，私人聊天全文不上传公开仓库。
 
 - [新功能] STOCK RAZOR V1.4 新增以“交易/雷达/OpenD/TickFlow/策略”等关键词触发的跨窗口快速上下文预读取与 OWNER 去敏决策事件发布：专用 GitHub issue_comment 工作流将 #924 结构化更新经 AWS SSM 写入现有 Context Manager，增设主题/时间/来源校验及对应回归；真实发布到云端到达和旧聊天自动重载仍需独立验收。
 
