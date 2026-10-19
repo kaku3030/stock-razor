@@ -467,7 +467,11 @@ def submit_report_feedback(report: Any, feedback_hub: Any) -> Any:
         raise ValueError("report feedback contract is missing")
     status = feedback.get("status")
     if status == "NO_DEFECT":
-        if report.get("status") != "PASS_RESEARCH_ONLY":
+        if (
+            report.get("status") != "PASS_RESEARCH_ONLY"
+            or report.get("data_acceptance") != "PASS"
+            or feedback.get("reasons") != []
+        ):
             raise ValueError("report status conflicts with feedback status")
         return None
     if status != "READY_FOR_FEEDBACK_HUB" or report.get("status") != "BLOCKED":
