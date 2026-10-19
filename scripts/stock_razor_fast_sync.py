@@ -63,6 +63,7 @@ def route_discussion(message: str, *, stock_razor_window: bool = False) -> dict:
             "GITHUB_CURRENT_MAIN_SHA",
             "SAME_SHA_AGENTS_SKILL_REGISTRY_ASSOCIATIONS",
             "STOCK_RAZOR_MCP_CONTEXT_MANAGER_SENTINEL",
+            "GITHUB_FAST_POINTER_COMMENT_6269031171",
             "GITHUB_ISSUE_924_OWNER_SYNC_COMMENTS",
         ] if found else [],
         "no_access_state": "SYNC_NOT_VERIFIED",
