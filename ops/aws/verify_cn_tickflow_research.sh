@@ -21,6 +21,10 @@ assert payload.get("schema") == "stock_razor_cn_tickflow_research_observation_v0
 assert payload.get("repo_sha") == expected
 assert re.fullmatch(r"[0-9a-f]{40}", payload["repo_sha"])
 assert payload.get("provider") == "TICKFLOW_PREMIUM"
+assert payload.get("status") == "PASS_RESEARCH_ONLY"
+assert isinstance(payload.get("symbols"), dict) and payload["symbols"]
+assert type(payload.get("sequence")) is int and payload["sequence"] > 0
+assert not payload.get("failure_class")
 assert payload.get("research_only") is True
 assert payload.get("source_arbiter_admission") == "BLOCKED"
 assert payload.get("radar_admission") == "BLOCKED"

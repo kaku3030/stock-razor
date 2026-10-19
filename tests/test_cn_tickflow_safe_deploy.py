@@ -1,4 +1,9 @@
 from pathlib import Path
+import json
+import subprocess
+import sys
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,3 +64,18 @@ def test_verifier_binds_worker_source_and_provider_and_keeps_gates_closed():
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
     assert 'CN_TICKFLOW_PROVIDER_QUALIFICATION=NOT_VERIFIED' in VERIFY
+
+
+@pytest.mark.parametrize("status,passed", [("PASS_RESEARCH_ONLY", True), ("BLOCKED", False)])
+def test_actual_verifier_rejects_running_worker_with_failed_data(tmp_path, status, passed):
+    payload = {"schema": "stock_razor_cn_tickflow_research_observation_v0_1",
+        "repo_sha": "a" * 40, "provider": "TICKFLOW_PREMIUM", "status": status,
+        "symbols": {"159611.SZ": {}}, "sequence": 1, "research_only": True,
+        "source_arbiter_admission": "BLOCKED", "radar_admission": "BLOCKED",
+        "live_trade": False, "canonical_write_authorized": False}
+    path = tmp_path / "status.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    code = VERIFY.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    result = subprocess.run([sys.executable, "-", str(path), "a" * 40],
+        input=code, capture_output=True, text=True, timeout=5)
+    assert (result.returncode == 0) is passed

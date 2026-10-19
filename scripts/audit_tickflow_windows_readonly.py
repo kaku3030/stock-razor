@@ -48,7 +48,8 @@ def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: fl
     except (InvalidOperation,TypeError,ValueError,OverflowError):
         return False
 
-SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# Held ETFs first; gold is an observation, not a position.
+SYMBOLS = ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
 PERIOD_COUNTS = {"1m": 240, "5m": 144, "15m": 96, "60m": 24, "1d": 40}
 END_CLOCKS = {
     "1m": tuple(f"{m // 60:02d}:{m % 60:02d}" for m in
@@ -64,6 +65,31 @@ END_CLOCKS = {
 }
 CN = ZoneInfo("Asia/Shanghai")
 CRED_TARGET = "StockRazor/TickFlow/APIKey"
+# Official fund-manager notice: this ETF was suspended until 10:30 on this date.
+# https://www.cmfchina.com/web/noticedetails/226517/index.html
+KNOWN_SUSPENSION_WINDOWS = {
+    ("159209.SZ", "2026-10-19"): (("09:30", "10:30"),),
+}
+
+
+def provider_endpoint_for(timeframe: str) -> str:
+    """Return the TickFlow klines endpoint selected for a supported timeframe."""
+    if timeframe not in PERIOD_COUNTS:
+        raise ValueError("unsupported timeframe")
+    return "get" if timeframe == "1d" else "intraday"
+
+
+def fetch_frame(client: object, symbol: str, timeframe: str) -> object:
+    """Fetch current-session minute bars or historical daily bars by contract."""
+    endpoint = provider_endpoint_for(timeframe)
+    kwargs = {
+        "period": timeframe,
+        "count": PERIOD_COUNTS[timeframe],
+        "as_dataframe": False,
+    }
+    if endpoint == "get":
+        kwargs["adjust"] = "none"
+    return getattr(client.klines, endpoint)(symbol, **kwargs)
 
 
 def read_windows_credential() -> str:
@@ -89,7 +115,34 @@ def safe_error_type(error: Exception) -> str:
     return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,39}", name) else "OtherError"
 
 
-def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
+def due_labels_for(
+    timeframe: str, now_cn: datetime, symbol: str | None = None
+) -> tuple[set[datetime], int]:
+    """Return due trading labels after subtracting published instrument halts."""
+    due = set()
+    if timeframe in END_CLOCKS and now_cn.weekday() < 5:
+        due = {
+            now_cn.replace(hour=int(h[:2]), minute=int(h[3:]),
+                           second=0, microsecond=0)
+            for h in END_CLOCKS[timeframe]
+        }
+        due = {stamp for stamp in due if stamp <= now_cn - timedelta(seconds=90)}
+
+    suspension_windows = KNOWN_SUSPENSION_WINDOWS.get(
+        (symbol, now_cn.date().isoformat()), ()
+    )
+    suspended = {
+        stamp for stamp in due
+        if any(start < stamp.strftime("%H:%M") <= end
+               for start, end in suspension_windows)
+    }
+    return due - suspended, len(suspended)
+
+
+def assess_compact(
+    frame: object, timeframe: str, now_utc: datetime,
+    symbol: str | None = None,
+) -> dict:
     """Validate chronological compact SDK columns, never return market values."""
     if timeframe not in PERIOD_COUNTS or now_utc.tzinfo is None:
         raise ValueError("invalid period/clock")
@@ -102,19 +155,13 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     if len(sizes) != 1:
         raise ValueError("compact column lengths mismatch")
     count = sizes.pop()
-    if not 4 <= count <= PERIOD_COUNTS[timeframe]:
+    minimum_count = 1 if timeframe == "60m" else 4
+    if not minimum_count <= count <= PERIOD_COUNTS[timeframe]:
         raise ValueError("out-of-bounds sample size")
 
     now_cn = now_utc.astimezone(CN)
     cutoff = now_cn - timedelta(seconds=90)
-    due = set()
-    if timeframe in END_CLOCKS and now_cn.weekday() < 5:
-        due = {
-            now_cn.replace(hour=int(h[:2]), minute=int(h[3:]),
-                           second=0, microsecond=0)
-            for h in END_CLOCKS[timeframe]
-        }
-        due = {stamp for stamp in due if stamp <= cutoff}
+    due, suspended_due_labels = due_labels_for(timeframe, now_cn, symbol)
 
     previous = None
     eligible = set()
@@ -126,6 +173,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     duplicate_or_reordered = 0
     same_day_daily_quarantined = 0
     latest_prior_daily_seen = False
+    valid_timestamps = []
     for i in range(count):
         try:
             epoch = float(frame["timestamp"][i])
@@ -134,6 +182,10 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
             if epoch > 1e12:
                 epoch /= 1000
             stamp = datetime.fromtimestamp(epoch, timezone.utc).astimezone(CN)
+            valid_timestamps.append(stamp)
+            if previous is not None and stamp <= previous:
+                duplicate_or_reordered += 1
+            previous = stamp
             nums = [float(frame[k][i]) for k in keys[1:]]
             if (not all(math.isfinite(x) for x in nums)
                 or min(nums[:4]) <= 0 or nums[4] < 0
@@ -141,9 +193,6 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 or nums[2] - 0.00001 > min(nums[0], nums[1], nums[3])):
                 invalid_ohlc += 1
                 continue
-            if previous is not None and stamp <= previous:
-                duplicate_or_reordered += 1
-            previous = stamp
             # A tolerance-accepted row is NOT strict OHLC. Earlier local
             # results called this PASS while AWS correctly quarantined the
             # same session's malformed 10:00 bar. Explicitly refuse it
@@ -185,6 +234,15 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         except (TypeError, ValueError, KeyError, IndexError, OverflowError, OSError):
             invalid_ohlc += 1
 
+    closure_order_valid = duplicate_or_reordered == 0
+    successor_closed_rows = (
+        max(0, len(valid_timestamps) - 1) if closure_order_valid else 0
+    )
+    latest_bar_closure = (
+        "NO_SUCCESSOR_UNCONFIRMED" if valid_timestamps and closure_order_valid
+        else "SEQUENCE_INVALID" if valid_timestamps else "NO_VALID_TIMESTAMP"
+    )
+
     if timeframe == "1d":
         status = (
             "PASS_PRIOR_DAILY_RESEARCH_ONLY"
@@ -199,6 +257,12 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
             "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
             "same_session_float_drift_rows": same_session_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
+            "suspended_due_labels_expected": suspended_due_labels,
+            "bar_timestamp_semantics": "BAR_END",
+            "successor_closed_rows": successor_closed_rows,
+            "latest_bar_closure": latest_bar_closure,
+            "closure_rule": "A later K-line confirms the preceding K-line is closed",
+            "post_close_revision_status": "NOT_RECHECKED",
             "current_day_d1_finality": "NOT_VERIFIED",
         }
 
@@ -218,6 +282,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         "status": status, "returned_rows": count,
         "due_count": len(due), "due_labels_present": len(due & eligible),
         "due_labels_missing": missing,
+        "suspended_due_labels_expected": suspended_due_labels,
         "research_due_labels_present": len(due & research_eligible),
         "research_due_labels_missing": research_missing,
         "research_progress_status": research_progress_status,
@@ -226,13 +291,18 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
         "same_session_float_drift_rows": same_session_float_drift_rows,
         "reordered_or_duplicate_rows": duplicate_or_reordered,
+        "bar_timestamp_semantics": "BAR_END",
+        "successor_closed_rows": successor_closed_rows,
+        "latest_bar_closure": latest_bar_closure,
+        "closure_rule": "A later K-line confirms the preceding K-line is closed",
+        "post_close_revision_status": "NOT_RECHECKED",
         "exchange_bar_finality": "NOT_VERIFIED",
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--execute", action="store_true", help="Opt in to <=20 bounded monthly-plan REST reads")
+    parser.add_argument("--execute", action="store_true", help="Opt in to <=25 bounded monthly-plan REST reads")
     parser.add_argument("--research-exit", action="store_true",
                         help="Success exit only for fully due research labels; strict status stays blocked")
     parser.add_argument("--timeframe", choices=("1m", "5m", "15m", "60m", "1d", "all"), default="all")
@@ -250,11 +320,28 @@ def main() -> int:
         if version != "0.1.25":
             raise RuntimeError("pinned SDK version mismatch")
         from tickflow import TickFlow
+    except Exception as exc:
+        print(json.dumps({"status": "SDK_BLOCKED",
+                          "error_class": safe_error_type(exc),
+                          "provider_requests": 0,
+                          "trading_admission": "BLOCKED"}, sort_keys=True))
+        return 2
+    try:
         key = read_windows_credential()
+    except Exception as exc:
+        print(json.dumps({"status": "LOCAL_CREDENTIAL_UNAVAILABLE",
+                          "credential_scope": "WINDOWS_CURRENT_USER_ONLY",
+                          "cloud_credential_status": "NOT_CHECKED",
+                          "recovery_workflow": "probe-tickflow-aws-premium.yml",
+                          "error_class": safe_error_type(exc),
+                          "provider_requests": 0,
+                          "trading_admission": "BLOCKED"}, sort_keys=True))
+        return 2
+    try:
         client = TickFlow(api_key=key, timeout=8.0, max_retries=0)
         del key
     except Exception as exc:
-        print(json.dumps({"status": "CREDENTIAL_OR_SDK_BLOCKED",
+        print(json.dumps({"status": "CLIENT_INITIALIZATION_BLOCKED",
                           "error_class": safe_error_type(exc),
                           "trading_admission": "BLOCKED"}, sort_keys=True))
         return 2
@@ -266,11 +353,10 @@ def main() -> int:
             for timeframe in requested:
                 start = time.perf_counter()
                 try:
-                    frame = client.klines.get(
-                        symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
-                        as_dataframe=False, adjust="none",
+                    frame = fetch_frame(client, symbol, timeframe)
+                    record = assess_compact(
+                        frame, timeframe, datetime.now(timezone.utc), symbol=symbol
                     )
-                    record = assess_compact(frame, timeframe, datetime.now(timezone.utc))
                 except Exception as exc:
                     record = {"status": "BLOCKED",
                               "error_class": safe_error_type(exc)}
@@ -278,6 +364,7 @@ def main() -> int:
                     "symbol": symbol, "timeframe": timeframe,
                     "request_ms": round((time.perf_counter() - start) * 1000, 2),
                     "data_source": "TICKFLOW_PREMIUM_DESKTOP_READONLY",
+                    "provider_endpoint": f"klines.{provider_endpoint_for(timeframe)}",
                     "provider_requests": 1,
                     "trading_admission": "BLOCKED", "live_trade": False,
                 })
@@ -295,3 +382,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

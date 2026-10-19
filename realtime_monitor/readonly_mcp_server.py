@@ -100,7 +100,7 @@ def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
 
 
 def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
-    """One remote MCP round trip for four held-ETF research histories; no provider IO.
+    """One remote MCP round trip for the bounded TickFlow research set; no provider IO.
 
     Five or twenty independent cache reads must share a source SHA and sequence.
     Never promote an incomplete or misaligned set to a usable batch.
@@ -123,7 +123,8 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
     raw = {}
     states = {}
     source_versions = set()
-    for symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"):
+    symbols = ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
+    for symbol in symbols:
         frames = {}
         for period in periods:
             result = read_cn_tickflow_research_data(
@@ -165,7 +166,7 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
         **base, "ok": True, "status": "PASS_HISTORICAL_ONLY",
         "repo_sha": sha, "sequence": sequence,
         "symbols": raw, "frame_status": states,
-        "frame_count": 4*len(periods),
+        "frame_count": len(symbols)*len(periods),
         "source_age_seconds": max(
             frame["source_age_seconds"]
             for frames in raw.values() for frame in frames.values()
@@ -174,7 +175,7 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
 
 
 def _read_tickflow_fast_snapshot() -> dict:
-    """Compact four-symbol/2-timeframe historical watchlist, never live advice.
+    """Compact TickFlow-symbol/2-timeframe historical watchlist, never live advice.
 
     Calls the same four-source-aligned, fail-closed research reader as BATCH.
     No TickFlow provider network I/O and no cached state held in the MCP.
@@ -197,14 +198,14 @@ def _read_tickflow_fast_snapshot() -> dict:
         "canonical_write_authorized": False,
         "provider_requests": 0,
         "research_mode": "historical_only",
-        "frame_count": 8,
+        "frame_count": 10,
         "read_scope": "CLOUD_MCP_LOCAL_CACHE_NOT_CHATGPT_RTT",
     }
     if not full.get("ok") or full.get("status") != "PASS_HISTORICAL_ONLY":
         return {**common, "frame_status": full.get("frame_status", {}),
                 "read_ms": round((perf_counter() - start) * 1000, 2)}
     latest = {}
-    for symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"):
+    for symbol in ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ"):
         frames = {}
         for tf in ("15m", "60m"):
             detail = full["symbols"][symbol][tf]

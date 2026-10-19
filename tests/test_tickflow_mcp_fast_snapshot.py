@@ -54,14 +54,14 @@ def test_fast_returns_bounded_native_ohlcv_and_quality_not_live_admission():
     assert fast["provider"]=="TICKFLOW_PREMIUM"
     assert fast["read_scope"]=="CLOUD_MCP_LOCAL_CACHE_NOT_CHATGPT_RTT"
     assert fast["read_ms"]>=0
-    assert fast["frame_count"]==8
+    assert fast["frame_count"]==10
     assert fast["repo_sha"]=="b"*40 and fast["sequence"]==5
     assert fast["research_only"] is True and fast["provider_requests"]==0
     assert fast["live_trade"] is False and fast["radar_admission"]=="BLOCKED"
     assert fast["bar_finality"]=="NOT_VERIFIED"
     assert fast["source_arbiter_admission"]=="BLOCKED"
     assert fast["can_confirm_signal"] is False
-    assert set(fast["symbols"])=={"159611.SZ","159209.SZ","512730.SH","159363.SZ"}
+    assert set(fast["symbols"])=={"159611.SZ","159209.SZ","518880.SH","512730.SH","159363.SZ"}
     assert all(set(v)=={"15m","60m"} for v in fast["symbols"].values())
     for frames in fast["symbols"].values():
         for row in frames.values():
@@ -71,7 +71,7 @@ def test_fast_returns_bounded_native_ohlcv_and_quality_not_live_admission():
             assert row["is_partial_bar"] is True
             assert row["bar_finality"]=="NOT_VERIFIED"
             assert row["expected_grid_progress"]=="DUE_LABEL_NOT_OBSERVED_HISTORICAL_ONLY"
-    assert len(calls)==8
+    assert len(calls)==10
     assert all(call[2:]==(1,"historical_only") for call in calls)
     full=h("TICKFLOW:BATCH",limit=1)
     assert len(json.dumps(fast,separators=(",",":")))<len(json.dumps(full,separators=(",",":")))

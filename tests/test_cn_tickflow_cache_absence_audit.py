@@ -346,7 +346,7 @@ def test_combined_cloud_audit_and_nonmutating_vendor_float_research_only(tmp_pat
 
     class Klines:
         def get(self, symbol, *, period, count, as_dataframe, adjust):
-            assert symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+            assert symbol in ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
             assert period in ("15m", "60m")
             assert count in (96, 24) and as_dataframe is False and adjust == "none"
             return raw_frame(period, symbol)
