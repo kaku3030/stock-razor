@@ -186,7 +186,7 @@ jobs:
           assert data.get("radar_admission") == "BLOCKED"
           assert data.get("source_arbiter_admission") == "BLOCKED"
           assert data.get("live_trade") is False
-          names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
+          names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_intraday_15m","kline_intraday_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
           states={"COMPLETED","OBSERVED","NO_EVENTS_OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
           raw=data.get("operations")
           assert isinstance(raw,list) and len(raw)<=20
@@ -199,6 +199,23 @@ jobs:
               elapsed=item.get("elapsed_ms")
               if type(elapsed) in (int,float) and 0 <= elapsed <= 100000000:
                   record["elapsed_ms"]=round(elapsed,3)
+              scope=item.get("data_scope")
+              expected_scope=(
+                  "HISTORICAL" if name in ("kline_15m","kline_60m")
+                  else "CURRENT_DAY_INTRADAY" if name in (
+                      "kline_intraday_15m","kline_intraday_60m",
+                      "kline_batch_15m","kline_batch_60m",
+                  ) else None
+              )
+              if expected_scope is not None:
+                  assert scope==expected_scope
+                  record["data_scope"]=expected_scope
+                  symbol=item.get("symbol")
+                  if symbol in ("159611.SZ","518880.SH"):
+                      record["symbol"]=symbol
+                  rows=item.get("row_count")
+                  if type(rows) is int and 0 <= rows <= 96:
+                      record["row_count"]=rows
               if name in ("kline_15m","kline_60m"):
                   bar=item.get("bar_range_structure")
                   record["bar_range_structure"]=bar if bar in ("PASS","FAIL","NOT_VERIFIED") else "NOT_VERIFIED"
