@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from .data_audit import audit_csv
+
 
 STRATEGIES = ("b0", "v0.2", "strong_pullback")
 COST_SCENARIOS = ((0.0, 0.0), (1.0, 1.0), (2.0, 2.0), (5.0, 5.0))
@@ -232,9 +234,15 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
         }
 
     return {
-        "schema_version": "stock-razor-vibe-replay-lab-v0.4",
+        "schema_version": "stock-razor-vibe-replay-lab-v0.6",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
+        "input_kind": "FIXTURE_SMOKE",
+        "data_audit": {
+            "status": "NOT_VERIFIED",
+            "historical_replay_eligibility": "BLOCKED",
+            "reason": "fixture input is for interface smoke only; source evidence is not a historical-data qualification",
+        },
         "strategy_rule_contract": {
             "status": "EXPLORATORY_PROXY_NOT_CANONICAL",
             "canonical_strategy_spec": "NOT_VERIFIED",
@@ -297,21 +305,32 @@ def replay_fixture(fixture: dict[str, Any], bars: list[Bar], strategies: Iterabl
 def replay_csv_files(paths: Iterable[str | Path], strategies: Iterable[str] = STRATEGIES) -> dict[str, Any]:
     inputs = []
     for path in paths:
+        audit = audit_csv(path)
         fixture, bars = load_csv(path)
         result = replay_fixture(fixture, bars, strategies)
-        inputs.append({"path": str(Path(path)), "symbol": fixture["authority"]["symbol"], "rows": len(bars), "replay": result})
+        inputs.append({
+            "path": str(Path(path)),
+            "symbol": fixture["authority"]["symbol"],
+            "rows": len(bars),
+            "data_audit": audit,
+            "replay": result,
+        })
     if not inputs:
         raise ValueError("at least one CSV is required")
     symbols = [item["symbol"] for item in inputs]
     if len(set(symbols)) != len(symbols):
         raise ValueError("CSV inputs must contain unique symbols")
     return {
-        "schema_version": "stock-razor-vibe-replay-lab-v0.4",
+        "schema_version": "stock-razor-vibe-replay-lab-v0.6",
         "status": "RESEARCH_ONLY",
         "execution": "REPLAY_COMPLETED",
         "strategies": tuple(dict.fromkeys(strategies)),
         "symbols": symbols,
         "inputs": inputs,
+        "data_audit": {
+            "status": "PASS" if all(item["data_audit"]["historical_replay"]["eligibility"] == "PASS" for item in inputs) else "BLOCKED",
+            "freshness_is_not_eligibility": True,
+        },
         "limitations": {
             "statistical_power": "NOT_ESTABLISHED",
             "provider_finality": "UNKNOWN",

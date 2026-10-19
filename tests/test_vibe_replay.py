@@ -12,6 +12,8 @@ def test_replay_uses_real_fixture_with_diagnostic_holdout() -> None:
     result = replay_fixture(fixture, bars)
     assert tuple(result["strategies"]) == STRATEGIES
     assert result["execution"] == "REPLAY_COMPLETED"
+    assert result["input_kind"] == "FIXTURE_SMOKE"
+    assert result["data_audit"]["historical_replay_eligibility"] == "BLOCKED"
     assert result["strategy_rule_contract"]["status"] == "EXPLORATORY_PROXY_NOT_CANONICAL"
     assert result["strategy_rule_contract"]["canonical_strategy_spec"] == "NOT_VERIFIED"
     assert result["oos"]["status"] == "HOLDOUT_REPLAYED_RESEARCH_ONLY"
@@ -52,6 +54,8 @@ def test_csv_replay_preserves_source_hash_and_safety(tmp_path) -> None:
     result = replay_csv_files([path], ("b0", "v0.2"))
     assert result["symbols"] == ["US.TEST"]
     assert result["inputs"][0]["replay"]["provenance"]["fixture_digest"].startswith("sha256:")
+    assert result["inputs"][0]["data_audit"]["historical_replay"]["eligibility"] == "BLOCKED"
+    assert result["data_audit"]["status"] == "BLOCKED"
     assert result["safety"]["trade_execution"] == "NO"
 
 
