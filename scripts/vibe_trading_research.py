@@ -17,6 +17,37 @@ from src.services.strategy_lab.vibe_replay import load_fixture, replay_csv_files
 PROFILES = {"b0": "vibe-b0-research-only", "v0.2": "vibe-v0.2-research-only", "strong_pullback": "vibe-strong-pullback-research-only"}
 
 
+def render_markdown(result: dict[str, Any]) -> str:
+    lines = [
+        "# Vibe-Trading research replay",
+        "",
+        f"- Status: `{result['status']}`",
+        f"- Execution: `{result['execution']}`",
+        f"- Input kind: `{result.get('replay', {}).get('input_kind', 'CSV_RESEARCH')}`",
+        f"- Data audit: `{result.get('replay', {}).get('data_audit', {}).get('status', 'NOT_VERIFIED')}`",
+        f"- OOS: `{result.get('oos', 'NOT_VERIFIED')}`",
+        f"- Radar admission: `{result['radar_admission']}`",
+        "",
+    ]
+    replay = result.get("replay")
+    if isinstance(replay, dict):
+        lines.append("| Symbol | Rows | Audit |")
+        lines.append("|---|---:|---|")
+        for item in replay.get("inputs", []):
+            audit = item.get("data_audit", {})
+            lines.append(
+                f"| {item.get('symbol', 'UNKNOWN')} | {item.get('rows', 0)} | "
+                f"`{audit.get('historical_replay', {}).get('eligibility', 'NOT_VERIFIED')}` |"
+            )
+        lines += [
+            "",
+            "Metrics are research-only. Missing or unverified provenance, timezone/DST, calendar, bar closure, provider finality, or sample requirements block OOS claims.",
+        ]
+    else:
+        lines.append("No replay was executed; this is a request description only.")
+    return "\n".join(lines) + "\n"
+
+
 def parse_request(prompt: str) -> dict[str, Any]:
     text = prompt.casefold()
     matches = []
@@ -54,6 +85,7 @@ def main() -> int:
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--csv", type=Path, action="append")
     parser.add_argument("--write", type=Path)
+    parser.add_argument("--write-md", type=Path)
     args = parser.parse_args()
     result = parse_comparison_request(args.prompt) if "compare" in args.prompt.casefold() else parse_request(args.prompt)
     if args.fixture and args.csv:
@@ -73,7 +105,10 @@ def main() -> int:
     if args.write:
         args.write.parent.mkdir(parents=True, exist_ok=True)
         args.write.write_text(payload, encoding="utf-8")
-    else:
+    if args.write_md:
+        args.write_md.parent.mkdir(parents=True, exist_ok=True)
+        args.write_md.write_text(render_markdown(result), encoding="utf-8")
+    if not args.write:
         print(payload, end="")
     return 0
 

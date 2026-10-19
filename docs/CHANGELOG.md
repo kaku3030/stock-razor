@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] Vibe-Trading Replay Lab V0.6 将 CSV 数据审计绑定到 Replay 报告并支持 JSON/Markdown 输出；fixture 仅标记为 `FIXTURE_SMOKE`，未验证证据继续阻断历史回放资格与 OOS 声明。
 - [改进] Vibe-Trading Replay Lab V0.5 增加离线 OHLCV 数据血缘、时间戳、质量、closure、provider finality、新鲜度与 replay eligibility 的 fail-closed 审计报告；UNKNOWN 不升级为 PASS。
 - [改进] TickFlow 隔离 Premium 探针在显式标准模式下对照 15m/60m 单票与批量读取深度，只导出有界根数与网格枚举；报价-only 路径及全部 Radar/交易门禁不变。
 - [新功能] Vibe-Trading Replay Lab 支持显式复用已有本地 OHLC CSV，记录来源哈希并按符号输出成本敏感性；不改变研究、Radar 或交易门禁。
