@@ -19,6 +19,14 @@
 - 快速状态可运行 `python scripts/self_improvement_gate.py --brief`。自动工程 120m 队列、DeepSeek+Aider 测试试点在工作前强制校验 **当前 GitHub main SHA 与共享错误登记**；主线变化、网络不可核实时直接 `BLOCKED`，不继续付费或长循环。
 - 每次进度要提供至少一项新增的**具体证据**：PR/SHA、准确失败原因、测试/运行记录、通知回执或确认无法取得；没有新增证据时坦诚说明，不虚构后台推进。
 
+## 0.2 未来未知错误的自主留痕与禁止盲目重试（V1.2）
+
+- **未知故障先持久化，而不是重新调用同一个任务碰运气。** Engineering Autonomy 120m 任务第一次非零退出 / 超时 / 未处理异常，在 `engineering_autonomy/incidents.json` 中创建仅含任务名、退出码、队列 SHA、来源 SHA、环境类别、运行 ID、指纹的脱敏记录，并将队列标记 `BLOCKED`；同条件下不进行第二次执行。记录中 `UNKNOWN_PENDING_ROOT_CAUSE` 不代表已修复。
+- **未来 GitHub CI / Research Radar Tests 失败时自动留痕。** `.github/workflows/self-improvement-ci-failure-capture.yml` 从 GitHub 仅只读获取失败作业名称/状态（绝不下载原始日志），自动上传保留 30 天的 `stock-razor-unknown-ci-<run_id>` 匿名分类 artifact；相关窗口可在 Actions 运行记录中检索，从而识别是否再次遇到相同失败家族。
+- **跨窗口永久沉淀规则：** 自主工程处理新的 artifact 时，必须查看精确 run/SHA、原始失败原因（若已获准查看）并生成可复现回归；只有找到可靠错误特征后，才能通过普通受 CI 约束的 PR 将其写入 `failure-registry.json`。Artifact 只提供暂存证据；**若未写回 GitHub 主线登记表，过期后不具备永久记忆保障**。
+- **相似不等于同一个根因：** 相同 CI job 名或进程退出码只是“同一症状家族”，不自动证明根因相同；不得因此放松安全门禁、改动凭据或无限停止必要的新版本验收。
+- **验收边界：** 代码被合并且 CI 全绿不等于 Actions 监听已实际触发、事故 artifact 已产生或所有历史聊天窗口已自动加载。必须分别验证 `workflow_run` 运行与 artifact 读回，并记录无权限或调度失败。
+
 ## 1. 硬规则
 
 - 遵循现有目录边界：

@@ -194,6 +194,20 @@
       "regression_evidence": "tests/test_self_improvement_gate.py",
       "mandatory_action": "Keep dotted official symbols/endpoints valid and run the real ai-governance script plus focused regression on exact PR head before claiming registry compliance.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-006",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "QUEUE_SHA_INVALID"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Actual PR #934 exact-head backend CI job 2/3 failed three engineering-autonomy loop cases: newly added unknown-incident recorder incorrectly validated SHA256 queue fingerprint with a 40-hex Git commit SHA validator. A queue fingerprint is 64 hex digits; commit SHA stays 40.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/934",
+      "regression_evidence": "tests/test_incident_memory.py",
+      "mandatory_action": "Use independent exact validators for the 64-character queue SHA256 and 40-character Git commit SHA, run loop fail-fast test and incident receipt regression at the same PR head; do not simply retry unchanged CI.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

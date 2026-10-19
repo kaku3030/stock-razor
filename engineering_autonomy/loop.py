@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Any
 
+from engineering_autonomy.incident_memory import observe_failure
+
 SCHEMA_VERSION = 1
 ALLOWED_COMMANDS = {
     "quality-check": (
@@ -200,6 +202,21 @@ def run_queue(
         return subprocess.run(task.command, check=False, timeout=remaining).returncode
 
     executor = executor or bounded_executor
+
+    def retain_unknown_failure(task: Task, code: int) -> None:
+        # Preserve the BLOCKED checkpoint first, then a durable sanitized
+        # incident receipt. Raw command output and exception text never cross.
+        state["failed"].append(task.id)
+        checkpoint("BLOCKED")
+        observe_failure(
+            state_path.with_name("incidents.json"), task_id=task.id,
+            kind=task.kind, exit_code=code, queue_sha=_queue_fingerprint(queue),
+            source_sha=os.environ.get("GITHUB_SHA", "UNKNOWN").lower(),
+            environment=("github-actions" if os.environ.get("GITHUB_ACTIONS") == "true"
+                         else "local"),
+            run_id=os.environ.get("GITHUB_RUN_ID", "UNKNOWN"),
+        )
+
     checkpoint("RUNNING")
     while state["next_index"] < len(queue):
         task = queue[state["next_index"]]
@@ -218,16 +235,25 @@ def run_queue(
             try:
                 code = executor(task)
             except subprocess.TimeoutExpired:
-                return checkpoint("STOPPED")
+                retain_unknown_failure(task, -124)
+                return state
+            except Exception:
+                # No raw exception/traceback is exported to the shared ledger.
+                retain_unknown_failure(task, -125)
+                return state
             if code == 0:
                 success = True
                 break
+            # A deterministic task with unchanged code/environment does NOT
+            # get a free repeat of the same failed command. A revised task or
+            # verified new condition must create a new explicit run/checkpoint.
+            retain_unknown_failure(task, code)
+            return state
         if success:
             state["completed"].append(task.id)
             state["next_index"] += 1
             checkpoint("RUNNING")
         else:
-            state["failed"].append(task.id)
             return checkpoint("BLOCKED")
     return checkpoint("PASS")
 
