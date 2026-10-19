@@ -114,6 +114,18 @@ def ensure_shared_failure_registry() -> None:
     )
     if proc.returncode != 0:
         fail("shared self-improvement registry validation failed: " + proc.stderr[:250])
+    recall_script = ROOT / "scripts" / "self_improvement_recall.py"
+    ensure_file_exists(recall_script, "cross-window associative error memory")
+    assoc = subprocess.run(
+        [sys.executable, str(recall_script), "--check-associations"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if assoc.returncode != 0:
+        fail("cross-window associative memory validation failed: " + assoc.stderr[:250])
 
 
 def ensure_gitignore_rules() -> None:

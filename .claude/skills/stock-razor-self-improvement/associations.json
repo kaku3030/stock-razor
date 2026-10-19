@@ -1,0 +1,239 @@
+{
+  "schema": "stock_razor_error_association_v1",
+  "scope": "STOCK_RAZOR_ONLY",
+  "authority": "kaku3030/stock-razor/main",
+  "semantics": "Related symptoms are retrieval hints, NEVER proven diagnosis. Cross-case links indicate potentially reusable investigations, not permission to reuse fixes.",
+  "cases": [
+    {
+      "id": "US-001",
+      "phrases": [
+        "日线无法返回",
+        "日线接口不支持",
+        "日k无法返回",
+        "mcp不支持日线",
+        "d1 unsupported",
+        "unsupported timeframe 1d",
+        "1d not supported",
+        "日线空",
+        "日线mcp",
+        "D1",
+        "1D"
+      ],
+      "related": [
+        "US-002",
+        "US-004"
+      ]
+    },
+    {
+      "id": "US-002",
+      "phrases": [
+        "k线没有闭合",
+        "闭合状态不明",
+        "k线finality",
+        "收盘不确认",
+        "provider finality",
+        "bar closure unproven",
+        "bar_closed unknown",
+        "is_closed不可靠",
+        "unproven",
+        "finality"
+      ],
+      "related": [
+        "US-004",
+        "US-005"
+      ]
+    },
+    {
+      "id": "US-003",
+      "phrases": [
+        "vwap超出高低价",
+        "vwap异常",
+        "vwap outside bar range",
+        "vwap outside range",
+        "成交额单位异常",
+        "turnover volume mismatch",
+        "partial turnover",
+        "金额和成交量不匹配"
+      ],
+      "related": [
+        "US-004",
+        "ENG-004"
+      ]
+    },
+    {
+      "id": "US-004",
+      "phrases": [
+        "雷达序列不同步",
+        "source sequence not aligned",
+        "sequence mismatch",
+        "缓存版本不同步",
+        "radar sequence",
+        "快照序列不一致",
+        "分析用的不是最新k线",
+        "快照不同步",
+        "数据更新雷达没更新"
+      ],
+      "related": [
+        "ENG-002",
+        "US-002"
+      ]
+    },
+    {
+      "id": "US-005",
+      "phrases": [
+        "discord没有消息",
+        "discord收不到",
+        "discord通知不来",
+        "webhook无回执",
+        "discord delivery",
+        "webhook http delivery",
+        "通知未送达",
+        "每15分钟没有消息",
+        "15分钟通知失败",
+        "推送通知失败"
+      ],
+      "related": [
+        "ENG-004",
+        "US-002"
+      ]
+    },
+    {
+      "id": "CN-001",
+      "phrases": [
+        "60分钟只有一根",
+        "60m row count",
+        "row count below min",
+        "s1_60m_normalize",
+        "分钟线条数不足",
+        "小时线数量不足",
+        "少于最小行数",
+        "正常半日盘小于4根"
+      ],
+      "related": [
+        "CN-003",
+        "ENG-004"
+      ]
+    },
+    {
+      "id": "CN-002",
+      "phrases": [
+        "tickflow返回腾讯",
+        "用了腾讯数据",
+        "数据源自动切换",
+        "tencent fallback",
+        "fallback tencent",
+        "518880.sh",
+        "provider用错",
+        "A股不该用腾讯",
+        "来源非tickflow"
+      ],
+      "related": [
+        "CN-003",
+        "ENG-001"
+      ]
+    },
+    {
+      "id": "CN-003",
+      "phrases": [
+        "tickflow分钟接口错误",
+        "intraday endpoint",
+        "klines.get intraday",
+        "klines.intraday",
+        "路由分钟线失败",
+        "取日线接口当分钟线",
+        "native sdk云端路由",
+        "minute endpoint"
+      ],
+      "related": [
+        "CN-001",
+        "ENG-002"
+      ]
+    },
+    {
+      "id": "ENG-001",
+      "phrases": [
+        "ci绿灯但不能使用",
+        "ci pass业务失败",
+        "测试通过云端不行",
+        "CI业务验收混淆",
+        "ci success not production",
+        "业务验收没过",
+        "ci绿色",
+        "健康但无法交易"
+      ],
+      "related": [
+        "ENG-004",
+        "ENG-002"
+      ]
+    },
+    {
+      "id": "ENG-002",
+      "phrases": [
+        "云端和main不一致",
+        "部署sha不一致",
+        "worker sha mismatch",
+        "版本没对齐",
+        "deployed sha mismatch",
+        "主线和云端版本不同",
+        "main sha not deployed",
+        "源码和实际运行不同"
+      ],
+      "related": [
+        "US-004",
+        "ENG-001"
+      ]
+    },
+    {
+      "id": "ENG-003",
+      "phrases": [
+        "同样的失败又出现",
+        "重复试探",
+        "一模一样又失败",
+        "反复跑同样命令",
+        "重复无效操作",
+        "same failure same sha",
+        "same sha same failure",
+        "再次报错没有新变化",
+        "盲目重试"
+      ],
+      "related": [
+        "ENG-001",
+        "ENG-002"
+      ]
+    },
+    {
+      "id": "ENG-004",
+      "phrases": [
+        "心跳正常但没有新行情",
+        "healthy但数据过期",
+        "healthy heartbeat stale bars",
+        "heartbeat healthy market feed stale",
+        "实时行情不更新",
+        "cache stale",
+        "stale snapshot",
+        "缓存还是周五",
+        "云端有连接但没行情",
+        "lv3但没有新k线"
+      ],
+      "related": [
+        "US-002",
+        "US-004"
+      ]
+    },
+    {
+      "id": "ENG-005",
+      "phrases": [
+        "registry signature invalid",
+        "登记表签名验证失败",
+        "带点符号被拒绝",
+        "带.的证券代码校验出错",
+        "ticker token validator",
+        "520880.sh token",
+        "失败登记不接受小数点"
+      ],
+      "related": [
+        "ENG-003"
+      ]
+    }
+  ]
+}
