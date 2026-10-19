@@ -23,8 +23,8 @@ def _blocked(market, symbol, *, evidence=None):
 def test_blocked_report_submits_only_sanitized_deduplicated_evidence():
     hub = FakeHub()
     report = _blocked("US", "AAPL")
-    report["endpoint_evidence"]["AWS"]["opaque_payload"] = {
-        "api_key": "MUST_NOT_BE_COPIED",
+    report["endpoint_evidence"]["AWS"] = {
+        "opaque_payload": {"api_key": "MUST_NOT_BE_COPIED"},
     }
 
     result = submit_report_feedback(report, hub)
