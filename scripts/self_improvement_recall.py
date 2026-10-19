@@ -13,7 +13,10 @@ import re
 import sys
 import unicodedata
 
-from scripts.self_improvement_gate import REGISTRY, ROOT, RegistryError, load_registry
+if __package__:
+    from scripts.self_improvement_gate import ROOT, RegistryError, load_registry
+else:
+    from self_improvement_gate import ROOT, RegistryError, load_registry
 
 ASSOCIATIONS = ROOT / ".claude/skills/stock-razor-self-improvement/associations.json"
 SCHEMA = "stock_razor_error_association_v1"
