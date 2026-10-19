@@ -275,8 +275,10 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if len(sizes) != 1:
             raise ValueError("compact SDK column lengths differ")
         count = sizes.pop()
-        if not 4 <= count <= _ALLOWED_PERIODS[timeframe]:
-            raise ValueError("insufficient or unbounded history")
+        if count < 4:
+            raise ValueError("insufficient history")
+        if count > _ALLOWED_PERIODS[timeframe]:
+            raise ValueError("history exceeds configured bound")
         records = [{**{key:frame[key][i] for key in keys},
                     **({} if amount_present else {"amount":None,"_sdk_amount_omitted":True})}
                    for i in range(count)]
@@ -284,8 +286,12 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         records = frame.to_dict(orient="records")
     else:
         raise ValueError("unexpected SDK data type")
-    if not isinstance(records, list) or not 4 <= len(records) <= _ALLOWED_PERIODS[timeframe]:
-        raise ValueError("insufficient or unbounded history")
+    if not isinstance(records, list):
+        raise ValueError("unexpected SDK data type")
+    if len(records) < 4:
+        raise ValueError("insufficient history")
+    if len(records) > _ALLOWED_PERIODS[timeframe]:
+        raise ValueError("history exceeds configured bound")
     bars=[]
     previous=None
     for raw in records:
