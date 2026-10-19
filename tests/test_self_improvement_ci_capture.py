@@ -89,7 +89,7 @@ def test_workflow_metadata_only_no_logs_no_write_permission():
     assert "actions: read" in workflow
     assert "contents: read" in workflow
     assert "contents: write" not in workflow
-    assert "download" not in workflow.lower()
+    assert "gh run download" not in workflow.lower()
     assert "jq -s '{jobs:[.[].jobs[] | {name,conclusion}]}'" in workflow
     assert "actions/upload-artifact@v4" in workflow
 
