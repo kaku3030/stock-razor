@@ -33,6 +33,13 @@ Run `python scripts/self_improvement_gate.py --signature "<sanitized error excer
 
 **Availability boundary:** These files are shared instantly *for a window that fetches current GitHub main*. Existing ChatGPT conversations cannot be silently pushed new instructions while inactive, and ChatGPT model weights do not change. Do not claim that old sessions auto-reloaded or that independent chats are automatically subscribed. Windows without GitHub access must say `SYNC_NOT_VERIFIED` and cannot claim cross-window rule compliance.
 
+## Fast path (V1.1)
+
+- For local/CI startup: `python scripts/self_improvement_gate.py --brief` emits one bounded JSON packet (<900 bytes) with unresolved P0 IDs, failure counts, registry revision, and explicit cross-chat-sync `NOT_VERIFIED`.
+- Autonomous workflows `engineering-autonomy-120m.yml` and `engineering-autonomy-coding-v1-1.yml` require exact current GitHub main and the registry check **before** reviewed engineering checks or any paid test requests. Divergent code SHA blocks the task; this check does not certify the provider or trading.
+- User command `继续 / 推进 / 如何`: fetch exact current main + relevant registry errors + current evidence; prioritize executing one smallest high-value nonduplicate fix rather than repeatedly writing plans. Attempt parallel read-only evidence-gathering only when independent. Report measured latency when available, not made-up speed metrics.
+- The short brief accelerates *local/Codex/CI* startup. ChatGPT windows still must retrieve the latest GitHub main and same-ref source files using connected GitHub (no automatic cross-chat broadcast).
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
