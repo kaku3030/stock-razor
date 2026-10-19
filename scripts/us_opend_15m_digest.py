@@ -85,6 +85,8 @@ def render(health, market, radar, now):
             states[value["symbol"]] = value.get("technical_state") or {}
     rows = market.get("symbols")
     rows = rows if isinstance(rows, dict) else {}
+    # A healthy global heartbeat cannot qualify an absent, provisional or degraded symbol.
+    all_symbol_bars_healthy = True
     lines = [
         f"📡 STOCK RAZOR OpenD 云端15分钟研究快报 {now:%m-%d %H:%M} UTC",
         "行情资格：" + ("RESEARCH_ONLY" if all(gates.values()) else "BLOCKED") + "｜确认交易信号：无",
@@ -94,11 +96,14 @@ def render(health, market, radar, now):
     for symbol in SYMBOLS:
         item = rows.get(symbol) or {}
         if not isinstance(item, dict) or item.get("feed") != "opend" or item.get("provider") != "futu":
+            all_symbol_bars_healthy = False
             lines.append(symbol[3:] + " OpenD缺失")
             continue
         frames = item.get("timeframes") or {}
         q15, detail = validbar(frames.get("15m"), now, 1200)
         q1h, _ = validbar(frames.get("1h"), now, 5400)
+        if q15 != "RESEARCH" or q1h != "RESEARCH":
+            all_symbol_bars_healthy = False
         technical = (states.get(symbol) or {}).get("technical") or {}
         d1 = technical.get("daily") or {}
         # D1 quality.as_of is often an NYSE session DATE without a timezone.
@@ -114,6 +119,8 @@ def render(health, market, radar, now):
         htrend = (technical.get("hourly") or {}).get("trend", "UNKNOWN") if q1h == "RESEARCH" else "UNKNOWN"
         mtrend = (technical.get("intraday") or {}).get("trend", "UNKNOWN") if q15 == "RESEARCH" else "UNKNOWN"
         lines.append(f"{symbol[3:]} D1:{d1trend} 1H:{htrend} 15m:{mtrend} | {detail} ({q15})")
+    gates["SYMBOL_BAR_QUALITY"] = all_symbol_bars_healthy
+    lines[1] = "行情资格：" + ("RESEARCH_ONLY" if all(gates.values()) else "BLOCKED") + "｜确认交易信号：无"
     if not all(gates.values()):
         lines.append("阻断：" + ",".join(name for name, passed in gates.items() if not passed))
     lines.append("OpenD缓存只读；交易/自动下单关闭；D1如缺失则UNKNOWN。")
