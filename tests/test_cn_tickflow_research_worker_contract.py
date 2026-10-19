@@ -99,3 +99,16 @@ def test_private_batch_error_message_is_never_projected_as_reason():
     error = ValueError("api_key=DO_NOT_ECHO provider body")
     error._tickflow_stage = "BATCH_1M_FETCH"
     assert _normalize_rejection_reason(error) == "NOT_APPLICABLE"
+
+
+def test_row_count_failure_diagnostics_are_split_without_provider_counts():
+    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
+    below=ValueError("insufficient history")
+    below._tickflow_stage="S0_60M_NORMALIZE"
+    above=ValueError("history exceeds configured bound")
+    above._tickflow_stage="S0_60M_NORMALIZE"
+    assert _normalize_rejection_reason(below)=="ROW_COUNT_BELOW_MIN"
+    assert _normalize_rejection_reason(above)=="ROW_COUNT_ABOVE_MAX"
+    legacy=ValueError("insufficient or unbounded history")
+    legacy._tickflow_stage="S0_60M_NORMALIZE"
+    assert _normalize_rejection_reason(legacy)=="ROW_COUNT_OUT_OF_BOUNDS"
