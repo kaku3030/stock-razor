@@ -118,6 +118,13 @@ def test_provider_and_endpoint_must_be_exactly_the_protocol_pair():
     assert "AWS_ENDPOINT_ID_MISMATCH" in result["feedback"]["reasons"]
 
 
+def test_invalid_symbol_is_not_reflected_in_report_or_feedback_key():
+    report = _build_report("US", "api_key=DO_NOT_ECHO", _evidence(), timings=TIMINGS)
+    assert report["status"] == "BLOCKED"
+    assert report["symbol"] == "UNKNOWN"
+    assert "DO_NOT_ECHO" not in repr(report)
+
+
 def test_malformed_bar_container_blocks_without_raising():
     evidence = _evidence()
     evidence["AWS"]["bars"] = []
@@ -176,9 +183,11 @@ def test_raw_endpoint_payload_is_not_echoed_and_fallback_never_surfaces():
     evidence["AWS"]["api_key"] = "secret=SHOULD_NOT_LEAK"
     evidence["WINDOWS"]["provider_payload"] = "raw provider response"
     evidence["AWS"]["fallback_from"] = "Yahoo"
+    evidence["AWS"]["bars"]["1m"]["close"] = "password=ALSO_PRIVATE"
     report = _build_report("US", "AAPL", evidence, timings=TIMINGS)
     rendered = repr(report)
     assert "SHOULD_NOT_LEAK" not in rendered
     assert "raw provider response" not in rendered
-    assert "Yahoo" in rendered  # Only the explicit prohibited-fallback evidence is retained.
+    assert "ALSO_PRIVATE" not in rendered
+    assert report["endpoint_evidence"]["AWS"]["fallback_from"] == "PRESENT"
 

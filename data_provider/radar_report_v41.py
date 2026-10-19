@@ -24,6 +24,9 @@ TIMING_PHASES = (
 )
 MAX_BAR_AGE_SECONDS = {"1m": 180, "5m": 600, "15m": 1800, "1H": 7200, "D1": 172800}
 _SHA = re.compile(r"^[0-9a-f]{40,64}$")
+_SAFE_ENDPOINT = re.compile(r"^[A-Za-z0-9._:/-]{1,120}$")
+_CN_SYMBOL = re.compile(r"^[0-9]{6}(?:\.(?:SH|SZ|BJ))?$")
+_US_SYMBOL = re.compile(r"^(?:US\.)?[A-Z0-9._-]{1,16}$")
 
 
 def _utc(value: Any) -> datetime | None:
@@ -191,21 +194,49 @@ def _project_endpoint_evidence(evidence: Any) -> dict:
         session = session if isinstance(session, dict) else {}
         bars = endpoint.get("bars")
         bars = bars if isinstance(bars, dict) else {}
+        endpoint_provider = endpoint.get("provider")
+        endpoint_provider = endpoint_provider if endpoint_provider in MARKET_PROVIDER.values() else "UNKNOWN"
+        endpoint_name = provenance.get("endpoint")
+        endpoint_name = endpoint_name if isinstance(endpoint_name, str) and _SAFE_ENDPOINT.fullmatch(endpoint_name) else "UNKNOWN"
+        timestamp = _utc(provenance.get("observed_at_utc"))
+        repo_sha = provenance.get("repo_sha")
+        runtime_sha = provenance.get("runtime_sha")
+        session_timezone = session.get("timezone")
+        try:
+            ZoneInfo(session_timezone)
+        except (ZoneInfoNotFoundError, TypeError):
+            session_timezone = "UNKNOWN"
+        session_state = session.get("state")
+        if session_state not in {"OPEN", "CLOSED", "PRE_MARKET", "AFTER_HOURS", "BREAK"}:
+            session_state = "UNKNOWN"
+        try:
+            datetime.strptime(session.get("session_date", ""), "%Y-%m-%d")
+            session_date = session["session_date"]
+        except (TypeError, ValueError):
+            session_date = "UNKNOWN"
         projected[name] = {
-            "provider": endpoint.get("provider"),
-            "endpoint_id": endpoint.get("endpoint_id"),
-            "permission_status": endpoint.get("permission_status"),
-            "fallback_from": endpoint.get("fallback_from"),
-            "market_session": {key: session.get(key) for key in ("state", "timezone", "session_date")},
-            "provenance": {key: provenance.get(key) for key in (
-                "endpoint", "repo_sha", "runtime_sha", "observed_at_utc", "request_latency_ms"
-            )},
+            "provider": endpoint_provider,
+            "endpoint_id": name,
+            "permission_status": "VERIFIED" if endpoint.get("permission_status") == "VERIFIED" else "UNVERIFIED",
+            "fallback_from": "PRESENT" if endpoint.get("fallback_from") not in (None, "") else None,
+            "market_session": {"state": session_state, "timezone": session_timezone, "session_date": session_date},
+            "provenance": {
+                "endpoint": endpoint_name,
+                "repo_sha": repo_sha if isinstance(repo_sha, str) and _SHA.fullmatch(repo_sha) else "UNKNOWN",
+                "runtime_sha": runtime_sha if isinstance(runtime_sha, str) and _SHA.fullmatch(runtime_sha) else "UNKNOWN",
+                "observed_at_utc": timestamp.isoformat() if timestamp else "UNKNOWN",
+                "request_latency_ms": float(provenance["request_latency_ms"]) if _finite(provenance.get("request_latency_ms")) and provenance["request_latency_ms"] >= 0 else None,
+            },
             "bars": {
-                frame: ({key: bars[frame].get(key) for key in (
-                    "bar_end_utc", "open", "high", "low", "close", "volume",
-                    "is_closed", "continuity", "freshness_checked_at_utc",
-                    "age_seconds", "max_age_seconds",
-                )} if isinstance(bars.get(frame), dict) else None)
+                frame: ({
+                    "bar_end_utc": (_utc(bars[frame].get("bar_end_utc")).isoformat() if _utc(bars[frame].get("bar_end_utc")) else "UNKNOWN"),
+                    **{key: float(bars[frame][key]) if _finite(bars[frame].get(key)) else None for key in ("open", "high", "low", "close", "volume")},
+                    "is_closed": bars[frame].get("is_closed") if type(bars[frame].get("is_closed")) is bool else None,
+                    "continuity": bars[frame].get("continuity") if bars[frame].get("continuity") == "PASS" else "UNKNOWN",
+                    "freshness_checked_at_utc": (_utc(bars[frame].get("freshness_checked_at_utc")).isoformat() if _utc(bars[frame].get("freshness_checked_at_utc")) else "UNKNOWN"),
+                    "age_seconds": float(bars[frame]["age_seconds"]) if _finite(bars[frame].get("age_seconds")) and bars[frame]["age_seconds"] >= 0 else None,
+                    "max_age_seconds": float(bars[frame]["max_age_seconds"]) if _finite(bars[frame].get("max_age_seconds")) and bars[frame]["max_age_seconds"] > 0 else None,
+                } if isinstance(bars.get(frame), dict) else None)
                 for frame in TIMEFRAMES if frame in bars
             },
         }
@@ -229,7 +260,13 @@ def build_report(
     errors = []
     if market not in MARKET_PROVIDER:
         errors.append("MARKET_NOT_SUPPORTED")
-    if not isinstance(symbol, str) or not symbol.strip():
+    normalized_symbol = symbol.strip().upper() if isinstance(symbol, str) else ""
+    symbol_valid = (
+        bool(_CN_SYMBOL.fullmatch(normalized_symbol)) if market == "CN"
+        else bool(_US_SYMBOL.fullmatch(normalized_symbol)) if market == "US"
+        else False
+    )
+    if not symbol_valid:
         errors.append("SYMBOL_INVALID")
     if market in MARKET_PROVIDER:
         received_at = _utc(received_at_utc)
@@ -289,14 +326,14 @@ def build_report(
     candidates = opportunities if accepted and isinstance(opportunities, list) else []
     plans = conditional_plans if accepted and isinstance(conditional_plans, list) else []
     feedback_material = json.dumps(
-        {"market": market, "symbol": symbol, "reasons": sorted(set(errors))},
+        {"market": market, "symbol": normalized_symbol if symbol_valid else "UNKNOWN", "reasons": sorted(set(errors))},
         sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")
     return {
         "schema": "stock_razor_unified_radar_report_v4_1",
         "status": "PASS_RESEARCH_ONLY" if accepted else "BLOCKED",
         "market": market or "UNKNOWN",
-        "symbol": symbol.strip().upper() if isinstance(symbol, str) else "UNKNOWN",
+        "symbol": normalized_symbol if symbol_valid else "UNKNOWN",
         "data_acceptance": "PASS" if accepted else "NOT_VERIFIED",
         "provider": MARKET_PROVIDER.get(market, "UNKNOWN"),
         "timeframes": list(TIMEFRAMES),
