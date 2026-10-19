@@ -25,6 +25,18 @@ before rerunning probes or requesting history from the user.
 Related symptoms are hypotheses, not confirmed same root cause; use source,
 runtime version and test evidence to choose the smallest nonduplicate fix.
 
+## Fast topic-triggered context sync (STOCK RAZOR V1.4)
+
+Before the first task after a project topic like trading, Radar, OpenD, TickFlow,
+replay or cloud: read latest GitHub main at one exact SHA, canonical error skill and
+registry/associations, and the existing US/CN MCP Context Manager snapshots when
+connected. Inspect the latest OWNER-only project sync events in GitHub PR #924.
+Use `python scripts/stock_razor_fast_sync.py --route "<sanitized topic>"`
+for fast topic classification. Publish substantive new project decisions as
+OWNER-authenticated, redacted `STOCK_RAZOR_SYNC_V1` comments only as documented in
+`docs/architecture/stock-razor-fast-cross-window-sync.md`; never include private
+portfolio holdings or secrets. Missing actual connected reads = SYNC_NOT_VERIFIED.
+
 ## Core Rules
 
 - Respect directory boundaries:
