@@ -45,6 +45,9 @@ def _summary(strategy: pd.Series, benchmark: pd.Series, scope: str, frequency: s
     wealth = (1.0 + strategy).cumprod()
     peak = wealth.cummax()
     rates = _rates(strategy, benchmark)
+    annual_periods = {"daily": 252.0, "monthly": 12.0}.get(frequency)
+    if annual_periods is None:
+        raise ValueError(f"unsupported summary frequency: {frequency}")
     return {
         "scope": scope,
         "frequency": frequency,
@@ -52,7 +55,7 @@ def _summary(strategy: pd.Series, benchmark: pd.Series, scope: str, frequency: s
         "end": str(strategy.index.max().date()),
         "n_periods": int(len(strategy)),
         "cumulative_return": float(wealth.iloc[-1] - 1.0),
-        "cagr": float(wealth.iloc[-1] ** (252.0 / len(strategy)) - 1.0) if len(strategy) else math.nan,
+        "cagr": float(wealth.iloc[-1] ** (annual_periods / len(strategy)) - 1.0) if len(strategy) else math.nan,
         "max_drawdown": float((wealth / peak - 1.0).min()),
         "positive_period_rate": float((strategy > 0).mean()) if len(strategy) else math.nan,
         **rates,
