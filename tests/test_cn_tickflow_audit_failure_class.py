@@ -287,3 +287,11 @@ def test_cloud_audit_projects_only_safe_cache_reasons_and_main_sha_match():
     assert "worker_source_matches_main" in workflow and "mcp_source_matches_main" in workflow
     assert "historical_cache_rejection_reason" in workflow
     assert "CACHE_SCHEMA_MISMATCH" in source
+
+
+def test_failure_reason_projection_accepts_only_fixed_row_count_enums():
+    from scripts.audit_cn_tickflow_research_runtime import safe_failure_reason
+    assert safe_failure_reason("ROW_COUNT_BELOW_MIN")=="ROW_COUNT_BELOW_MIN"
+    assert safe_failure_reason("ROW_COUNT_ABOVE_MAX")=="ROW_COUNT_ABOVE_MAX"
+    assert safe_failure_reason("ROW_COUNT_OUT_OF_BOUNDS")=="ROW_COUNT_OUT_OF_BOUNDS"
+    assert safe_failure_reason("credential=secret")=="UNKNOWN"
