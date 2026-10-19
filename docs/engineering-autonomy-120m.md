@@ -11,6 +11,8 @@ The loop provides:
 - a finite cost-unit budget;
 - a local stop switch file or AUTONOMY_STOP=true;
 - fail-closed BLOCKED and STOPPED terminal states.
+- a durable Feedback Hub preflight before checkpoint recovery or task work;
+  records may come from `US_WINDOW`, `CN_WINDOW`, `US_RADAR`, or `CN_RADAR`.
 
 The loop never merges PRs, changes secrets/IAM, deploys production, enables Radar/Paper,
 or executes trades. The workflow remains manual-only and requires an explicit
@@ -43,6 +45,12 @@ authorized manual dispatch; it is fail-closed when absent or `true`.
 The variable is sampled when a job starts, **not live** during execution.
 To stop a running job immediately, cancel it from GitHub Actions; local
 AUTONOMY_STOP is checked only between commands. There is no schedule.
+
+`FEEDBACK_HUB_PATH` must point to persistent cloud storage. The workflow fails
+closed when it is absent or corrupt; it never treats a temporary runner-local
+database as durable. Feedback records are deduplicated, atomically leased, and
+written back with bounded evidence and audit events. This is cloud-side and
+does not depend on a Windows computer.
 
 Before enabling multi-hour AI coding, separately prove DeepSeek+Aider E2E
 from a fresh code revision with an independent PR, real API cost metering,

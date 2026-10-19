@@ -46,6 +46,17 @@ jobs:
             echo 'BLOCKED: resume_run_id must be numeric' >&2
             exit 1
           fi
+      - name: Read durable Feedback Hub before mainline work
+        env:
+          FEEDBACK_HUB_PATH: ${{ vars.FEEDBACK_HUB_PATH }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$FEEDBACK_HUB_PATH" || {
+            echo 'BLOCKED: FEEDBACK_HUB_PATH must point to the persistent cloud Feedback Hub.' >&2
+            exit 1
+          }
+          python -m engineering_autonomy.feedback_hub --db "$FEEDBACK_HUB_PATH"
       - name: Restore only the requested checkpoint
         id: resume-cache
         if: ${{ inputs.resume_run_id != '' }}
@@ -64,10 +75,12 @@ jobs:
         continue-on-error: true
         env:
           AUTONOMY_STOP: ${{ vars.ENGINEERING_AUTONOMY_STOP }}
+          FEEDBACK_HUB_PATH: ${{ vars.FEEDBACK_HUB_PATH }}
         run: |
           set -euo pipefail
           python -m engineering_autonomy.loop \
             --state engineering_autonomy/state.json \
+            --feedback-db "$FEEDBACK_HUB_PATH" \
             --budget-units 8 \
             --max-runtime-seconds 7200
       - name: Persist checkpoint for a later manual resume
