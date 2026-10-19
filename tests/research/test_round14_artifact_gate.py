@@ -59,6 +59,12 @@ class ArtifactGateTests(unittest.TestCase):
             f.write(first + "\n")
         self.assertFalse(gate.verify(self.root)["manifest_valid"])
 
+    def test_nonhex_digest_fails(self):
+        manifest = self.root / "round13_artifact_manifest.sha256"
+        with manifest.open("a", encoding="utf-8") as f:
+            f.write("z" * 64 + "  extra.csv\\n")
+        self.assertFalse(gate.verify(self.root)["manifest_valid"])
+
     def test_parent_directory_escape_fails(self):
         manifest = self.root / "round13_artifact_manifest.sha256"
         with manifest.open("a", encoding="utf-8") as f:
