@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] STOCK RAZOR V1.4 新增以“交易/雷达/OpenD/TickFlow/策略”等关键词触发的跨窗口快速上下文预读取与 OWNER 去敏决策事件发布：专用 GitHub issue_comment 工作流将 #924 结构化更新经 AWS SSM 写入现有 Context Manager，增设主题/时间/来源校验及对应回归；真实发布到云端到达和旧聊天自动重载仍需独立验收。
+
 - [改进] Self-Improvement V1.3 要求所有 STOCK RAZOR 运行窗口先关联检索已知中英同义故障及邻接案例，再决定是否重试；降低用户重复提醒的需求，但相似症状并不证明相同根因，未知事故必须先脱敏记录、经回归验证后纳入永久记忆。
 
 - [新功能] Self-Improvement V1.2 自动记录 Engineering Autonomy 未知退出错误的脱敏指纹并阻止同条件下盲目重试，同时在 GitHub CI / Research Radar Tests 失败后通过只读 workflow_run 保存异常任务分类至 30 天 Actions artifact 供跨窗口检索；根因自动修复及永久登记仍须独立证据和受保护主线 PR，交易/付费/通知权限不改变。
