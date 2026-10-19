@@ -9,7 +9,7 @@ from engineering_autonomy.incident_memory import (
 
 SHA1 = "a" * 40
 SHA2 = "b" * 40
-QUEUE = "c" * 40
+QUEUE = "c" * 64
 
 
 def receipt(tmp_path, **overrides):
