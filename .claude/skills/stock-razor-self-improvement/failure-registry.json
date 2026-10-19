@@ -1,0 +1,185 @@
+{
+  "schema": "stock_razor_cross_window_failure_registry_v1",
+  "last_reconciled_utc": "2026-10-19T11:00:00Z",
+  "authority": "kaku3030/stock-razor/main",
+  "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
+  "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
+  "records": [
+    {
+      "id": "US-001",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "UNSUPPORTED_TIMEFRAME",
+        "1D"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Existing MCP get_market_bars accepts 1m/5m/15m/1h, not 1d. Historical D1 repair exists in open PR #749, not deployed.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/749",
+      "regression_evidence": "tests/test_us_opend_15m_digest.py",
+      "mandatory_action": "Do not call vendor OpenD D1-broken; fix cloud MCP consumer 1d contract and verify exact deployed SHA.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-002",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "SOURCE_BAR_CLOSURE_UNPROVEN"
+      ],
+      "status": "OPEN",
+      "diagnosis": "US cloud closed-bar finality proof absent; a bar is_closed field in historical snapshot does not independently establish provider finality.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/931",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Preserve all Radar trade admission BLOCKED; collect provider callback and finality during actual RTH.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-003",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "VWAP_OUTSIDE_BAR_RANGE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "QQQ/NVDA/GLDM aggregate VWAP sometimes outside same-bar OHLC. Suspected turnover/volume aggregation mismatch; source semantics not verified.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/769",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Quarantine derived VWAP; inspect provider amount units, fix aggregator and exact-head regression before claiming clean.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-004",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "SOURCE_SEQUENCE_NOT_ALIGNED"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Cross-read source sequence can drift while producer and consumer publish; permanent mismatch not proven.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/931",
+      "regression_evidence": "tests/test_us_opend_15m_digest.py",
+      "mandatory_action": "Atomic capture/recheck source revision+runtime+sequence, do not equate health heartbeat with aligned Radar analysis.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-005",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "DISCORD_RADAR_HTTP_DELIVERY"
+      ],
+      "status": "OPEN",
+      "diagnosis": "GitHub Actions 15m XNYS cron code merged in #931; actual scheduled execution and Discord receipt have not been verified.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/931",
+      "regression_evidence": "tests/test_us_opend_15m_digest.py",
+      "mandatory_action": "Require distinct proof for cron trigger, SSM success, new bars, analysis, Discord HTTP acceptance and client receipt.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-001",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "ROW_COUNT_BELOW_MIN",
+        "S1_60M_NORMALIZE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Cloud 60m normalization row count below required threshold; #927 handles valid 1-3 intraday bars but is not deployed.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/927",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Differentiate legitimate partial 60m day vs invalid daily depth; rerun after exact patch/environment change only.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-002",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "TENCENT",
+        "518880.SH"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Gold ETF observation MCP had Tencent fallback; source provider was not TickFlow despite status PASS.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/930",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Reject any provider other than TickFlow for A-share validation; do not call fallback PASS.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-003",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "KLINES.GET",
+        "INTRADAY"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Cloud minute endpoints had incorrect route; intraday resolutions require TickFlow intraday endpoint rather than D1 getter.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/928",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Use provider official endpoint by resolution and verify Windows NativeSDK five periods first.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-001",
+      "owner": "Main Control",
+      "severity": "P0",
+      "signature_tokens": [
+        "CI",
+        "BUSINESS_ACCEPTANCE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "GitHub success denotes code/test transport, not qualified live data, bar finality, provider ownership, notification or trade readiness.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/924",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Report CI, deployment, source qualification, Radar signal admission, and notification as separate gates.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-002",
+      "owner": "Main Control",
+      "severity": "P0",
+      "signature_tokens": [
+        "SHA",
+        "MISMATCH"
+      ],
+      "status": "OPEN",
+      "diagnosis": "GitHub main vs deployed EC2 version can diverge; same-source worker heartbeats alone do not prove current main was deployed.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/924",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Verify expected immutable main, deployed LiveFeed/Radar/MCP SHA and canonical snapshot provenance independently.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-003",
+      "owner": "Main Control",
+      "severity": "P0",
+      "signature_tokens": [
+        "SAME_FAILURE",
+        "SAME_SHA"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Repeated commands against identical failing revision/environment produced no new engineering evidence.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/924",
+      "regression_evidence": "tests/test_self_improvement_gate.py",
+      "mandatory_action": "STOP duplicate retry; require distinct root-cause hypothesis, code change, environment correction or targeted evidence.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-004",
+      "owner": "Main Control",
+      "severity": "P0",
+      "signature_tokens": [
+        "MARKET_FEED_STALE",
+        "HEARTBEAT_HEALTHY"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Livefeed HEALTHY heartbeat and LV3 rights do not establish current trading-session market K-line delivery.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/931",
+      "regression_evidence": "NOT_VERIFIED",
+      "mandatory_action": "Measure last provider bar and push callback, compare against US session time; guard weekend/premarket separately.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    }
+  ]
+}
