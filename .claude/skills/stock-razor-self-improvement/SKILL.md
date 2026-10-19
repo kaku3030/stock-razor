@@ -40,6 +40,16 @@ Run `python scripts/self_improvement_gate.py --signature "<sanitized error excer
 - User command `继续 / 推进 / 如何`: fetch exact current main + relevant registry errors + current evidence; prioritize executing one smallest high-value nonduplicate fix rather than repeatedly writing plans. Attempt parallel read-only evidence-gathering only when independent. Report measured latency when available, not made-up speed metrics.
 - The short brief accelerates *local/Codex/CI* startup. ChatGPT windows still must retrieve the latest GitHub main and same-ref source files using connected GitHub (no automatic cross-chat broadcast).
 
+## Automatic unknown-failure receipt (V1.2)
+
+1. When the existing Engineering Autonomy 120m executor returns a nonzero code, is timed out, or throws an exception, it must **stop unchanged retries** and persist a sanitized `engineering_autonomy/incidents.json` record atomically. Record only `task_id`, reviewed `kind`, numeric exit classification, exact known/UNKNOWN SHA, workflow run ID, queue revision, environment category and hashed family. **Never record raw stderr, prompt, secret or stack trace.**
+2. Existing 120m workflow saves the incident receipt with its resumable checkpoint and uploads a 30-day GitHub Actions artifact for cross-window readers. New failure does not become "root cause known".
+3. New CI / Research Radar Tests failures automatically produce a **read-only** artifact under their source run ID, by `.github/workflows/self-improvement-ci-failure-capture.yml`. The capture job sees **only** GitHub job metadata; no provider API or paid model is called and no Github write token permissions are added.
+4. Before retrying a similar CI failure, inspect the latest source run's `stock-razor-unknown-ci-<run_id>` artifact, its `failure_family`, then inspect exact-head CI logs separately for real diagnostics. A matching family means **STOP BLIND RETRY / DIAGNOSE**, not a proven identical root cause.
+5. Turn verified unknown incidents into permanent `failure-registry.json` entries + regression tests in a protected-main PR. Generic CI-family artifacts expire after 30 days and **do not automatically become permanent knowledge**. Every verification stage must remain explicit: code deployed, watcher triggered, artifact retained, other window read it, corrected root cause.
+
+Example lookup: `gh run list --repo kaku3030/stock-razor --workflow "Capture Unknown CI Failures (Read-Only)" --limit 20`, then `gh run download <capture-run-id> --repo kaku3030/stock-razor --name stock-razor-unknown-ci-<source-run-id>`. GitHub API/connector readers may use the same run artifact metadata.
+
 ## Required work product (show only real outcomes)
 
 `main_sha`, `registry_revision`, `failure_id(s)`, `change_since_last_attempt`, `local_test`, `exact_head_ci`, `deployed_sha`, `provider_freshness_and_finality`, `notification_receipt`, `gate_status`, `next_non_duplicate_step`.
