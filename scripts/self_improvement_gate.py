@@ -83,6 +83,8 @@ def load_registry(path: Path = REGISTRY, *, check_tests: bool = True) -> dict:
         test = record["regression_evidence"]
         if not isinstance(test, str) or len(test) > 200:
             raise RegistryError("REGISTRY_TEST_INVALID")
+        if record["status"] == "RESOLVED" and test == "NOT_VERIFIED":
+            raise RegistryError("REGISTRY_RESOLVED_WITHOUT_REGRESSION")
         if test != "NOT_VERIFIED":
             target = ROOT / test
             if not test.startswith("tests/") or ".." in Path(test).parts:
