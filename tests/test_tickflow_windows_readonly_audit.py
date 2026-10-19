@@ -74,6 +74,15 @@ def test_morning_first_60m_due_guard():
     assert second["due_count"] == second["due_labels_present"] == 1
 
 
+def test_partial_intraday_60m_rows_are_qualified_without_finality_claim():
+    c = compact(["2026-10-15 10:30", "2026-10-15 11:30"])
+    answer = audit.assess_compact(c, "60m", clock("2026-10-15 11:32"))
+    assert answer["status"] == "PASS_RESEARCH_ONLY"
+    assert answer["returned_rows"] == 2
+    assert answer["due_count"] == answer["due_labels_present"] == 2
+    assert answer["exchange_bar_finality"] == "NOT_VERIFIED"
+
+
 def test_daily_date_never_promoted_to_today_closed_bar():
     c = compact([
         "2026-10-12 00:00", "2026-10-13 00:00",
@@ -225,3 +234,39 @@ def test_research_exit_flag_is_explicit_opt_in(monkeypatch, capsys):
     result=json.loads(capsys.readouterr().out)
     assert result["provider_requests"]==0
     assert result["status"]=="NOT_EXECUTED_OPT_IN_REQUIRED"
+
+
+@pytest.mark.parametrize("timeframe", tuple(audit.PERIOD_COUNTS))
+def test_fetch_frame_uses_the_correct_tickflow_endpoint(timeframe):
+    calls = []
+    expected_frame = object()
+
+    def record(endpoint):
+        def fetch(symbol, **kwargs):
+            calls.append((endpoint, symbol, kwargs))
+            return expected_frame
+        return fetch
+
+    client = SimpleNamespace(klines=SimpleNamespace(
+        get=record("historical"), intraday=record("intraday"),
+    ))
+    assert audit.fetch_frame(client, "159611.SZ", timeframe) is expected_frame
+
+    expected_endpoint = "historical" if timeframe == "1d" else "intraday"
+    expected_kwargs = {
+        "period": timeframe,
+        "count": audit.PERIOD_COUNTS[timeframe],
+        "as_dataframe": False,
+    }
+    if timeframe == "1d":
+        expected_kwargs["adjust"] = "none"
+    assert calls == [(expected_endpoint, "159611.SZ", expected_kwargs)]
+
+
+def test_fetch_frame_rejects_unknown_timeframe_before_provider_call():
+    client = SimpleNamespace(klines=SimpleNamespace(
+        get=lambda *args, **kwargs: pytest.fail("unexpected historical request"),
+        intraday=lambda *args, **kwargs: pytest.fail("unexpected intraday request"),
+    ))
+    with pytest.raises(ValueError, match="unsupported timeframe"):
+        audit.fetch_frame(client, "159611.SZ", "2m")

@@ -66,6 +66,21 @@ CN = ZoneInfo("Asia/Shanghai")
 CRED_TARGET = "StockRazor/TickFlow/APIKey"
 
 
+def fetch_frame(client: object, symbol: str, timeframe: str) -> object:
+    """Fetch current-session minute bars or historical daily bars by contract."""
+    if timeframe not in PERIOD_COUNTS:
+        raise ValueError("unsupported timeframe")
+    if timeframe == "1d":
+        return client.klines.get(
+            symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
+            as_dataframe=False, adjust="none",
+        )
+    return client.klines.intraday(
+        symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
+        as_dataframe=False,
+    )
+
+
 def read_windows_credential() -> str:
     """Return a key to the caller in memory only, never on argv/logs/disk."""
     import win32cred  # type: ignore[import-not-found]  # optional Windows dependency
@@ -102,7 +117,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     if len(sizes) != 1:
         raise ValueError("compact column lengths mismatch")
     count = sizes.pop()
-    if not 4 <= count <= PERIOD_COUNTS[timeframe]:
+    minimum_count = 1 if timeframe == "60m" else 4
+    if not minimum_count <= count <= PERIOD_COUNTS[timeframe]:
         raise ValueError("out-of-bounds sample size")
 
     now_cn = now_utc.astimezone(CN)
@@ -266,10 +282,7 @@ def main() -> int:
             for timeframe in requested:
                 start = time.perf_counter()
                 try:
-                    frame = client.klines.get(
-                        symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
-                        as_dataframe=False, adjust="none",
-                    )
+                    frame = fetch_frame(client, symbol, timeframe)
                     record = assess_compact(frame, timeframe, datetime.now(timezone.utc))
                 except Exception as exc:
                     record = {"status": "BLOCKED",
