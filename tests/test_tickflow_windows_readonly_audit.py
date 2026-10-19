@@ -161,6 +161,43 @@ def test_one_minute_research_grid_uses_same_closed_bar_guard():
     assert out["exchange_bar_finality"] == "NOT_VERIFIED"
 
 
+@pytest.mark.parametrize(
+    ("timeframe", "tradable_due", "suspended_due"),
+    [("1m", 60, 60), ("5m", 12, 12), ("15m", 4, 4), ("60m", 1, 1)],
+)
+def test_official_suspension_window_is_removed_from_expected_labels(
+    timeframe, tradable_due, suspended_due,
+):
+    now = clock("2026-10-19 11:32")
+    due, suspended = audit.due_labels_for(timeframe, now.astimezone(CN), "159209.SZ")
+    all_due, other_suspended = audit.due_labels_for(
+        timeframe, now.astimezone(CN), "159611.SZ"
+    )
+    assert len(due) == tradable_due
+    assert suspended == suspended_due
+    assert len(all_due) == tradable_due + suspended_due
+    assert other_suspended == 0
+
+
+def test_suspension_schedule_changes_expected_grid_not_quality_gate():
+    c = compact([
+        "2026-10-19 10:45", "2026-10-19 11:00",
+        "2026-10-19 11:15", "2026-10-19 11:30",
+    ])
+    halt_aware = audit.assess_compact(
+        c, "15m", clock("2026-10-19 11:32"), symbol="159209.SZ"
+    )
+    ordinary = audit.assess_compact(
+        c, "15m", clock("2026-10-19 11:32"), symbol="159611.SZ"
+    )
+    assert halt_aware["due_count"] == halt_aware["due_labels_present"] == 4
+    assert halt_aware["suspended_due_labels_expected"] == 4
+    assert halt_aware["research_progress_status"] == "PASS_RESEARCH_ONLY"
+    assert ordinary["due_count"] == 8
+    assert ordinary["due_labels_missing"] == 4
+    assert ordinary["suspended_due_labels_expected"] == 0
+
+
 def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
     # Reproduces 2026-10-15 desktop vs AWS discrepancy in principle:
     # tolerant OHLC accepts a tiny 1e-5 drift that strict cloud rejects.

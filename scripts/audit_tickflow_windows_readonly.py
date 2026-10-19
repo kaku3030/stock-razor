@@ -64,6 +64,11 @@ END_CLOCKS = {
 }
 CN = ZoneInfo("Asia/Shanghai")
 CRED_TARGET = "StockRazor/TickFlow/APIKey"
+# Official fund-manager notice: this ETF was suspended until 10:30 on this date.
+# https://www.cmfchina.com/web/noticedetails/226517/index.html
+KNOWN_SUSPENSION_WINDOWS = {
+    ("159209.SZ", "2026-10-19"): (("09:30", "10:30"),),
+}
 
 
 def provider_endpoint_for(timeframe: str) -> str:
@@ -109,7 +114,34 @@ def safe_error_type(error: Exception) -> str:
     return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,39}", name) else "OtherError"
 
 
-def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
+def due_labels_for(
+    timeframe: str, now_cn: datetime, symbol: str | None = None
+) -> tuple[set[datetime], int]:
+    """Return due trading labels after subtracting published instrument halts."""
+    due = set()
+    if timeframe in END_CLOCKS and now_cn.weekday() < 5:
+        due = {
+            now_cn.replace(hour=int(h[:2]), minute=int(h[3:]),
+                           second=0, microsecond=0)
+            for h in END_CLOCKS[timeframe]
+        }
+        due = {stamp for stamp in due if stamp <= now_cn - timedelta(seconds=90)}
+
+    suspension_windows = KNOWN_SUSPENSION_WINDOWS.get(
+        (symbol, now_cn.date().isoformat()), ()
+    )
+    suspended = {
+        stamp for stamp in due
+        if any(start < stamp.strftime("%H:%M") <= end
+               for start, end in suspension_windows)
+    }
+    return due - suspended, len(suspended)
+
+
+def assess_compact(
+    frame: object, timeframe: str, now_utc: datetime,
+    symbol: str | None = None,
+) -> dict:
     """Validate chronological compact SDK columns, never return market values."""
     if timeframe not in PERIOD_COUNTS or now_utc.tzinfo is None:
         raise ValueError("invalid period/clock")
@@ -128,14 +160,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 
     now_cn = now_utc.astimezone(CN)
     cutoff = now_cn - timedelta(seconds=90)
-    due = set()
-    if timeframe in END_CLOCKS and now_cn.weekday() < 5:
-        due = {
-            now_cn.replace(hour=int(h[:2]), minute=int(h[3:]),
-                           second=0, microsecond=0)
-            for h in END_CLOCKS[timeframe]
-        }
-        due = {stamp for stamp in due if stamp <= cutoff}
+    due, suspended_due_labels = due_labels_for(timeframe, now_cn, symbol)
 
     previous = None
     eligible = set()
@@ -220,6 +245,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
             "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
             "same_session_float_drift_rows": same_session_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
+            "suspended_due_labels_expected": suspended_due_labels,
             "current_day_d1_finality": "NOT_VERIFIED",
         }
 
@@ -239,6 +265,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
         "status": status, "returned_rows": count,
         "due_count": len(due), "due_labels_present": len(due & eligible),
         "due_labels_missing": missing,
+        "suspended_due_labels_expected": suspended_due_labels,
         "research_due_labels_present": len(due & research_eligible),
         "research_due_labels_missing": research_missing,
         "research_progress_status": research_progress_status,
@@ -288,7 +315,9 @@ def main() -> int:
                 start = time.perf_counter()
                 try:
                     frame = fetch_frame(client, symbol, timeframe)
-                    record = assess_compact(frame, timeframe, datetime.now(timezone.utc))
+                    record = assess_compact(
+                        frame, timeframe, datetime.now(timezone.utc), symbol=symbol
+                    )
                 except Exception as exc:
                     record = {"status": "BLOCKED",
                               "error_class": safe_error_type(exc)}
