@@ -51,6 +51,10 @@ class FakeKlines:
         return {key: df[key].tolist() for key in
                 ("timestamp","open","high","low","close","volume","amount")}
 
+    def intraday(self, symbol, *, period, count, as_dataframe):
+        return self.get(symbol, period=period, count=count,
+                        as_dataframe=as_dataframe, adjust="none")
+
     def batch(self, symbols, **kwargs):
         self.batch_calls.append((list(symbols), kwargs))
         return {symbol: self.get(
@@ -77,11 +81,11 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert snap["radar_admission"]=="BLOCKED"
     assert snap["canonical_write_authorized"] is False
     assert snap["live_trade"] is False
-    assert len(fake.klines.calls)==8
-    assert [x[2] for x in fake.klines.calls]==[96,24]*4
+    assert len(fake.klines.calls)==10
+    assert [x[2] for x in fake.klines.calls]==[96,24]*5
     assert all(x[3] is False and x[4]=="none" for x in fake.klines.calls)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(snap)
-    for sym in ("159611.SZ","159209.SZ","512730.SH","159363.SZ"):
+    for sym in ("159611.SZ","159209.SZ","518880.SH","512730.SH","159363.SZ"):
         for period in ("15m","60m"):
             bars=snap["symbols"][sym][period]["rows"]
             assert len(bars)==len(TIMES[period])
@@ -110,7 +114,7 @@ def test_batch_missing_symbols_fall_back_only_for_missing_entries():
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
     calls=[call for call in fake.klines.calls if call[1]=="1m"]
-    assert len(calls)==5
+    assert len(calls)==6
     assert sum(call[0]=="159363.SZ" for call in calls)==2
     assert len(snap["symbols"]["159363.SZ"]["1m"]["rows"])==4
     assert all(row["bar_finality"]=="NOT_VERIFIED"
@@ -168,7 +172,7 @@ def test_batch_missing_symbols_across_periods_use_bounded_fallback_budget():
     )
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
-    assert len(fake.klines.calls)==25
+    assert len(fake.klines.calls)==30
     assert all(
         period in observed
         for observed in snap["symbols"].values()
@@ -939,6 +943,47 @@ def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
     too_few={key:base[key].tolist()[:3] for key in columns}
     too_many={key:(base[key].tolist()*7)[:25] for key in columns}
     with pytest.raises(ValueError,match="insufficient history"):
-        normalize_bars(too_few,"60m",now_utc=NOW)
+        normalize_bars(too_few,"15m",now_utc=NOW)
+    assert len(normalize_bars(too_few,"60m",now_utc=NOW))==3
     with pytest.raises(ValueError,match="history exceeds configured bound"):
         normalize_bars(too_many,"60m",now_utc=NOW)
+
+
+@pytest.mark.parametrize("count", [1, 2, 3])
+def test_short_hourly_history_is_published_but_not_qualified(tmp_path, count):
+    # Short 60m depth must not poison publication, but cannot qualify history.
+    fake = FakeClient()
+    get = fake.klines.get
+    def short(symbol, **kwargs):
+        result = get(symbol, **kwargs)
+        if symbol == "159209.SZ" and kwargs["period"] == "60m":
+            result = {k: v[-count:] for k, v in result.items()}
+        return result
+    fake.klines.get = short
+    snapshot = build_observation(fake, now_utc=NOW, repo_sha="a" * 40,
+                                 sequence=1, include_supplemental=True, use_batch=True)
+    path = tmp_path / "cache.json"
+    atomic_publish(str(path), snapshot)
+    result = read_cn_tickflow_research_data("159209.SZ", "60m", path=str(path),
+              now_utc=NOW, research_mode="historical_only")
+    assert len(snapshot["symbols"]["159209.SZ"]["60m"]["rows"]) == count
+    assert result["status"] == "INVALID_CACHE"
+    assert len(snapshot["symbols"]) == 5
+
+
+def test_missing_intraday_batch_entry_never_uses_historical_endpoint():
+    fake = FakeClient()
+    original = fake.klines.intraday_batch
+    def omit(symbols, **kwargs):
+        result = original(symbols, **kwargs)
+        result.pop(symbols[0])
+        return result
+    fake.klines.intraday_batch = omit
+    calls = []
+    def live(symbol, *, period, count, as_dataframe):
+        calls.append((symbol, period))
+        return {k: v.tolist() for k, v in frame(period).items()
+                if k != "credential"}
+    fake.klines.intraday = live
+    build_observation(fake, now_utc=NOW, repo_sha="a" * 40, sequence=1, use_batch=True)
+    assert calls == [("159611.SZ", "15m"), ("159611.SZ", "60m")]

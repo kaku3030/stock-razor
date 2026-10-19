@@ -131,7 +131,8 @@ def test_same_day_daily_label_is_quarantined():
 
 @pytest.mark.parametrize("case,passes", [("valid", True), ("wrong_source", False),
     ("wrong_sequence", False), ("wrong_policy", False), ("unsafe", False),
-    ("false_closed", False)])
+    ("false_closed", False), ("source_symbol_missing", False),
+    ("analysis_symbol_missing", False)])
 def test_actual_deployment_verifier_independently_reads_source(tmp_path, case, passes):
     source = observation(datetime.now(timezone.utc))
     evaluation = evaluate_tickflow_observation_payload(source, now_utc=datetime.now(timezone.utc))
@@ -148,6 +149,11 @@ def test_actual_deployment_verifier_independently_reads_source(tmp_path, case, p
     elif case == "unsafe": heartbeat["live_trade"] = True
     elif case == "false_closed":
         evaluation["symbols"]["159611"]["technical"]["hourly"]["quality"]["is_partial_bar"] = False
+    elif case == "source_symbol_missing":
+        del source["symbols"]["518880.SH"]
+    elif case == "analysis_symbol_missing":
+        del evaluation["symbols"]["518880"]
+        evaluation["research_state_symbols"].remove("518880")
     source_path = tmp_path / "source.json"
     source_path.write_text(json.dumps(source))
     status_path = tmp_path / "status.json"

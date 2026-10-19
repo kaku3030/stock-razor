@@ -8,6 +8,9 @@ from src.services.live_feed.tickflow_subscription_manager import TickFlowSubscri
 NOW = datetime(2026, 10, 14, 6, 0, tzinfo=timezone.utc)
 KEY_A = SemanticStreamKey("tickflow", "cn", "SH.600000", "QUOTE", "tick")
 KEY_B = SemanticStreamKey("tickflow", "cn", "SZ.000001", "QUOTE", "tick")
+HELD_159611 = SemanticStreamKey("tickflow", "cn", "SZ.159611", "QUOTE", "tick")
+HELD_159209 = SemanticStreamKey("tickflow", "cn", "SZ.159209", "QUOTE", "tick")
+OBSERVATION_518880 = SemanticStreamKey("tickflow", "cn", "SH.518880", "QUOTE", "tick")
 
 
 @dataclass
@@ -77,3 +80,20 @@ def test_invalid_provider_key_and_admission_remain_closed():
     assert snap.radar_admission == "BLOCKED"
     assert snap.source_arbiter_admission == "BLOCKED"
     assert snap.live_trade is False
+
+
+def test_observation_pool_keeps_holdings_and_adds_518880():
+    transport = FakeTransport()
+    service = TickFlowSubscriptionManager(transport, now_utc=lambda: NOW)
+
+    result = service.update_candidates(
+        [HELD_159611, HELD_159209, OBSERVATION_518880]
+    )
+
+    assert result.status == "APPLIED"
+    assert {key.symbol for key in result.applied} == {
+        "SZ.159611", "SZ.159209", "SH.518880"
+    }
+    assert transport.subscribe_calls == [
+        (OBSERVATION_518880, HELD_159209, HELD_159611)
+    ]

@@ -91,7 +91,15 @@ assert symbols
 research_symbols = set(evaluation.get("research_state_symbols") or [])
 assert research_symbols == set(symbols)
 if is_tickflow:
-    assert research_symbols == {"159611", "159209", "512730", "159363"}
+    # Verify the independently read producer set, not a stale four-symbol copy.
+    # Adding an observation ETF must not break deployment or hide a dropped ETF.
+    source_symbols = source.get("symbols")
+    assert isinstance(source_symbols, dict) and source_symbols
+    assert all(isinstance(s, str) and len(s) == 9 and
+               s[:6].isdigit() and s[6:] in {".SH", ".SZ", ".BJ"}
+               for s in source_symbols)
+    assert set(source_symbols) == {"159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ"}
+    assert research_symbols == {s[:6] for s in source_symbols}
 for symbol, item in symbols.items():
     assert item.get("status") == "RESEARCH_STATE"
     assert item.get("research_only") is True

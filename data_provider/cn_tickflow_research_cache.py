@@ -15,7 +15,8 @@ from typing import Any
 CN = ZoneInfo("Asia/Shanghai")
 SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
-SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# Keep held ETFs first; 518880.SH is observation-only and is not a position.
+SYMBOLS = ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
 # Expert capacity ceiling. The deployment default remains 20; explicit scans
 # may use the full 200 only through the bounded batch path.
 MAX_SCAN_SYMBOLS = 200
@@ -103,10 +104,11 @@ class _BatchKlinesFacade:
                         # Recover only a small number of omitted batch entries.
                         # Larger gaps fail closed to cap provider calls and cost.
                         try:
-                            frame = client.klines.get(
-                                symbol, period=period, count=count,
-                                as_dataframe=False, adjust="none",
-                            )
+                            method = (client.klines.get if period == "1d"
+                                      else client.klines.intraday)
+                            options = {"adjust": "none"} if period == "1d" else {}
+                            frame = method(symbol, period=period, count=count,
+                                           as_dataframe=False, **options)
                         except Exception:
                             failure = _BatchSymbolFallbackError(
                                 "batch symbol fallback failed"
@@ -275,7 +277,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if len(sizes) != 1:
             raise ValueError("compact SDK column lengths differ")
         count = sizes.pop()
-        if count < 4:
+        if count < (1 if timeframe == "60m" else 4):
             raise ValueError("insufficient history")
         if count > _ALLOWED_PERIODS[timeframe]:
             raise ValueError("history exceeds configured bound")
@@ -288,7 +290,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         raise ValueError("unexpected SDK data type")
     if not isinstance(records, list):
         raise ValueError("unexpected SDK data type")
-    if len(records) < 4:
+    if len(records) < (4 if timeframe == "1d" else 1):
         raise ValueError("insufficient history")
     if len(records) > _ALLOWED_PERIODS[timeframe]:
         raise ValueError("history exceeds configured bound")
@@ -409,7 +411,9 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             "bar_finality": "NOT_VERIFIED",
             "ohlc_validation":ohlc_validation,
         })
-    if len(bars)<4:
+    # Ingestion is independent from indicator lookback sufficiency. A valid
+    # opening/suspended-session hour must not invalidate every other ETF.
+    if len(bars) < (1 if timeframe == "60m" else 4):
         raise ValueError("no sufficient historical closed-time candidates")
     return bars
 
@@ -671,7 +675,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         raw=cached_symbols[symbol][timeframe]
         rows=raw["rows"]
         reject_reason="BAR_COUNT_INVALID"
-        if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
+        minimum = 1 if timeframe == "60m" and research_mode == "session_progress" else 4
+        if not isinstance(rows,list) or not minimum<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
         reject_reason="FRAME_METADATA_INVALID"
         if raw.get("closure")!="NOT_VERIFIED" or raw.get("currentness")!="UNPROVEN":

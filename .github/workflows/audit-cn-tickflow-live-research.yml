@@ -211,10 +211,11 @@ jobs:
           periods=(
             "159611_SZ_1m","159611_SZ_5m","159611_SZ_15m","159611_SZ_60m",
             "159209_SZ_1m","159209_SZ_5m","159209_SZ_15m","159209_SZ_60m",
+            "518880_SH_1m","518880_SH_5m","518880_SH_15m","518880_SH_60m",
             "512730_SH_1m","512730_SH_5m","512730_SH_15m","512730_SH_60m",
             "159363_SZ_1m","159363_SZ_5m","159363_SZ_15m","159363_SZ_60m")
           historical_periods=(*periods,
-             "159611_SZ_1d","159209_SZ_1d","512730_SH_1d","159363_SZ_1d")
+             "159611_SZ_1d","159209_SZ_1d","518880_SH_1d","512730_SH_1d","159363_SZ_1d")
           allowed_grid=("UNKNOWN","NO_SESSION_GRID_DUE","NO_SAME_DAY_RETAINED_BAR",
                         "LAST_LABEL_OFF_GRID","MATCHED_DUE_LABEL",
                         "ONE_DUE_BOUNDARY_MISSING","MULTIPLE_DUE_BOUNDARIES_MISSING")
@@ -223,7 +224,7 @@ jobs:
                               "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY",
                               "ONE_DUE_LABEL_MISSING","MULTIPLE_DUE_LABELS_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
-          allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144")
+          allowed_rows=("UNKNOWN","ONE_TO_THREE","FOUR_TO_24","25_TO_96","97_TO_144")
           parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
                          "STALE_REFERENCE","INVALID_TICKFLOW_ROWS",
                          "UNQUALIFIED_REFERENCE_GRID","NO_OVERLAP",
