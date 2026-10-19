@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] 美股云端 OpenD 增加 GitHub XNYS 日历约束的 15 分钟研究级缓存审计与 Discord Radar 摘要通知：只读现有 15m/1H K线与 Radar D1 研究状态，严格阻断过期、未闭合、异常和来源不一致，不开启任何交易门禁；实际 GitHub 调度精度与 Discord 到达率仍待云端验收。
+
 - [改进] Vibe-Trading historical capture preserves the Yahoo Chart raw payload hash and audits timezone/DST, XNYS calendar, source manifest, bar closure, and provider finality separately; missing evidence continues to block historical replay eligibility.
 - [改进] Vibe-Trading Replay Lab V0.6 将 CSV 数据审计绑定到 Replay 报告并支持 JSON/Markdown 输出；fixture 仅标记为 `FIXTURE_SMOKE`，未验证证据继续阻断历史回放资格与 OOS 声明。
 - [改进] Vibe-Trading Replay Lab V0.5 增加离线 OHLCV 数据血缘、时间戳、质量、closure、provider finality、新鲜度与 replay eligibility 的 fail-closed 审计报告；UNKNOWN 不升级为 PASS。
