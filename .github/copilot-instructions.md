@@ -14,6 +14,17 @@ failure signature; if the same error has the same version/conditions and no
 new evidence, STOP rather than retry. The mandatory `ai-governance` gate
 checks this shared registry. Follow `AGENTS.md` on any precedence conflict.
 
+## Mandatory incident recall before new probes
+
+At the start of all STOCK RAZOR work, read current-main `AGENTS.md`, the
+canonical `.claude/skills/stock-razor-self-improvement/SKILL.md`,
+`failure-registry.json`, and `associations.json` at the same SHA.
+For a new or recurring symptom, run
+`python scripts/self_improvement_recall.py --query "<sanitized description>"`
+before rerunning probes or requesting history from the user.
+Related symptoms are hypotheses, not confirmed same root cause; use source,
+runtime version and test evidence to choose the smallest nonduplicate fix.
+
 ## Core Rules
 
 - Respect directory boundaries:
