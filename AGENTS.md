@@ -4,6 +4,14 @@
 
 如果本文件与仓库中的脚本、工作流、代码现状不一致，以实际可执行内容为准，并在相关改动中顺手修正文档，避免规则继续漂移。
 
+## 0. STOCK RAZOR 跨窗口自我进化启动门禁（所有工程窗口必读）
+
+- **每次新建、恢复或切换 STOCK RAZOR 工作窗口，在分析/编码/行情查询/云端操作前，必须先获取 GitHub `kaku3030/stock-razor` 当前 `main` 的完整 SHA，再以同一个 SHA 读取 `AGENTS.md`、`.claude/skills/stock-razor-self-improvement/SKILL.md` 和 `.claude/skills/stock-razor-self-improvement/failure-registry.json`。** 上次对话、旧内存、本地 checkout 或未合并 PR 不替代最新共享规则。ChatGPT 窗口通过 GitHub 连接读取；其他工程 Agent 可通过 `git fetch` 获取。
+- **出现相同故障时先查失败登记表和前一次验证 SHA，再决定重试。** 同签名+相同代码SHA+相同环境/探针参数+无新证据 = `STOP_DUPLICATE`；不得继续重复云端试探、收费 API 或 CI 重跑。只有新诊断、新代码、新环境变化或有证据的反例才允许下一步。
+- **修复必须沉淀为一次根因说明、证据链接、回归测试及状态更新，并经 protected main 生效。** 未验收标记 `NOT_VERIFIED`，CI 绿灯、Heartbeat HEALTHY 和数据业务 PASS 独立报告。禁止虚报“所有窗口已经自动同步”或“同一错误永不复发”。
+- `scripts/self_improvement_gate.py --check-registry` 纳入既有 `ai-governance` CI 检查；`--status` 快速取证；`--signature ... --sha ... --previous-sha ...` 在确有上次失败 SHA 证据时阻止重复重试。**其他窗口不会被 GitHub 改动主动插入一条新聊天消息；必须在该窗口下一次开始工作时重新读取最新 `main`。**
+- 路线 Main Control / OpenD / TickFlow 使用同一共享规则及失败编号；按最新用户指令维持本地优先、今晚美股开盘期间 OpenD 云端暂时优先、云端 TickFlow 最后。交易安全门禁、凭据及付费授权不因本技能改变。
+
 ## 1. 硬规则
 
 - 遵循现有目录边界：

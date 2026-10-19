@@ -4,6 +4,16 @@ Canonical source: [`AGENTS.md`](../AGENTS.md).
 
 If any instruction in this file conflicts with `AGENTS.md`, follow `AGENTS.md`.
 
+## Mandatory cross-window self-improvement bootstrap
+
+For every STOCK RAZOR task, read latest `origin/main` `AGENTS.md`,
+`.claude/skills/stock-razor-self-improvement/SKILL.md` and
+`.claude/skills/stock-razor-self-improvement/failure-registry.json` before
+repeating errors or submitting a change. Compare exact SHA and the prior
+failure signature; if the same error has the same version/conditions and no
+new evidence, STOP rather than retry. The mandatory `ai-governance` gate
+checks this shared registry. Follow `AGENTS.md` on any precedence conflict.
+
 ## Core Rules
 
 - Respect directory boundaries:

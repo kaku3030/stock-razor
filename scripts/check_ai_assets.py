@@ -29,6 +29,7 @@ REQUIRED_SKILL_FILES = {
     "analyze-issue/SKILL.md",
     "analyze-pr/SKILL.md",
     "fix-issue/SKILL.md",
+    "stock-razor-self-improvement/SKILL.md",
 }
 
 REQUIRED_GITIGNORE_SNIPPETS = (
@@ -94,6 +95,27 @@ def ensure_skill_files() -> None:
                 fail(f"{path.relative_to(ROOT)} must reference AGENTS.md as the rule source")
 
 
+def ensure_shared_failure_registry() -> None:
+    """Every PR must pass the same cross-window anti-repeat registry contract."""
+    registry = CLAUDE_SKILLS_DIR / "stock-razor-self-improvement" / "failure-registry.json"
+    ensure_file_exists(registry, "canonical cross-window failure registry")
+    agents = AGENTS.read_text(encoding="utf-8")
+    if "stock-razor-self-improvement/SKILL.md" not in agents:
+        fail("AGENTS.md missing mandatory shared self-improvement bootstrap")
+    script = ROOT / "scripts" / "self_improvement_gate.py"
+    ensure_file_exists(script, "self-improvement fail-closed gate")
+    proc = subprocess.run(
+        [sys.executable, str(script), "--check-registry"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if proc.returncode != 0:
+        fail("shared self-improvement registry validation failed: " + proc.stderr[:250])
+
+
 def ensure_gitignore_rules() -> None:
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     for snippet in REQUIRED_GITIGNORE_SNIPPETS:
@@ -133,6 +155,7 @@ def main() -> None:
     ensure_copilot_entry()
     ensure_instruction_files()
     ensure_skill_files()
+    ensure_shared_failure_registry()
     ensure_gitignore_rules()
     ensure_no_tracked_claude_artifacts()
     ensure_skill_repository_references()
