@@ -123,6 +123,18 @@ if evaluation.get("status") == "BLOCKED":
         "SOURCE_EXPORT_FROM_FUTURE",
         "SOURCE_SEQUENCE_REGRESSION",
     }
+    if "BAR_EVENT_SOURCE_NOT_QUALIFIED" in reasons:
+        # Operational verification of a correctly blocked research inbox;
+        # this never qualifies source data or authorizes event admission.
+        assert os.environ["CLOSED_BAR_EVENTS_ENABLED"] == "true"
+        assert reasons == {"BAR_EVENT_SOURCE_NOT_QUALIFIED"}
+        assert evaluation.get("source_delivery_mode") != "REALTIME" or evaluation.get("source_bar_closure") != "PROVEN"
+        ingress = evaluation.get("bar_event_ingress") or {}
+        assert ingress.get("status") == "BLOCKED"
+        assert ingress.get("reasons") == ["BAR_EVENT_SOURCE_NOT_QUALIFIED"]
+        for name in ("created_count", "duplicate_count"):
+            assert type(ingress.get(name)) is int and ingress[name] == 0
+        allowed.add("BAR_EVENT_SOURCE_NOT_QUALIFIED")
     assert reasons
     assert reasons.issubset(allowed)
 PY
@@ -130,7 +142,12 @@ PY
       systemctl is-enabled "$service"
       systemctl is-active "$service"
       test "$(systemctl show "$service" -p Type --value)" = "notify"
-      test "$(systemctl show "$service" -p WatchdogUSec --value)" = "90000000"
+      # systemctl formats duration properties despite their USec suffix;
+      # 90 seconds is normally displayed as "1min 30s", not raw usec.
+      case "$(systemctl show "$service" -p WatchdogUSec --value)" in
+        '1min 30s'|90s) ;;
+        *) echo US_RADAR_WATCHDOG_DURATION_MISMATCH >&2; exit 1 ;;
+      esac
       test "$(systemctl show "$service" -p PrivateNetwork --value)" = "yes"
       test "$(systemctl show "$service" -p NoNewPrivileges --value)" = "yes"
       if [ "$expected_events" = true ]; then

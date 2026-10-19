@@ -25,6 +25,8 @@ _NORMALIZE_REJECTION_REASON = {
     "missing compact SDK column": "COLUMN_MISSING_OR_NOT_LIST",
     "compact SDK column lengths differ": "COLUMN_LENGTH_MISMATCH",
     "insufficient or unbounded history": "ROW_COUNT_OUT_OF_BOUNDS",
+    "insufficient history": "ROW_COUNT_BELOW_MIN",
+    "history exceeds configured bound": "ROW_COUNT_ABOVE_MAX",
     "unexpected SDK data type": "SDK_SHAPE_INVALID",
     "non-dict record": "ROW_TYPE_INVALID",
     "invalid provider timestamp": "TIMESTAMP_TYPE_INVALID",

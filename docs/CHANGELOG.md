@@ -1,5 +1,3 @@
-Total output lines: 400
-
 # 变更记录
 
 ## 2026-09-14 — PR #120 governance incident record
@@ -22,6 +20,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 - [改进] TickFlow A股观察集合保留159611.SZ与159209.SZ持仓优先，并加入非持仓518880.SH，覆盖本地与云端五周期只读观察。
 - [修复] TickFlow 批量响应漏项时每个观察周期最多对四个缺失符号执行单票补取，补取失败或超限时继续阻断缓存。
+
+- [改进] Vibe-Trading historical capture preserves the Yahoo Chart raw payload hash and audits timezone/DST, XNYS calendar, source manifest, bar closure, and provider finality separately; missing evidence continues to block historical replay eligibility.
+- [改进] Vibe-Trading Replay Lab V0.6 将 CSV 数据审计绑定到 Replay 报告并支持 JSON/Markdown 输出；fixture 仅标记为 `FIXTURE_SMOKE`，未验证证据继续阻断历史回放资格与 OOS 声明。
+- [改进] Vibe-Trading Replay Lab V0.5 增加离线 OHLCV 数据血缘、时间戳、质量、closure、provider finality、新鲜度与 replay eligibility 的 fail-closed 审计报告；UNKNOWN 不升级为 PASS。
+- [改进] TickFlow 隔离 Premium 探针在显式标准模式下对照 15m/60m 单票与批量读取深度，只导出有界根数与网格枚举；报价-only 路径及全部 Radar/交易门禁不变。
+- [新功能] Vibe-Trading Replay Lab 支持显式复用已有本地 OHLC CSV，记录来源哈希并按符号输出成本敏感性；不改变研究、Radar 或交易门禁。
+- [改进] Vibe-Trading Replay Lab V0.4 为每个策略/标的/成本场景输出权益曲线、交易次数、净收益和 bar-low/close 最大回撤，并增加哈希绑定的严格 Walk-Forward 样本门禁；样本不足仍阻断 OOS claim。
+
+- [修复] 多周期分析在历史不足或空数据分支保留调用方的未闭合标记，短历史仍输出明确不足告警；TickFlow 研究状态新增历史深度不足风险，防止 4 根 1H / 16 根 15m 被误标为非部分 K 线。
+
+- [新功能] CN Radar 可显式选择现有 TickFlow 缓存，复用同一隔离服务生成四只基线标的的 D1/60m/15m 历史研究状态；独立核对来源版本与时效，保留未闭合及门禁阻断，不新增供应商调用。
+
+- [修复] 美国 Radar 部署验收按 systemctl 的时长显示格式核对 90 秒 watchdog；增加完整 shell 路径回归测试，拒绝关闭、错误时长及无单位原始数字，保持数据和交易门禁关闭。
+- [修复] A股只读 Radar 部署增加 owner/精确 main/显式重启校验、安装与验收脚本双哈希检查，阻止完整 SSM 输出进入公开日志；美股 Radar 部署仅在研究事件零入队且门禁关闭时识别未闭合源的合法阻断。
+- [修复] OpenD 无订阅变更探针仅使用当前连接的订阅，避免借用其他连接状态后产生误导性拒绝；无自有订阅时零 K 线调用并明确阻断。
+- [修复] TickFlow 批量响应漏项时每周期最多对四个缺失符号执行单票补取、每次五周期观察最多二十次；补取失败或超限时继续阻断缓存。
+- [修复] Vibe-Trading 导入器仅在完整摩擦字段和受治理 holdout 证据存在时通过成本/OOS 验证，并增加 B0/V0.2/Strong Pullback 的只读自然语言研究入口。
+- [新功能] Vibe-Trading 研究入口支持离线 Replay Lab 三策略比较、显式成本敏感性、不可变 fixture 来源哈希与两行诊断 holdout 且不宣称 OOS 验证；无持仓盯市路径时最大回撤明确为 NOT_COMPUTED；小样本统计能力仍明确为不足，研究/交易门禁保持关闭。
 - [改进] TickFlow 私有研究缓存将封套 schema、provider 与状态不匹配分成固定脱敏错误码，便于云端定位并继续 fail-closed。
 - [修复] 美股历史K线分页游标绑定查询条件，阻止跨日期范围复用后跳过数据。
 - [新功能] 增加只读 `get_historical_bars` 缓存读取契约：限定 US 五周期、QFQ/RTH、日期范围，逐根校验来源元数据、时区、日历、闭合状态、OHLCV 与快照绑定分页；不执行 provider I/O，finality 与 Radar/交易门禁保持 UNKNOWN/BLOCKED。

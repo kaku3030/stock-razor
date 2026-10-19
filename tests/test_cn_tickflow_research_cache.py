@@ -150,9 +150,7 @@ def test_batch_missing_symbol_fallback_failure_fails_closed():
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_FALLBACK_FAILED"
 
 
-def test_batch_missing_symbols_across_periods_stay_within_fallback_cap():
-    from scripts.run_cn_tickflow_research_worker import _normalize_rejection_reason
-
+def test_batch_missing_symbols_across_periods_use_bounded_fallback_budget():
     fake=FakeClient()
     original_intraday=fake.klines.intraday_batch
     original_daily=fake.klines.batch
@@ -168,12 +166,14 @@ def test_batch_missing_symbols_across_periods_stay_within_fallback_cap():
     fake.klines.batch=lambda symbols, **kwargs: omit_one(
         original_daily,symbols,**kwargs
     )
-    with pytest.raises(ValueError) as caught:
-        build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
-                          include_supplemental=True,use_batch=True)
-    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1D_FETCH"
-    assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
-
+    snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
+                           include_supplemental=True,use_batch=True)
+    assert len(fake.klines.calls)==25
+    assert all(
+        period in observed
+        for observed in snap["symbols"].values()
+        for period in ("1m","5m","15m","60m","1d")
+    )
 
 def test_data_reader_does_not_allow_stale_file_or_promoted_admission(tmp_path):
     dest=tmp_path/"obs.json"
@@ -931,3 +931,14 @@ def test_batch_missing_symbol_count_over_fallback_cap_fails_closed():
                           include_supplemental=True,use_batch=True)
     assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_FETCH"
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
+
+
+def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
+    base=frame("60m")
+    columns=("timestamp","open","high","low","close","volume","amount")
+    too_few={key:base[key].tolist()[:3] for key in columns}
+    too_many={key:(base[key].tolist()*7)[:25] for key in columns}
+    with pytest.raises(ValueError,match="insufficient history"):
+        normalize_bars(too_few,"60m",now_utc=NOW)
+    with pytest.raises(ValueError,match="history exceeds configured bound"):
+        normalize_bars(too_many,"60m",now_utc=NOW)

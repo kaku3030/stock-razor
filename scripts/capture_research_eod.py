@@ -8,8 +8,10 @@ import hashlib
 import json
 import math
 import time
-from datetime import datetime, timezone
+from datetime import datetime, time as dt_time, timezone
 from pathlib import Path
+from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 
 def capture_baostock(symbol: str, start: str, end: str):
@@ -121,10 +123,58 @@ def capture_yfinance(symbol: str, start: str, end: str):
     return rows
 
 
+def capture_yahoo_chart(symbol: str, start: str, end: str):
+    """Capture a public Yahoo Chart response while retaining its raw payload hash."""
+    start_epoch = int(datetime.fromisoformat(start).replace(tzinfo=timezone.utc).timestamp())
+    end_epoch = int(datetime.fromisoformat(end).replace(tzinfo=timezone.utc).timestamp())
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        f"{symbol}?period1={start_epoch}&period2={end_epoch}&interval=1d"
+        "&events=history&includeAdjustedClose=false"
+    )
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    raw_payload = urlopen(request, timeout=20).read()
+    document = json.loads(raw_payload.decode("utf-8"))
+    result = (document.get("chart", {}).get("result") or [None])[0]
+    if not isinstance(result, dict):
+        raise ValueError("Yahoo Chart response did not contain a result")
+    timestamps = result.get("timestamp") or []
+    quote = ((result.get("indicators") or {}).get("quote") or [None])[0]
+    if not isinstance(quote, dict) or not timestamps:
+        raise ValueError("Yahoo Chart response did not contain daily OHLCV")
+    ny = ZoneInfo("America/New_York")
+    rows = []
+    for index, epoch in enumerate(timestamps):
+        date = datetime.fromtimestamp(int(epoch), timezone.utc).date()
+        close_time = datetime.combine(date, dt_time(16), tzinfo=ny)
+        values = {key: (quote.get(key) or [None] * len(timestamps))[index] for key in ("open", "high", "low", "close", "volume")}
+        if any(value is None for value in values.values()):
+            continue
+        rows.append({
+            "symbol": symbol.upper(),
+            "date": date.isoformat(),
+            "time_key": close_time.isoformat(),
+            "open": float(values["open"]),
+            "high": float(values["high"]),
+            "low": float(values["low"]),
+            "close": float(values["close"]),
+            "volume": float(values["volume"]),
+            "source": "yahoo_chart",
+            "timezone": "America/New_York",
+            "session": "XNYS_REGULAR",
+            "closed_bar_evidence": "NOT_VERIFIED",
+            "provider_finality": "NOT_VERIFIED",
+            "calendar": "XNYS",
+        })
+    if not rows:
+        raise ValueError("Yahoo Chart response contained no complete daily rows")
+    return rows, raw_payload, url
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--market", choices=("cn", "us"), required=True)
-    parser.add_argument("--source", choices=("baostock", "akshare", "yfinance"), default=None)
+    parser.add_argument("--source", choices=("baostock", "akshare", "yfinance", "yahoo_chart"), default=None)
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
@@ -135,8 +185,10 @@ def main() -> int:
     source_id = args.source or ("baostock" if args.market == "cn" else "yfinance")
     if args.market == "cn" and source_id == "yfinance":
         raise ValueError("yfinance is not a CN capture source")
-    if args.market == "us" and source_id != "yfinance":
-        raise ValueError("only yfinance is supported for US capture")
+    if args.market == "us" and source_id not in {"yfinance", "yahoo_chart"}:
+        raise ValueError("only yfinance or yahoo_chart is supported for US capture")
+    raw_payload = None
+    endpoint_url = "history_eod"
     try:
         last_error = None
         for attempt in range(max(1, args.retries)):
@@ -145,8 +197,10 @@ def main() -> int:
                     rows = capture_baostock(args.symbol, args.start, args.end)
                 elif source_id == "akshare":
                     rows = capture_akshare(args.symbol, args.start, args.end)
-                else:
+                elif source_id == "yfinance":
                     rows = capture_yfinance(args.symbol, args.start, args.end)
+                else:
+                    rows, raw_payload, endpoint_url = capture_yahoo_chart(args.symbol, args.start, args.end)
                 break
             except Exception as exc:
                 last_error = exc
@@ -157,17 +211,32 @@ def main() -> int:
     except Exception as exc:
         # Never leave a prior/staged CSV that could look valid beside a blocked manifest.
         args.output.unlink(missing_ok=True)
+        args.output.with_suffix(args.output.suffix + ".raw.json").unlink(missing_ok=True)
         manifest = args.output.with_suffix(args.output.suffix + ".manifest.json")
-        manifest.write_text(json.dumps({"source_id": source_id, "market": args.market, "endpoint_id": "history_eod", "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "CAPTURE_BLOCKED", "error_type": type(exc).__name__, "error": str(exc)}, indent=2), encoding="utf-8")
+        manifest.write_text(json.dumps({"source_id": source_id, "market": args.market, "endpoint_id": endpoint_url, "retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "CAPTURE_BLOCKED", "error_type": type(exc).__name__, "error": str(exc)}, indent=2), encoding="utf-8")
         print(json.dumps({"status": "CAPTURE_BLOCKED", "source_id": source_id, "market": args.market, "symbol": args.symbol, "error_type": type(exc).__name__, "error": str(exc)}, sort_keys=True))
         return 2
+    fieldnames = (
+        ("symbol", "date", "time_key", "open", "high", "low", "close", "volume", "source", "timezone", "session", "closed_bar_evidence", "provider_finality", "calendar")
+        if source_id == "yahoo_chart"
+        else ("symbol", "date", "open", "high", "low", "close", "volume")
+    )
     with args.output.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=("symbol", "date", "open", "high", "low", "close", "volume"))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow(row)
     digest = hashlib.sha256(args.output.read_bytes()).hexdigest()
     manifest = args.output.with_suffix(args.output.suffix + ".manifest.json")
-    manifest.write_text(json.dumps({"source_id": source_id, "market": args.market, "endpoint_id": "history_eod", "retrieved_at": datetime.now(timezone.utc).isoformat(), "raw_sha256": digest, "adjustment": "unadjusted", "status": "CAPTURED_NOT_APPROVED"}, indent=2), encoding="utf-8")
+    manifest_payload = {"source_id": source_id, "market": args.market, "endpoint_id": endpoint_url, "retrieved_at": datetime.now(timezone.utc).isoformat(), "normalized_csv_sha256": digest, "adjustment": "unadjusted", "status": "CAPTURED_NOT_APPROVED"}
+    if raw_payload is not None:
+        raw_path = args.output.with_suffix(args.output.suffix + ".raw.json")
+        raw_path.write_bytes(raw_payload)
+        manifest_payload["raw_payload_sha256"] = hashlib.sha256(raw_payload).hexdigest()
+        manifest_payload["raw_payload_bytes"] = len(raw_payload)
+        manifest_payload["raw_payload_path"] = raw_path.name
+        manifest_payload["endpoint_url"] = endpoint_url
+    manifest.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     return 0
 
 

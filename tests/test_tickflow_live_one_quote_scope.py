@@ -101,7 +101,7 @@ def test_aws_workflow_default_one_quote_requires_separate_explicit_full_probe():
     assert "TICKFLOW_PREMIUM_QUOTE_ONLY_FORBIDS_WS" in wf
     assert "if [[ \"$quote_only\" == true ]]; then" in script
     assert "probe_args+=(--quote-only)" in script
-    assert 'result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)"' in script
+    assert 'result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>"$stage/probe-stderr")"' in script
     assert "TICKFLOW_ONE_QUOTE_SCOPE=" in script
     assert "NO_NETWORK" not in wf  # Provider network is an explicit opt-in.
     assert "canonical_write" in script

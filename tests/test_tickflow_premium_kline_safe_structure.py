@@ -129,9 +129,45 @@ def test_invalid_structure_fields_never_leak_unknown_values(tmp_path, changes, e
     assert json.loads(result.stdout)["live_trade"] is False
 
 
+
+
+def test_batch_kline_exports_only_bounded_counts_and_never_closure(tmp_path):
+    batch = _kline(
+        "kline_batch_15m",
+        requested_symbol_count=2,
+        returned_symbol_count=1,
+        missing_symbol_count=1,
+        unrequested_symbol_count=0,
+        symbol_row_counts=[96, None],
+        symbol_complete_end_sessions=[6, None],
+        symbol_grid_conventions=["BAR_END_GRID_MATCH", "INSUFFICIENT"],
+        raw_close=99999999,
+    )
+    result, _ = _run_private_sanitizer(tmp_path, [batch])
+    assert result.returncode == 0, result.stderr[:200]
+    data = json.loads(result.stdout)
+    item = data["operations"][2]
+    assert item["requested_symbol_count"] == 2
+    assert item["returned_symbol_count"] == 1
+    assert item["missing_symbol_count"] == 1
+    assert item["batch_symbol_row_counts"] == [96, None]
+    assert item["batch_symbol_complete_end_sessions"] == [6, None]
+    assert item["batch_symbol_grid_conventions"] == [
+        "BAR_END_GRID_MATCH", "INSUFFICIENT"
+    ]
+    assert item["freshness"] == "NOT_VERIFIED"
+    assert item["closure"] == "NOT_VERIFIED"
+    assert item["provider_live_qualified"] is False
+    safe = json.dumps(data)
+    assert "99999999" not in safe
+    assert "raw_close" not in safe
+
 def test_public_workflow_reprojects_kline_schema_only_as_bounded_enums():
     wf = WORKFLOW.read_text(encoding="utf-8")
     assert 'if name in ("kline_15m","kline_60m"):' in wf
+    assert 'if name in ("kline_batch_15m","kline_batch_60m"):' in wf
+    assert '("batch_symbol_row_counts","batch_symbol_row_counts")' in wf
+    assert 'record["provider_live_qualified"]=False' in wf
     assert 'record["bar_range_structure"]' in wf
     assert 'record["timestamp_order"]' in wf
     assert '("numeric_ohlcv","numeric_amount")' in wf

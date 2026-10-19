@@ -232,7 +232,46 @@ probe_args=(--mode premium --location AWS_TOKYO_SSM_ISOLATE
 if [[ "$quote_only" == true ]]; then
   probe_args+=(--quote-only)
 fi
-result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>/dev/null)"
+probe_exit=0
+result="$("$venv/bin/python" "$stage/probe.py" "${probe_args[@]}" 2>"$stage/probe-stderr")" || probe_exit=$?
+if (( probe_exit != 0 )); then
+  # Python emits only a fixed schema and exception class on failure. Do not
+  # expose traceback, provider response text, URLs, or command arguments.
+  failure_class="$(printf '%s\n' "$result" | python3 -c '
+import json, re, sys
+try:
+    value=json.load(sys.stdin).get("failure_class")
+except Exception:
+    value=None
+print(value if isinstance(value,str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}",value) else "UNKNOWN")
+' 2>/dev/null)"
+  if [[ "$failure_class" == UNKNOWN ]]; then
+    # Keep stderr private and inspect only its final exception type. The file
+    # is inside the mode-0700 temporary stage and removed by the EXIT trap.
+    failure_class="$(python3 - "$stage/probe-stderr" <<'PY'
+import os, re, sys
+try:
+    path=sys.argv[1]
+    size=os.path.getsize(path)
+    with open(path,"rb") as handle:
+        handle.seek(max(0,size-16384))
+        tail=handle.read().decode("utf-8","replace")
+except Exception:
+    tail=""
+for line in reversed(tail.splitlines()):
+    line=re.sub(r"\x1b\[[0-9;]*m","",line)
+    match=re.match(r"^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)",line)
+    if match:
+        print(match.group(1))
+        break
+else:
+    print("UNKNOWN")
+PY
+)"
+  fi
+  printf 'TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=%s\n' "$failure_class"
+  exit "$probe_exit"
+fi
 probe_stage=VALIDATE_RESULT
 printf '%s\n' "$result" | STOCK_RAZOR_TICKFLOW_PROBE_CACHE_PATH="$root/last-sanitized-probe.json" STOCK_RAZOR_PROBE_REPO_SHA="$revision" TICKFLOW_ONE_QUOTE_SCOPE="$quote_only" python3 -c '
 import json, os, sys, tempfile
@@ -253,7 +292,7 @@ assert d["canonical_write"] is False and d["order_execution"] is False
 assert d["source_arbiter_admission"] == "BLOCKED" and d["radar_admission"] == "BLOCKED"
 assert d["live_trade"] is False and d["can_confirm_signal"] is False
 assert isinstance(d["operations"],list) and len(d["operations"]) <= 20
-allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","five_level_depth","websocket_quote_smoke"}
+allowed_names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_intraday_15m","kline_intraday_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
 allowed_states={"COMPLETED","NO_EVENTS_OBSERVED","OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
 ops=[]
 for raw in d["operations"]:
@@ -261,6 +300,16 @@ for raw in d["operations"]:
     state=raw.get("operation")
     assert state in allowed_states
     item={"name":raw["name"],"operation":state}
+    if raw["name"] in ("kline_15m","kline_60m"):
+        item["data_scope"]="HISTORICAL"
+    elif raw["name"] in (
+        "kline_intraday_15m","kline_intraday_60m",
+        "kline_batch_15m","kline_batch_60m",
+    ):
+        item["data_scope"]="CURRENT_DAY_INTRADAY"
+    symbol=raw.get("symbol")
+    if symbol in ("159611.SZ","518880.SH"):
+        item["symbol"]=symbol
     for field in ("elapsed_ms","row_count"):
         value=raw.get(field)
         if type(value) in (int,float) and 0 <= value <= 1e8:
@@ -272,6 +321,39 @@ for raw in d["operations"]:
         for field in ("freshness","closure"):
             if summary.get(field) in ("NOT_VERIFIED","PROVEN","UNPROVEN","PASS","BLOCKED"):
                 item[field]=summary[field]
+    if raw["name"] in ("kline_batch_15m","kline_batch_60m"):
+        batch=raw.get("summary")
+        batch=batch if isinstance(batch,dict) else {}
+        for field in ("requested_symbol_count","returned_symbol_count",
+                      "missing_symbol_count","unrequested_symbol_count"):
+            value=batch.get(field)
+            item[field]=value if type(value) is int and 0 <= value <= 5 else None
+        ceiling=96 if raw["name"] == "kline_batch_15m" else 24
+        for source_field,target_field in (
+            ("symbol_row_counts","batch_symbol_row_counts"),
+            ("symbol_complete_end_sessions","batch_symbol_complete_end_sessions"),
+        ):
+            values=batch.get(source_field)
+            if isinstance(values,list) and len(values) <= 5:
+                item[target_field]=[
+                    value if type(value) is int and 0 <= value <= (
+                        ceiling if source_field == "symbol_row_counts" else 120
+                    ) else None
+                    for value in values
+                ]
+            else:
+                item[target_field]=[]
+        conventions=batch.get("symbol_grid_conventions")
+        item["batch_symbol_grid_conventions"]=(
+            [value if value in (
+                "BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT",
+                "INSUFFICIENT","INVALID_TIMESTAMP_ORDER",
+            ) else "INSUFFICIENT" for value in conventions]
+            if isinstance(conventions,list) and len(conventions) <= 5 else []
+        )
+        item["freshness"]="NOT_VERIFIED"
+        item["closure"]="NOT_VERIFIED"
+        item["provider_live_qualified"]=False
     if raw["name"] in ("kline_15m","kline_60m"):
         # Private raw Kline samples are NEVER exported; even structurally
         # clean historical 15m/60m rows cannot establish live currentness.

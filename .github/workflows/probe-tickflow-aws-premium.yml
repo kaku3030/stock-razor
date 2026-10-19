@@ -145,6 +145,7 @@ jobs:
             safe_diagnostics="$(printf '%s\n%s\n' "$output" "$error_output" | awk -F= '
               /^TICKFLOW_PREMIUM_(FAILED_STAGE|BOOTSTRAP_STAGE|AWS_CLI_STAGE)=[A-Z_]+$/ {print; next}
               /^TICKFLOW_PREMIUM_EXIT_CLASS=NONZERO$/ {print; next}
+              /^TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=[A-Za-z][A-Za-z0-9_]{0,63}$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI=(AVAILABLE|UNAVAILABLE|INVALID)$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI_ARCH=(x86_64|aarch64|UNSUPPORTED)$/ {print; next}
               /^TICKFLOW_PREMIUM_AWS_CLI_PATH=\/[A-Za-z0-9._+\/-]+$/ {print; next}
@@ -185,7 +186,7 @@ jobs:
           assert data.get("radar_admission") == "BLOCKED"
           assert data.get("source_arbiter_admission") == "BLOCKED"
           assert data.get("live_trade") is False
-          names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","five_level_depth","websocket_quote_smoke"}
+          names={"sdk_import","realtime_quote","kline_1m","kline_5m","kline_15m","kline_30m","kline_60m","kline_intraday_15m","kline_intraday_60m","kline_batch_15m","kline_batch_60m","five_level_depth","websocket_quote_smoke"}
           states={"COMPLETED","OBSERVED","NO_EVENTS_OBSERVED","CLOSE_FAILED","FAILED","BLOCKED","SKIPPED","ERROR"}
           raw=data.get("operations")
           assert isinstance(raw,list) and len(raw)<=20
@@ -195,6 +196,26 @@ jobs:
               name,state=item.get("name"),item.get("operation")
               assert name in names and state in states
               record={"name":name,"operation":state}
+              elapsed=item.get("elapsed_ms")
+              if type(elapsed) in (int,float) and 0 <= elapsed <= 100000000:
+                  record["elapsed_ms"]=round(elapsed,3)
+              scope=item.get("data_scope")
+              expected_scope=(
+                  "HISTORICAL" if name in ("kline_15m","kline_60m")
+                  else "CURRENT_DAY_INTRADAY" if name in (
+                      "kline_intraday_15m","kline_intraday_60m",
+                      "kline_batch_15m","kline_batch_60m",
+                  ) else None
+              )
+              if expected_scope is not None:
+                  assert scope==expected_scope
+                  record["data_scope"]=expected_scope
+                  symbol=item.get("symbol")
+                  if symbol in ("159611.SZ","518880.SH"):
+                      record["symbol"]=symbol
+                  rows=item.get("row_count")
+                  if type(rows) is int and 0 <= rows <= 96:
+                      record["row_count"]=rows
               if name in ("kline_15m","kline_60m"):
                   bar=item.get("bar_range_structure")
                   record["bar_range_structure"]=bar if bar in ("PASS","FAIL","NOT_VERIFIED") else "NOT_VERIFIED"
@@ -219,6 +240,41 @@ jobs:
                   assert item.get("freshness")=="NOT_VERIFIED"
                   assert item.get("closure")=="NOT_VERIFIED"
                   assert item.get("provider_live_qualified") is False
+                  record["provider_live_qualified"]=False
+              if name in ("kline_batch_15m","kline_batch_60m"):
+                  count_ceiling=96 if name == "kline_batch_15m" else 24
+                  for field in ("requested_symbol_count","returned_symbol_count",
+                                "missing_symbol_count","unrequested_symbol_count"):
+                      value=item.get(field)
+                      record[field]=value if type(value) is int and 0<=value<=5 else None
+                  for field,target in (
+                      ("batch_symbol_row_counts","batch_symbol_row_counts"),
+                      ("batch_symbol_complete_end_sessions","batch_symbol_complete_end_sessions"),
+                  ):
+                      values=item.get(field)
+                      if isinstance(values,list) and len(values)<=5:
+                          ceiling=count_ceiling if field=="batch_symbol_row_counts" else 120
+                          record[target]=[
+                              value if type(value) is int and 0<=value<=ceiling else None
+                              for value in values
+                          ]
+                      else:
+                          record[target]=[]
+                  conventions=item.get("batch_symbol_grid_conventions")
+                  allowed_conventions=(
+                      "BAR_END_GRID_MATCH","BAR_START_GRID_MATCH","GRID_CONFLICT",
+                      "INSUFFICIENT","INVALID_TIMESTAMP_ORDER"
+                  )
+                  record["batch_symbol_grid_conventions"]=(
+                      [value if value in allowed_conventions else "INSUFFICIENT"
+                       for value in conventions]
+                      if isinstance(conventions,list) and len(conventions)<=5 else []
+                  )
+                  assert item.get("freshness")=="NOT_VERIFIED"
+                  assert item.get("closure")=="NOT_VERIFIED"
+                  assert item.get("provider_live_qualified") is False
+                  record["freshness"]="NOT_VERIFIED"
+                  record["closure"]="NOT_VERIFIED"
                   record["provider_live_qualified"]=False
               if name == "websocket_quote_smoke":
                   for field in (

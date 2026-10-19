@@ -8,6 +8,10 @@ from scripts import probe_tickflow_isolated as probe
 
 
 class FakeKlines:
+    def __init__(self):
+        self.batch_calls = []
+        self.intraday_calls = []
+
     def get(self, symbol, *, period, count):
         assert symbol in {"159611.SZ", "518880.SH"}
         assert period in {"1d", "1m", "5m", "15m", "30m", "60m"}
@@ -21,6 +25,20 @@ class FakeKlines:
             "volume": [100],
             "amount": [1000],
             "api_key": "DO_NOT_LEAK",
+        }
+
+    def intraday(self, symbol, *, period, count, as_dataframe):
+        self.intraday_calls.append((symbol, period, count, as_dataframe))
+        assert as_dataframe is False
+        return self.get(symbol, period=period, count=count)
+
+    def intraday_batch(self, symbols, **kwargs):
+        self.batch_calls.append((list(symbols), dict(kwargs)))
+        return {
+            symbol: self.get(
+                symbol, period=kwargs["period"], count=kwargs["count"]
+            )
+            for symbol in symbols
         }
 
 
@@ -332,14 +350,18 @@ def test_cli_dependency_failure_exits_nonzero_without_leaking(monkeypatch, capsy
 
 
 def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
+    fake = FakeClient()
     r = probe.build_probe(
         mode="premium", symbols=("159611.SZ", "518880.SH"),
-        client_factory=FakeClient, credential_present=True,
+        client_factory=lambda: fake, credential_present=True,
     )
     names = [x["name"] for x in r["operations"]]
     assert names == [
         "sdk_import", "realtime_quote", "kline_1m", "kline_5m",
-        "kline_15m", "kline_15m", "kline_30m", "kline_60m", "kline_60m",
+        "kline_15m", "kline_15m",
+        "kline_intraday_15m", "kline_intraday_15m", "kline_batch_15m",
+        "kline_30m", "kline_60m", "kline_60m",
+        "kline_intraday_60m", "kline_intraday_60m", "kline_batch_60m",
         "five_level_depth",
         "websocket_quote_smoke",
     ]
@@ -354,6 +376,38 @@ def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
         ("kline_60m", "159611.SZ"),
         ("kline_60m", "518880.SH"),
     ]
+    batch_ops = [
+        x for x in r["operations"]
+        if x["name"] in {"kline_batch_15m", "kline_batch_60m"}
+    ]
+    assert [(x["name"], x["operation"]) for x in batch_ops] == [
+        ("kline_batch_15m", "COMPLETED"),
+        ("kline_batch_60m", "COMPLETED"),
+    ]
+    for operation in batch_ops:
+        summary = operation["summary"]
+        assert summary["requested_symbol_count"] == 2
+        assert summary["returned_symbol_count"] == 2
+        assert summary["missing_symbol_count"] == 0
+        assert summary["symbol_row_counts"] == [1, 1]
+        assert summary["symbol_complete_end_sessions"] == [0, 0]
+        assert len(summary["symbol_grid_conventions"]) == 2
+    assert fake.klines.intraday_calls == [
+        ("159611.SZ", "15m", 96, False),
+        ("518880.SH", "15m", 96, False),
+        ("159611.SZ", "60m", 24, False),
+        ("518880.SH", "60m", 24, False),
+    ]
+    assert len(fake.klines.batch_calls) == 2
+    assert [
+        (kwargs["period"], kwargs["count"], kwargs["as_dataframe"],
+         kwargs["show_progress"], kwargs["max_workers"], kwargs["batch_size"])
+        for _symbols, kwargs in fake.klines.batch_calls
+    ] == [
+        ("15m", 96, False, False, 5, 2),
+        ("60m", 24, False, False, 5, 2),
+    ]
+    assert "DO_NOT_LEAK" not in json.dumps(batch_ops)
     for operation in kline_ops:
         summary = operation["summary"]
         assert summary["sample_count"] == 1
@@ -370,6 +424,29 @@ def test_premium_rest_smoke_is_redacted_and_not_radar_authority():
     assert "bid_prices" not in encoded
     assert r["can_confirm_signal"] is False
     assert r["source_arbiter_admission"] == "BLOCKED"
+
+
+
+
+def test_batch_kline_summary_is_count_and_enum_only():
+    frames = {
+        "159611.SZ": {
+            "timestamp": [1, 2], "open": [10, 10], "high": [11, 11],
+            "low": [9, 9], "close": [10.5, 10.5], "volume": [100, 100],
+            "api_key": "DO_NOT_LEAK",
+        },
+        "unexpected": {"raw": "DO_NOT_LEAK"},
+    }
+    summary = probe._batch_kline_summary(
+        frames, symbols=("159611.SZ", "518880.SH"), period="15m"
+    )
+    assert summary["requested_symbol_count"] == 2
+    assert summary["returned_symbol_count"] == 1
+    assert summary["missing_symbol_count"] == 1
+    assert summary["unrequested_symbol_count"] == 1
+    assert summary["symbol_row_counts"] == [2, None]
+    assert "DO_NOT_LEAK" not in json.dumps(summary)
+    assert '"open"' not in json.dumps(summary)
 
 
 def test_ws_smoke_tracks_callbacks_but_never_promotes_stream(monkeypatch):
@@ -619,3 +696,37 @@ def test_nonzero_seconds_on_past_bars_cannot_confirm_end_grid():
     assert grid["complete_end_sessions"]==2
     assert grid["label_convention"]=="INSUFFICIENT"
     assert grid["closure_proven"] is False
+
+
+def test_cli_unexpected_failure_emits_only_exception_class(monkeypatch, capsys):
+    import sys
+
+    monkeypatch.setattr(probe.importlib.metadata, "version", lambda _name: "0.1.25")
+
+    def fail_probe(**_kwargs):
+        raise RuntimeError("DO_NOT_LEAK_PROVIDER_DETAIL")
+
+    monkeypatch.setattr(probe, "build_probe", fail_probe)
+    monkeypatch.setattr(sys, "argv", [
+        "probe", "--mode", "premium", "--symbols", "159611.SZ",
+    ])
+    assert probe.main() == 2
+    output = capsys.readouterr().out
+    result = json.loads(output)
+    assert result["setup_state"] == "BLOCKED"
+    assert result["failure_class"] == "RuntimeError"
+    assert "DO_NOT_LEAK_PROVIDER_DETAIL" not in output
+
+def test_probe_can_run_without_optional_python_dotenv(monkeypatch):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def missing_dotenv(name, *args, **kwargs):
+        if name == "dotenv":
+            raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_dotenv)
+    assert probe._load_optional_env_file(".env") is False
+

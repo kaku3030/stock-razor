@@ -5,7 +5,16 @@ INSTALL_ROOT="${INSTALL_ROOT:-/opt/stock-razor-cn-radar}"
 SERVICE_NAME="${SERVICE_NAME:-stock-razor-cn-radar.service}"
 REPO_URL="${REPO_URL:-https://github.com/kaku3030/stock-razor.git}"
 REPO_REF="${REPO_REF:?REPO_REF exact worker commit SHA is required}"
-SOURCE_PATH="${SOURCE_PATH:-/run/stock-razor-cn-eastmoney/latest-observation.json}"
+SOURCE_PROVIDER="${SOURCE_PROVIDER:-eastmoney}"
+case "$SOURCE_PROVIDER" in
+  eastmoney)
+    SOURCE_PATH=/run/stock-razor-cn-eastmoney/latest-observation.json
+    SOURCE_SERVICE=stock-razor-cn-eastmoney.service ;;
+  tickflow)
+    SOURCE_PATH=/run/stock-razor-cn-tickflow/latest-research-observation.json
+    SOURCE_SERVICE=stock-razor-cn-tickflow-research.service ;;
+  *) echo CN_RADAR_SOURCE_PROVIDER_INVALID >&2; exit 2 ;;
+esac
 STATUS_PATH="${STATUS_PATH:-/run/stock-razor-cn-radar/latest-research-state.json}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 
@@ -47,12 +56,18 @@ import os
 import socket
 import time
 import uuid
+
+from data_provider.cn_tickflow_research_cache import MAX_BYTES
+from src.services.stock_radar_v2.tickflow_observation_analysis import (
+    evaluate_tickflow_observation_payload, validate_tickflow_source_clock,
+)
 from datetime import datetime, timezone
 
 from src.services.stock_radar_v2.cn_observation_analysis import (
     evaluate_cn_observation_payload,
 )
 
+source_provider = os.environ.get("STOCK_RAZOR_CN_RADAR_SOURCE_PROVIDER", "eastmoney")
 worker_repo_sha = os.environ["STOCK_RAZOR_WORKER_REPO_SHA"].strip().lower()
 source_path = os.environ.get(
     "STOCK_RAZOR_CN_OBSERVATION_PATH",
@@ -101,15 +116,19 @@ while True:
     data_to_radar_latency_ms = None
 
     try:
-        with open(source_path, encoding="utf-8") as handle:
-            source = json.load(handle)
+        with open(source_path, "rb") as handle:
+            text = handle.read(MAX_BYTES + 1)
+            if len(text) > MAX_BYTES:
+                raise ValueError("observation too large")
+            source = json.loads(text)
+            source_stat = os.fstat(handle.fileno())
         if not isinstance(source, dict):
             raise ValueError("source root must be object")
 
         source_repo_sha = source.get("repo_sha")
-        source_runtime_instance_id = source.get("runtime_instance_id")
+        source_runtime_instance_id = source.get("runtime_instance_id") or "NOT_VERIFIED"
         source_sequence = int(source.get("sequence") or 0)
-        source_emitted_at_utc = source.get("emitted_at_utc")
+        source_emitted_at_utc = source.get("observed_at_utc" if source_provider == "tickflow" else "emitted_at_utc")
         source_emitted = datetime.fromisoformat(str(source_emitted_at_utc))
         if source_emitted.tzinfo is None or source_emitted.utcoffset() is None:
             raise ValueError("source emitted_at must be timezone-aware")
@@ -118,12 +137,20 @@ while True:
             (now - source_emitted.astimezone(timezone.utc)).total_seconds(),
         )
         key = (source_runtime_instance_id, source_sequence)
+        if source_provider == "tickflow":
+            validate_tickflow_source_clock(source, now)
+            key = (source_repo_sha, source_sequence, source_emitted_at_utc,
+                   source_stat.st_ino, source_stat.st_mtime_ns)
         if key == last_key and last_evaluation is not None:
             evaluation = last_evaluation
             poll_status = "UNCHANGED"
         else:
             analysis_started = time.perf_counter()
-            evaluation = evaluate_cn_observation_payload(source)
+            evaluation = (
+                evaluate_tickflow_observation_payload(source, now_utc=now)
+                if source_provider == "tickflow"
+                else evaluate_cn_observation_payload(source)
+            )
             radar_analysis_latency_ms = round(
                 (time.perf_counter() - analysis_started) * 1000,
                 3,
@@ -179,8 +206,8 @@ PY
 cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
 [Unit]
 Description=STOCK RAZOR A-share cloud Radar research worker
-After=stock-razor-cn-eastmoney.service
-Wants=stock-razor-cn-eastmoney.service
+After=$SOURCE_SERVICE
+Wants=$SOURCE_SERVICE
 
 [Service]
 Type=simple
@@ -189,6 +216,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$INSTALL_ROOT/repo
 Environment=STOCK_RAZOR_WORKER_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_CN_OBSERVATION_PATH=$SOURCE_PATH
+Environment=STOCK_RAZOR_CN_RADAR_SOURCE_PROVIDER=$SOURCE_PROVIDER
 Environment=STOCK_RAZOR_CN_RADAR_STATUS_PATH=$STATUS_PATH
 Environment=STOCK_RAZOR_CN_RADAR_POLL_SECONDS=$POLL_SECONDS
 RuntimeDirectory=stock-razor-cn-radar
@@ -202,6 +230,7 @@ PrivateNetwork=true
 ProtectSystem=strict
 ProtectHome=true
 ReadOnlyPaths=/run/stock-razor-cn-eastmoney
+ReadOnlyPaths=-/run/stock-razor-cn-tickflow
 
 [Install]
 WantedBy=multi-user.target

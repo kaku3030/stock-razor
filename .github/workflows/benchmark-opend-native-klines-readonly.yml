@@ -87,7 +87,7 @@ jobs:
               and .max_calls==65
               and (.results | type)=="array")
             | {schema,observed_utc,source,market,status,connection,
-              subscription_discovery,preexisting_symbol_timeframe_pairs,
+              subscription_discovery,subscription_scope,preexisting_symbol_timeframe_pairs,
               preexisting_codes,preexisting_periods,
               call_count,native_p50_ms,native_p95_ms,repeat_p50_ms,
               repeat_p95_ms,repeated_passes,repeated_failures,

@@ -2,17 +2,22 @@
 set -euo pipefail
 
 expected_worker_sha="${1:?expected worker sha required}"
+expected_provider="${2:-eastmoney}"
+case "$expected_provider" in eastmoney|tickflow) ;; *) exit 2;; esac
 service="stock-razor-cn-radar.service"
 status="/run/stock-razor-cn-radar/latest-research-state.json"
 python_bin="/opt/stock-razor-cn-radar/venv/bin/python"
 
 for _ in $(seq 1 24); do
   if systemctl is-active --quiet "$service" && [[ -s "$status" ]]; then
-    if "$python_bin" - "$status" "$expected_worker_sha" <<'PY'
+    if "$python_bin" - "$status" "$expected_worker_sha" "$expected_provider" <<'PY'
 import json
 import sys
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
-status_path, expected_worker_sha = sys.argv[1:]
+status_path, expected_worker_sha, expected_provider = sys.argv[1:]
+is_tickflow = expected_provider == "tickflow"
 with open(status_path, encoding="utf-8") as handle:
     payload = json.load(handle)
 
@@ -53,26 +58,63 @@ assert evaluation.get("research_only") is True
 assert evaluation.get("can_confirm_signal") is False
 assert evaluation.get("radar_admission") == "BLOCKED"
 assert evaluation.get("live_trade") is False
-assert evaluation.get("intraday_timestamp_semantics_proven") is True
+if is_tickflow:
+    assert evaluation.get("provider_requests") == 0
+    assert evaluation.get("bar_finality") == "NOT_VERIFIED"
+    assert evaluation.get("source_arbiter_admission") == "BLOCKED"
+    assert evaluation.get("intraday_timestamp_semantics_proven") is False
+    assert evaluation.get("provider_policy") == "TICKFLOW_CACHE_HISTORICAL_RESEARCH_ONLY"
+    assert evaluation.get("provider_lineages") == ["tickflow"]
+    assert evaluation.get("source_repo_sha") == payload.get("source_repo_sha")
+    assert type(payload.get("source_sequence")) is int and payload["source_sequence"] > 0
+    assert payload.get("source_age_seconds") is not None
+    with open("/run/stock-razor-cn-tickflow/latest-research-observation.json", "rb") as source_file:
+        raw = source_file.read(64_000_001)
+    assert len(raw) <= 64_000_000
+    source = json.loads(raw)
+    assert source.get("provider") == "TICKFLOW_PREMIUM"
+    assert source.get("live_trade") is False
+    assert source.get("radar_admission") == "BLOCKED"
+    assert payload.get("source_repo_sha") == source.get("repo_sha")
+    assert payload.get("source_sequence") == source.get("sequence")
+    assert payload.get("source_emitted_at_utc") == source.get("observed_at_utc")
+    observed = datetime.fromisoformat(source["observed_at_utc"])
+    now = datetime.now(timezone.utc)
+    max_age = 1080 if now.astimezone(ZoneInfo("Asia/Shanghai")).weekday() >= 5 else 360
+    assert observed.tzinfo is not None and 0 <= (now - observed).total_seconds() <= max_age
+else:
+    assert evaluation.get("intraday_timestamp_semantics_proven") is True
 assert isinstance(evaluation.get("intraday_currentness_proven"), bool)
 
 symbols = evaluation.get("symbols") or {}
 assert symbols
 research_symbols = set(evaluation.get("research_state_symbols") or [])
 assert research_symbols == set(symbols)
+if is_tickflow:
+    assert research_symbols == {"159611", "159209", "512730", "159363"}
 for symbol, item in symbols.items():
     assert item.get("status") == "RESEARCH_STATE"
     assert item.get("research_only") is True
     assert item.get("can_confirm_signal") is False
     assert item.get("signal_permission") == "record_only"
-    assert item.get("intraday_timestamp_semantics_proven") is True
+    assert item.get("intraday_timestamp_semantics_proven") is (not is_tickflow)
     assert isinstance(item.get("intraday_currentness_proven"), bool)
     technical = item.get("technical") or {}
     assert technical
     frames = item.get("frame_provenance") or {}
     assert set(frames) == {"1d", "60m", "15m"}
     risk_flags = set(technical.get("risk_flags") or [])
-    assert "cn_intraday_timestamp_semantics_unproven" not in risk_flags
+    if is_tickflow:
+        assert "cn_intraday_timestamp_semantics_unproven" in risk_flags
+        assert "tickflow_bar_finality_not_verified" in risk_flags
+        assert item.get("intraday_currentness_proven") is False
+        assert technical["hourly"]["quality"]["is_partial_bar"] is True
+        assert technical["intraday"]["quality"]["is_partial_bar"] is True
+        for frame in frames.values():
+            assert frame.get("provider_used") == "TICKFLOW_PREMIUM"
+            assert frame.get("bar_finality") == "NOT_VERIFIED"
+    else:
+        assert "cn_intraday_timestamp_semantics_unproven" not in risk_flags
     if item.get("intraday_currentness_proven") is True:
         assert "cn_intraday_currentness_unproven" not in risk_flags
     else:

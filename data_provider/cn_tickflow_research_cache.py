@@ -44,7 +44,11 @@ _LABEL_END = {
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
 _ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
-_MAX_BATCH_FALLBACKS_PER_OBSERVATION = 4
+# Recover at most four omitted entries per period and twenty per full scan.
+_MAX_BATCH_FALLBACKS_PER_PERIOD = 4
+_MAX_BATCH_FALLBACKS_PER_OBSERVATION = (
+    _MAX_BATCH_FALLBACKS_PER_PERIOD * len(_ALLOWED_PERIODS)
+)
 _SOURCE = "TICKFLOW_PREMIUM"
 
 
@@ -87,7 +91,8 @@ class _BatchKlinesFacade:
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
                 missing = tuple(symbol for symbol in symbols if symbol not in result)
-                if (self._fallback_count + len(missing)
+                if (len(missing) > _MAX_BATCH_FALLBACKS_PER_PERIOD
+                        or self._fallback_count + len(missing)
                         > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
                     raise ValueError("batch SDK symbol missing")
                 # Count attempted calls, including a later provider failure.
@@ -271,8 +276,10 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if len(sizes) != 1:
             raise ValueError("compact SDK column lengths differ")
         count = sizes.pop()
-        if not 4 <= count <= _ALLOWED_PERIODS[timeframe]:
-            raise ValueError("insufficient or unbounded history")
+        if count < 4:
+            raise ValueError("insufficient history")
+        if count > _ALLOWED_PERIODS[timeframe]:
+            raise ValueError("history exceeds configured bound")
         records = [{**{key:frame[key][i] for key in keys},
                     **({} if amount_present else {"amount":None,"_sdk_amount_omitted":True})}
                    for i in range(count)]
@@ -280,8 +287,12 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         records = frame.to_dict(orient="records")
     else:
         raise ValueError("unexpected SDK data type")
-    if not isinstance(records, list) or not 4 <= len(records) <= _ALLOWED_PERIODS[timeframe]:
-        raise ValueError("insufficient or unbounded history")
+    if not isinstance(records, list):
+        raise ValueError("unexpected SDK data type")
+    if len(records) < 4:
+        raise ValueError("insufficient history")
+    if len(records) > _ALLOWED_PERIODS[timeframe]:
+        raise ValueError("history exceeds configured bound")
     bars=[]
     previous=None
     for raw in records:
@@ -549,7 +560,7 @@ def atomic_publish(path: str, payload: dict) -> None:
 
 def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=30,
              *, path: str=DEFAULT_PATH, now_utc:datetime|None=None,
-             research_mode: str="session_progress") -> dict:
+             research_mode: str="session_progress", observation:dict|None=None) -> dict:
     """Bounded research-only read, with explicitly separate historical mode.
 
     session_progress requires the last due intraday BAR_END label; historical
@@ -577,11 +588,16 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             or type(limit)!=int or not 1<=limit<=240):
         return {**base,"status":"INVALID_REQUEST"}
     try:
-        with open(path,"rb") as f:
-            data=f.read(MAX_BYTES+1)
-        if len(data)>MAX_BYTES:
-            return invalid_cache("CACHE_SIZE_EXCEEDED")
-        obj=json.loads(data)
+        # A worker may validate several frames from one atomically loaded
+        # observation. All provenance/row checks below remain identical.
+        if observation is None:
+            with open(path,"rb") as f:
+                data=f.read(MAX_BYTES+1)
+            if len(data)>MAX_BYTES:
+                return invalid_cache("CACHE_SIZE_EXCEEDED")
+            obj=json.loads(data)
+        else:
+            obj=observation
     except (OSError,ValueError,TypeError,UnicodeError):
         return {**base,"status":"NO_DATA"}
     if not isinstance(obj, dict):

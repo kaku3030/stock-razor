@@ -9,6 +9,8 @@ from scripts.probe_tickflow_isolated import build_probe
 CLOUD = Path("ops/aws/run_tickflow_cloud_isolated_smoke.sh").read_text(encoding="utf-8")
 WORKFLOW = Path(".github/workflows/probe-tickflow-aws-isolated.yml").read_text(encoding="utf-8")
 
+PREMIUM_WORKFLOW = Path(".github/workflows/probe-tickflow-aws-premium.yml").read_text(encoding="utf-8")
+
 
 def test_cloud_workflow_dispatch_restricts_modes_and_is_oidc_ssm_only():
     wf = yaml.safe_load(WORKFLOW)
@@ -182,3 +184,22 @@ def test_non_free_modes_keep_historical_observation_not_requested():
         sdk_version="test",
     )
     assert result["historical_kline_observation"] == "NOT_REQUESTED"
+
+def test_premium_probe_reports_only_sanitized_python_failure_class():
+    premium = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    assert 'probe_exit=0' in premium
+    assert 'TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=' in premium
+    assert 're.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}",value)' in premium
+    assert '2>/dev/null' in premium
+
+def test_premium_workflow_allowlists_only_validated_probe_failure_class():
+    assert r"/^TICKFLOW_PREMIUM_PROBE_FAILURE_CLASS=[A-Za-z][A-Za-z0-9_]{0,63}$/ {print; next}" in PREMIUM_WORKFLOW
+
+def test_premium_probe_keeps_python_stderr_private_and_extracts_type_only():
+    premium = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    assert '2>"$stage/probe-stderr"' in premium
+    assert 'size-16384' in premium
+    assert 'r"^([A-Za-z][A-Za-z0-9_]{0,63})(?::|$)"' in premium
+    assert 'print(match.group(1))' in premium
+    assert 'print(line)' not in premium
+

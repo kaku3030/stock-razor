@@ -35,6 +35,24 @@ CACHE_REJECTION_REASONS={
 HOLDINGS=("159611.SZ","159209.SZ","518880.SH","512730.SH","159363.SZ")
 LIVE_PERIODS=("1m","5m","15m","60m")
 RESEARCH_PERIODS=("1m","5m","15m","60m","1d")
+FAILURE_REASON_CODES=frozenset((
+    "UNSUPPORTED_PERIOD","CLOCK_MISSING_TZ",
+    "COLUMN_MISSING_OR_NOT_LIST","COLUMN_LENGTH_MISMATCH",
+    "ROW_COUNT_OUT_OF_BOUNDS","ROW_COUNT_BELOW_MIN","ROW_COUNT_ABOVE_MAX",
+    "SDK_SHAPE_INVALID","ROW_TYPE_INVALID","TIMESTAMP_TYPE_INVALID",
+    "TIMESTAMP_EPOCH_INVALID","TIMESTAMP_MISSING","TIMESTAMP_ORDER_INVALID",
+    "HISTORICAL_SESSION_GRID_MISMATCH","FUTURE_TRADING_DATE",
+    "OHLCVA_NUMBER_TYPE_INVALID","OHLCVA_COLUMN_MISSING",
+    "OHLCVA_RELATION_INVALID","VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
+    "OHLCVA_NONPOSITIVE","OHLCVA_HIGH_LT_BODY","OHLCVA_LOW_GT_BODY",
+    "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE","CACHE_SIZE_EXCEEDED",
+    "BATCH_SHAPE_INVALID","BATCH_SYMBOL_MISSING",
+))
+
+def safe_failure_reason(value: object) -> str:
+    """Return only the finite worker failure vocabulary."""
+    return value if isinstance(value,str) and value in FAILURE_REASON_CODES else "UNKNOWN"
+
 
 def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: datetime) -> dict:
     """Export no bars, prices, raw timestamps or provider credentials."""
@@ -820,21 +838,7 @@ def sample():
                 and failure_class in allowed_failure_classes else "UNKNOWN"
             )
             result["failure_stage"]=safe_failure_stage(data.get("failure_stage"))
-            reason=data.get("failure_reason")
-            allowed_reasons={
-                "UNSUPPORTED_PERIOD","CLOCK_MISSING_TZ",
-                "COLUMN_MISSING_OR_NOT_LIST","COLUMN_LENGTH_MISMATCH",
-                "ROW_COUNT_OUT_OF_BOUNDS","SDK_SHAPE_INVALID","ROW_TYPE_INVALID",
-                "TIMESTAMP_TYPE_INVALID","TIMESTAMP_EPOCH_INVALID","TIMESTAMP_MISSING",
-                "TIMESTAMP_ORDER_INVALID","HISTORICAL_SESSION_GRID_MISMATCH",
-                "FUTURE_TRADING_DATE","OHLCVA_NUMBER_TYPE_INVALID",
-                "OHLCVA_COLUMN_MISSING","OHLCVA_RELATION_INVALID",
-                "VALID_BAR_COUNT_LOW","OTHER","NOT_APPLICABLE",
-                "OHLCVA_NONPOSITIVE","OHLCVA_HIGH_LT_BODY","OHLCVA_LOW_GT_BODY",
-                "OHLCVA_VOLUME_NEGATIVE","OHLCVA_AMOUNT_NEGATIVE",
-                "CACHE_SIZE_EXCEEDED", "BATCH_SHAPE_INVALID", "BATCH_SYMBOL_MISSING",
-            }
-            result["failure_reason"]=reason if isinstance(reason,str) and reason in allowed_reasons else "UNKNOWN"
+            result["failure_reason"]=safe_failure_reason(data.get("failure_reason"))
             precision=data.get("failure_ohlc_float_gap_bucket")
             result["failure_ohlc_float_gap_bucket"]=(
                 precision if isinstance(precision,str)

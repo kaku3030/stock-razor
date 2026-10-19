@@ -55,10 +55,15 @@ python scripts/probe_tickflow_isolated.py --mode premium --ws-seconds 10
 ```
 
 Default watchlist is `159611.SZ 518880.SH 512730.SH`, never more than five
-symbols in the initial probe. Paid REST smoke performs at most one small quote
-batch, five short K-line requests for *one* symbol, and one L1 depth request;
-optional WS subscribes to the small set in a short test. No automatic loops,
-unbounded retry, subscriptions to whole market, trading or canonical writes.
+symbols in the initial probe. The manually opt-in standard Premium REST probe performs one quote batch,
+bounded K-line reads, and one L1 depth request. For 15m and 60m it compares
+per-symbol `.get` reads with one `intraday_batch` call per timeframe across
+the same validated symbol set. This adds exactly two batch API calls to a
+standard probe run; the quote-only mode remains one quote request and makes
+zero K-line, depth, or WebSocket calls. Batch output contains row counts and
+fixed grid enums only. Optional WS subscribes to the small set in a short test.
+No automatic loops, unbounded retry, subscriptions to whole market, trading
+or canonical writes.
 
 Each operation reports only completed/failed/skipped, elapsed milliseconds,
 row count when safe and exception **class only**. Never print market prices,

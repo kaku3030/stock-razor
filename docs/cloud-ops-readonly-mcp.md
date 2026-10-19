@@ -170,3 +170,59 @@ introduced.
 
 Revert the isolated MCP tool, read-only reader, test, installer smoke and
 changelog patch. No IAM, database, broker or source migration is involved.
+
+## Guarded CN Radar deployment
+
+`Deploy Read-Only CN Radar Worker` is manual, owner-only and bound to the
+current full main SHA. Set `approve_restart=true` and provide
+`expected_main_sha`; the workflow checks main before AWS credentials and again
+before SSM. Both immutable installer/verifier downloads must match their source
+SHA256 before restart. Installation and full verifier output stay private on EC2;
+public Actions logs contain only fixed deployment/safety markers. Missing proof,
+remote failure or a moved main blocks deployment success. Roll back by dispatching
+a separately reviewed revert on protected main.
+
+The workflow's `source_provider` choice defaults to `eastmoney` (the existing
+Eastmoney/Tencent observer). Explicit `tickflow` selects the existing private
+TickFlow cache for **historical research only**, using the same CN Radar service,
+status file, analyzer and `get_cn_market_analysis` readback. The installer binds
+each choice to its fixed cache path and source unit; arbitrary `SOURCE_PATH`
+overrides are no longer used. No SDK, network access, extra polling service or
+provider request is introduced. `RADAR_ADMISSION=BLOCKED` and `LIVE_TRADE=NO`.
+
+TickFlow evaluates only the four existing baseline symbols and cached D1/60m/15m.
+The strict cache reader validates all rows from one bounded atomic snapshot.
+Every poll rechecks source age, including unchanged evaluations; atomic file
+replacement invalidates the compute cache even when sequence metadata repeats.
+Same-day D1 is quarantined. Intraday bars remain partial, currentness UNPROVEN,
+finality/volume units/adjustment NOT_VERIFIED. Vendor operational-close rules
+are not promoted to immutable finality by this bridge. Source runtime UUID is
+NOT_VERIFIED because the collector does not publish one. Current D1 cache depth
+is at most 40 bars: this is not the full long-history/L3 strategy prerequisite.
+The first actual cloud bridge readback contained D1=40, 60m=4 and 15m=16
+rows per baseline symbol. Requested SDK counts are not evidence of returned
+depth. Insufficient-history indicator states retain the caller's partial-bar
+flag, bar count, latest label and explicit warnings; TickFlow also reports
+`tickflow_indicator_history_insufficient`. Operational bridge verification
+does not turn these short histories into qualified multi-timeframe signals.
+
+The TickFlow deployment verifier independently rereads the source SHA, sequence
+and observation time, verifies all four research states and provisional flags,
+and requires the existing network sandbox and closed gates. CI or a fixture
+does not prove deployed integration: dispatch the exact main SHA with the chosen
+provider, then read actual MCP provenance. Roll back the provider choice by
+dispatching protected main with `source_provider=eastmoney`; no source collector,
+subscription, durable market-data store or trading state is modified.
+
+For US Radar with research events enabled, operational deployment verification
+also accepts the precise `BAR_EVENT_SOURCE_NOT_QUALIFIED` block only when the
+source remains unqualified, the ingress is explicitly blocked, and it created
+and duplicated zero events. Queue types, source SHA and all safety checks still
+apply. This verifies fail-closed service behavior, not market-data qualification.
+
+The verifier also requires the existing 90-second service watchdog. `systemctl
+show ... -p WatchdogUSec --value` formats this duration as `1min 30s` (or
+`90s`); the property suffix does not make its display a raw microsecond integer.
+Zero, other durations and a unitless `90000000` fail verification. The full shell
+acceptance path is tested in addition to the embedded heartbeat checks. See
+[systemd's property formatter](https://github.com/systemd/systemd/blob/v255/src/shared/bus-print-properties.c).
