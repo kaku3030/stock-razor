@@ -101,8 +101,16 @@ def render(health, market, radar, now):
         q1h, _ = validbar(frames.get("1h"), now, 5400)
         technical = (states.get(symbol) or {}).get("technical") or {}
         d1 = technical.get("daily") or {}
-        day = utc((d1.get("quality") or {}).get("as_of"))
-        d1trend = d1.get("trend", "UNKNOWN") if day and 0 <= (now-day).total_seconds() <= 5*86400 else "UNKNOWN"
+        # D1 quality.as_of is often an NYSE session DATE without a timezone.
+        # Treat the calendar date only as historical research context, never finality proof.
+        day_text = (d1.get("quality") or {}).get("as_of")
+        day = None
+        if isinstance(day_text, str):
+            try:
+                day = datetime.fromisoformat(day_text[:10]).date()
+            except ValueError:
+                pass
+        d1trend = d1.get("trend", "UNKNOWN") if day and 0 <= (now.date()-day).days <= 5 else "UNKNOWN"
         htrend = (technical.get("hourly") or {}).get("trend", "UNKNOWN") if q1h == "RESEARCH" else "UNKNOWN"
         mtrend = (technical.get("intraday") or {}).get("trend", "UNKNOWN") if q15 == "RESEARCH" else "UNKNOWN"
         lines.append(f"{symbol[3:]} D1:{d1trend} 1H:{htrend} 15m:{mtrend} | {detail} ({q15})")
