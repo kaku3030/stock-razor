@@ -18,7 +18,6 @@ REQUIRED = (
     "round13_portfolio_equity_curve.csv",
     "round13_regime_coverage.csv",
 )
-FORBIDDEN_STATUS = ("PASS", "READY", "VERIFIED")
 
 
 def verify(directory: Path) -> dict:
@@ -27,6 +26,7 @@ def verify(directory: Path) -> dict:
         p = directory / name
         findings["required"][name] = p.is_file() and p.stat().st_size > 0
     manifest = directory / "round13_artifact_manifest.sha256"
+    listed = set()
     if manifest.is_file():
         for line in manifest.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
@@ -38,6 +38,9 @@ def verify(directory: Path) -> dict:
                 continue
             expected, filename = fields
             filename = filename.lstrip("*").replace("\\", "/")
+            if filename in listed:
+                findings["hashes"]["duplicate:" + filename] = False
+            listed.add(filename)
             target = (directory / filename).resolve()
             # Prevent manifest entries escaping the provided directory.
             if not target.is_relative_to(directory.resolve()) or not target.is_file():
@@ -46,7 +49,9 @@ def verify(directory: Path) -> dict:
             actual = hashlib.sha256(target.read_bytes()).hexdigest()
             findings["hashes"][filename] = actual.lower() == expected.lower()
     findings["inventory_complete"] = all(findings["required"].values())
-    findings["manifest_valid"] = bool(findings["hashes"]) and all(findings["hashes"].values())
+    required_hashed = set(REQUIRED) - {"round13_artifact_manifest.sha256"}
+    findings["manifest_coverage"] = sorted(required_hashed - listed)
+    findings["manifest_valid"] = (not findings["manifest_coverage"] and bool(findings["hashes"]) and all(findings["hashes"].values()))
     # Even with verified output artifacts, historical OHLC inputs and engine source
     # must be verified independently before any cloud parity claim.
     findings["engine_source_verified"] = False
