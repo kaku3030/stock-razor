@@ -42,7 +42,10 @@ def _finite(value: Any) -> bool:
     return type(value) in (int, float) and math.isfinite(value)
 
 
-def _bar_errors(bar: Any, observed_at: datetime, timeframe: str) -> list[str]:
+def _bar_errors(
+    bar: Any, observed_at: datetime, report_completed_at: datetime,
+    timeframe: str,
+) -> list[str]:
     if not isinstance(bar, dict):
         return ["MISSING_BAR"]
     errors = []
@@ -67,7 +70,7 @@ def _bar_errors(bar: Any, observed_at: datetime, timeframe: str) -> list[str]:
     freshness_checked = _utc(bar.get("freshness_checked_at_utc"))
     if freshness_checked is None:
         errors.append("BAR_FRESHNESS_NOT_MEASURED")
-    elif freshness_checked > observed_at:
+    elif abs((freshness_checked - observed_at).total_seconds()) > 5:
         errors.append("BAR_FRESHNESS_TIMESTAMP_INVALID")
     age = bar.get("age_seconds")
     limit = bar.get("max_age_seconds")
@@ -75,12 +78,19 @@ def _bar_errors(bar: Any, observed_at: datetime, timeframe: str) -> list[str]:
         errors.append("BAR_STALE_OR_FRESHNESS_INVALID")
     elif stamp is not None:
         measured_age = max(0.0, (observed_at - stamp).total_seconds())
-        if measured_age > limit or abs(measured_age - age) > 5:
+        report_age = max(0.0, (report_completed_at - stamp).total_seconds())
+        if (
+            measured_age > limit or report_age > MAX_BAR_AGE_SECONDS[timeframe]
+            or abs(measured_age - age) > 5
+        ):
             errors.append("BAR_STALE_OR_FRESHNESS_INVALID")
     return errors
 
 
-def _endpoint_errors(market: str, name: str, endpoint: Any) -> list[str]:
+def _endpoint_errors(
+    market: str, name: str, endpoint: Any, received_at: datetime | None,
+    report_completed_at: datetime | None,
+) -> list[str]:
     errors = []
     if not isinstance(endpoint, dict):
         return [f"{name}_ENDPOINT_MISSING"]
@@ -99,8 +109,11 @@ def _endpoint_errors(market: str, name: str, endpoint: Any) -> list[str]:
     for key in ("repo_sha", "runtime_sha"):
         if not isinstance(provenance.get(key), str) or not _SHA.fullmatch(provenance[key]):
             errors.append(f"{name}_{key.upper()}_INVALID")
-    if _utc(provenance.get("observed_at_utc")) is None:
+    observed_at = _utc(provenance.get("observed_at_utc"))
+    if observed_at is None:
         errors.append(f"{name}_OBSERVED_AT_INVALID")
+    elif received_at and report_completed_at and not received_at <= observed_at <= report_completed_at:
+        errors.append(f"{name}_OBSERVATION_OUTSIDE_REPORT_WINDOW")
     latency = provenance.get("request_latency_ms")
     if not (_finite(latency) and latency >= 0):
         errors.append(f"{name}_REQUEST_LATENCY_NOT_MEASURED")
@@ -117,6 +130,10 @@ def _endpoint_errors(market: str, name: str, endpoint: Any) -> list[str]:
             ZoneInfo(session["timezone"])
         except (ZoneInfoNotFoundError, TypeError):
             errors.append(f"{name}_SESSION_TIMEZONE_INVALID")
+        try:
+            datetime.strptime(session["session_date"], "%Y-%m-%d")
+        except (TypeError, ValueError):
+            errors.append(f"{name}_SESSION_DATE_INVALID")
     bars = endpoint.get("bars")
     if not isinstance(bars, dict):
         bars = {}
@@ -124,9 +141,10 @@ def _endpoint_errors(market: str, name: str, endpoint: Any) -> list[str]:
         if timeframe not in bars:
             errors.append(f"{name}_{timeframe}_MISSING")
             continue
-        observed_at = _utc(provenance.get("observed_at_utc"))
-        if observed_at:
-            errors.extend(f"{name}_{timeframe}_{reason}" for reason in _bar_errors(bars[timeframe], observed_at, timeframe))
+        if observed_at and report_completed_at:
+            errors.extend(f"{name}_{timeframe}_{reason}" for reason in _bar_errors(
+                bars[timeframe], observed_at, report_completed_at, timeframe
+            ))
     if endpoint.get("fallback_from") not in (None, ""):
         errors.append(f"{name}_PROVIDER_FALLBACK_PROHIBITED")
     return errors
@@ -151,6 +169,10 @@ def _agreement_errors(evidence: Any) -> list[str]:
         keys = ("bar_end_utc", "open", "high", "low", "close", "volume")
         if any(wb.get(key) != ab.get(key) for key in keys):
             errors.append(f"DUAL_ENDPOINT_{timeframe}_DISAGREEMENT")
+    ws, aws_session = windows.get("market_session"), aws.get("market_session")
+    if isinstance(ws, dict) and isinstance(aws_session, dict):
+        if any(ws.get(key) != aws_session.get(key) for key in ("state", "timezone", "session_date")):
+            errors.append("DUAL_ENDPOINT_SESSION_DISAGREEMENT")
     return errors
 
 
@@ -199,6 +221,8 @@ def build_report(
     opportunities: list[dict] | None = None,
     conditional_plans: list[dict] | None = None,
     timings: dict | None = None,
+    received_at_utc: str | None = None,
+    report_completed_at_utc: str | None = None,
 ) -> dict:
     """Assemble a Main Control report; invalid evidence yields no candidates."""
     market = market.upper() if isinstance(market, str) else ""
@@ -208,12 +232,22 @@ def build_report(
     if not isinstance(symbol, str) or not symbol.strip():
         errors.append("SYMBOL_INVALID")
     if market in MARKET_PROVIDER:
+        received_at = _utc(received_at_utc)
+        report_completed_at = _utc(report_completed_at_utc)
+        if received_at is None or report_completed_at is None or report_completed_at < received_at:
+            errors.append("REPORT_TIME_WINDOW_INVALID")
         if not isinstance(endpoint_evidence, dict):
             errors.append("DUAL_ENDPOINT_EVIDENCE_MISSING")
         else:
             for endpoint in ENDPOINTS:
-                errors.extend(_endpoint_errors(market, endpoint, endpoint_evidence.get(endpoint)))
+                errors.extend(_endpoint_errors(
+                    market, endpoint, endpoint_evidence.get(endpoint),
+                    received_at, report_completed_at,
+                ))
             errors.extend(_agreement_errors(endpoint_evidence))
+    else:
+        received_at = _utc(received_at_utc)
+        report_completed_at = _utc(report_completed_at_utc)
 
     measured = {}
     if not isinstance(timings, dict):
@@ -225,6 +259,18 @@ def build_report(
         errors.append("TIMING_FIELDS_INCOMPLETE")
     elif measured["end_to_end_ms"] < max(measured[key] for key in TIMING_PHASES[:-1]):
         errors.append("END_TO_END_TIMING_INCONSISTENT")
+    if received_at is None or report_completed_at is None or report_completed_at < received_at:
+        errors.append("REPORT_TIME_WINDOW_INVALID")
+        actual_end_to_end_ms = "NOT_MEASURED"
+    else:
+        actual_end_to_end_ms = round((report_completed_at - received_at).total_seconds() * 1000, 3)
+        if measured["end_to_end_ms"] != "NOT_MEASURED" and abs(
+            measured["end_to_end_ms"] - actual_end_to_end_ms
+        ) > max(10.0, actual_end_to_end_ms * 0.1):
+            errors.append("END_TO_END_TIMING_TIMESTAMP_MISMATCH")
+    measured["received_at_utc"] = received_at_utc if received_at else "NOT_MEASURED"
+    measured["report_completed_at_utc"] = report_completed_at_utc if report_completed_at else "NOT_MEASURED"
+    measured["end_to_end_ms"] = actual_end_to_end_ms
 
     holdings_state = "VERIFIED" if isinstance(holdings, list) and holdings and all(
         isinstance(item, dict) and item.get("verification") == "VERIFIED"
