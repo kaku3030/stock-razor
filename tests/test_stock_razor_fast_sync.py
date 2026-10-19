@@ -157,3 +157,21 @@ def test_workflow_uses_existing_fixed_ssm_target_and_rejects_untrusted_subproces
     assert "payload_b64" in step
     assert "StandardOutputContent" in step
     assert "CONTEXT_DISCUSSION_RECEIPT=SSM_RECORDED_OR_DUPLICATE" in step
+
+
+
+def test_latest_discussion_fast_pointer_is_known_to_all_project_agents():
+    from scripts.stock_razor_fast_sync import route_discussion
+    routes = route_discussion("交易 雷达 OpenD 策略")
+    assert "GITHUB_FAST_POINTER_COMMENT_6269031171" in routes["entrypoints"]
+    for pathname in (
+        "AGENTS.md",
+        ".claude/skills/stock-razor-self-improvement/SKILL.md",
+        ".github/copilot-instructions.md",
+        "docs/architecture/stock-razor-fast-cross-window-sync.md",
+    ):
+        contents = Path(pathname).read_text(encoding="utf-8")
+        assert "6269031171" in contents, pathname
+    docs = Path("AGENTS.md").read_text(encoding="utf-8")
+    assert "同步" in docs and "去敏" in docs
+    assert "未打开的新聊天" in docs
