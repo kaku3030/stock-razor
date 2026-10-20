@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import math
 from pathlib import Path
 
@@ -277,9 +278,43 @@ def run(capture: Path, out: Path, timestamp_zone: str) -> None:
         curve["cost_bps_per_side"] = cost
         all_trades.append(trades); all_curves.append(curve)
         summary.extend(summarize(trades, curve, cost))
-    pd.concat(all_trades, ignore_index=True).to_csv(out / "s2_candidate_trade_ledger.csv", index=False)
-    pd.concat(all_curves, ignore_index=True).to_csv(out / "s2_candidate_equity_curve.csv", index=False)
-    pd.DataFrame(summary).to_csv(out / "s2_candidate_metrics.csv", index=False)
+    trades_all = pd.concat(all_trades, ignore_index=True)
+    curves_all = pd.concat(all_curves, ignore_index=True)
+    metrics = pd.DataFrame(summary)
+    trades_all.to_csv(out / "s2_candidate_trade_ledger.csv", index=False)
+    curves_all.to_csv(out / "s2_candidate_equity_curve.csv", index=False)
+    metrics.to_csv(out / "s2_candidate_metrics.csv", index=False)
+    status = {
+        "schema_version": "stock-razor-round26-s2-candidate-v1",
+        "strategy": "S2_CANDIDATE",
+        "state": "BACKTEST_COMPUTED_NOT_VALIDATED",
+        "symbols": list(SYMBOLS),
+        "source": "local OpenD QFQ/RTH captures",
+        "timestamp_zone_argument": timestamp_zone,
+        "input_rows": int(sum(x["rows"] for x in manifest)),
+        "signal_rows": int(len(signals)),
+        "accepted_trade_rows_by_cost": {str(c): int((trades_all.cost_bps_per_side == c).sum()) for c in COSTS_BPS},
+        "source_manifest": manifest,
+        "unresolved_validation": ["provider_finality", "session_calendar_and_timestamp_semantics", "independent_data_quality_signoff"],
+        "safety": {"RADAR_ADMISSION": "BLOCKED", "PAPER_AUTO_READY": "NO", "LIVE_TRADE": "NO", "TRADE_EXECUTION": "NO"},
+    }
+    (out / "s2_candidate_status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+    table = "```csv\n" + metrics.to_csv(index=False).rstrip() + "\n```"
+    report = "\n".join([
+        "# Round26 S2 Candidate Replay",
+        "",
+        "State: `BACKTEST_COMPUTED_NOT_VALIDATED`; this is a new research candidate, not a recovered historical rule or a strategy promotion.",
+        "",
+        "The replay reads only local OpenD QFQ/RTH files. OHLC and 1m session-grid validation are fail-closed. Provider finality, source timestamp semantics and independent data-quality signoff remain separate validation gates.",
+        "",
+        table,
+        "",
+        "See the CSV ledger, equity curve, metrics, manifest and JSON status for machine-readable evidence.",
+        "",
+        "`TRADE_EXECUTION=NO`; `RADAR_ADMISSION=BLOCKED`; `PAPER_AUTO_READY=NO`; `LIVE_TRADE=NO`.",
+        "",
+    ])
+    (out / "s2_candidate_report.md").write_text(report, encoding="utf-8")
 
 
 if __name__ == "__main__":
