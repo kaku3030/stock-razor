@@ -228,7 +228,7 @@ probe_stage=RUN_PREMIUM_PROBE
 # One-quote mode: one REST request, no K-line, depth or WebSocket.
 # Keep the old broad smoke accessible only by explicit quote_only=false.
 probe_args=(--mode premium --location AWS_TOKYO_SSM_ISOLATE
-  --symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds")
+  --symbols 159611.SZ 159209.SZ --ws-seconds "$ws_seconds")
 if [[ "$quote_only" == true ]]; then
   probe_args+=(--quote-only)
 fi
