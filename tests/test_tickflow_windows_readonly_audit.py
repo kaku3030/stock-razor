@@ -74,6 +74,30 @@ def test_morning_first_60m_due_guard():
     assert second["due_count"] == second["due_labels_present"] == 1
 
 
+def test_partial_intraday_60m_rows_are_qualified_without_finality_claim():
+    c = compact(["2026-10-15 10:30", "2026-10-15 11:30"])
+    answer = audit.assess_compact(c, "60m", clock("2026-10-15 11:32"))
+    assert answer["status"] == "PASS_RESEARCH_ONLY"
+    assert answer["returned_rows"] == 2
+    assert answer["due_count"] == answer["due_labels_present"] == 2
+    assert answer["exchange_bar_finality"] == "NOT_VERIFIED"
+    assert answer["bar_timestamp_semantics"] == "BAR_END"
+    assert answer["successor_closed_rows"] == 1
+    assert answer["latest_bar_closure"] == "NO_SUCCESSOR_UNCONFIRMED"
+    assert answer["post_close_revision_status"] == "NOT_RECHECKED"
+
+
+def test_reordered_rows_do_not_produce_successor_closure_evidence():
+    c = compact([
+        "2026-10-14 14:00", "2026-10-14 14:30",
+        "2026-10-14 14:15", "2026-10-15 09:45",
+    ])
+    answer = audit.assess_compact(c, "15m", clock("2026-10-15 09:47"))
+    assert answer["reordered_or_duplicate_rows"] == 1
+    assert answer["successor_closed_rows"] == 0
+    assert answer["latest_bar_closure"] == "SEQUENCE_INVALID"
+
+
 def test_daily_date_never_promoted_to_today_closed_bar():
     c = compact([
         "2026-10-12 00:00", "2026-10-13 00:00",
@@ -152,6 +176,43 @@ def test_one_minute_research_grid_uses_same_closed_bar_guard():
     assert out["exchange_bar_finality"] == "NOT_VERIFIED"
 
 
+@pytest.mark.parametrize(
+    ("timeframe", "tradable_due", "suspended_due"),
+    [("1m", 60, 60), ("5m", 12, 12), ("15m", 4, 4), ("60m", 1, 1)],
+)
+def test_official_suspension_window_is_removed_from_expected_labels(
+    timeframe, tradable_due, suspended_due,
+):
+    now = clock("2026-10-19 11:32")
+    due, suspended = audit.due_labels_for(timeframe, now.astimezone(CN), "159209.SZ")
+    all_due, other_suspended = audit.due_labels_for(
+        timeframe, now.astimezone(CN), "159611.SZ"
+    )
+    assert len(due) == tradable_due
+    assert suspended == suspended_due
+    assert len(all_due) == tradable_due + suspended_due
+    assert other_suspended == 0
+
+
+def test_suspension_schedule_changes_expected_grid_not_quality_gate():
+    c = compact([
+        "2026-10-19 10:45", "2026-10-19 11:00",
+        "2026-10-19 11:15", "2026-10-19 11:30",
+    ])
+    halt_aware = audit.assess_compact(
+        c, "15m", clock("2026-10-19 11:32"), symbol="159209.SZ"
+    )
+    ordinary = audit.assess_compact(
+        c, "15m", clock("2026-10-19 11:32"), symbol="159611.SZ"
+    )
+    assert halt_aware["due_count"] == halt_aware["due_labels_present"] == 4
+    assert halt_aware["suspended_due_labels_expected"] == 4
+    assert halt_aware["research_progress_status"] == "PASS_RESEARCH_ONLY"
+    assert ordinary["due_count"] == 8
+    assert ordinary["due_labels_missing"] == 4
+    assert ordinary["suspended_due_labels_expected"] == 0
+
+
 def test_tiny_vendor_float_drift_never_masquerades_as_strict_closed_grid_bar():
     # Reproduces 2026-10-15 desktop vs AWS discrepancy in principle:
     # tolerant OHLC accepts a tiny 1e-5 drift that strict cloud rejects.
@@ -225,3 +286,41 @@ def test_research_exit_flag_is_explicit_opt_in(monkeypatch, capsys):
     result=json.loads(capsys.readouterr().out)
     assert result["provider_requests"]==0
     assert result["status"]=="NOT_EXECUTED_OPT_IN_REQUIRED"
+
+
+@pytest.mark.parametrize("timeframe", tuple(audit.PERIOD_COUNTS))
+def test_fetch_frame_uses_the_correct_tickflow_endpoint(timeframe):
+    calls = []
+    expected_frame = object()
+
+    def record(endpoint):
+        def fetch(symbol, **kwargs):
+            calls.append((endpoint, symbol, kwargs))
+            return expected_frame
+        return fetch
+
+    client = SimpleNamespace(klines=SimpleNamespace(
+        get=record("get"), intraday=record("intraday"),
+    ))
+    assert audit.fetch_frame(client, "159611.SZ", timeframe) is expected_frame
+
+    expected_endpoint = "get" if timeframe == "1d" else "intraday"
+    assert audit.provider_endpoint_for(timeframe) == expected_endpoint
+    expected_kwargs = {
+        "period": timeframe,
+        "count": audit.PERIOD_COUNTS[timeframe],
+        "as_dataframe": False,
+    }
+    if timeframe == "1d":
+        expected_kwargs["adjust"] = "none"
+    assert calls == [(expected_endpoint, "159611.SZ", expected_kwargs)]
+
+
+def test_fetch_frame_rejects_unknown_timeframe_before_provider_call():
+    client = SimpleNamespace(klines=SimpleNamespace(
+        get=lambda *args, **kwargs: pytest.fail("unexpected historical request"),
+        intraday=lambda *args, **kwargs: pytest.fail("unexpected intraday request"),
+    ))
+    with pytest.raises(ValueError, match="unsupported timeframe"):
+        audit.fetch_frame(client, "159611.SZ", "2m")
+
