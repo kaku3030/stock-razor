@@ -277,9 +277,11 @@ def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float,
     return rows
 
 
-def run(capture: Path, out: Path, timestamp_zone: str) -> None:
+def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str) -> None:
     if timestamp_zone != "America/New_York":
         raise ValueError("Round26 candidate requires the audited America/New_York timezone")
+    if bar_time_semantics != "end":
+        raise ValueError("Round26 candidate requires bar-end timestamps to prevent lookahead")
     out.mkdir(parents=True, exist_ok=True)
     prepared: dict[str, dict[str, pd.DataFrame]] = {}
     signals: list[dict] = []
@@ -316,6 +318,7 @@ def run(capture: Path, out: Path, timestamp_zone: str) -> None:
         "symbols": list(SYMBOLS),
         "source": "local OpenD QFQ/RTH captures",
         "timestamp_zone_argument": timestamp_zone,
+        "bar_time_semantics_argument": bar_time_semantics,
         "input_rows": int(sum(x["rows"] for x in manifest)),
         "signal_rows": int(len(signals)),
         "accepted_trade_rows_by_cost": {str(c): int((trades_all.cost_bps_per_side == c).sum()) for c in COSTS_BPS},
@@ -347,5 +350,7 @@ if __name__ == "__main__":
     parser.add_argument("--capture", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--timestamp-zone", required=True, help="Timezone declared by the audited capture, e.g. America/New_York")
+    parser.add_argument("--bar-time-semantics", choices=("end",), required=True,
+                        help="Must be supported by the capture provenance; no start-time fallback is allowed")
     args = parser.parse_args()
-    run(args.capture, args.out, args.timestamp_zone)
+    run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics)
