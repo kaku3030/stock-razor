@@ -5,11 +5,28 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).parent))
-import round26_s2_candidate_replay as s2
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if (REPO_ROOT / "tools/research/round26_s2_candidate_replay.py").is_file():
+    sys.path.insert(0, str(REPO_ROOT))
+    from tools.research import round26_s2_candidate_replay as s2
+else:
+    sys.path.insert(0, str(Path(__file__).parent))
+    import round26_s2_candidate_replay as s2
 
 
 class CandidateReplayTests(unittest.TestCase):
+    def test_split_capture_directories_resolve_separate_one_minute_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            high_tf = root / "high"
+            one_minute = root / "minute"
+            high_tf.mkdir(); one_minute.mkdir()
+            h1 = high_tf / "US_AAPL_1H_qfq_rth_20190101_20261016.csv"
+            m1 = one_minute / "US_AAPL_1m_qfq_rth_20190101_20261016.csv"
+            h1.touch(); m1.touch()
+            self.assertEqual(s2.resolve_input_path(high_tf, "AAPL", "1H", one_minute), h1)
+            self.assertEqual(s2.resolve_input_path(high_tf, "AAPL", "1m", one_minute), m1)
+
     def test_higher_timeframe_lookup_is_strictly_prior(self):
         times = pd.date_range("2024-01-02 10:00", periods=2, freq="min", tz="America/New_York")
         frame = pd.DataFrame({"time_key": times, "value": [1, 2]})
