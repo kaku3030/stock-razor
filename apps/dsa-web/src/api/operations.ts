@@ -33,6 +33,21 @@ export type USLiveMonitorBar = {
   health?: { grade?: string; quality_flags?: string[] };
 };
 
+export type USLiveMonitorPush = {
+  symbol?: string;
+  time_key?: string;
+  received_at_utc?: string;
+  age_seconds?: number;
+  freshness_status?: 'FRESH' | 'STALE';
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+  bar_closure?: 'UNPROVEN';
+  research_eligible?: false;
+};
+
 export type USLiveMonitor = {
   source: 'CLOUD_CANONICAL_OPEND_CACHE';
   status: string;
@@ -49,6 +64,10 @@ export type USLiveMonitor = {
     bar_closure_proven?: boolean;
     bar_closure?: string;
     provider_callback_latency_ms?: number;
+    last_push_utc?: string;
+    last_push_age_seconds?: number;
+    latest_push_status?: string;
+    latest_push_observations?: Record<string, USLiveMonitorPush>;
     read_latency_ms?: number;
     radar_admission: 'BLOCKED';
     live_trade: false;
@@ -83,4 +102,5 @@ export const operationsApi = {
     return response.data;
   },
 };
+
 
