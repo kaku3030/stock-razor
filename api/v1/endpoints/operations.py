@@ -82,10 +82,9 @@ _MONITOR_HEALTH_FIELDS = {
     "sequence", "emitted_at_utc", "controller_lifecycle", "market_state_us",
     "cache_session_us", "delivery_mode", "bar_closure", "provider_callback_latency_ms",
     "provider_callback_latency_sample_count", "realtime_delivery_evidence",
-    "realtime_evidence_scope", "bar_closure_proven", "last_push_utc",
-    "last_push_age_seconds", "latest_push_status", "latest_push_observations",
-    "read_latency_ms",
-    "radar_admission", "live_trade",
+    "realtime_evidence_scope", "bar_closure_proven", "read_latency_ms",
+    "last_push_utc", "last_push_age_seconds", "latest_push_status",
+    "latest_push_observations", "radar_admission", "live_trade",
 }
 _MONITOR_MARKET_FIELDS = {
     "ok", "status", "source_age_seconds", "publication_age_seconds", "repo_sha",
@@ -101,21 +100,6 @@ _MONITOR_BAR_FIELDS = {
     "fallback_from",
 }
 _MONITOR_QUALITY_FIELDS = {"grade", "quality_flags"}
-_MONITOR_PUSH_FIELDS = {
-    "symbol", "time_key", "received_at_utc", "age_seconds", "freshness_status",
-    "open", "high", "low", "close", "volume", "bar_closure", "research_eligible",
-}
-
-
-def _monitor_health_projection(payload: dict) -> dict:
-    result = _monitor_projection(payload, _MONITOR_HEALTH_FIELDS)
-    observations = payload.get("latest_push_observations")
-    result["latest_push_observations"] = {
-        symbol: _monitor_projection(item, _MONITOR_PUSH_FIELDS)
-        for symbol, item in observations.items()
-        if isinstance(symbol, str) and isinstance(item, dict)
-    } if isinstance(observations, dict) else {}
-    return result
 
 
 def _monitor_market_projection(payload: dict) -> dict:
@@ -152,6 +136,23 @@ def _monitor_market_projection(payload: dict) -> dict:
     return result
 
 
+def _monitor_health_projection(payload: dict) -> dict:
+    result = _monitor_projection(payload, _MONITOR_HEALTH_FIELDS)
+    source = payload.get("latest_push_observations")
+    observations = {}
+    allowed = {
+        "symbol", "time_key", "received_at_utc", "open", "high", "low",
+        "close", "volume", "age_seconds", "freshness_status", "bar_closure",
+        "research_eligible",
+    }
+    if isinstance(source, dict):
+        for symbol, item in source.items():
+            if isinstance(item, dict):
+                observations[symbol] = _monitor_projection(item, allowed)
+    result["latest_push_observations"] = observations
+    return result
+
+
 @router.get("/status", response_model=OperationsStatusResponse)
 def operations_status() -> OperationsStatusResponse:
     """Expose safety and notification readiness without mutating runtime state."""
@@ -162,10 +163,10 @@ def operations_status() -> OperationsStatusResponse:
     # environment typo or "PASS" value must NEVER claim admission.
     channels = _configured_channels()
     pending = [
-        "TickFlow ʵ������������ʵ��ʷ������֤",
-        "��ʵ�ֻ����ջ�ִ",
-        "PAPER_AUTO_READY ��������",
-        "�ƶ� OpenD SIMULATE �˻�ֻ������",
+        "TickFlow 实盘连续性与真实历史交叉验证",
+        "真实手机接收回执",
+        "PAPER_AUTO_READY 独立验收",
+        "云端 OpenD SIMULATE 账户只读发现",
     ]
     return OperationsStatusResponse(
         # This surface is offline-only with no authorized external Paper operator.
@@ -272,4 +273,3 @@ def paper_operator_controls() -> PaperOperatorControlsResponse:
             ),
         ]
     )
-
