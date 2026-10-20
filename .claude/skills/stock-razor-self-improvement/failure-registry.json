@@ -214,8 +214,8 @@
       "owner": "Main Control",
       "severity": "P1",
       "signature_tokens": [
-        "ModuleNotFoundError",
-        "anyio",
+        "MODULENOTFOUNDERROR",
+        "ANYIO",
         "ENGINEERING_AUTONOMY_120M"
       ],
       "status": "OPEN",
