@@ -5,6 +5,11 @@ SERVICE_NAME="${SERVICE_NAME:-stock-razor-us-livefeed.service}"
 REPO_URL="${REPO_URL:-https://github.com/kaku3030/stock-razor.git}"
 REPO_REF="${REPO_REF:?REPO_REF exact commit SHA is required}"
 OPEND_CLIENT_ROOT="${OPEND_CLIENT_ROOT:-/opt/stock-razor-opend-client}"
+STOCK_RAZOR_AB_BLEND_SUBSCRIBE="${STOCK_RAZOR_AB_BLEND_SUBSCRIBE:-0}"
+case "$STOCK_RAZOR_AB_BLEND_SUBSCRIBE" in
+  0|1) ;;
+  *) echo "STOCK_RAZOR_AB_BLEND_SUBSCRIBE must be 0 or 1" >&2; exit 2 ;;
+esac
 
 test "$(id -u)" -eq 0
 test -x "$OPEND_CLIENT_ROOT/venv/bin/python"
@@ -793,6 +798,8 @@ try:
         heartbeat={"type":"us_opend_livefeed_heartbeat","runtime_instance_id":runtime_id,
           "repo_sha":repo_sha,"host_id":host_id,"sequence":seq,"emitted_at_utc":now.isoformat(),
           "symbols":list(CODES),"subscribed":[k.symbol for k in snap.subscribed],
+          "ab_blend_enabled":AB_BLEND_ENABLED,
+          "provider_subscription_ack":("PASS" if (adapter.diagnostics().get("last_subscribe_result") or {}).get("ret")==ft.RET_OK else "BLOCKED"),
           "dynamic_subscription_preview":candidate_preview,
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
@@ -870,6 +877,7 @@ Environment=HOME=/root
 Environment=STOCK_RAZOR_REPO_SHA=$REPO_REF
 Environment=STOCK_RAZOR_US_LIVEFEED_STATUS_PATH=/run/stock-razor-us-livefeed/latest-heartbeat.json
 Environment=STOCK_RAZOR_CANONICAL_SNAPSHOT_PATH=/run/stock-razor-us-livefeed/canonical-market-snapshot.json
+Environment=STOCK_RAZOR_AB_BLEND_SUBSCRIBE=$STOCK_RAZOR_AB_BLEND_SUBSCRIBE
 RuntimeDirectory=stock-razor-us-livefeed
 RuntimeDirectoryMode=0755
 ExecStart=$OPEND_CLIENT_ROOT/venv/bin/python $INSTALL_ROOT/run.py
@@ -881,6 +889,41 @@ ProtectSystem=strict
 [Install]
 WantedBy=multi-user.target
 EOF
+if [[ "$STOCK_RAZOR_AB_BLEND_SUBSCRIBE" == "1" ]]; then
+  "$OPEND_CLIENT_ROOT/venv/bin/python" - <<'PY_AB_BLEND_QUOTA_PREFLIGHT'
+import futu as ft
+
+context = None
+try:
+    context = ft.OpenQuoteContext(host="127.0.0.1", port=11111)
+    ret, data = context.query_subscription(is_all_conn=True)
+    if ret != ft.RET_OK or not isinstance(data, dict):
+        print("AB_BLEND_OPEND_QUOTA_PREFLIGHT=BLOCKED")
+        raise SystemExit(4)
+    total = data.get("total_used")
+    remaining = data.get("remain")
+    if (
+        type(total) is not int or total < 0
+        or type(remaining) is not int or remaining < 5
+        or total + remaining > 10000
+    ):
+        print("AB_BLEND_OPEND_QUOTA_PREFLIGHT=BLOCKED")
+        raise SystemExit(5)
+    print("AB_BLEND_OPEND_QUOTA_PREFLIGHT=PASS")
+except SystemExit:
+    raise
+except Exception:
+    print("AB_BLEND_OPEND_QUOTA_PREFLIGHT=BLOCKED")
+    raise SystemExit(6) from None
+finally:
+    close = getattr(context, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+PY_AB_BLEND_QUOTA_PREFLIGHT
+fi
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 # Recheck immediately before actual restart, including unexpectedly slow

@@ -4,6 +4,19 @@ INSTALLER=(ROOT/"ops/aws/install_us_opend_livefeed.sh").read_text()
 WORKFLOW=(ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
 VERIFY=(ROOT/"ops/aws/verify_us_opend_livefeed.sh").read_text()
 
+def test_ab_blend_is_explicitly_enabled_with_quota_and_symbol_acceptance():
+    assert 'AB_BLEND_CODES=("US.SCHD","US.KMLM","US.GLD","US.DBMF","US.BTAL")' in INSTALLER
+    assert 'STOCK_RAZOR_AB_BLEND_SUBSCRIBE' in INSTALLER
+    assert 'AB_BLEND_OPEND_QUOTA_PREFLIGHT=PASS' in INSTALLER
+    assert 'Environment=STOCK_RAZOR_AB_BLEND_SUBSCRIBE=$STOCK_RAZOR_AB_BLEND_SUBSCRIBE' in INSTALLER
+    assert '"ab_blend_enabled":AB_BLEND_ENABLED' in INSTALLER
+    assert '"provider_subscription_ack"' in INSTALLER
+    assert "US.SCHD" in VERIFY and "US.KMLM" in VERIFY and "US.GLD" in VERIFY
+    assert "US.DBMF" in VERIFY and "US.BTAL" in VERIFY and "US.QQQ" in VERIFY
+    assert "inputs.subscribe_ab_blend" in WORKFLOW
+    assert "AB_BLEND_OPEND_SUBSCRIPTIONS=PASS" in WORKFLOW
+
+
 def test_installer_is_read_only_and_fail_closed():
     assert "stock-razor-us-livefeed.service" in INSTALLER
     assert "FutuK1MStreamingAdapter" in INSTALLER
@@ -23,7 +36,7 @@ def test_deploy_binds_exact_sha_and_requires_heartbeat():
     assert "inputs.expected_main_sha == github.sha" in WORKFLOW
     assert "inputs.approve_restart == true" in WORKFLOW
     assert "ref: ${{ github.sha }}" in WORKFLOW
-    assert "REPO_REF='$REPO_REF' bash" in WORKFLOW
+    assert "STOCK_RAZOR_AB_BLEND_SUBSCRIBE='$AB_BLEND_SUBSCRIBE' bash" in WORKFLOW
     assert "verify_us_opend_livefeed.sh" in WORKFLOW
     assert "sha256sum -c - >/dev/null" in WORKFLOW
     assert "US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS" in WORKFLOW

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 expected_sha="${1:?expected sha required}"
+expected_ab_blend="${2:-0}"
+[[ "$expected_ab_blend" =~ ^[01]$ ]] || { echo "AB_BLEND_EXPECTATION_INVALID" >&2; exit 2; }
 status=/run/stock-razor-us-livefeed/latest-heartbeat.json
 snapshot=/run/stock-razor-us-livefeed/canonical-market-snapshot.json
 daily=/run/stock-razor-us-livefeed/daily-history.json
@@ -8,12 +10,12 @@ python_bin=/opt/stock-razor-opend-client/venv/bin/python
 
 for _ in $(seq 1 18); do
   if systemctl is-active --quiet stock-razor-us-livefeed.service && [[ -s "$status" ]] && [[ -s "$snapshot" ]] && [[ -s "$daily" ]]; then
-    if "$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" <<'PY'
+    if "$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" "$expected_ab_blend" <<'PY'
 import json
 import math
 import sys
 
-status_path, snapshot_path, daily_path, expected_sha = sys.argv[1:]
+status_path, snapshot_path, daily_path, expected_sha, expected_ab_blend = sys.argv[1:]
 with open(status_path, encoding="utf-8") as handle:
     heartbeat = json.load(handle)
 with open(snapshot_path, encoding="utf-8") as handle:
@@ -48,11 +50,16 @@ assert warm_start.get("live_trade") is False
 assert int(warm_start.get("required_sessions") or 0) == 3
 warm_symbols = warm_start.get("symbols") or {}
 expected_symbols = set(heartbeat.get("symbols") or [])
+AB_BLEND_SYMBOLS = {"US.QQQ", "US.SCHD", "US.KMLM", "US.GLD", "US.DBMF", "US.BTAL"}
+assert heartbeat.get("ab_blend_enabled") is (expected_ab_blend == "1")
+if expected_ab_blend == "1":
+    assert AB_BLEND_SYMBOLS.issubset(expected_symbols)
+    assert heartbeat.get("provider_subscription_ack") == "PASS"
 assert set(warm_symbols) == expected_symbols
 assert expected_symbols
 
 # Runtime dynamic candidate observation is intentionally read-only.
-# The existing nine US quote streams remain the protected baseline.
+# All configured US quote streams remain the protected baseline.
 # A known-but-unverified provider quota may block a proposed addition,
 # but the acceptance gate must never claim it subscribed/unsubscribed.
 acknowledged = heartbeat.get("subscribed")
@@ -283,6 +290,11 @@ PY
       echo "CANONICAL_SNAPSHOT_EXPORT=PASS"
       echo "CANONICAL_SNAPSHOT_PATH=$snapshot"
       echo "OPEND_CANDIDATE_PREVIEW=READONLY_PASS"
+      if [[ "$expected_ab_blend" == "1" ]]; then
+        echo "AB_BLEND_OPEND_SUBSCRIPTIONS=PASS"
+      else
+        echo "AB_BLEND_OPEND_SUBSCRIPTIONS=DISABLED"
+      fi
       exit 0
     fi
   fi
