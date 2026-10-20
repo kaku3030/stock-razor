@@ -1,0 +1,204 @@
+{
+  "source": "Futu/OpenD local capture",
+  "files": [
+    {
+      "symbol": "AAPL",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "0b4f761ec051eebb176ac1799c56047e18b5dc4a28a4bddf10ac7bf2c7875e90"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "1H",
+      "rows": 13668,
+      "first_time_key": "2019-01-02 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "235f36da0afbe92788c515381ee2585d99c67f3db997fc210cf4aed1893985f7"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "15m",
+      "rows": 50754,
+      "first_time_key": "2019-01-02 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "f336ae194bf101648f826d6b57477efbafd0d4f3be2eb09233e70f568b3fa09a"
+    },
+    {
+      "symbol": "AAPL",
+      "timeframe": "5m",
+      "rows": 152262,
+      "first_time_key": "2019-01-02 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "b333b00af5797398bdc6c9d28e0729ebf7ffbbdb0bed98a3e25e4b237872ddcc"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "e66488f376877fba3d91dd681d035e093e0bd57ab150560271c4e3e787b5e450"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "1H",
+      "rows": 13668,
+      "first_time_key": "2019-01-02 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "8ef0f4a19743e28bc006cd1bec59b87d9f94a56a6d3f3b97bf2655a44e1a79a9"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "15m",
+      "rows": 50754,
+      "first_time_key": "2019-01-02 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "cf43e8339368228e1a3e4c15d66b5200f4d494972a58d60b8e3125fd69de6c0e"
+    },
+    {
+      "symbol": "AMD",
+      "timeframe": "5m",
+      "rows": 152262,
+      "first_time_key": "2019-01-02 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "a7d4055cfeb457e942e4f8f85c0e8b9e725028e916f4b75dff71da3849cebe3d"
+    },
+    {
+      "symbol": "COHR",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "db974448dbf68b7223b82b3f577794797fd5eb1646f7dc8043e986b846f23f53"
+    },
+    {
+      "symbol": "COHR",
+      "timeframe": "1H",
+      "rows": 7239,
+      "first_time_key": "2022-08-29 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "2af92679c9e1b862bdcea6a24fd2123587d7c802b5d4251270994095effdf83e"
+    },
+    {
+      "symbol": "COHR",
+      "timeframe": "15m",
+      "rows": 26880,
+      "first_time_key": "2022-08-29 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "183d03ed8d94859dae76cb3c9b41e6852c06bc41aceb7fb4c551a14d090498d6"
+    },
+    {
+      "symbol": "COHR",
+      "timeframe": "5m",
+      "rows": 80640,
+      "first_time_key": "2022-08-29 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "7113092c5fb562907c8101c8fef7feb47330a0d803e4c7d4b85ad4753465f8a2"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "a80e160b8f127140c6b4529f88f4f9cd10f91df2cb594b52fa4edea327dbfa8d"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "1H",
+      "rows": 13668,
+      "first_time_key": "2019-01-02 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "e6fcce354ac333bfafb8a270b723c2d05d0118122a95770a64880217b348b1fa"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "15m",
+      "rows": 50754,
+      "first_time_key": "2019-01-02 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "5e991fa801e9dfe53675e64e3bc05622026da9253d9f61195d8dae0326e2cca7"
+    },
+    {
+      "symbol": "NVDA",
+      "timeframe": "5m",
+      "rows": 152262,
+      "first_time_key": "2019-01-02 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "06df4a8cff8156587cdbd7b468a272fdea822ca7576a3b329e23e4fc9e90b3cf"
+    },
+    {
+      "symbol": "QQQ",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "91b0b1291b22b761220965057097158c1b4b775e3deba9ae0afd116303a35e19"
+    },
+    {
+      "symbol": "QQQ",
+      "timeframe": "1H",
+      "rows": 13668,
+      "first_time_key": "2019-01-02 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "b4ff86af6d5c4ff61cced501236200cd25a22aa5ca7e7e8e88012500884a0477"
+    },
+    {
+      "symbol": "QQQ",
+      "timeframe": "15m",
+      "rows": 50754,
+      "first_time_key": "2019-01-02 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "79cad967cb6335a23bd1b6882dd29d7313ab9b1fd496fc88a69c385020f88414"
+    },
+    {
+      "symbol": "QQQ",
+      "timeframe": "5m",
+      "rows": 152262,
+      "first_time_key": "2019-01-02 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "bb90b32787196ff5773a08daf106b69161b7f553c5a6600cebff91f05e9ed0cb"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "D1",
+      "rows": 1959,
+      "first_time_key": "2019-01-02 00:00:00",
+      "last_time_key": "2026-10-16 00:00:00",
+      "sha256": "6e413f4f00ae914539a3d4e7ee012cbbcbdec3290e6cf66bb6aa64700ff53a9a"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "1H",
+      "rows": 13668,
+      "first_time_key": "2019-01-02 10:30:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "06fbd4615b69d60e15e165c422d6c9b6a2e290a7d340f117f951cb5d2f237e6b"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "15m",
+      "rows": 50754,
+      "first_time_key": "2019-01-02 09:45:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "bebca52fdf1068f78f5d4b0aab75b5218900a740323e724a5cc15f7cb94da4f4"
+    },
+    {
+      "symbol": "TSLA",
+      "timeframe": "5m",
+      "rows": 152262,
+      "first_time_key": "2019-01-02 09:35:00",
+      "last_time_key": "2026-10-16 16:00:00",
+      "sha256": "0e9cecad13969d5026030eed4248be27cf71cfc35f8a6c160164a8a2f4839e5b"
+    }
+  ],
+  "reused_signal_ledgers": {
+    "round13_status_sha256": "6f20299b00ab99e7234d6e54149e4fbdb5636f2d621661588ce9e695f778aed1",
+    "round14_status_sha256": "d543c50631749531679d9fa07be2c9c01b1615dde382b060ec79b1084118014d",
+    "round13_signal_rows": 3388,
+    "round14_confirmation_rows": 3388,
+    "signal_key_parity": "PASS"
+  }
+}
