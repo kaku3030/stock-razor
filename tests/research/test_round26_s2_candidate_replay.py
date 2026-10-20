@@ -51,11 +51,11 @@ class CandidateReplayTests(unittest.TestCase):
                           "open": [1, 1], "high": [1, 1], "low": [1, 1],
                           "close": [1, 1], "volume": [1, 1]}).to_csv(path, index=False)
             with self.assertRaisesRegex(ValueError, "not strictly ordered"):
-                s2.read_bars(path, "America/New_York", "5m")
+                s2.read_bars(path, "America/New_York", "5m", "AAPL")
             pd.DataFrame({"time_key": ["2024-01-02 10:00"], "open": [1], "high": [1],
                           "low": [1], "close": [2], "volume": [1]}).to_csv(path, index=False)
             with self.assertRaisesRegex(ValueError, "invalid OHLC"):
-                s2.read_bars(path, "America/New_York", "5m")
+                s2.read_bars(path, "America/New_York", "5m", "AAPL")
 
     def test_incomplete_one_minute_session_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,7 +64,21 @@ class CandidateReplayTests(unittest.TestCase):
             pd.DataFrame({"time_key": times, "open": [1] * 3, "high": [1] * 3,
                           "low": [1] * 3, "close": [1] * 3, "volume": [0] * 3}).to_csv(path, index=False)
             with self.assertRaisesRegex(ValueError, "unexpected RTH 1m session endpoints"):
-                s2.read_bars(path, "America/New_York", "1m")
+                s2.read_bars(path, "America/New_York", "1m", "AAPL")
+
+    def test_known_cohr_anomaly_requires_explicit_whole_session_exclusion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cohr.csv"
+            times = pd.date_range("2025-02-11 09:31", periods=390, freq="min")
+            frame = pd.DataFrame({"time_key": times, "open": [92.0] * 390, "high": [92.1] * 390,
+                                  "low": [91.9] * 390, "close": [92.0] * 390, "volume": [22.0] * 390})
+            frame.loc[0, ["open", "high", "low", "close", "volume"]] = [91.67, 91.67, 91.67, 93.66, 22.0]
+            frame.to_csv(path, index=False)
+            with self.assertRaisesRegex(ValueError, "invalid OHLC"):
+                s2.read_bars(path, "America/New_York", "1m", "COHR")
+            excluded = s2.read_bars(path, "America/New_York", "1m", "COHR", "2025-02-11")
+            self.assertTrue(excluded.empty)
+            self.assertEqual(excluded.attrs["excluded_session_rows"], 390)
 
     def test_unverified_bar_start_semantics_cannot_run(self):
         with tempfile.TemporaryDirectory() as tmp:
