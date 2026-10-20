@@ -66,6 +66,11 @@ class CandidateReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unexpected RTH 1m session endpoints"):
                 s2.read_bars(path, "America/New_York", "1m")
 
+    def test_unverified_bar_start_semantics_cannot_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "bar-end timestamps"):
+                s2.run(Path(tmp), Path(tmp) / "out", "America/New_York", "start")
+
 
 if __name__ == "__main__":
     unittest.main()
