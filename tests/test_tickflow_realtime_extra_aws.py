@@ -106,7 +106,7 @@ def test_ws_import_guard_does_not_block_explicit_no_ws_premium_rest(monkeypatch)
     assert result["radar_admission"]=="BLOCKED"
 
 
-def test_aws_premium_probe_targets_the_two_currently_held_etfs():
+def test_aws_premium_probe_targets_the_requested_two_etfs():
     script=BOOTSTRAP.read_text(encoding="utf-8")
     start=script.index("probe_args=(")
     end=script.index('if [[ "$quote_only" == true ]]',start)
