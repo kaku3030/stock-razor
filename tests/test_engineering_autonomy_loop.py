@@ -149,3 +149,12 @@ def test_resume_requires_exact_cache_hit():
     assert "steps.resume-cache.outputs.cache-hit != 'true'" in workflow
     assert "fail-on-cache-miss: true" in workflow
     assert "restore-keys:" not in workflow
+
+
+def test_reviewed_commands_disable_global_conftest():
+    from engineering_autonomy.loop import ALLOWED_COMMANDS
+
+    assert all(
+        command[:4] == ("python", "-m", "pytest", "--noconftest")
+        for command in ALLOWED_COMMANDS.values()
+    )
