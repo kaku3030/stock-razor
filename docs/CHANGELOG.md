@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [改进] TickFlow A股观察集合保留159611.SZ与159209.SZ持仓优先，并加入非持仓518880.SH，覆盖本地与云端五周期只读观察。
+- [修复] TickFlow 批量响应漏项时每个观察周期最多对四个缺失符号执行单票补取，补取失败或超限时继续阻断缓存。
 
 - [修复] Engineering Autonomy 120m 的固定测试命令禁用全局 `tests/conftest.py`，保持 pytest-only 云端环境可执行并防止缺少应用依赖时队列虚报完成。
 

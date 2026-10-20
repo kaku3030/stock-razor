@@ -131,7 +131,7 @@ def test_only_exception_class_is_projected_to_logs():
 
 
 def test_fixed_symbol_and_timeframe_budget_only():
-    assert audit.SYMBOLS == ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+    assert audit.SYMBOLS == ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
     assert audit.PERIOD_COUNTS == {"1m": 240, "5m": 144, "15m": 96, "60m": 24, "1d": 40}
 
 

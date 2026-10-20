@@ -26,7 +26,8 @@ ENDPOINT = "wss://api.tickflow.org/v1/ws/stream"
 SAFE_SYMBOL = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 MAX_SYMBOLS = 200
 SUBSCRIBE_BATCH_SIZE = 5
-HOLDINGS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# The first two are held ETFs; 518880.SH is observation-only.
+HOLDINGS = ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
 KLINE_PERIODS = ("1m", "5m", "15m", "60m", "1d")
 _KLINE_FINGERPRINT_FIELDS = (
     "timestamp", "open", "high", "low", "close", "volume", "amount",

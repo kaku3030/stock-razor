@@ -52,10 +52,10 @@ def test_batch_gets_four_holdings_and_two_periods_in_one_connected_action():
     assert response["ok"] is True
     assert response["status"] == "PASS_HISTORICAL_ONLY"
     assert response["provider"] == "TICKFLOW_PREMIUM"
-    assert response["frame_count"] == 8
+    assert response["frame_count"] == 10
     assert response["sequence"] == 9
     assert response["repo_sha"] == "a" * 40
-    assert set(response["symbols"]) == {"159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"}
+    assert set(response["symbols"]) == {"159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ"}
     assert all(set(p) == {"15m", "60m"} for p in response["symbols"].values())
     assert response["bar_finality"] == "NOT_VERIFIED"
     assert response["radar_admission"] == "BLOCKED"
@@ -68,6 +68,8 @@ def test_batch_gets_four_holdings_and_two_periods_in_one_connected_action():
         ("159611.SZ", "60m", 2, "historical_only"),
         ("159209.SZ", "15m", 2, "historical_only"),
         ("159209.SZ", "60m", 2, "historical_only"),
+        ("518880.SH", "15m", 2, "historical_only"),
+        ("518880.SH", "60m", 2, "historical_only"),
         ("512730.SH", "15m", 2, "historical_only"),
         ("512730.SH", "60m", 2, "historical_only"),
         ("159363.SZ", "15m", 2, "historical_only"),

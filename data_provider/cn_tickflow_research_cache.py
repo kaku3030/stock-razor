@@ -15,7 +15,8 @@ from typing import Any
 CN = ZoneInfo("Asia/Shanghai")
 SCHEMA = "stock_razor_cn_tickflow_research_observation_v0_1"
 DEFAULT_PATH = "/run/stock-razor-cn-tickflow/latest-research-observation.json"
-SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+# Keep held ETFs first; 518880.SH is observation-only and is not a position.
+SYMBOLS = ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
 # Expert capacity ceiling. The deployment default remains 20; explicit scans
 # may use the full 200 only through the bounded batch path.
 MAX_SCAN_SYMBOLS = 200

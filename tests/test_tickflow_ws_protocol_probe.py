@@ -16,7 +16,7 @@ SYMS = ("159611.SZ", "518880.SH")
 
 
 def test_default_cloud_matrix_is_the_four_holdings_and_five_periods():
-    assert HOLDINGS == ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
+    assert HOLDINGS == ("159611.SZ", "159209.SZ", "518880.SH", "512730.SH", "159363.SZ")
     assert KLINE_PERIODS == ("1m", "5m", "15m", "60m", "1d")
 
 
