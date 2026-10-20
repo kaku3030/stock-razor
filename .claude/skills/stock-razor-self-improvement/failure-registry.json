@@ -216,7 +216,7 @@
       "signature_tokens": [
         "ModuleNotFoundError",
         "anyio",
-        "engineering-autonomy-120m"
+        "ENGINEERING_AUTONOMY_120M"
       ],
       "status": "OPEN",
       "diagnosis": "The main-branch Engineering Autonomy 120m workflow installed only pytest, but its fixed queue commands invoked pytest with tests/conftest.py enabled. The global application conftest imports anyio/FastAPI/httpx and failed before the reviewed autonomy tests ran. The failure was captured on run 39439612414 at main SHA 7e1ca0edc7be2c099bf3638ead49f994a2cefde1.",
