@@ -74,6 +74,8 @@ export type USLiveMonitor = {
   };
   market: {
     status?: string;
+    market_state_us?: string;
+    cache_session_us?: string;
     source_age_seconds?: number;
     publication_age_seconds?: number;
     read_latency_ms?: number;
