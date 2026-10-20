@@ -59,7 +59,8 @@ Round24 中曾草拟的 20 根高点与量能 1.2 倍原型不是本规则的历
 
 - 回放器：`tools/research/round26_s2_candidate_replay.py`
 - 回归测试：`tests/research/test_round26_s2_candidate_replay.py`
+- Windows 本机运行器：`tools/research/run_round26_s2_local.ps1`；直接读取 Round24 的 24 份高周期文件与已有六标的 1m 审计捕获，不复制/提交原始行情，不请求新行情。运行器先执行测试，确认严格模式只因已知 COHR OHLC 问题失败，再运行显式排除该完整交易日的敏感性结果，可选择只提交 outputs。
 - 启动方式：`python tools/research/round26_s2_candidate_replay.py --capture <本地OpenD捕获目录> --out <输出目录> --timestamp-zone America/New_York --bar-time-semantics end`
 - 回放器输出 manifest、信号账本、逐成本交易账本、权益曲线、指标、JSON状态与 Markdown 报告。必须显式声明 America/New_York 与有来源依据的 bar-end 时间语义；非法 OHLC、乱序/重复时间戳、非完整 1m RTH 网格会失败关闭。只有明确传入 `--exclude-invalid-session COHR:2025-02-11` 才能生成敏感性结果；该模式验证已知异常指纹后剔除 COHR 整个交易日并在状态/报告中记录，不能算严格六标的全数据结果。
-- 本轮验证：py_compile PASS；9 项 unittest PASS；六标的合成输入端到端生成输出 PASS（含 Round24 同口径买入持有基准字段）。合成数据只验证回放工程路径，**不属于行情结果**。
-- 原始 OpenD 捕获未能在当前执行环境读取；所以本规则仍为 `BACKTEST=NOT_RUN`、`OOS=NOT_RUN`，上述工程验证不能替代真实历史回测。
+- 本轮验证：py_compile PASS；10 项 unittest PASS；六标的合成输入端到端生成输出 PASS（含 Round24 同口径买入持有基准字段）。合成数据只验证回放工程路径，**不属于行情结果**。
+- 原始 OpenD 捕获不能由当前 Linux 执行环境读取；六标的文件已存在 Windows 本地目录。使用上述 PowerShell 运行器可绕过 Desktop Commander 远程工具额度，在原机生成真实行情敏感性结果。当前本轮尚未由远程执行器运行，故本规则仍为 `BACKTEST=NOT_RUN`、`OOS=NOT_RUN`。
