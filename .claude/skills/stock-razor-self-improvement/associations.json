@@ -234,6 +234,21 @@
       "related": [
         "ENG-003"
       ]
+    },
+    {
+      "id": "CN-004",
+      "phrases": [
+        "AWS TickFlow探针标的错误",
+        "premium probe symbol scope mismatch",
+        "159209没有进入云端探针",
+        "探针把159209写成518880",
+        "wrong held ETF in TickFlow AWS probe"
+      ],
+      "related": [
+        "CN-002",
+        "CN-003",
+        "ENG-001"
+      ]
     }
   ]
 }

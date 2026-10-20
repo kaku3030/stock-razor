@@ -208,6 +208,22 @@
       "regression_evidence": "tests/test_incident_memory.py",
       "mandatory_action": "Use independent exact validators for the 64-character queue SHA256 and 40-character Git commit SHA, run loop fail-fast test and incident receipt regression at the same PR head; do not simply retry unchanged CI.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-004",
+      "owner": "TickFlow",
+      "severity": "P0",
+      "signature_tokens": [
+        "PREMIUM_PROBE_SYMBOL_SCOPE_MISMATCH",
+        "159209.SZ",
+        "518880.SH"
+      ],
+      "status": "OPEN",
+      "diagnosis": "The AWS Premium probe hardcodes 159611.SZ and 518880.SH, so its quote-only path cannot validate the requested validation pair 159611.SZ and 159209.SZ. The mismatch was caught before a provider request; the 518880.SH probe was not run.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/7e1ca0edc7be2c099bf3638ead49f994a2cefde1/ops/aws/run_tickflow_premium_probe.sh",
+      "regression_evidence": "tests/test_tickflow_realtime_extra_aws.py",
+      "mandatory_action": "Keep the AWS quote-only probe restricted to the requested two-symbol validation scope and run it only after the exact-source main workflow accepts the verified pair; confirm both targets in sanitized evidence while preserving all data/Radar/trade gates.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

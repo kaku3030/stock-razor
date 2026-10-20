@@ -152,7 +152,7 @@ def test_cloud_ws_duration_is_validated_before_remote_network_calls():
 def test_cloud_premium_probe_has_exactly_two_explicit_qualification_symbols():
     # The Python probe has a third default symbol. Cloud qualification must not
     # accidentally consume extra provider entitlement or conflate failure modes.
-    assert '--symbols 159611.SZ 518880.SH --ws-seconds "$ws_seconds"' in PREMIUM_BOOTSTRAP
+    assert '--symbols 159611.SZ 159209.SZ --ws-seconds "$ws_seconds"' in PREMIUM_BOOTSTRAP
     assert '--symbols "$symbols"' not in PREMIUM_BOOTSTRAP
     assert "RADAR_ADMISSION=BLOCKED" in PREMIUM_BOOTSTRAP
     assert "LIVE_TRADE=NO" in PREMIUM_BOOTSTRAP
