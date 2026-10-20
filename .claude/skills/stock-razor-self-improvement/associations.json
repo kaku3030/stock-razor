@@ -234,6 +234,18 @@
       "related": [
         "ENG-003"
       ]
+    },
+    {
+      "id": "ENG-007",
+      "phrases": [
+        "Engineering Autonomy 120m 缺少 anyio",
+        "pytest 全局 conftest 导入失败",
+        "ModuleNotFoundError anyio workflow",
+        "engineering-autonomy-120m pytest conftest dependency"
+      ],
+      "related": [
+        "ENG-003"
+      ]
     }
   ]
 }
