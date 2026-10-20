@@ -102,6 +102,7 @@ def _heartbeat(*, emitted_at=NOW - timedelta(seconds=5), safe=True):
         "sequence": 50,
         "emitted_at_utc": emitted_at.isoformat(),
         "controller_lifecycle": "CONNECTED",
+        "symbols": ["US.AMD", "US.QQQ"],
         "market_state_us": "MORNING",
         "cache_session_us": "regular",
         "delivery_mode": "REALTIME",
@@ -300,6 +301,75 @@ def test_livefeed_health_exposes_safe_provider_callback_latency(tmp_path):
     assert result["status"] == "HEALTHY"
     assert result["provider_callback_latency_ms"] == 4.25
     assert result["provider_callback_latency_sample_count"] == 17
+
+
+def test_livefeed_health_projects_fresh_forming_push_without_promoting_closure(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["market_state_us"] = "PRE_MARKET_BEGIN"
+    heartbeat["latest_push_observations"] = {
+        "US.AMD": {
+            "symbol": "US.AMD",
+            "time_key": "2026-10-07 00:39:00",
+            "received_at_utc": (NOW - timedelta(seconds=2)).isoformat(),
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 12.0,
+            "bar_closure": "UNPROVEN",
+            "private_field": "must not escape",
+        },
+        "HK.00700": {
+            "symbol": "HK.00700",
+            "time_key": "2026-10-07 00:39:00",
+            "received_at_utc": NOW.isoformat(),
+            "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0,
+        },
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+
+    observation = result["latest_push_observations"]["US.AMD"]
+    assert result["latest_push_status"] == "FRESH"
+    assert observation["close"] == 100.5
+    assert observation["volume"] == 12.0
+    assert observation["bar_closure"] == "UNPROVEN"
+    assert observation["research_eligible"] is False
+    assert observation["freshness_status"] == "FRESH"
+    assert "private_field" not in observation
+    assert "HK.00700" not in result["latest_push_observations"]
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_livefeed_health_marks_old_forming_push_stale_and_drops_invalid_ohlcv(tmp_path):
+    heartbeat = _heartbeat()
+    heartbeat["latest_push_observations"] = {
+        "US.AMD": {
+            "symbol": "US.AMD",
+            "time_key": "2026-10-07 00:37:00",
+            "received_at_utc": (NOW - timedelta(minutes=3)).isoformat(),
+            "open": 100.0, "high": 101.0, "low": 99.0,
+            "close": 100.0, "volume": 12.0,
+        },
+        "US.QQQ": {
+            "symbol": "US.QQQ",
+            "time_key": "2026-10-07 00:37:00",
+            "received_at_utc": NOW.isoformat(),
+            "open": 100.0, "high": 100.0, "low": 101.0,
+            "close": 100.0, "volume": 12.0,
+        },
+    }
+    status = _write(tmp_path / "heartbeat.json", heartbeat)
+    snapshot = _write(tmp_path / "snapshot.json", _snapshot())
+
+    result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
+
+    assert result["latest_push_status"] == "STALE"
+    assert result["latest_push_observations"]["US.AMD"]["freshness_status"] == "STALE"
+    assert "US.QQQ" not in result["latest_push_observations"]
     assert result["radar_admission"] == "BLOCKED"
     assert result["live_trade"] is False
 
@@ -441,3 +511,4 @@ def test_realtime_evidence_rejects_unverified_source_identity(tmp_path):
     unknown = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
     assert unknown["status"] == "HEALTHY"
     assert unknown["realtime_delivery_evidence"] is False
+
