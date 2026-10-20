@@ -266,6 +266,21 @@ def _buy_hold(prepared: dict[str, dict[str, pd.DataFrame]], start: pd.Timestamp,
             "final_equity": float(equity.iloc[-1])}
 
 
+def resolve_input_path(capture: Path, symbol: str, timeframe: str,
+                       one_minute_capture: Path | None = None) -> Path:
+    source_root = one_minute_capture if timeframe == "1m" and one_minute_capture is not None else capture
+    expected = source_root / f"US_{symbol}_{timeframe}_qfq_rth_20190101_20261016.csv"
+    if expected.is_file():
+        return expected
+    if timeframe != "1m" and source_root == capture:
+        matches = list(capture.rglob(expected.name))
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"multiple candidate capture files match {symbol}/{timeframe}: {matches}")
+    raise ValueError(f"missing capture: {symbol}/{timeframe} ({expected})")
+
+
 def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float,
               prepared: dict[str, dict[str, pd.DataFrame]]) -> list[dict]:
     periods = {"full_2019_2026": (None, None), "train_2019_2023": ("2019-01-01", "2023-12-31 23:59:59"), "oos_2024_2026": ("2024-01-01", "2026-10-16 23:59:59")}
@@ -343,7 +358,8 @@ def six_strategy_comparison(candidate_metrics: pd.DataFrame, baseline_path: Path
 
 
 def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
-        exclude_invalid_session: str | None = None, baseline_metrics: Path | None = None) -> None:
+        exclude_invalid_session: str | None = None, baseline_metrics: Path | None = None,
+        one_minute_capture: Path | None = None) -> None:
     if timestamp_zone != "America/New_York":
         raise ValueError("Round26 candidate requires the audited America/New_York timezone")
     if bar_time_semantics != "end":
@@ -357,11 +373,11 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
     for symbol in SYMBOLS:
         frames = {}
         for tf in TIMEFRAMES:
-            path = capture / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
+            path = resolve_input_path(capture, symbol, tf, one_minute_capture)
             exclude = "2025-02-11" if exclude_invalid_session and symbol == "COHR" else None
             frame = add_features(read_bars(path, timestamp_zone, tf, symbol, exclude))
             frames[tf] = frame
-            manifest.append({"symbol": symbol, "timeframe": tf, "rows": len(frame), "excluded_session_rows": int(frame.attrs.get("excluded_session_rows", 0)), "first": str(frame.time_key.iloc[0]), "last": str(frame.time_key.iloc[-1]), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+            manifest.append({"symbol": symbol, "timeframe": tf, "rows": len(frame), "excluded_session_rows": int(frame.attrs.get("excluded_session_rows", 0)), "first": str(frame.time_key.iloc[0]), "last": str(frame.time_key.iloc[-1]), "source_path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         prepared[symbol] = frames
         signals.extend(generate_signals(frames, symbol))
     pd.DataFrame(manifest).to_csv(out / "s2_candidate_manifest.csv", index=False)
@@ -438,6 +454,8 @@ if __name__ == "__main__":
                         help="Optional explicit sensitivity run; excludes the entire audited COHR session, never repairs the bar")
     parser.add_argument("--baseline-metrics", type=Path, default=None,
                         help="Optional Round24 strategy metrics CSV; defaults to the repository's Round24 output path")
+    parser.add_argument("--one-minute-capture", type=Path, default=None,
+                        help="Optional separate local OpenD 1m capture directory; D1/1H/15m/5m remain under --capture")
     args = parser.parse_args()
     run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics,
-        args.exclude_invalid_session, args.baseline_metrics)
+        args.exclude_invalid_session, args.baseline_metrics, args.one_minute_capture)
