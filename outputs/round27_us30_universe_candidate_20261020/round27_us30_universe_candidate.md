@@ -29,3 +29,12 @@ This is a fixed-symbol research candidate, not a point-in-time constituent unive
 ## Current execution constraint
 
 The Windows OpenD capture is local to the user's machine. The Remote Desktop Commander monthly quota is exhausted, and this workspace has no mounted copy of the ignored local captures. Therefore this candidate file does not claim data capture or a 30-symbol backtest has run. Raw historical bars remain required before computation.
+
+
+## Backtest-engine compatibility finding
+
+Inspection of `tools/research/round24_six_strategy_backtest.py` shows the current runner is bound to the Round13 symbol tuple. It also refuses cached Round13/Round14 signal ledgers unless their SHA256 map exactly matches the capture manifest. Those caches describe the original six-symbol cohort. Adding 24 CSV sets and rerunning Round24 would therefore either fail the hash gate or reuse the wrong signal set.
+
+Round27 must explicitly load all 30 configured symbols with fail-closed coverage, rebuild Round13 signals and Round14 SRVP confirmation flags from the 30-symbol captures, and then replay all arms and the equal-weight benchmark on that same cohort. The existing Round13 driver also selects only its built-in symbol list and silently marks others unavailable; its driver needs an explicit-universe entry point before a complete 30-symbol run. The underlying signal and accounting functions can be reused, but the six-symbol cache cannot.
+
+This code-path change is independent of Windows access. Raw OpenD captures for the additional symbols are still required before producing return metrics.
