@@ -59,6 +59,9 @@ const USLiveMonitorCard: React.FC<{ monitor: USLiveMonitor | null; error: string
           <div className="mt-2 text-xs text-secondary-text">
             K 线闭合验收：{monitor.health.bar_closure_proven ? '已验证' : '未验证'} · delivery mode {monitor.health.delivery_mode ?? '未知'}
           </div>
+          <div className="mt-2 text-xs text-secondary-text">
+            US session: {monitor.market.market_state_us ?? '未知'} · cache session: {monitor.market.cache_session_us ?? '未知'}
+          </div>
           <div className="mt-3 text-xs text-secondary-text">
             Runtime {monitor.health.runtime_instance_id ?? '未知'} · SHA {monitor.health.repo_sha?.slice(0, 10) ?? '未知'} · 身份匹配 {monitor.source_identity_matched ? '是' : '否'}
           </div>
