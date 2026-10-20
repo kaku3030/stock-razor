@@ -89,8 +89,8 @@ describe('OperationsPage', () => {
     expect(screen.getByText('Premarket and after-hours callbacks (closure unproven)')).toBeInTheDocument();
     expect(screen.getByText('715.5 / 715.6 / 715.4 / 715.5082')).toBeInTheDocument();
     expect(screen.getByText(/UNPROVEN/)).toBeInTheDocument();
-    expect(screen.getByText('���� / ���� / δ��֤')).toBeInTheDocument();
-    expect(screen.getByText(/Radar ʼ�� BLOCKED/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Unclosed OpenD callback observations')).toBeInTheDocument();
+    expect(screen.getAllByText(/BLOCKED/).length).toBeGreaterThan(0);
     expect(getUSLiveMonitor).toHaveBeenCalledWith();
   });
 });
