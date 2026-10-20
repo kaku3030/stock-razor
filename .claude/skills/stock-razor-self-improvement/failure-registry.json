@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-20T14:29:13Z",
+  "last_reconciled_utc": "2026-10-20T15:14:06Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -218,11 +218,11 @@
         "ANYIO",
         "ENGINEERING_AUTONOMY_120M"
       ],
-      "status": "OPEN",
-      "diagnosis": "The main-branch Engineering Autonomy 120m workflow installed only pytest, but its fixed queue commands invoked pytest with tests/conftest.py enabled. The global application conftest imports anyio/FastAPI/httpx and failed before the reviewed autonomy tests ran. The failure was captured on run 39439612414 at main SHA 7e1ca0edc7be2c099bf3638ead49f994a2cefde1.",
-      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39439612414",
+      "status": "MITIGATED",
+      "diagnosis": "The main-branch Engineering Autonomy 120m workflow installed only pytest, but its fixed queue commands invoked pytest with tests/conftest.py enabled. The global application conftest imports anyio/FastAPI/httpx and failed before the reviewed autonomy tests ran. The failure was captured on run 39439612414 at main SHA 7e1ca0edc7be2c099bf3638ead49f994a2cefde1. Protected main fix #945 was independently exercised in fresh run 39443606247 (30+24 tests, PASS) and exact-cache recovery 39443918486 (PASS, attempts unchanged at one per task).",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39443918486",
       "regression_evidence": "tests/test_engineering_autonomy_loop.py",
-      "mandatory_action": "Keep the reviewed pytest commands aligned with the existing secretless coding-pilot command by adding --noconftest; require exact-head CI and a fresh main workflow run to reach PASS before marking mitigated. Never resume the failed queue after its fingerprint changes.",
+      "mandatory_action": "Keep --noconftest on the exact reviewed pytest-only queue commands. Preserve exact queue fingerprint/cache checks; use fresh runs after queue changes. PASS applies only to fixed offline queue execution, not AWS deployment, continuous AI coding or trading.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
