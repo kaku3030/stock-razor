@@ -52,6 +52,8 @@ beforeEach(() => {
     },
     market: {
       status: 'STALE',
+      market_state_us: 'PRE_MARKET_BEGIN',
+      cache_session_us: 'premarket',
       source_age_seconds: 130,
       read_latency_ms: 2,
       symbols: {
@@ -85,6 +87,7 @@ describe('OperationsPage', () => {
     expect(await screen.findByText('US.QQQ / 1m')).toBeInTheDocument();
     expect(screen.getByText('600 / 602 / 599 / 601')).toBeInTheDocument();
     expect(screen.getByText('12345')).toBeInTheDocument();
+    expect(screen.getByText('US session: PRE_MARKET_BEGIN · cache session: premarket')).toBeInTheDocument();
     expect(screen.getByText('阻塞 / 过期 / 未验证')).toBeInTheDocument();
     expect(screen.getByLabelText('Unclosed OpenD callback observations')).toBeInTheDocument();
     expect(screen.getByText('715.5 / 715.6 / 715.4 / 715.5082')).toBeInTheDocument();
