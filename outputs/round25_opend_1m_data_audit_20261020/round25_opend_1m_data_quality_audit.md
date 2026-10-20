@@ -16,7 +16,7 @@ OpenD returned genuine historical 1-minute bars for all six Round24 symbols. A s
 | QQQ | 761,310 | 1,959 | 2019-01-02 09:31 | 2026-10-16 16:00 | Pass |
 | TSLA | 761,310 | 1,959 | 2019-01-02 09:31 | 2026-10-16 16:00 | Pass |
 
-All six files had strictly increasing, unique timestamps, no intraday minute gaps, finite positive OHLC, and nonnegative volume. Every observed session contained 390 bars; the audit did not cross-check whole-session coverage against an authoritative exchange calendar, and provider timezone/finality remain unverified.
+All six files had strictly increasing, unique timestamps, no intraday minute gaps, finite positive OHLC except the COHR row shown below, and nonnegative volume. Daily counts were 390 bars or 210 bars (no other count occurred); the audit did not cross-check whole-session coverage against an authoritative exchange calendar, and provider timezone/finality remain unverified.
 
 ## COHR provider anomaly
 
