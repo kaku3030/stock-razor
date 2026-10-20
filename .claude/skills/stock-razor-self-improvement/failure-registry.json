@@ -221,7 +221,7 @@
       "status": "OPEN",
       "diagnosis": "The main-branch Engineering Autonomy 120m workflow installed only pytest, but its fixed queue commands invoked pytest with tests/conftest.py enabled. The global application conftest imports anyio/FastAPI/httpx and failed before the reviewed autonomy tests ran. The failure was captured on run 39439612414 at main SHA 7e1ca0edc7be2c099bf3638ead49f994a2cefde1.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39439612414",
-      "regression_evidence": "tests/test_engineering_autonomy_loop.py::test_reviewed_commands_disable_global_conftest (pending exact-head CI)",
+      "regression_evidence": "tests/test_engineering_autonomy_loop.py",
       "mandatory_action": "Keep the reviewed pytest commands aligned with the existing secretless coding-pilot command by adding --noconftest; require exact-head CI and a fresh main workflow run to reach PASS before marking mitigated. Never resume the failed queue after its fingerprint changes.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
