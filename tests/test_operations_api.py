@@ -9,6 +9,19 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
         "realtime_delivery_evidence": True,
+        "last_push_age_seconds": 2.0,
+        "latest_push_status": "FRESH",
+        "latest_push_observations": {
+            "US.AMD": {
+                "symbol": "US.AMD",
+                "time_key": "2026-10-07 00:39:00",
+                "close": 123.0,
+                "volume": 12.0,
+                "bar_closure": "UNPROVEN",
+                "research_eligible": False,
+                "private_field": "must not escape",
+            },
+        },
         "radar_admission": "BLOCKED",
         "live_trade": False,
         "source_path": "C:/private/heartbeat.json",
@@ -30,6 +43,10 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
     assert response.source == "CLOUD_CANONICAL_OPEND_CACHE"
     assert response.source_identity_matched is True
     assert response.market["symbols"]["US.AMD"]["latest"]["1m"]["close"] == 123.0
+    assert response.health["latest_push_observations"]["US.AMD"]["close"] == 123.0
+    assert response.health["latest_push_observations"]["US.AMD"]["bar_closure"] == "UNPROVEN"
+    assert response.health["latest_push_observations"]["US.AMD"]["research_eligible"] is False
+    assert "private_field" not in response.health["latest_push_observations"]["US.AMD"]
     assert response.radar_admission == "BLOCKED"
     assert response.live_trade is False
     assert "source_path" not in response.health
@@ -93,8 +110,8 @@ def test_operations_status_is_fail_closed(monkeypatch):
     assert response.notification_ready is False
     assert response.notification_routes == {"report": [], "alert": [], "system_error": []}
     assert response.notification_delivery_evidence == "NOT_VERIFIED"
-    assert "真实手机接收回执" in response.pending_acceptance
-    assert "云端 OpenD SIMULATE 账户只读发现" in response.pending_acceptance
+    assert "��ʵ�ֻ����ջ�ִ" in response.pending_acceptance
+    assert "�ƶ� OpenD SIMULATE �˻�ֻ������" in response.pending_acceptance
 
 
 def test_operations_status_reports_configured_notification_channel(monkeypatch):
@@ -108,7 +125,7 @@ def test_operations_status_reports_configured_notification_channel(monkeypatch):
     assert response.notification_channels_configured == ["telegram"]
     assert response.notification_ready is False
     # A configured webhook is not proof that the phone received a message.
-    assert "真实手机接收回执" in response.pending_acceptance
+    assert "��ʵ�ֻ����ջ�ִ" in response.pending_acceptance
     assert response.live_trade is False
 
 
@@ -238,7 +255,7 @@ def test_credentials_and_routes_never_count_as_verified_phone_receipt(monkeypatc
     assert response.notification_routes["alert"] == ["telegram", "discord"]
     assert response.notification_delivery_evidence == "NOT_VERIFIED"
     assert response.notification_ready is False
-    assert "真实手机接收回执" in response.pending_acceptance
+    assert "��ʵ�ֻ����ջ�ִ" in response.pending_acceptance
     assert response.paper_auto_ready is False
     assert response.live_trade is False
 
@@ -255,3 +272,4 @@ def test_operation_effective_admission_ignores_permissive_env(monkeypatch):
     assert payload.source_arbiter_admission == "BLOCKED"
     assert payload.paper_auto_ready is False
     assert payload.live_trade is False
+
