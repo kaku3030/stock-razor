@@ -224,7 +224,26 @@ def portfolio_replay(signals: list[dict], close_by_symbol: dict[str, pd.Series],
     return trade_frame, curve
 
 
-def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float) -> list[dict]:
+def _buy_hold(prepared: dict[str, dict[str, pd.DataFrame]], start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    series = {}
+    for symbol, frames in prepared.items():
+        close = frames["D1"].set_index("time_key").close.astype(float)
+        close = close[(close.index >= start) & (close.index <= end)]
+        if len(close) >= 2:
+            series[symbol] = close
+    prices = pd.concat(series, axis=1).sort_index().ffill().dropna() if series else pd.DataFrame()
+    if prices.empty:
+        return {"return": None, "mdd": None, "mdd_pct": None, "final_equity": None}
+    equity = INITIAL_EQUITY * (prices / prices.iloc[0]).mean(axis=1)
+    drawdown = equity.cummax() - equity
+    return {"return": float(equity.iloc[-1] / equity.iloc[0] - 1),
+            "mdd": float(drawdown.max()),
+            "mdd_pct": float((drawdown / equity.cummax()).max()),
+            "final_equity": float(equity.iloc[-1])}
+
+
+def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float,
+              prepared: dict[str, dict[str, pd.DataFrame]]) -> list[dict]:
     periods = {"full_2019_2026": (None, None), "train_2019_2023": ("2019-01-01", "2023-12-31 23:59:59"), "oos_2024_2026": ("2024-01-01", "2026-10-16 23:59:59")}
     rows = []
     for name, (start, end) in periods.items():
@@ -237,18 +256,24 @@ def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float) -> list[di
         wins, losses = pnl[pnl > 0], pnl[pnl < 0]
         if cg.empty:
             mdd = 0.0
+            dd_pct = 0.0
         else:
             start_equity = float(cg.equity.iloc[0])
             running_peak = np.maximum.accumulate(np.r_[start_equity, cg.equity.to_numpy()])
             dd = running_peak[1:] - cg.equity.to_numpy()
             mdd = float(dd.max()) if len(dd) else 0.0
-        dd_pct = float((dd / running_peak[1:]).max()) if len(dd) else 0.0
+            dd_pct = float((dd / running_peak[1:]).max()) if len(dd) else 0.0
+        start_ts = pd.Timestamp(start, tz="America/New_York") if start is not None else pd.Timestamp("2019-01-01", tz="America/New_York")
+        end_ts = pd.Timestamp(end, tz="America/New_York") if end is not None else pd.Timestamp("2026-10-16 23:59:59", tz="America/New_York")
+        benchmark = _buy_hold(prepared, start_ts, end_ts)
         rows.append({"strategy": "S2_CANDIDATE", "window": name, "cost_bps_per_side": cost,
                      "trades": int(len(tg)), "net_pnl": float(pnl.sum()),
                      "profit_factor": float(wins.sum() / abs(losses.sum())) if not losses.empty else None,
                      "max_drawdown": mdd, "max_drawdown_pct": dd_pct,
                      "win_rate": float((pnl > 0).mean()) if len(pnl) else None,
-                     "expectancy": float(pnl.mean()) if len(pnl) else None})
+                     "expectancy": float(pnl.mean()) if len(pnl) else None,
+                     "buy_hold_return": benchmark["return"], "buy_hold_max_drawdown": benchmark["mdd"],
+                     "buy_hold_max_drawdown_pct": benchmark["mdd_pct"], "buy_hold_final_equity": benchmark["final_equity"]})
     return rows
 
 
@@ -277,7 +302,7 @@ def run(capture: Path, out: Path, timestamp_zone: str) -> None:
         trades["cost_bps_per_side"] = cost
         curve["cost_bps_per_side"] = cost
         all_trades.append(trades); all_curves.append(curve)
-        summary.extend(summarize(trades, curve, cost))
+        summary.extend(summarize(trades, curve, cost, prepared))
     trades_all = pd.concat(all_trades, ignore_index=True)
     curves_all = pd.concat(all_curves, ignore_index=True)
     metrics = pd.DataFrame(summary)
