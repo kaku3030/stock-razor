@@ -61,5 +61,5 @@ Round24 中曾草拟的 20 根高点与量能 1.2 倍原型不是本规则的历
 - 回归测试：`tests/research/test_round26_s2_candidate_replay.py`
 - 启动方式：`python tools/research/round26_s2_candidate_replay.py --capture <本地OpenD捕获目录> --out <输出目录> --timestamp-zone America/New_York`
 - 回放器输出 manifest、信号账本、逐成本交易账本、权益曲线、指标、JSON状态与 Markdown 报告。非法 OHLC、乱序/重复时间戳、非完整 1m RTH 网格会失败关闭。
-- 本轮验证：py_compile PASS；5 项 unittest PASS；六标的合成输入端到端生成输出 PASS。合成数据只验证回放工程路径，**不属于行情结果**。
+- 本轮验证：py_compile PASS；6 项 unittest PASS；六标的合成输入端到端生成输出 PASS（含 Round24 同口径买入持有基准字段）。合成数据只验证回放工程路径，**不属于行情结果**。
 - 原始 OpenD 捕获未能在当前执行环境读取；所以本规则仍为 `BACKTEST=NOT_RUN`、`OOS=NOT_RUN`，上述工程验证不能替代真实历史回测。
