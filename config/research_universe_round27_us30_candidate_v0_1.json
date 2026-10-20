@@ -1,0 +1,69 @@
+{
+  "schema": "stock-razor-round27-us30-candidate-v0.1",
+  "universe_id": "round27-us30-fixed-symbol-candidate",
+  "as_of": "2026-10-20",
+  "purpose": "research_only",
+  "status": "CANDIDATE_PENDING_PIT_AND_DATA_GATE",
+  "promotion_status": "NOT_APPROVED",
+  "markets": {
+    "us": {
+      "source_id": "authorized_local_futu_opend_required",
+      "data_adjustment": "qfq",
+      "session": "rth",
+      "requested_start": "2019-01-01",
+      "requested_end": "2026-10-16",
+      "symbols": [
+        {"symbol": "SPY", "sector": "ETF", "cohort": "existing12"},
+        {"symbol": "QQQ", "sector": "ETF", "cohort": "existing12"},
+        {"symbol": "NVDA", "sector": "SEMIS", "cohort": "existing12"},
+        {"symbol": "AMD", "sector": "SEMIS", "cohort": "existing12"},
+        {"symbol": "AAPL", "sector": "TECH", "cohort": "existing12"},
+        {"symbol": "TSLA", "sector": "AUTO", "cohort": "existing12"},
+        {"symbol": "ANET", "sector": "NETWORKING", "cohort": "existing12"},
+        {"symbol": "MRVL", "sector": "SEMIS", "cohort": "existing12"},
+        {"symbol": "QCOM", "sector": "SEMIS", "cohort": "existing12"},
+        {"symbol": "TSM", "sector": "SEMIS", "cohort": "existing12"},
+        {"symbol": "COHR", "sector": "OPTICAL_NETWORKING", "cohort": "existing12"},
+        {"symbol": "VRT", "sector": "DATACENTER_INFRASTRUCTURE", "cohort": "existing12"},
+        {"symbol": "MSFT", "sector": "TECH", "cohort": "proposed18"},
+        {"symbol": "AMZN", "sector": "CONSUMER_INTERNET", "cohort": "proposed18"},
+        {"symbol": "GOOGL", "sector": "COMMUNICATION_SERVICES", "cohort": "proposed18"},
+        {"symbol": "META", "sector": "COMMUNICATION_SERVICES", "cohort": "proposed18"},
+        {"symbol": "AVGO", "sector": "SEMIS", "cohort": "proposed18"},
+        {"symbol": "MU", "sector": "SEMIS", "cohort": "proposed18"},
+        {"symbol": "INTC", "sector": "SEMIS", "cohort": "proposed18"},
+        {"symbol": "ORCL", "sector": "SOFTWARE", "cohort": "proposed18"},
+        {"symbol": "CRM", "sector": "SOFTWARE", "cohort": "proposed18"},
+        {"symbol": "JPM", "sector": "FINANCIALS", "cohort": "proposed18"},
+        {"symbol": "XOM", "sector": "ENERGY", "cohort": "proposed18"},
+        {"symbol": "CVX", "sector": "ENERGY", "cohort": "proposed18"},
+        {"symbol": "LLY", "sector": "HEALTHCARE", "cohort": "proposed18"},
+        {"symbol": "UNH", "sector": "HEALTHCARE", "cohort": "proposed18"},
+        {"symbol": "CAT", "sector": "INDUSTRIALS", "cohort": "proposed18"},
+        {"symbol": "BA", "sector": "INDUSTRIALS", "cohort": "proposed18"},
+        {"symbol": "HD", "sector": "CONSUMER_DISCRETIONARY", "cohort": "proposed18"},
+        {"symbol": "COST", "sector": "CONSUMER_STAPLES", "cohort": "proposed18"}
+      ],
+      "timeframes": ["D1", "1H", "15m", "5m", "1m"]
+    }
+  },
+  "membership_controls": {
+    "point_in_time_membership": "UNRESOLVED",
+    "inactive_delisted_symbols": "NOT_INCLUDED_PENDING_SCOPE_DECISION",
+    "survivorship_bias": "PRESENT_UNTIL_RESOLVED",
+    "performance_claims_allowed": false
+  },
+  "execution_gates": {
+    "raw_data_in_repository": false,
+    "capture_provider": "authorized_local_futu_opend_only",
+    "provider_finality_and_timestamp_semantics": "UNVERIFIED",
+    "do_not_silently_drop_missing_symbols": true,
+    "do_not_upload_raw_captures": true
+  },
+  "safety": {
+    "RADAR_ADMISSION": "BLOCKED",
+    "PAPER_AUTO_READY": "NO",
+    "LIVE_TRADE": "NO",
+    "TRADE_EXECUTION": "NO"
+  }
+}
