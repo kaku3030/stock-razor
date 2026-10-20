@@ -103,7 +103,7 @@ from src.services.live_feed.opend_readonly_candidate_plan import plan_readonly_s
 from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
 
-CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ","US.GLDM","US.LITE","US.AAOI","US.CIEN")
+CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ","US.GLDM","US.LITE","US.AAOI","US.CIEN","US.SCHD","US.KMLM","US.GLD","US.DBMF","US.BTAL")
 runtime_id=os.environ.get("STOCK_RAZOR_RUNTIME_ID") or str(uuid.uuid4())
 repo_sha=os.environ["STOCK_RAZOR_REPO_SHA"]
 status_path=os.environ.get("STOCK_RAZOR_US_LIVEFEED_STATUS_PATH","/run/stock-razor-us-livefeed/latest-heartbeat.json")
