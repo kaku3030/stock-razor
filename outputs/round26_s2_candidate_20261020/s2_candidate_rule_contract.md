@@ -61,5 +61,5 @@ Round24 中曾草拟的 20 根高点与量能 1.2 倍原型不是本规则的历
 - 回归测试：`tests/research/test_round26_s2_candidate_replay.py`
 - 启动方式：`python tools/research/round26_s2_candidate_replay.py --capture <本地OpenD捕获目录> --out <输出目录> --timestamp-zone America/New_York --bar-time-semantics end`
 - 回放器输出 manifest、信号账本、逐成本交易账本、权益曲线、指标、JSON状态与 Markdown 报告。必须显式声明 America/New_York 与有来源依据的 bar-end 时间语义；非法 OHLC、乱序/重复时间戳、非完整 1m RTH 网格会失败关闭。只有明确传入 `--exclude-invalid-session COHR:2025-02-11` 才能生成敏感性结果；该模式验证已知异常指纹后剔除 COHR 整个交易日并在状态/报告中记录，不能算严格六标的全数据结果。
-- 本轮验证：py_compile PASS；8 项 unittest PASS；六标的合成输入端到端生成输出 PASS（含 Round24 同口径买入持有基准字段）。合成数据只验证回放工程路径，**不属于行情结果**。
+- 本轮验证：py_compile PASS；9 项 unittest PASS；六标的合成输入端到端生成输出 PASS（含 Round24 同口径买入持有基准字段）。合成数据只验证回放工程路径，**不属于行情结果**。
 - 原始 OpenD 捕获未能在当前执行环境读取；所以本规则仍为 `BACKTEST=NOT_RUN`、`OOS=NOT_RUN`，上述工程验证不能替代真实历史回测。
