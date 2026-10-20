@@ -23,11 +23,11 @@ from engineering_autonomy.incident_memory import observe_failure
 SCHEMA_VERSION = 1
 ALLOWED_COMMANDS = {
     "quality-check": (
-        "python", "-m", "pytest", "-q",
+        "python", "-m", "pytest", "--noconftest", "-q",
         "tests/test_engineering_autonomy.py", "tests/test_engineering_coding_gate.py",
     ),
     "e2e-evidence": (
-        "python", "-m", "pytest", "-q", "tests/test_engineering_coding_gate.py",
+        "python", "-m", "pytest", "--noconftest", "-q", "tests/test_engineering_coding_gate.py",
     ),
 }
 ALLOWED_KINDS = frozenset(ALLOWED_COMMANDS)
