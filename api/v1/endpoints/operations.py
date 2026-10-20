@@ -82,7 +82,9 @@ _MONITOR_HEALTH_FIELDS = {
     "sequence", "emitted_at_utc", "controller_lifecycle", "market_state_us",
     "cache_session_us", "delivery_mode", "bar_closure", "provider_callback_latency_ms",
     "provider_callback_latency_sample_count", "realtime_delivery_evidence",
-    "realtime_evidence_scope", "bar_closure_proven", "read_latency_ms",
+    "realtime_evidence_scope", "bar_closure_proven", "last_push_utc",
+    "last_push_age_seconds", "latest_push_status", "latest_push_observations",
+    "read_latency_ms",
     "radar_admission", "live_trade",
 }
 _MONITOR_MARKET_FIELDS = {
@@ -99,6 +101,21 @@ _MONITOR_BAR_FIELDS = {
     "fallback_from",
 }
 _MONITOR_QUALITY_FIELDS = {"grade", "quality_flags"}
+_MONITOR_PUSH_FIELDS = {
+    "symbol", "time_key", "received_at_utc", "age_seconds", "freshness_status",
+    "open", "high", "low", "close", "volume", "bar_closure", "research_eligible",
+}
+
+
+def _monitor_health_projection(payload: dict) -> dict:
+    result = _monitor_projection(payload, _MONITOR_HEALTH_FIELDS)
+    observations = payload.get("latest_push_observations")
+    result["latest_push_observations"] = {
+        symbol: _monitor_projection(item, _MONITOR_PUSH_FIELDS)
+        for symbol, item in observations.items()
+        if isinstance(symbol, str) and isinstance(item, dict)
+    } if isinstance(observations, dict) else {}
+    return result
 
 
 def _monitor_market_projection(payload: dict) -> dict:
@@ -145,10 +162,10 @@ def operations_status() -> OperationsStatusResponse:
     # environment typo or "PASS" value must NEVER claim admission.
     channels = _configured_channels()
     pending = [
-        "TickFlow 实盘连续性与真实历史交叉验证",
-        "真实手机接收回执",
-        "PAPER_AUTO_READY 独立验收",
-        "云端 OpenD SIMULATE 账户只读发现",
+        "TickFlow ʵ������������ʵ��ʷ������֤",
+        "��ʵ�ֻ����ջ�ִ",
+        "PAPER_AUTO_READY ��������",
+        "�ƶ� OpenD SIMULATE �˻�ֻ������",
     ]
     return OperationsStatusResponse(
         # This surface is offline-only with no authorized external Paper operator.
@@ -208,7 +225,7 @@ def us_live_monitor(symbols: str = "US.AMD,US.QQQ") -> USLiveMonitorResponse:
         source="CLOUD_CANONICAL_OPEND_CACHE",
         status=status,
         source_identity_matched=source_identity_matched,
-        health=_monitor_projection(health, _MONITOR_HEALTH_FIELDS),
+        health=_monitor_health_projection(health),
         market=_monitor_market_projection(market),
         radar_admission="BLOCKED",
         live_trade=False,
@@ -255,3 +272,4 @@ def paper_operator_controls() -> PaperOperatorControlsResponse:
             ),
         ]
     )
+
