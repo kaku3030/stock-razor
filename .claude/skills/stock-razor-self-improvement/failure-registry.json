@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-19T11:26:54Z",
+  "last_reconciled_utc": "2026-10-20T14:29:13Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -207,6 +207,22 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/934",
       "regression_evidence": "tests/test_incident_memory.py",
       "mandatory_action": "Use independent exact validators for the 64-character queue SHA256 and 40-character Git commit SHA, run loop fail-fast test and incident receipt regression at the same PR head; do not simply retry unchanged CI.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "ENG-007",
+      "owner": "Engineering Autonomy",
+      "severity": "P1",
+      "signature_tokens": [
+        "ModuleNotFoundError",
+        "anyio",
+        "engineering-autonomy-120m"
+      ],
+      "status": "OPEN",
+      "diagnosis": "The main-branch Engineering Autonomy 120m workflow installed only pytest, but its fixed queue commands invoked pytest with tests/conftest.py enabled. The global application conftest imports anyio/FastAPI/httpx and failed before the reviewed autonomy tests ran. The failure was captured on run 39439612414 at main SHA 7e1ca0edc7be2c099bf3638ead49f994a2cefde1.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39439612414",
+      "regression_evidence": "tests/test_engineering_autonomy_loop.py::test_reviewed_commands_disable_global_conftest (pending exact-head CI)",
+      "mandatory_action": "Keep the reviewed pytest commands aligned with the existing secretless coding-pilot command by adding --noconftest; require exact-head CI and a fresh main workflow run to reach PASS before marking mitigated. Never resume the failed queue after its fingerprint changes.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
