@@ -7,7 +7,7 @@
 
 Round24 已有真实历史行情回测包含 S1、S3–S6，统一按每边 10 bps 的成本结果及每边 5/20 bps 压力结果；样本区间为 2019–2026-10-16，另列 2019–2023 训练期和 2024–2026-10-16 样本外期。Round24 的买入持有基准为六标的等权组合。下表来自 Round24 已提交的 `round24_strategy_metrics.csv`，不代表本轮重算。所有既有策略在 5/10/20 bps × 全样本/训练/OOS 的数据及 S2 明确阻塞占位行，另见 [全成本六策略 CSV](six_strategy_comparison_all_costs.csv)。
 
-S2 原始 1m 文件在当前运行环境不可读取。尝试 Windows 只读目录检查时，远程命令连接明确返回本月 Desktop Commander 调用已暂停；本轮不再重试。故没有伪造 S2 数字。S2 候选回放器及严格数据质量门禁已提交，但尚未用真实行情运行，且 COHR 2025-02-11 有已知非法 OHLC 柱；最终 S2 仍为 `BLOCKED_DATA_ACCESS_AND_QUALITY`。
+六标的 1m 文件实际上已在 Windows 本地审计目录 `data/round24_s2_1m_opend_probe_20261020/`，Round24 的 D1/1H/15m/5m 原始文件也留在本地工作树。Desktop Commander 远程终端通道已暂停本月调用，但不妨碍在 Windows 本机 PowerShell 运行。为此已加入本地运行器：`tools/research/run_round26_s2_local.ps1`。它不拉新行情、不上传原始 CSV；会先验证 30 份输入和 10 项测试，记录严格全数据模式被 COHR 异常阻断，再执行明确标记的 COHR 整日排除敏感性回测，且可只提交结果文件。当前尚未在该 Windows 主机执行，因此下面仍不填造 S2 数字。
 
 ## 10 bps / 单边：全样本与样本外
 
@@ -34,13 +34,13 @@ S1、S3–S6 的 5/10/20 bps × 全样本/训练/OOS 逐组合指标、逐笔成
 
 ## S2 已完成与未完成
 
-- 已完成：新候选规则单独冻结、回放器、账务一致性与无未来函数检查、9 项回归测试、严格 1m RTH 网格审计、完整 COHR 异常日剔除敏感性模式。
+- 已完成：新候选规则单独冻结、回放器、账务一致性与无未来函数检查、10 项回归测试、严格 1m RTH 网格审计、完整 COHR 异常日剔除敏感性模式。
 - 尚未完成：真实 S2 信号/交易账本、5/10/20 bps 真实结果、训练/OOS 结果和与其余五策略的完整六策略比较。
 - 当前数据门禁：访问不到 Windows 忽略目录中的本地 OpenD 文件；COHR 2025-02-11 09:31 存在 high 91.67 小于 close 93.66 的异常 bar；数据时间戳含义/provider finality/独立审计也待证明。
-- 处理办法：取得该 capture 目录中的五周期六标的文件到可执行的工作区（无需付费 API），先审计来源、时区与 bar-end 语义；严格运行默认全数据回测。只有明确标记的整日排除敏感性可跳过已知异常日，且不能代替正式全样本验收。
+- 替代执行路线已准备好，无需移动原始文件：在 Round24 工作树拉取本研究分支并新增 Round26 工作树后，于 Windows PowerShell 运行 `tools/research/run_round26_s2_local.ps1 -PushResults`。它读取本地捕获目录并把结果推回本分支。
 
 ## 工程验证
 
-回放器 `tools/research/round26_s2_candidate_replay.py`，测试 `tests/research/test_round26_s2_candidate_replay.py`。本地验证：`py_compile PASS`，9 项 unittest 全部 PASS；既往六标的合成数据端到端路径通过，仅证明程序能运行，不属于真实行情证据。
+回放器 `tools/research/round26_s2_candidate_replay.py`，测试 `tests/research/test_round26_s2_candidate_replay.py`。本地验证：`py_compile PASS`，10 项 unittest 全部 PASS；既往六标的合成数据端到端路径通过，仅证明程序能运行，不属于真实行情证据。
 
 安全门禁仍为 `TRADE_EXECUTION=NO`、`PAPER_AUTO_READY=NO`、`LIVE_TRADE=NO`、`RADAR_ADMISSION=BLOCKED`。没有实盘、纸面交易或策略晋级。
