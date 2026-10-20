@@ -164,7 +164,7 @@ def test_installer_enables_only_explicit_sync_transport_lifecycle_evidence():
 def test_deploy_gate_waits_for_bounded_self_heal_and_exact_sha():
     workflow = (ROOT/".github/workflows/deploy-us-opend-livefeed.yml").read_text()
     assert "verify_us_opend_livefeed.sh" in workflow
-    assert "REPO_REF='$REPO_REF' bash" in workflow
+    assert "STOCK_RAZOR_AB_BLEND_SUBSCRIBE='$AB_BLEND_SUBSCRIBE' bash" in workflow
     assert "event_count" in VERIFY
     assert "sleep 5" in VERIFY
     assert "expected_sha" in VERIFY
@@ -266,7 +266,7 @@ def test_status_snapshot_summary_embedded_python_compiles():
 
 
 def test_verify_snapshot_provenance_embedded_python_compiles():
-    marker = '"$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" <<\'PY\''
+    marker = '"$python_bin" - "$status" "$snapshot" "$daily" "$expected_sha" "$expected_ab_blend" <<\'PY\''
     start = VERIFY.index(marker)
     start = VERIFY.index("\n", start) + 1
     end = VERIFY.index("\nPY", start)
