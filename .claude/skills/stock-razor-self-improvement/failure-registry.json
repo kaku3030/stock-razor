@@ -211,7 +211,7 @@
     },
     {
       "id": "ENG-007",
-      "owner": "Engineering Autonomy",
+      "owner": "Main Control",
       "severity": "P1",
       "signature_tokens": [
         "ModuleNotFoundError",
