@@ -44,6 +44,30 @@ class CandidateReplayTests(unittest.TestCase):
         self.assertAlmostEqual(result["return"], 0.10)
         self.assertAlmostEqual(result["final_equity"], 110_000.0)
 
+    def test_six_strategy_comparison_joins_round24_and_candidate_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline_path = Path(tmp) / "baseline.csv"
+            baseline = pd.DataFrame([{
+                "strategy": strategy, "window": window, "cost_bps_per_side": 10.0,
+                "trades": 10, "net_pnl": 1000.0, "profit_factor": 1.5,
+                "max_drawdown_pct": 0.05, "win_rate": 0.6,
+                "buy_hold_return": 0.2, "buy_hold_max_drawdown_pct": 0.3,
+            } for window in ("full_2019_2026", "oos_2024_2026")
+              for strategy in ("S1", "S3", "S4", "S5", "S6")])
+            baseline.to_csv(baseline_path, index=False)
+            candidate = pd.DataFrame([{
+                "strategy": "S2_CANDIDATE", "window": window, "cost_bps_per_side": 10.0,
+                "trades": 4, "net_pnl": 250.0, "profit_factor": 1.2,
+                "max_drawdown_pct": 0.02, "win_rate": 0.5,
+            } for window in ("full_2019_2026", "train_2019_2023", "oos_2024_2026")])
+            comparison = s2.six_strategy_comparison(candidate, baseline_path)
+            self.assertEqual(len(comparison), 14)
+            c = comparison[(comparison.strategy == "S2_CANDIDATE") & (comparison.window == "oos_2024_2026")].iloc[0]
+            self.assertEqual(c.status, "CANDIDATE_UNVALIDATED")
+            self.assertEqual(c.trades, 4)
+            bh = comparison[comparison.strategy == "BUY_HOLD_EQUAL_WEIGHT"].iloc[0]
+            self.assertEqual(bh.net_pnl, 20_000.0)
+
     def test_bad_ohlc_and_nonmonotonic_rows_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bars.csv"
