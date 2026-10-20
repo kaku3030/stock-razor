@@ -34,6 +34,16 @@ class CandidateReplayTests(unittest.TestCase):
         self.assertAlmostEqual(float(trades.iloc[0].net_pnl), expected, places=8)
         self.assertLess((curve.equity - curve.cash - curve.holdings_market_value).abs().max(), 1e-8)
 
+    def test_equal_weight_buy_and_hold_matches_round24_method(self):
+        times = pd.date_range("2024-01-02 16:00", periods=2, freq="D", tz="America/New_York")
+        prepared = {
+            "AAPL": {"D1": pd.DataFrame({"time_key": times, "close": [100.0, 110.0]})},
+            "QQQ": {"D1": pd.DataFrame({"time_key": times, "close": [200.0, 220.0]})},
+        }
+        result = s2._buy_hold(prepared, times[0], times[1])
+        self.assertAlmostEqual(result["return"], 0.10)
+        self.assertAlmostEqual(result["final_equity"], 110_000.0)
+
     def test_bad_ohlc_and_nonmonotonic_rows_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bars.csv"
