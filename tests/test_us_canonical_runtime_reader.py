@@ -407,6 +407,8 @@ def test_livefeed_health_realtime_evidence_requires_fresh_provenanced_source(tmp
         NOW - timedelta(minutes=10)
     ).isoformat()
     _write(tmp_path / "snapshot.json", fresh)
+    stat = os.stat(snapshot)
+    os.utime(snapshot, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
     result = read_us_livefeed_health(status, snapshot, now_utc=NOW)
     assert result["status"] == "HEALTHY"
     assert result["canonical_snapshot_status"] == "STALE"

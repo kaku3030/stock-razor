@@ -8,6 +8,11 @@ from api.v1.schemas.operations import (
     OperationsStatusResponse,
     PaperOperatorAction,
     PaperOperatorControlsResponse,
+    USLiveMonitorResponse,
+)
+from data_provider.us_canonical_runtime_reader import (
+    read_us_livefeed_health,
+    read_us_market_snapshots,
 )
 from src.notification_routing import NOTIFICATION_ROUTE_CONFIGS, split_notification_route_channels
 from src.services.execution_engine import ExecutionBlocked
@@ -66,6 +71,70 @@ def _effective_notification_routes(channels: list[str]) -> dict[str, list[str]]:
     return routes
 
 
+def _monitor_projection(payload: dict, allowed_fields: set[str]) -> dict:
+    """Project runtime data onto the public monitor contract."""
+
+    return {key: value for key, value in payload.items() if key in allowed_fields}
+
+
+_MONITOR_HEALTH_FIELDS = {
+    "ok", "status", "heartbeat_age_seconds", "repo_sha", "runtime_instance_id",
+    "sequence", "emitted_at_utc", "controller_lifecycle", "market_state_us",
+    "cache_session_us", "delivery_mode", "bar_closure", "provider_callback_latency_ms",
+    "provider_callback_latency_sample_count", "realtime_delivery_evidence",
+    "realtime_evidence_scope", "bar_closure_proven", "read_latency_ms",
+    "radar_admission", "live_trade",
+}
+_MONITOR_MARKET_FIELDS = {
+    "ok", "status", "source_age_seconds", "publication_age_seconds", "repo_sha",
+    "runtime_instance_id", "sequence", "emitted_at_utc", "latest_source_timestamp_utc",
+    "latest_received_at_utc", "market_state_us", "cache_session_us", "delivery_mode",
+    "bar_closure", "missing_symbols", "data_available", "read_latency_ms",
+    "radar_admission", "live_trade",
+}
+_MONITOR_BAR_FIELDS = {
+    "bar_start_utc", "bar_end_utc", "open", "high", "low", "close", "volume",
+    "amount", "source_timestamp_utc", "received_at_utc", "session", "is_closed",
+    "is_complete", "provider", "feed", "latency_ms", "freshness_ms", "quality_flags",
+    "fallback_from",
+}
+_MONITOR_QUALITY_FIELDS = {"grade", "quality_flags"}
+
+
+def _monitor_market_projection(payload: dict) -> dict:
+    result = _monitor_projection(payload, _MONITOR_MARKET_FIELDS)
+    source_symbols = payload.get("symbols")
+    projected_symbols = {}
+    if isinstance(source_symbols, dict):
+        for symbol, item in source_symbols.items():
+            if not isinstance(item, dict):
+                continue
+            projected = {
+                key: item[key]
+                for key in ("provider", "feed", "counts")
+                if key in item
+            }
+            latest = item.get("latest")
+            if isinstance(latest, dict):
+                frames = {}
+                for timeframe in ("1m", "5m", "15m", "1h"):
+                    bar = latest.get(timeframe)
+                    if not isinstance(bar, dict):
+                        frames[timeframe] = None
+                        continue
+                    bar_data = _monitor_projection(bar, _MONITOR_BAR_FIELDS)
+                    quality = bar.get("health")
+                    if isinstance(quality, dict):
+                        bar_data["health"] = _monitor_projection(
+                            quality, _MONITOR_QUALITY_FIELDS
+                        )
+                    frames[timeframe] = bar_data
+                projected["latest"] = frames
+            projected_symbols[symbol] = projected
+    result["symbols"] = projected_symbols
+    return result
+
+
 @router.get("/status", response_model=OperationsStatusResponse)
 def operations_status() -> OperationsStatusResponse:
     """Expose safety and notification readiness without mutating runtime state."""
@@ -110,6 +179,39 @@ def operations_status() -> OperationsStatusResponse:
         # end-to-end delivery receipt is consumed by the notification owner.
         notification_ready=False,
         pending_acceptance=pending,
+    )
+
+
+@router.get("/us-live-monitor", response_model=USLiveMonitorResponse)
+def us_live_monitor(symbols: str = "US.AMD,US.QQQ") -> USLiveMonitorResponse:
+    """Expose bounded OpenD cache evidence; never contacts a broker/provider."""
+
+    requested = [item.strip() for item in symbols.split(",") if item.strip()]
+    if not requested or len(requested) > 20:
+        requested = []
+    health = read_us_livefeed_health()
+    market = read_us_market_snapshots(requested or ["__invalid__"])
+    source_identity_matched = bool(
+        health.get("repo_sha")
+        and health.get("runtime_instance_id")
+        and health.get("repo_sha") == market.get("repo_sha")
+        and health.get("runtime_instance_id") == market.get("runtime_instance_id")
+    )
+    source_evidence = (
+        health.get("realtime_delivery_evidence") is True
+        and market.get("status") == "PASS"
+        and market.get("data_available") is True
+        and source_identity_matched
+    )
+    status = "REALTIME_SOURCE_EVIDENCE" if source_evidence else "BLOCKED_OR_STALE"
+    return USLiveMonitorResponse(
+        source="CLOUD_CANONICAL_OPEND_CACHE",
+        status=status,
+        source_identity_matched=source_identity_matched,
+        health=_monitor_projection(health, _MONITOR_HEALTH_FIELDS),
+        market=_monitor_market_projection(market),
+        radar_admission="BLOCKED",
+        live_trade=False,
     )
 
 

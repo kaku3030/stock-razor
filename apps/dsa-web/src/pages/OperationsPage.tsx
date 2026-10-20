@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, BellRing, RefreshCw, ShieldCheck } from 'lucide-react';
-import { operationsApi, type OperationsStatus } from '../api/operations';
+import { Activity, BellRing, RefreshCw, ShieldCheck, Signal } from 'lucide-react';
+import { operationsApi, type OperationsStatus, type USLiveMonitor } from '../api/operations';
 import { ApiErrorAlert, AppPage, Card, Loading, PageHeader } from '../components/common';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 
@@ -30,11 +30,71 @@ const routeLabel = (route: string): string => ({
   system_error: '系统错误',
 }[route] ?? route);
 
+const ageLabel = (seconds?: number): string => (
+  typeof seconds === 'number' && Number.isFinite(seconds) ? `${Math.max(0, Math.round(seconds))}s` : '未知'
+);
+
+const USLiveMonitorCard: React.FC<{ monitor: USLiveMonitor | null; error: string | null }> = ({ monitor, error }) => {
+  const symbols = monitor?.market.symbols ?? {};
+  return (
+    <Card className="mt-4" title="OpenD 行情监控" subtitle="只读云端 canonical cache">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Signal className="h-5 w-5 text-primary" aria-hidden="true" />
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${monitor?.status === 'REALTIME_SOURCE_EVIDENCE' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}>
+          {monitor?.status === 'REALTIME_SOURCE_EVIDENCE' ? '源级实时证据' : '阻塞 / 过期 / 未验证'}
+        </span>
+        <span className="text-xs text-secondary-text">数据源：{monitor?.source ?? 'CLOUD_CANONICAL_OPEND_CACHE'}</span>
+      </div>
+      {error && <p className="mb-3 text-sm text-warning">监控接口暂不可用：{error}</p>}
+      {!error && !monitor && <p className="text-sm text-secondary-text">正在读取 canonical cache…</p>}
+      {monitor && (
+        <>
+          <div className="grid gap-2 text-xs text-secondary-text sm:grid-cols-2 lg:grid-cols-4">
+            <div>服务心跳：{monitor.health.status ?? '未知'} · {ageLabel(monitor.health.heartbeat_age_seconds)}</div>
+            <div>行情新鲜度：{monitor.market.status ?? '未知'} · {ageLabel(monitor.market.source_age_seconds)}</div>
+            <div>Provider callback：{typeof monitor.health.provider_callback_latency_ms === 'number' ? `${monitor.health.provider_callback_latency_ms.toFixed(1)} ms` : '未知'}</div>
+            <div>读取耗时：{typeof monitor.market.read_latency_ms === 'number' ? `${monitor.market.read_latency_ms.toFixed(1)} ms` : '未知'}</div>
+          </div>
+          <div className="mt-2 text-xs text-secondary-text">
+            K 线闭合验收：{monitor.health.bar_closure_proven ? '已验证' : '未验证'} · delivery mode {monitor.health.delivery_mode ?? '未知'}
+          </div>
+          <div className="mt-3 text-xs text-secondary-text">
+            Runtime {monitor.health.runtime_instance_id ?? '未知'} · SHA {monitor.health.repo_sha?.slice(0, 10) ?? '未知'} · 身份匹配 {monitor.source_identity_matched ? '是' : '否'}
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-xs">
+              <thead className="text-secondary-text"><tr><th className="py-2 pr-3">标的 / 周期</th><th className="pr-3">Feed</th><th className="pr-3">K线时间 UTC</th><th className="pr-3">OHLC</th><th className="pr-3">成交量</th><th>质量</th></tr></thead>
+              <tbody>
+                {Object.entries(symbols).flatMap(([symbol, item]) => ['1m', '5m', '15m', '1h'].map((frame) => {
+                  const bar = item.latest?.[frame];
+                  return (
+                    <tr className="border-t border-border/60" key={`${symbol}-${frame}`}>
+                      <td className="py-2 pr-3 font-medium">{symbol} / {frame}</td>
+                      <td className="pr-3">{item.provider ?? '未知'} / {item.feed ?? '未知'}</td>
+                      <td className="pr-3">{bar?.bar_end_utc ?? bar?.source_timestamp_utc ?? '无数据'}</td>
+                      <td className="pr-3">{bar ? `${bar.open ?? '—'} / ${bar.high ?? '—'} / ${bar.low ?? '—'} / ${bar.close ?? '—'}` : '—'}</td>
+                      <td className="pr-3">{bar?.volume ?? '—'}</td>
+                      <td>{bar ? `${bar.is_closed === true ? 'source tag: closed' : 'source tag: open/unknown'}${bar.health?.grade ? ` · ${bar.health.grade}` : ''}${bar.health?.quality_flags?.length ? ` · ${bar.health.quality_flags.join(', ')}` : ''}` : '—'}</td>
+                    </tr>
+                  );
+                }))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs text-warning">此处只读取云端 canonical cache；源级实时证据不代表逐标的验收。Radar 始终 BLOCKED，Live Trade 始终关闭。</p>
+        </>
+      )}
+    </Card>
+  );
+};
+
 const OperationsPage: React.FC = () => {
   const [status, setStatus] = useState<OperationsStatus | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [liveMonitor, setLiveMonitor] = useState<USLiveMonitor | null>(null);
+  const [liveMonitorError, setLiveMonitorError] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     setRefreshing(true);
@@ -49,12 +109,26 @@ const OperationsPage: React.FC = () => {
     }
   }, []);
 
+  const loadLiveMonitor = useCallback(async () => {
+    try {
+      setLiveMonitor(await operationsApi.getUSLiveMonitor());
+      setLiveMonitorError(null);
+    } catch (err) {
+      setLiveMonitorError(getParsedApiError(err).message);
+    }
+  }, []);
+
   useEffect(() => {
     document.title = '运行控制台 - Stock Razor';
     void loadStatus();
+    void loadLiveMonitor();
     const timer = window.setInterval(() => void loadStatus(), 30_000);
-    return () => window.clearInterval(timer);
-  }, [loadStatus]);
+    const monitorTimer = window.setInterval(() => void loadLiveMonitor(), 10_000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(monitorTimer);
+    };
+  }, [loadStatus, loadLiveMonitor]);
 
   if (error) return <AppPage><ApiErrorAlert error={error} /></AppPage>;
   if (!status) return <AppPage><Loading /></AppPage>;
@@ -129,6 +203,7 @@ const OperationsPage: React.FC = () => {
           <p className="pt-3 text-xs text-secondary-text">自动执行仍需独立重启、重连与对账验收。</p>
         </Card>
       </div>
+      <USLiveMonitorCard monitor={liveMonitor} error={liveMonitorError} />
       <Card className="mt-4" title="待验收事项" subtitle="ACCEPTANCE QUEUE">
         <ul className="space-y-2 text-sm text-secondary-text">
           {status.pending_acceptance.map((item) => <li key={item}>• {item}</li>)}
