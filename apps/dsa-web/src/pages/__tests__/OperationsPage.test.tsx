@@ -88,7 +88,7 @@ describe('OperationsPage', () => {
     expect(await screen.findByText('US.QQQ / 1m')).toBeInTheDocument();
     expect(screen.getByText('600 / 602 / 599 / 601')).toBeInTheDocument();
     expect(screen.getByText('12345')).toBeInTheDocument();
-    expect(screen.getByText(/序列匹配 否/)).toBeInTheDocument();
+    expect(screen.getByText(/快照序列匹配 否/)).toBeInTheDocument();
     expect(screen.getByText('US session: PRE_MARKET_BEGIN · cache session: premarket')).toBeInTheDocument();
     expect(screen.getByText('阻塞 / 过期 / 未验证')).toBeInTheDocument();
     expect(screen.getByLabelText('Unclosed OpenD callback observations')).toBeInTheDocument();

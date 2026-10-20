@@ -111,7 +111,7 @@ def _heartbeat(*, emitted_at=NOW - timedelta(seconds=5), safe=True):
         "event_count": 100,
         "accepted_event_count": 110,
         "quote_right_evidence": {"delivery_mode": "REALTIME"},
-        "canonical_snapshot_export": {"status": "PASS"},
+        "canonical_snapshot_export": {"status": "PASS", "sequence": 49},
         "canonical_cache": {
             "US.AMD": {
                 "bar_count": 2,
@@ -301,6 +301,7 @@ def test_livefeed_health_exposes_safe_provider_callback_latency(tmp_path):
     assert result["status"] == "HEALTHY"
     assert result["provider_callback_latency_ms"] == 4.25
     assert result["provider_callback_latency_sample_count"] == 17
+    assert result["canonical_snapshot_sequence"] == 49
 
 
 def test_livefeed_health_projects_fresh_forming_push_without_promoting_closure(tmp_path):
@@ -511,4 +512,3 @@ def test_realtime_evidence_rejects_unverified_source_identity(tmp_path):
     unknown = read_us_livefeed_health(status, str(snapshot), now_utc=NOW)
     assert unknown["status"] == "HEALTHY"
     assert unknown["realtime_delivery_evidence"] is False
-

@@ -8,7 +8,8 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
         "status": "HEALTHY",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
-        "sequence": 25,
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
         "realtime_delivery_evidence": True,
         "radar_admission": "BLOCKED",
         "live_trade": False,
@@ -46,7 +47,8 @@ def test_us_live_monitor_blocks_mismatched_runtime_identity(monkeypatch):
         "status": "HEALTHY",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
-        "sequence": 25,
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
         "realtime_delivery_evidence": True,
         "source_path": "C:/private/heartbeat.json",
     })
@@ -75,7 +77,8 @@ def test_us_live_monitor_blocks_sequence_mismatch_even_when_runtime_identity_mat
         "status": "HEALTHY",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
-        "sequence": 25,
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
         "realtime_delivery_evidence": True,
     })
     monkeypatch.setattr(operations, "read_us_market_snapshots", lambda symbols: {

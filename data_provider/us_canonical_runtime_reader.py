@@ -457,6 +457,14 @@ def read_us_livefeed_health(
         if any(item["freshness_status"] == "FRESH" for item in latest_push_observations.values())
         else "STALE" if latest_push_observations else "UNAVAILABLE"
     )
+    snapshot_export = heartbeat.get("canonical_snapshot_export")
+    snapshot_sequence = (
+        snapshot_export.get("sequence")
+        if isinstance(snapshot_export, dict)
+        and type(snapshot_export.get("sequence")) is int
+        and snapshot_export["sequence"] > 0
+        else None
+    )
     last_push = _aware_timestamp(heartbeat.get("last_push_utc"))
     last_push_age = (now - last_push).total_seconds() if last_push else None
     # Operational heartbeat and provider market evidence are independent.
@@ -483,6 +491,7 @@ def read_us_livefeed_health(
         "repo_sha": heartbeat.get("repo_sha"),
         "runtime_instance_id": heartbeat.get("runtime_instance_id"),
         "sequence": heartbeat.get("sequence"),
+        "canonical_snapshot_sequence": snapshot_sequence,
         "emitted_at_utc": heartbeat.get("emitted_at_utc"),
         "controller_lifecycle": heartbeat.get("controller_lifecycle"),
         "market_state_us": heartbeat.get("market_state_us"),
@@ -669,4 +678,3 @@ def read_us_market_bars(
         "total_bar_count": len(bars),
         "bars": selected,
     })
-

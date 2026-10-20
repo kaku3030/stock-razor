@@ -63,7 +63,7 @@ const USLiveMonitorCard: React.FC<{ monitor: USLiveMonitor | null; error: string
             US session: {monitor.market.market_state_us ?? '未知'} · cache session: {monitor.market.cache_session_us ?? '未知'}
           </div>
           <div className="mt-3 text-xs text-secondary-text">
-            Runtime {monitor.health.runtime_instance_id ?? '未知'} · SHA {monitor.health.repo_sha?.slice(0, 10) ?? '未知'} · 身份匹配 {monitor.source_identity_matched ? '是' : '否'} · 序列匹配 {monitor.source_sequence_matched ? '是' : '否'}
+            Runtime {monitor.health.runtime_instance_id ?? '未知'} · SHA {monitor.health.repo_sha?.slice(0, 10) ?? '未知'} · 身份匹配 {monitor.source_identity_matched ? '是' : '否'} · 快照序列匹配 {monitor.source_sequence_matched ? '是' : '否'}
           </div>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-xs">

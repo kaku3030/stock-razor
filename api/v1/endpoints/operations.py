@@ -85,6 +85,7 @@ _MONITOR_HEALTH_FIELDS = {
     "realtime_evidence_scope", "bar_closure_proven", "read_latency_ms",
     "last_push_utc", "last_push_age_seconds", "latest_push_status",
     "latest_push_observations", "radar_admission", "live_trade",
+    "canonical_snapshot_sequence",
 }
 _MONITOR_MARKET_FIELDS = {
     "ok", "status", "source_age_seconds", "publication_age_seconds", "repo_sha",
@@ -215,7 +216,7 @@ def us_live_monitor(symbols: str = "US.AMD,US.QQQ") -> USLiveMonitorResponse:
         and health.get("repo_sha") == market.get("repo_sha")
         and health.get("runtime_instance_id") == market.get("runtime_instance_id")
     )
-    health_sequence = health.get("sequence")
+    health_sequence = health.get("canonical_snapshot_sequence")
     market_sequence = market.get("sequence")
     source_sequence_matched = (
         type(health_sequence) is int

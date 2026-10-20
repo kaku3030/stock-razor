@@ -55,6 +55,7 @@ export type USLiveMonitor = {
   source_sequence_matched: boolean;
   health: {
     status?: string;
+    canonical_snapshot_sequence?: number;
     heartbeat_age_seconds?: number;
     emitted_at_utc?: string;
     runtime_instance_id?: string;
