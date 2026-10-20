@@ -301,8 +301,49 @@ def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float,
     return rows
 
 
+def six_strategy_comparison(candidate_metrics: pd.DataFrame, baseline_path: Path) -> pd.DataFrame:
+    """Join Round24 S1/S3-S6 metrics with this candidate and its matched B&H."""
+    if not baseline_path.exists():
+        return pd.DataFrame()
+    baseline = pd.read_csv(baseline_path)
+    required = {"strategy", "window", "cost_bps_per_side", "trades", "net_pnl",
+                "profit_factor", "max_drawdown_pct", "win_rate", "buy_hold_return",
+                "buy_hold_max_drawdown_pct"}
+    missing = required - set(baseline.columns)
+    if missing:
+        raise ValueError(f"Round24 baseline metrics missing columns: {sorted(missing)}")
+    baseline = baseline[baseline.cost_bps_per_side == 10.0].copy()
+    candidate = candidate_metrics[candidate_metrics.cost_bps_per_side == 10.0].copy()
+    candidate["strategy"] = "S2_CANDIDATE"
+    source = pd.concat([baseline, candidate], ignore_index=True, sort=False)
+    rows = []
+    for window in ("full_2019_2026", "oos_2024_2026"):
+        group = source[source.window == window]
+        bh_return = float(group.buy_hold_return.dropna().iloc[0]) if not group.empty else float("nan")
+        bh_mdd = float(group.buy_hold_max_drawdown_pct.dropna().iloc[0]) if not group.empty else float("nan")
+        for strategy in ("S1", "S2_CANDIDATE", "S3", "S4", "S5", "S6"):
+            match = group[group.strategy == strategy]
+            if match.empty:
+                rows.append({"strategy": strategy, "window": window, "cost_bps_per_side": 10.0,
+                             "status": "NOT_COMPUTED" if strategy == "S2_CANDIDATE" else "BASELINE_MISSING"})
+                continue
+            row = match.iloc[0]
+            rows.append({"strategy": strategy, "window": window, "cost_bps_per_side": 10.0,
+                         "status": "CANDIDATE_UNVALIDATED" if strategy == "S2_CANDIDATE" else "ROUND24_BASELINE",
+                         "net_pnl": row.net_pnl, "profit_factor": row.profit_factor,
+                         "max_drawdown_pct": row.max_drawdown_pct, "trades": row.trades,
+                         "win_rate": row.win_rate, "buy_hold_return": bh_return,
+                         "buy_hold_max_drawdown_pct": bh_mdd})
+        rows.append({"strategy": "BUY_HOLD_EQUAL_WEIGHT", "window": window,
+                     "cost_bps_per_side": 0.0, "status": "ROUND24_BASELINE",
+                     "net_pnl": 100000.0 * bh_return, "profit_factor": None,
+                     "max_drawdown_pct": bh_mdd, "trades": None, "win_rate": None,
+                     "buy_hold_return": bh_return, "buy_hold_max_drawdown_pct": bh_mdd})
+    return pd.DataFrame(rows)
+
+
 def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
-        exclude_invalid_session: str | None = None) -> None:
+        exclude_invalid_session: str | None = None, baseline_metrics: Path | None = None) -> None:
     if timestamp_zone != "America/New_York":
         raise ValueError("Round26 candidate requires the audited America/New_York timezone")
     if bar_time_semantics != "end":
@@ -339,6 +380,12 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
     trades_all.to_csv(out / "s2_candidate_trade_ledger.csv", index=False)
     curves_all.to_csv(out / "s2_candidate_equity_curve.csv", index=False)
     metrics.to_csv(out / "s2_candidate_metrics.csv", index=False)
+    if baseline_metrics is None:
+        baseline_metrics = Path(__file__).resolve().parents[2] / "outputs" / "round24_six_strategy_backtest_20261020" / "round24_strategy_metrics.csv"
+    comparison = six_strategy_comparison(metrics, baseline_metrics)
+    comparison_path = out / "s2_candidate_six_strategy_comparison.csv"
+    if not comparison.empty:
+        comparison.to_csv(comparison_path, index=False)
     status = {
         "schema_version": "stock-razor-round26-s2-candidate-v1",
         "strategy": "S2_CANDIDATE",
@@ -352,6 +399,8 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
         "signal_rows": int(len(signals)),
         "accepted_trade_rows_by_cost": {str(c): int((trades_all.cost_bps_per_side == c).sum()) for c in COSTS_BPS},
         "source_manifest": manifest,
+        "comparison_file": str(comparison_path) if not comparison.empty else None,
+        "comparison_status": "ROUND24_BASELINE_JOINED" if not comparison.empty else "BASELINE_METRICS_NOT_FOUND",
         "unresolved_validation": ["provider_finality", "session_calendar_and_timestamp_semantics", "independent_data_quality_signoff"],
         "safety": {"RADAR_ADMISSION": "BLOCKED", "PAPER_AUTO_READY": "NO", "LIVE_TRADE": "NO", "TRADE_EXECUTION": "NO"},
     }
@@ -370,7 +419,7 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
         "",
         table,
         "",
-        "See the CSV ledger, equity curve, metrics, manifest and JSON status for machine-readable evidence.",
+        "See the CSV ledger, equity curve, metrics, manifest, six-strategy comparison and JSON status for machine-readable evidence.",
         "",
         "`TRADE_EXECUTION=NO`; `RADAR_ADMISSION=BLOCKED`; `PAPER_AUTO_READY=NO`; `LIVE_TRADE=NO`.",
         "",
@@ -387,5 +436,8 @@ if __name__ == "__main__":
                         help="Must be supported by the capture provenance; no start-time fallback is allowed")
     parser.add_argument("--exclude-invalid-session", choices=("COHR:2025-02-11",), default=None,
                         help="Optional explicit sensitivity run; excludes the entire audited COHR session, never repairs the bar")
+    parser.add_argument("--baseline-metrics", type=Path, default=None,
+                        help="Optional Round24 strategy metrics CSV; defaults to the repository's Round24 output path")
     args = parser.parse_args()
-    run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics, args.exclude_invalid_session)
+    run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics,
+        args.exclude_invalid_session, args.baseline_metrics)
