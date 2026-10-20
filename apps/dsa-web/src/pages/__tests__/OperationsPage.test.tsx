@@ -37,7 +37,20 @@ beforeEach(() => {
     source: 'CLOUD_CANONICAL_OPEND_CACHE',
     status: 'BLOCKED_OR_STALE',
     source_identity_matched: false,
-    health: { status: 'STALE', heartbeat_age_seconds: 45, bar_closure_proven: false, radar_admission: 'BLOCKED', live_trade: false },
+    health: {
+      status: 'STALE', heartbeat_age_seconds: 45, bar_closure_proven: false,
+      last_push_age_seconds: 2, latest_push_status: 'FRESH',
+      latest_push_observations: {
+        'US.QQQ': {
+          symbol: 'US.QQQ', time_key: '2026-10-20 06:30:00',
+          received_at_utc: '2026-10-20T10:29:07Z', open: 715.5,
+          high: 715.6, low: 715.4, close: 715.5082, volume: 1,
+          age_seconds: 2, freshness_status: 'FRESH', bar_closure: 'UNPROVEN',
+          research_eligible: false,
+        },
+      },
+      radar_admission: 'BLOCKED', live_trade: false,
+    },
     market: {
       status: 'STALE',
       source_age_seconds: 130,
@@ -73,8 +86,12 @@ describe('OperationsPage', () => {
     expect(await screen.findByText('US.QQQ / 1m')).toBeInTheDocument();
     expect(screen.getByText('600 / 602 / 599 / 601')).toBeInTheDocument();
     expect(screen.getByText('12345')).toBeInTheDocument();
-    expect(screen.getByText('阻塞 / 过期 / 未验证')).toBeInTheDocument();
-    expect(screen.getByText(/Radar 始终 BLOCKED/)).toBeInTheDocument();
+    expect(screen.getByText('Premarket and after-hours callbacks (closure unproven)')).toBeInTheDocument();
+    expect(screen.getByText('715.5 / 715.6 / 715.4 / 715.5082')).toBeInTheDocument();
+    expect(screen.getByText(/UNPROVEN/)).toBeInTheDocument();
+    expect(screen.getByText('���� / ���� / δ��֤')).toBeInTheDocument();
+    expect(screen.getByText(/Radar ʼ�� BLOCKED/)).toBeInTheDocument();
     expect(getUSLiveMonitor).toHaveBeenCalledWith();
   });
 });
+
