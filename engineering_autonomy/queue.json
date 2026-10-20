@@ -4,14 +4,29 @@
     {
       "id": "focused-autonomy-tests",
       "kind": "quality-check",
-      "command": ["python", "-m", "pytest", "-q", "tests/test_engineering_autonomy.py", "tests/test_engineering_coding_gate.py"],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--noconftest",
+        "-q",
+        "tests/test_engineering_autonomy.py",
+        "tests/test_engineering_coding_gate.py"
+      ],
       "max_attempts": 2,
       "cost_units": 1
     },
     {
       "id": "workflow-contract-check",
       "kind": "e2e-evidence",
-      "command": ["python", "-m", "pytest", "-q", "tests/test_engineering_coding_gate.py"],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "--noconftest",
+        "-q",
+        "tests/test_engineering_coding_gate.py"
+      ],
       "max_attempts": 2,
       "cost_units": 1
     }
