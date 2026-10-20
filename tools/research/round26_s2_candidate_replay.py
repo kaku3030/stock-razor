@@ -20,7 +20,8 @@ MAX_POSITIONS = 3
 MAX_SECTOR_POSITIONS = 2
 
 
-def read_bars(path: Path, timestamp_zone: str, timeframe: str) -> pd.DataFrame:
+def read_bars(path: Path, timestamp_zone: str, timeframe: str, symbol: str,
+              exclude_session: str | None = None) -> pd.DataFrame:
     frame = pd.read_csv(path)
     required = {"time_key", "open", "high", "low", "close", "volume"}
     missing = required - set(frame.columns)
@@ -38,14 +39,35 @@ def read_bars(path: Path, timestamp_zone: str, timeframe: str) -> pd.DataFrame:
             raise ValueError(f"{path}: non-finite {col}")
     if (frame[["open", "high", "low", "close"]] <= 0).any().any() or (frame.volume < 0).any():
         raise ValueError(f"{path}: non-positive OHLC or negative volume")
-    bad = (frame.high < frame[["open", "close", "low"]].max(axis=1)) | (frame.low > frame[["open", "close", "high"]].min(axis=1))
-    if bad.any():
-        rows = frame.loc[bad, ["time_key", "open", "high", "low", "close", "volume"]].head(5)
-        raise ValueError(f"{path}: invalid OHLC rows: {rows.to_dict('records')}")
     if frame.time_key.duplicated().any():
         raise ValueError(f"{path}: duplicate timestamps")
     if not frame.time_key.is_monotonic_increasing:
         raise ValueError(f"{path}: timestamps not strictly ordered")
+    excluded_rows = 0
+    bad = (frame.high < frame[["open", "close", "low"]].max(axis=1)) | (frame.low > frame[["open", "close", "high"]].min(axis=1))
+    if exclude_session is not None:
+        if (symbol, exclude_session) != ("COHR", "2025-02-11"):
+            raise ValueError("only the audited COHR 1m session on 2025-02-11 has an approved sensitivity exclusion")
+        local = frame.time_key.dt.tz_convert("America/New_York")
+        day_mask = local.dt.strftime("%Y-%m-%d") == exclude_session
+        if timeframe == "1m":
+            anomaly = frame.loc[day_mask & bad]
+            if len(anomaly) != 1:
+                raise ValueError("known COHR anomaly did not match exactly once; refusing session exclusion")
+            row = anomaly.iloc[0]
+            stamp = row.time_key.tz_convert("America/New_York")
+            observed = (stamp.strftime("%Y-%m-%d %H:%M"), float(row.open), float(row.high), float(row.low), float(row.close), float(row.volume))
+            expected = ("2025-02-11 09:31", 91.67, 91.67, 91.67, 93.66, 22.0)
+            if observed != expected:
+                raise ValueError(f"COHR anomaly changed from audited fingerprint: {observed}")
+        elif bad.any():
+            rows = frame.loc[bad, ["time_key", "open", "high", "low", "close", "volume"]].head(5)
+            raise ValueError(f"{path}: invalid OHLC rows: {rows.to_dict('records')}")
+        excluded_rows = int(day_mask.sum())
+        frame = frame.loc[~day_mask].copy()
+    elif bad.any():
+        rows = frame.loc[bad, ["time_key", "open", "high", "low", "close", "volume"]].head(5)
+        raise ValueError(f"{path}: invalid OHLC rows: {rows.to_dict('records')}")
     if timeframe == "1m":
         local = frame.time_key.dt.tz_convert("America/New_York")
         for day, indexes in local.groupby(local.dt.date).groups.items():
@@ -57,7 +79,9 @@ def read_bars(path: Path, timestamp_zone: str, timeframe: str) -> pd.DataFrame:
             expected = pd.date_range(first, last, freq="1min")
             if not day_times.reset_index(drop=True).equals(pd.Series(expected)):
                 raise ValueError(f"{path}: missing or irregular 1m RTH bars on {day}")
-    return frame.reset_index(drop=True)
+    frame = frame.reset_index(drop=True)
+    frame.attrs["excluded_session_rows"] = excluded_rows
+    return frame
 
 
 def add_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -277,11 +301,14 @@ def summarize(trades: pd.DataFrame, curve: pd.DataFrame, cost: float,
     return rows
 
 
-def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str) -> None:
+def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
+        exclude_invalid_session: str | None = None) -> None:
     if timestamp_zone != "America/New_York":
         raise ValueError("Round26 candidate requires the audited America/New_York timezone")
     if bar_time_semantics != "end":
         raise ValueError("Round26 candidate requires bar-end timestamps to prevent lookahead")
+    if exclude_invalid_session not in (None, "COHR:2025-02-11"):
+        raise ValueError("supported sensitivity exclusion is only COHR:2025-02-11")
     out.mkdir(parents=True, exist_ok=True)
     prepared: dict[str, dict[str, pd.DataFrame]] = {}
     signals: list[dict] = []
@@ -290,9 +317,10 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str) 
         frames = {}
         for tf in TIMEFRAMES:
             path = capture / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
-            frame = add_features(read_bars(path, timestamp_zone, tf))
+            exclude = "2025-02-11" if exclude_invalid_session and symbol == "COHR" else None
+            frame = add_features(read_bars(path, timestamp_zone, tf, symbol, exclude))
             frames[tf] = frame
-            manifest.append({"symbol": symbol, "timeframe": tf, "rows": len(frame), "first": str(frame.time_key.iloc[0]), "last": str(frame.time_key.iloc[-1]), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+            manifest.append({"symbol": symbol, "timeframe": tf, "rows": len(frame), "excluded_session_rows": int(frame.attrs.get("excluded_session_rows", 0)), "first": str(frame.time_key.iloc[0]), "last": str(frame.time_key.iloc[-1]), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         prepared[symbol] = frames
         signals.extend(generate_signals(frames, symbol))
     pd.DataFrame(manifest).to_csv(out / "s2_candidate_manifest.csv", index=False)
@@ -319,6 +347,7 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str) 
         "source": "local OpenD QFQ/RTH captures",
         "timestamp_zone_argument": timestamp_zone,
         "bar_time_semantics_argument": bar_time_semantics,
+        "sensitivity_exclusions": [exclude_invalid_session] if exclude_invalid_session else [],
         "input_rows": int(sum(x["rows"] for x in manifest)),
         "signal_rows": int(len(signals)),
         "accepted_trade_rows_by_cost": {str(c): int((trades_all.cost_bps_per_side == c).sum()) for c in COSTS_BPS},
@@ -328,12 +357,16 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str) 
     }
     (out / "s2_candidate_status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
     table = "```csv\n" + metrics.to_csv(index=False).rstrip() + "\n```"
+    exclusion_note = (f"Sensitivity only: the complete COHR session {exclude_invalid_session.split(':', 1)[1]} was excluded. "
+                      "The corrupted bar was not repaired or silently removed.") if exclude_invalid_session else "No data session exclusions were requested."
     report = "\n".join([
         "# Round26 S2 Candidate Replay",
         "",
         "State: `BACKTEST_COMPUTED_NOT_VALIDATED`; this is a new research candidate, not a recovered historical rule or a strategy promotion.",
         "",
         "The replay reads only local OpenD QFQ/RTH files. OHLC and 1m session-grid validation are fail-closed. Provider finality, source timestamp semantics and independent data-quality signoff remain separate validation gates.",
+        "",
+        exclusion_note,
         "",
         table,
         "",
@@ -352,5 +385,7 @@ if __name__ == "__main__":
     parser.add_argument("--timestamp-zone", required=True, help="Timezone declared by the audited capture, e.g. America/New_York")
     parser.add_argument("--bar-time-semantics", choices=("end",), required=True,
                         help="Must be supported by the capture provenance; no start-time fallback is allowed")
+    parser.add_argument("--exclude-invalid-session", choices=("COHR:2025-02-11",), default=None,
+                        help="Optional explicit sensitivity run; excludes the entire audited COHR session, never repairs the bar")
     args = parser.parse_args()
-    run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics)
+    run(args.capture, args.out, args.timestamp_zone, args.bar_time_semantics, args.exclude_invalid_session)
