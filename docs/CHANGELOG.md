@@ -17,10 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
-## [Unreleased]
-
-- Add a separate OpenD extended-hours callback panel. The service requests Session.ALL and exposes a bounded, sanitized latest forming observation with receipt age and `UNPROVEN` closure; canonical closed bars and Radar admission remain unchanged.
-
+## [Unreleased]\n\n- Add a separate OpenD extended-hours callback panel. The service requests Session.ALL and exposes a bounded, sanitized latest forming observation with receipt age and UNPROVEN closure; canonical closed bars and Radar admission remain unchanged.\n\n- [改进] OpenD 监控仅在 health 与 canonical snapshot 的 runtime/SHA 身份和 sequence 一致时报告源级实时证据。\n
 
 - [改进] STOCK RAZOR 跨窗口同步 V1.4.1 新增固定 GitHub 最新讨论索引 `#924/6269031171`，一条直读快速发现当前去敏工程事件，无需浏览整段 PR 历史或等待 AWS Actions 排队；重要讨论由当前连接窗口同步写入 append-only 事件与固定指针并独立验证，私人聊天全文不上传公开仓库。
 

@@ -52,6 +52,7 @@ export type USLiveMonitor = {
   source: 'CLOUD_CANONICAL_OPEND_CACHE';
   status: string;
   source_identity_matched: boolean;
+  source_sequence_matched: boolean;
   health: {
     status?: string;
     heartbeat_age_seconds?: number;
@@ -104,5 +105,4 @@ export const operationsApi = {
     return response.data;
   },
 };
-
 

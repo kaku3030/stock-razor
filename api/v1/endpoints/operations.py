@@ -215,17 +215,28 @@ def us_live_monitor(symbols: str = "US.AMD,US.QQQ") -> USLiveMonitorResponse:
         and health.get("repo_sha") == market.get("repo_sha")
         and health.get("runtime_instance_id") == market.get("runtime_instance_id")
     )
+    health_sequence = health.get("sequence")
+    market_sequence = market.get("sequence")
+    source_sequence_matched = (
+        type(health_sequence) is int
+        and health_sequence > 0
+        and type(market_sequence) is int
+        and market_sequence > 0
+        and health_sequence == market_sequence
+    )
     source_evidence = (
         health.get("realtime_delivery_evidence") is True
         and market.get("status") == "PASS"
         and market.get("data_available") is True
         and source_identity_matched
+        and source_sequence_matched
     )
     status = "REALTIME_SOURCE_EVIDENCE" if source_evidence else "BLOCKED_OR_STALE"
     return USLiveMonitorResponse(
         source="CLOUD_CANONICAL_OPEND_CACHE",
         status=status,
         source_identity_matched=source_identity_matched,
+        source_sequence_matched=source_sequence_matched,
         health=_monitor_health_projection(health),
         market=_monitor_market_projection(market),
         radar_admission="BLOCKED",

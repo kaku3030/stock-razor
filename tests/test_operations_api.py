@@ -8,6 +8,7 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
         "status": "HEALTHY",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
+        "sequence": 25,
         "realtime_delivery_evidence": True,
         "radar_admission": "BLOCKED",
         "live_trade": False,
@@ -17,6 +18,7 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
         "status": "PASS",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
+        "sequence": 25,
         "symbols": {"US.AMD": {"latest": {"1m": {"close": 123.0}}}},
         "data_available": True,
         "radar_admission": "BLOCKED",
@@ -29,6 +31,7 @@ def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
     assert response.status == "REALTIME_SOURCE_EVIDENCE"
     assert response.source == "CLOUD_CANONICAL_OPEND_CACHE"
     assert response.source_identity_matched is True
+    assert response.source_sequence_matched is True
     assert response.market["symbols"]["US.AMD"]["latest"]["1m"]["close"] == 123.0
     assert response.radar_admission == "BLOCKED"
     assert response.live_trade is False
@@ -43,6 +46,7 @@ def test_us_live_monitor_blocks_mismatched_runtime_identity(monkeypatch):
         "status": "HEALTHY",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-1",
+        "sequence": 25,
         "realtime_delivery_evidence": True,
         "source_path": "C:/private/heartbeat.json",
     })
@@ -50,6 +54,7 @@ def test_us_live_monitor_blocks_mismatched_runtime_identity(monkeypatch):
         "status": "PASS",
         "repo_sha": "a" * 40,
         "runtime_instance_id": "runtime-old",
+        "sequence": 25,
         "symbols": {},
         "source_path": "C:/private/market.json",
     })
@@ -58,6 +63,35 @@ def test_us_live_monitor_blocks_mismatched_runtime_identity(monkeypatch):
 
     assert response.status == "BLOCKED_OR_STALE"
     assert response.source_identity_matched is False
+    assert response.source_sequence_matched is True
+    assert response.radar_admission == "BLOCKED"
+    assert response.live_trade is False
+
+
+def test_us_live_monitor_blocks_sequence_mismatch_even_when_runtime_identity_matches(monkeypatch):
+    import api.v1.endpoints.operations as operations
+
+    monkeypatch.setattr(operations, "read_us_livefeed_health", lambda: {
+        "status": "HEALTHY",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 25,
+        "realtime_delivery_evidence": True,
+    })
+    monkeypatch.setattr(operations, "read_us_market_snapshots", lambda symbols: {
+        "status": "PASS",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 26,
+        "symbols": {},
+        "data_available": True,
+    })
+
+    response = operations.us_live_monitor()
+
+    assert response.source_identity_matched is True
+    assert response.source_sequence_matched is False
+    assert response.status == "BLOCKED_OR_STALE"
     assert response.radar_admission == "BLOCKED"
     assert response.live_trade is False
 

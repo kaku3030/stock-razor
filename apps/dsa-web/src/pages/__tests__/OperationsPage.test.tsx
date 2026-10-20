@@ -37,6 +37,7 @@ beforeEach(() => {
     source: 'CLOUD_CANONICAL_OPEND_CACHE',
     status: 'BLOCKED_OR_STALE',
     source_identity_matched: false,
+    source_sequence_matched: false,
     health: {
       status: 'STALE', heartbeat_age_seconds: 45, bar_closure_proven: false,
       latest_push_observations: {
@@ -87,6 +88,7 @@ describe('OperationsPage', () => {
     expect(await screen.findByText('US.QQQ / 1m')).toBeInTheDocument();
     expect(screen.getByText('600 / 602 / 599 / 601')).toBeInTheDocument();
     expect(screen.getByText('12345')).toBeInTheDocument();
+    expect(screen.getByText(/序列匹配 否/)).toBeInTheDocument();
     expect(screen.getByText('US session: PRE_MARKET_BEGIN · cache session: premarket')).toBeInTheDocument();
     expect(screen.getByText('阻塞 / 过期 / 未验证')).toBeInTheDocument();
     expect(screen.getByLabelText('Unclosed OpenD callback observations')).toBeInTheDocument();

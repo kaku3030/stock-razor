@@ -36,6 +36,7 @@ class USLiveMonitorResponse(BaseModel):
     source: Literal["CLOUD_CANONICAL_OPEND_CACHE"]
     status: str
     source_identity_matched: bool
+    source_sequence_matched: bool
     health: dict[str, object]
     market: dict[str, object]
     radar_admission: Literal["BLOCKED"] = "BLOCKED"
