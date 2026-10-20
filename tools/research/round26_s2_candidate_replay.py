@@ -101,17 +101,28 @@ def _latest_before(frame: pd.DataFrame, timestamp: pd.Timestamp) -> pd.Series | 
 
 
 def _breakout(row: pd.Series) -> bool:
-    values = (row.get("prior_high20"), row.get("prior_volume_mean20"))
+    get = row.get if hasattr(row, "get") else lambda key: getattr(row, key, None)
+    prior_high20, prior_volume_mean20 = get("prior_high20"), get("prior_volume_mean20")
+    values = (prior_high20, prior_volume_mean20)
     if any(pd.isna(x) for x in values) or float(row.prior_volume_mean20) <= 0:
         return False
-    return float(row.close) > float(row.prior_high20) and float(row.volume) > 1.2 * float(row.prior_volume_mean20)
+    return float(row.close) > float(prior_high20) and float(row.volume) > 1.2 * float(prior_volume_mean20)
 
 
 def generate_signals(frames: dict[str, pd.DataFrame], symbol: str) -> list[dict]:
     d1, h1, m15, m5, m1 = (frames[x] for x in TIMEFRAMES)
     result: list[dict] = []
     last_m15_index = -10**9
-    for i, row15 in m15.iterrows():
+    # Group intraday bars once. Re-filtering all 4m+ 1m bars for every
+    # candidate made the original replay effectively quadratic.
+    m5_by_day = {day: group for day, group in m5.groupby(m5.time_key.map(lambda t: t.date()), sort=False)}
+    m1_by_day = {day: group for day, group in m1.groupby(m1.time_key.map(lambda t: t.date()), sort=False)}
+    m1_positions_by_day = {
+        day: (int(m1.time_key.searchsorted(group.time_key.iloc[0], side="left")),
+              int(m1.time_key.searchsorted(group.time_key.iloc[-1], side="right")))
+        for day, group in m1_by_day.items()
+    }
+    for i, row15 in enumerate(m15.itertuples(index=False)):
         if i - last_m15_index < 20 or not _breakout(row15):
             continue
         d, h = _latest_before(d1, row15.time_key), _latest_before(h1, row15.time_key)
@@ -125,18 +136,32 @@ def generate_signals(frames: dict[str, pd.DataFrame], symbol: str) -> list[dict]
         if not math.isfinite(stop) or stop <= 0 or stop >= float(row15.close):
             continue
         date15 = row15.time_key.date()
-        m5_after = m5[(m5.time_key > row15.time_key) & (m5.time_key.dt.date == date15)].head(3)
-        confirm5 = next((x for _, x in m5_after.iterrows() if _breakout(x)), None)
+        day5 = m5_by_day.get(date15)
+        if day5 is None:
+            last_m15_index = i
+            continue
+        start5 = int(day5.time_key.searchsorted(row15.time_key, side="right"))
+        confirm5 = next((day5.iloc[j] for j in range(start5, min(start5 + 3, len(day5)))
+                         if _breakout(day5.iloc[j])), None)
         if confirm5 is None:
             last_m15_index = i
             continue
-        m1_after = m1[(m1.time_key > confirm5.time_key) & (m1.time_key.dt.date == date15)].head(5)
-        confirm1 = next((x for _, x in m1_after.iterrows() if _breakout(x)), None)
+        day1 = m1_by_day.get(date15)
+        if day1 is None:
+            last_m15_index = i
+            continue
+        start1 = int(day1.time_key.searchsorted(confirm5.time_key, side="right"))
+        confirm1 = next((day1.iloc[j] for j in range(start1, min(start1 + 5, len(day1)))
+                         if _breakout(day1.iloc[j])), None)
         if confirm1 is None:
             last_m15_index = i
             continue
         entry_pos = int(m1.time_key.searchsorted(confirm1.time_key, side="right"))
         if entry_pos >= len(m1):
+            last_m15_index = i
+            continue
+        day_start, day_end = m1_positions_by_day[date15]
+        if not (day_start <= entry_pos < day_end):
             last_m15_index = i
             continue
         entry = m1.iloc[entry_pos]
@@ -150,18 +175,15 @@ def generate_signals(frames: dict[str, pd.DataFrame], symbol: str) -> list[dict]
             continue
         risk = entry_price - stop
         target = entry_price + 2.0 * risk
-        session = m1[m1.time_key.dt.date == date15]
-        entry_global = int(entry_pos)
-        session_positions = session.index.to_list()
-        after = [idx for idx in session_positions if idx >= entry_global][:80]
-        if not after:
+        after_end = min(entry_pos + 80, day_end)
+        if entry_pos >= after_end:
             last_m15_index = i
             continue
-        last_candidate = after[-1]
+        last_candidate = after_end - 1
         exit_price = float(m1.iloc[last_candidate].close)
         exit_time = m1.iloc[last_candidate].time_key
         reason = "TIME_80_BARS"
-        for idx in after:
+        for idx in range(entry_pos, after_end):
             bar = m1.iloc[idx]
             op, lo, hi = float(bar.open), float(bar.low), float(bar.high)
             if op <= stop:
@@ -174,7 +196,7 @@ def generate_signals(frames: dict[str, pd.DataFrame], symbol: str) -> list[dict]
             if hit_target:
                 exit_price, exit_time, reason = target, bar.time_key, "TARGET"
                 break
-        if last_candidate == session_positions[-1] and reason == "TIME_80_BARS":
+        if last_candidate == day_end - 1 and reason == "TIME_80_BARS":
             reason = "RTH_CLOSE"
         result.append({
             "symbol": symbol, "sector": SECTOR[symbol], "signal_time": row15.time_key,
@@ -371,15 +393,19 @@ def run(capture: Path, out: Path, timestamp_zone: str, bar_time_semantics: str,
     signals: list[dict] = []
     manifest = []
     for symbol in SYMBOLS:
+        print(f"[round26] loading {symbol}", flush=True)
         frames = {}
         for tf in TIMEFRAMES:
             path = resolve_input_path(capture, symbol, tf, one_minute_capture)
+            print(f"[round26] validating {symbol} {tf}: {path}", flush=True)
             exclude = "2025-02-11" if exclude_invalid_session and symbol == "COHR" else None
             frame = add_features(read_bars(path, timestamp_zone, tf, symbol, exclude))
             frames[tf] = frame
             manifest.append({"symbol": symbol, "timeframe": tf, "rows": len(frame), "excluded_session_rows": int(frame.attrs.get("excluded_session_rows", 0)), "first": str(frame.time_key.iloc[0]), "last": str(frame.time_key.iloc[-1]), "source_path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         prepared[symbol] = frames
-        signals.extend(generate_signals(frames, symbol))
+        symbol_signals = generate_signals(frames, symbol)
+        signals.extend(symbol_signals)
+        print(f"[round26] {symbol}: {len(symbol_signals)} signals; {len(signals)} total", flush=True)
     pd.DataFrame(manifest).to_csv(out / "s2_candidate_manifest.csv", index=False)
     pd.DataFrame(signals).to_csv(out / "s2_candidate_signals.csv", index=False)
     close_by_symbol = {s: f["1m"].set_index("time_key").close for s, f in prepared.items()}
