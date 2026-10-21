@@ -39,6 +39,20 @@ def _normal(health: MarketDataHealth | None) -> bool:
                 and health.score >= 80 and not health.quality_flags)
 
 
+# These flags describe a bar that is useful for observation but unsafe for a
+# closed-bar event. They quarantine only the affected symbol/timeframe; they
+# must not suppress valid events for the rest of the candidate set.
+_SYMBOL_BAR_QUARANTINE_FLAGS = frozenset({
+    "VWAP_OUTSIDE_BAR_RANGE",
+    "PARTIAL_TURNOVER",
+})
+
+
+def _is_symbol_bar_quarantinable(bar: Bar) -> bool:
+    flags = {str(flag).strip().upper() for flag in bar.quality_flags if str(flag).strip()}
+    return bool(flags) and flags.issubset(_SYMBOL_BAR_QUARANTINE_FLAGS)
+
+
 def _qualified_bar(bar: Bar, *, observed_at: datetime, minutes: int) -> bool:
     local_start = bar.bar_start.astimezone(US_EASTERN)
     local_end = bar.bar_end.astimezone(US_EASTERN)
@@ -86,6 +100,7 @@ def record_canonical_closed_bars(
         return blocked("BAR_EVENT_SOURCE_TIME_INVALID")
 
     candidates = []
+    quarantined: list[str] = []
     for snapshot in source.snapshots:
         if (not snapshot.symbol.startswith("US.") or snapshot.provider != "futu"
                 or snapshot.feed != "opend" or snapshot.fallback_from or snapshot.fallback_reason
@@ -108,6 +123,15 @@ def record_canonical_closed_bars(
             if (observed_at - bar.bar_end).total_seconds() > max_age_seconds:
                 continue
             if not _qualified_bar(bar, observed_at=observed_at, minutes=minutes):
+                if _is_symbol_bar_quarantinable(bar):
+                    flags = ",".join(sorted({
+                        str(flag).strip().upper()
+                        for flag in bar.quality_flags if str(flag).strip()
+                    }))
+                    quarantined.append(
+                        f"SYMBOL_BAR_QUARANTINED:{snapshot.symbol}:{timeframe}:{flags}"
+                    )
+                    continue
                 return blocked("BAR_EVENT_BAR_NOT_QUALIFIED")
             try:
                 candidates.append(ClosedBarEventCandidate(
@@ -129,6 +153,11 @@ def record_canonical_closed_bars(
                 ))
             except ValueError:
                 return blocked("BAR_EVENT_CANDIDATE_INVALID")
+    if not candidates:
+        return blocked(
+            "BAR_EVENT_NO_QUALIFIED_SYMBOLS",
+            reasons=tuple(quarantined),
+        )
     created = duplicates = 0
     try:
         for candidate in candidates:
@@ -141,6 +170,10 @@ def record_canonical_closed_bars(
         return blocked("BAR_EVENT_STORAGE_FAILED", created, duplicates)
     except ValueError:
         return blocked("BAR_EVENT_FACT_CONFLICT", created, duplicates)
+    if quarantined:
+        return CanonicalBarEventIngressResult(
+            "PARTIAL", created, duplicates, tuple(quarantined)
+        )
     return CanonicalBarEventIngressResult(
         "RECORDED" if created else ("UNCHANGED" if duplicates else "NO_NEW_CLOSED_BAR"),
         created, duplicates,
