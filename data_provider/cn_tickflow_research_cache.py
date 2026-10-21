@@ -69,13 +69,14 @@ def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
 
 
 class _BatchKlinesFacade:
-    """Materialize one bounded provider batch per timeframe for the builder."""
+    """Materialize bounded provider batches for each timeframe's symbol subset."""
 
-    def __init__(self, client: Any, symbols: tuple[str, ...], periods: dict[str, int],
-                 batch_size: int) -> None:
+    def __init__(self, client: Any, period_symbols: dict[str, tuple[str, ...]],
+                 periods: dict[str, int], batch_size: int) -> None:
         self._frames: dict[tuple[str, str], Any] = {}
         self._fallback_count = 0
-        for period, count in periods.items():
+        for period, period_symbol_list in period_symbols.items():
+            count = periods[period]
             try:
                 method = (client.klines.batch if period == "1d"
                           else client.klines.intraday_batch)
@@ -86,17 +87,17 @@ class _BatchKlinesFacade:
                 }
                 if period == "1d":
                     kwargs["adjust"] = "none"
-                result = method(list(symbols), **kwargs)
+                result = method(list(period_symbol_list), **kwargs)
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
-                missing = tuple(symbol for symbol in symbols if symbol not in result)
+                missing = tuple(symbol for symbol in period_symbol_list if symbol not in result)
                 if (len(missing) > _MAX_BATCH_FALLBACKS_PER_PERIOD
                         or self._fallback_count + len(missing)
                         > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
                     raise ValueError("batch SDK symbol missing")
                 # Count attempted calls, including a later provider failure.
                 self._fallback_count += len(missing)
-                for symbol in symbols:
+                for symbol in period_symbol_list:
                     if symbol in result:
                         frame = result[symbol]
                     else:
@@ -465,6 +466,19 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
              else {"15m":96,"60m":24})
     if type(use_batch) is not bool:
         raise ValueError("invalid batch mode flag")
+    period_symbols={period: symbols for period in periods}
+    if include_supplemental and allow_scan_symbols:
+        # Short periods are diagnostic QC only. Keep them on the approved
+        # core set so sparse data from an arbitrary scan symbol cannot fail
+        # the whole historical backtest snapshot.
+        qc_symbols=tuple(symbol for symbol in symbols if symbol in SYMBOLS)
+        period_symbols.pop("1m", None)
+        period_symbols.pop("5m", None)
+        if qc_symbols:
+            period_symbols["1m"]=qc_symbols
+            period_symbols["5m"]=qc_symbols
+        period_symbols={period: period_symbols[period] for period in periods
+                        if period in period_symbols}
     if use_batch:
         # The installed SDK contract defaults to 100 symbols per request.
         # Keep the scan ceiling at 200 while letting the SDK split each
@@ -477,12 +491,15 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         batch_size = min(len(symbols), max(1, min(configured_batch_size, 100)))
         client = type("_BatchClient", (), {
             "klines": _BatchKlinesFacade(
-                client, symbols, periods, batch_size=batch_size,
+                client, period_symbols, periods, batch_size=batch_size,
             ),
         })()
     for index,symbol in enumerate(symbols):
         frames={}
         for interval, n in periods.items():
+            if symbol not in period_symbols.get(interval, ()):
+                frames[interval]={"status":"QC_ONLY_NOT_COLLECTED","rows":[]}
+                continue
             # SDK's isolated Premium Kline contract was separately verified on AWS.
             stage=f"S{index}_{interval.upper()}_FETCH"
             try:
@@ -675,6 +692,11 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
         raw=cached_symbols[symbol][timeframe]
+        if (isinstance(raw,dict)
+                and raw.get("status")=="QC_ONLY_NOT_COLLECTED"
+                and timeframe in ("1m","5m")):
+            return {**base,"status":"NO_DATA",
+                    "cache_rejection_reason":"QC_PERIOD_NOT_COLLECTED"}
         rows=raw["rows"]
         reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
