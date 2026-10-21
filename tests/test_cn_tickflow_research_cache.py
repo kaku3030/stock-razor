@@ -308,16 +308,26 @@ def test_scan_capacity_accepts_twenty_explicit_symbols_and_reader_sees_all(tmp_p
     assert result["radar_admission"] == "BLOCKED"
 
 
-def test_scan_capacity_covers_twenty_symbols_across_all_five_periods():
+def test_scan_capacity_keeps_short_periods_qc_only_for_core_symbols(tmp_path):
     symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
     fake = FakeClient()
     snapshot = build_observation(
         fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
         symbols=symbols, include_supplemental=True, allow_scan_symbols=True,
     )
-    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 5
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 3
     assert all(set(snapshot["symbols"][symbol]) ==
                {"1m", "5m", "15m", "60m", "1d"} for symbol in symbols)
+    assert all(snapshot["symbols"][symbol][period]["status"] ==
+               "QC_ONLY_NOT_COLLECTED"
+               for symbol in symbols for period in ("1m", "5m"))
+    path=tmp_path / "scan.json"
+    atomic_publish(str(path), snapshot)
+    got=read_cn_tickflow_research_data(
+        symbols[-1], "1m", path=str(path), now_utc=NOW,
+    )
+    assert got["status"] == "NO_DATA"
+    assert got["cache_rejection_reason"] == "QC_PERIOD_NOT_COLLECTED"
 
 
 def test_full_capacity_uses_one_batch_request_per_period():
@@ -329,7 +339,7 @@ def test_full_capacity_uses_one_batch_request_per_period():
         allow_scan_symbols=True, use_batch=True,
     )
     assert len(fake.klines.batch_calls) == 1
-    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(fake.klines.intraday_batch_calls) == 2
     assert len(snapshot["symbols"]) == TEST_SCAN_SYMBOLS
 
 
@@ -342,7 +352,7 @@ def test_two_hundred_symbol_batch_capacity_covers_all_five_periods():
         allow_scan_symbols=True, use_batch=True,
     )
     assert len(fake.klines.batch_calls) == 1
-    assert len(fake.klines.intraday_batch_calls) == 4
+    assert len(fake.klines.intraday_batch_calls) == 2
     assert len(snapshot["symbols"]) == TEST_MAX_SYMBOLS
 
 
@@ -938,7 +948,7 @@ def test_batch_missing_symbol_count_over_fallback_cap_fails_closed():
         build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
                           symbols=symbols,allow_scan_symbols=True,
                           include_supplemental=True,use_batch=True)
-    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_FETCH"
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_15M_FETCH"
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
 
 

@@ -7,6 +7,11 @@ on:
         description: "Explicit Linux EC2 instance id; never inferred"
         type: string
         required: true
+      research_symbols:
+        description: "AUTO_200 or comma-separated explicit A-share symbols (maximum 200)"
+        type: string
+        required: true
+        default: AUTO_200
       mode:
         description: "Preflight only by default; deploy requires explicit confirmation"
         type: choice
@@ -42,6 +47,7 @@ jobs:
       DEPLOY_MODE: ${{ inputs.mode }}
       CONFIRM_DEPLOY: ${{ inputs.confirm_deploy }}
       APPROVE_PAID_TICKFLOW: ${{ inputs.approve_paid_tickflow_ingestion }}
+      TICKFLOW_RESEARCH_SYMBOLS: ${{ inputs.research_symbols }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,6 +70,21 @@ jobs:
           [[ "$main_sha" == "$checkout_sha" ]] || { echo 'CN_TICKFLOW_DEPLOY_MAIN_MOVED_ABORT' >&2; exit 2; }
           test -f ops/aws/install_cn_tickflow_research.sh
           test -f ops/aws/verify_cn_tickflow_research.sh
+          if [[ "$TICKFLOW_RESEARCH_SYMBOLS" != AUTO_200 ]]; then
+            export TICKFLOW_RESEARCH_SYMBOLS
+            python - <<'PY'
+          import os, re, sys
+          value = os.environ.get("TICKFLOW_RESEARCH_SYMBOLS", "")
+          symbols = value.split(",")
+          if (not symbols or len(symbols) > 200
+                  or len(set(symbols)) != len(symbols)
+                  or any(not re.fullmatch(r"[0-9]{6}\.(?:SH|SZ)", symbol)
+                         for symbol in symbols)):
+              print("CN_TICKFLOW_SYMBOL_INPUT_INVALID", file=sys.stderr)
+              raise SystemExit(2)
+          print(f"CN_TICKFLOW_SYMBOL_INPUT_VALID=count:{len(symbols)}")
+          PY
+          fi
           echo "CN_TICKFLOW_DEPLOY_SOURCE_SHA=$checkout_sha"
           echo "CN_TICKFLOW_DEPLOY_MODE=$DEPLOY_MODE"
       - uses: aws-actions/configure-aws-credentials@v4
@@ -169,7 +190,7 @@ jobs:
           set -euo pipefail
           install_hash="$(sha256sum ops/aws/install_cn_tickflow_research.sh | awk '{print $1}')"
           verify_hash="$(sha256sum ops/aws/verify_cn_tickflow_research.sh | awk '{print $1}')"
-          remote="set -euo pipefail; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL --max-time 25 https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_tickflow_research.sh -o \"\$stage/install.sh\"; curl --proto '=https' --tlsv1.2 -fsSL --max-time 25 https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_tickflow_research.sh -o \"\$stage/verify.sh\"; printf '%s  %s\n' '$install_hash' \"\$stage/install.sh\" | sha256sum -c - >/dev/null; printf '%s  %s\n' '$verify_hash' \"\$stage/verify.sh\" | sha256sum -c - >/dev/null; chmod 0755 \"\$stage/install.sh\" \"\$stage/verify.sh\"; REPO_REF=$REPO_REF ALLOW_SERVICE_MUTATION=true \"\$stage/install.sh\"; \"\$stage/verify.sh\" $REPO_REF"
+          remote="set -euo pipefail; stage=\$(mktemp -d); trap 'rm -rf \"\$stage\"' EXIT; curl --proto '=https' --tlsv1.2 -fsSL --max-time 25 https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_tickflow_research.sh -o \"\$stage/install.sh\"; curl --proto '=https' --tlsv1.2 -fsSL --max-time 25 https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_tickflow_research.sh -o \"\$stage/verify.sh\"; printf '%s  %s\n' '$install_hash' \"\$stage/install.sh\" | sha256sum -c - >/dev/null; printf '%s  %s\n' '$verify_hash' \"\$stage/verify.sh\" | sha256sum -c - >/dev/null; chmod 0755 \"\$stage/install.sh\" \"\$stage/verify.sh\"; REPO_REF=$REPO_REF TICKFLOW_RESEARCH_SYMBOLS=$TICKFLOW_RESEARCH_SYMBOLS ALLOW_SERVICE_MUTATION=true \"\$stage/install.sh\"; \"\$stage/verify.sh\" $REPO_REF"
           encoded="$(printf '%s' "$remote" | base64 -w0)"
           params="$(jq -cn --arg c "printf '%s' '$encoded' | base64 -d | bash" '{commands:[$c]}')"
           cid="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$params" --timeout-seconds 600 --query Command.CommandId --output text)"
