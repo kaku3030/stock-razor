@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-21T04:18:44Z",
+  "last_reconciled_utc": "2026-10-21T15:40:00Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -263,9 +263,9 @@
         "BAR_EVENT_SNAPSHOT_NOT_QUALIFIED",
         "BAR_EVENT_NO_QUALIFIED_SYMBOLS"
       ],
-      "status": "OPEN",
-      "diagnosis": "Known symbol-local turnover quality flags aborted valid sibling intake. Initial PR #961 also failed to skip quarantined snapshots and incorrectly blocked healthy inter-closure polls. Adversarial tests reproduced five failures before convergence. Live readback after deployment also showed global source closure oscillating independently of valid research observations; event source proof gating must not be conflated with technical research polling.",
-      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/961",
+      "status": "MITIGATED",
+      "diagnosis": "Known symbol-local turnover quality flags aborted valid sibling intake. Initial PR #961 also failed to skip quarantined snapshots and incorrectly blocked healthy inter-closure polls. Adversarial tests reproduced five failures before convergence. Live readback after deployment also showed global source closure oscillating independently of valid research observations; event source proof gating must not be conflated with technical research polling. Fixes #961/#964 merged and worker deployed at 3cb68e6084a935ca1f8adacd6fd30d1c9e008510 via run 39627400747; live readback across 57146..57158 showed research UNCHANGED with PARTIAL GLDM quarantine. This mitigates batch research blocking, not provider turnover anomalies, whole-session reliability or trade admission.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/964",
       "regression_evidence": "tests/test_stock_radar_v2_canonical_bar_events.py",
       "mandatory_action": "Skip known unhealthy snapshots, isolate flagged closed bars without masking structural errors, retain quarantine diagnostics, allow healthy NO_NEW_CLOSED_BAR polls; verify exact deployed worker/source SHA and cloud readback before marking resolved. Keep event/source admission blocked for UNPROVEN/UNKNOWN source proof while allowing fresh schema-valid provisional research; preserve event gate status on unchanged polls.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
