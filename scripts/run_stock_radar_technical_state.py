@@ -17,6 +17,7 @@ from data_provider.alpaca_market_data_adapter import AlpacaMarketDataAdapter, Al
 from data_provider.eastmoney_gm_market_data_adapter import EastmoneyGMMarketDataAdapter
 from data_provider.existing_market_data_adapter import ExistingMarketDataAdapter
 from data_provider.market_data_adapter import MarketDataAdapter
+from data_provider.stockdata_hub_historical_adapter import StockDataHubHistoricalAdapter
 from src.repositories.stock_radar_technical_state_repo import StockRadarTechnicalStateRepository
 from src.services.stock_radar_v2.provider_runtime import StockRadarProviderRuntime
 from src.services.stock_radar_v2.technical_state_radar import StockRadarTechnicalStateRadar
@@ -74,7 +75,7 @@ def run(
     radar = StockRadarTechnicalStateRadar(StockRadarTechnicalStateRepository(db))
     intraday = intraday_adapter or _intraday_adapter(provider, alpaca_feed=alpaca_feed)
     daily = daily_adapter or (
-        intraday if provider == "eastmoney"
+        StockDataHubHistoricalAdapter() if market == "cn"
         else ExistingMarketDataAdapter(DataFetcherManager())
     )
     runtime = StockRadarProviderRuntime(intraday, daily, radar=radar)

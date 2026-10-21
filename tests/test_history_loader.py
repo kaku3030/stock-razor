@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -73,11 +74,44 @@ class HistoryLoaderTestCase(unittest.TestCase):
         mock_fm.get_daily_data.return_value = (fake_df, "eastmoney")
         mock_get_fm.return_value = mock_fm
 
-        df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
+        with patch(
+            "src.services.history_loader._get_historical_adapter",
+            side_effect=RuntimeError("adapter unavailable"),
+        ):
+            df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
 
         self.assertIsNotNone(df)
         self.assertEqual(source, "eastmoney")
         mock_fm.get_daily_data.assert_called_once_with("600519", days=60)
+
+    @patch("src.storage.get_db")
+    def test_uses_historical_adapter_before_dfm(self, mock_get_db):
+        from src.services.history_loader import load_history_df
+
+        mock_db = MagicMock()
+        mock_db.get_data_range.return_value = []
+        mock_get_db.return_value = mock_db
+        bar = SimpleNamespace(
+            bar_start=datetime(2026, 4, 18),
+            open=10.0,
+            high=11.0,
+            low=9.0,
+            close=10.5,
+            volume=100.0,
+            amount=None,
+            is_closed=True,
+            is_complete=True,
+        )
+        adapter = MagicMock()
+        adapter.get_bars.return_value = [bar]
+
+        with patch("src.services.history_loader._get_historical_adapter", return_value=adapter), \
+                patch("src.services.history_loader._get_fetcher_manager") as mock_get_fm:
+            df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
+
+        self.assertEqual(source, "stockdata-hub+tencent-daily")
+        self.assertEqual(df.iloc[0]["close"], 10.5)
+        mock_get_fm.assert_not_called()
 
     # ------------------------------------------------------------------
     # ContextVar integration
@@ -149,7 +183,11 @@ class HistoryLoaderTestCase(unittest.TestCase):
         mock_fm.get_daily_data.side_effect = Exception("API down")
         mock_get_fm.return_value = mock_fm
 
-        df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
+        with patch(
+            "src.services.history_loader._get_historical_adapter",
+            side_effect=RuntimeError("adapter down"),
+        ):
+            df, source = load_history_df("600519", days=60, target_date=date(2026, 4, 18))
 
         self.assertIsNone(df)
         self.assertEqual(source, "none")

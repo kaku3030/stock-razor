@@ -66,3 +66,32 @@ def test_script_rejects_provider_market_mismatch_before_runtime(tmp_path) -> Non
             intraday_adapter=object(),
             daily_adapter=object(),
         )
+
+
+def test_cn_radar_defaults_to_historical_adapter_for_daily_bars(tmp_path, monkeypatch) -> None:
+    captured = {}
+
+    class FakeRuntime:
+        def __init__(self, intraday, daily, *, radar):
+            captured["adapters"] = (intraday, daily)
+
+        def run(self, **kwargs):
+            return {"runtime": {"evaluated_count": 1}}
+
+    historical = object()
+    monkeypatch.setattr(runner, "StockRadarProviderRuntime", FakeRuntime)
+    monkeypatch.setattr(runner, "StockDataHubHistoricalAdapter", lambda: historical)
+
+    runner.run(
+        provider="eastmoney",
+        market="cn",
+        symbols=["600519"],
+        run_id="run-cn-history",
+        output_dir=tmp_path,
+        database=tmp_path / "runtime.db",
+        intraday_adapter=object(),
+        daily_adapter=None,
+        as_of=NOW,
+    )
+
+    assert captured["adapters"][1] is historical
