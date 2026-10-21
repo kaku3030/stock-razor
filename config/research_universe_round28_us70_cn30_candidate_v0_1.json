@@ -1,0 +1,614 @@
+﻿{
+    "schema":  "stock-razor-round28-us70-cn30-candidate-v0.1",
+    "universe_id":  "round28-us70-cn30-mixed-market-candidate",
+    "as_of":  "2026-10-21",
+    "purpose":  "research_only",
+    "status":  "CANDIDATE_PENDING_POINT_IN_TIME_MEMBERSHIP_AND_DATA_GATES",
+    "promotion_status":  "NOT_APPROVED",
+    "market_separation":  "Report US and CN independently; never combine USD and CNY P\u0026L or drawdown.",
+    "requested_window":  {
+                             "start":  "2019-01-01",
+                             "end":  "2026-10-16"
+                         },
+    "timeframes":  [
+                       "D1",
+                       "1H",
+                       "15m",
+                       "5m",
+                       "1m"
+                   ],
+    "markets":  {
+                    "us":  {
+                               "currency":  "USD",
+                               "source_id":  "authorized_local_futu_opend",
+                               "adjustment":  "QFQ",
+                               "session":  "RTH",
+                               "symbols":  [
+                                               {
+                                                   "symbol":  "NVDA",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "AMD",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "AAPL",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "TSLA",
+                                                   "sector":  "AUTO",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "ANET",
+                                                   "sector":  "NETWORKING",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "MRVL",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "QCOM",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "TSM",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "COHR",
+                                                   "sector":  "OPTICAL_NETWORKING",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "VRT",
+                                                   "sector":  "DATACENTER_INFRASTRUCTURE",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "MSFT",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "AMZN",
+                                                   "sector":  "CONSUMER_INTERNET",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "GOOGL",
+                                                   "sector":  "COMMUNICATION_SERVICES",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "META",
+                                                   "sector":  "COMMUNICATION_SERVICES",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "AVGO",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "MU",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "INTC",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "ORCL",
+                                                   "sector":  "SOFTWARE",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "CRM",
+                                                   "sector":  "SOFTWARE",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "JPM",
+                                                   "sector":  "FINANCIALS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "XOM",
+                                                   "sector":  "ENERGY",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "CVX",
+                                                   "sector":  "ENERGY",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "LLY",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "UNH",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "CAT",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "BA",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "HD",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "COST",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "round27_us30_stock_overlap"
+                                               },
+                                               {
+                                                   "symbol":  "ADBE",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ADI",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ADP",
+                                                   "sector":  "BUSINESS_SERVICES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ADSK",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "AMAT",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "AMGN",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "APP",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ASML",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "AXON",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "BKNG",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "CEG",
+                                                   "sector":  "UTILITIES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "CMCSA",
+                                                   "sector":  "COMMUNICATION_SERVICES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "CRWD",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "CSCO",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "CTAS",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "DASH",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "DDOG",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "GEHC",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "GILD",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "INTU",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ISRG",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "KLAC",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "LRCX",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "MELI",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "MPWR",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "NFLX",
+                                                   "sector":  "COMMUNICATION_SERVICES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "NXPI",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "PANW",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "PDD",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "PEP",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "PLTR",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "REGN",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ROP",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "SBUX",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "SHOP",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "SNPS",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "TMUS",
+                                                   "sector":  "COMMUNICATION_SERVICES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "TXN",
+                                                   "sector":  "SEMIS",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "VRTX",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "WMT",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "WDC",
+                                                   "sector":  "DATA_STORAGE",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "ABNB",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "nasdaq100_20261015_candidate"
+                                               }
+                                           ],
+                               "captured_overlap_count":  28,
+                               "missing_symbol_count":  42
+                           },
+                    "cn":  {
+                               "currency":  "CNY",
+                               "source_id":  "tickflow_local_history_required",
+                               "fallback_policy":  "Do not use paid cloud history or unapproved Tencent/Eastmoney fallback.",
+                               "adjustment":  "QFQ",
+                               "session":  "CN_MAINLAND_REGULAR",
+                               "symbols":  [
+                                               {
+                                                   "symbol":  "600519.SH",
+                                                   "opend_code":  "SH.600519",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "300750.SZ",
+                                                   "opend_code":  "SZ.300750",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "300308.SZ",
+                                                   "opend_code":  "SZ.300308",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601318.SH",
+                                                   "opend_code":  "SH.601318",
+                                                   "sector":  "FINANCIALS_INSURANCE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601899.SH",
+                                                   "opend_code":  "SH.601899",
+                                                   "sector":  "MATERIALS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600036.SH",
+                                                   "opend_code":  "SH.600036",
+                                                   "sector":  "FINANCIALS_BANK",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "300502.SZ",
+                                                   "opend_code":  "SZ.300502",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "000333.SZ",
+                                                   "opend_code":  "SZ.000333",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600900.SH",
+                                                   "opend_code":  "SH.600900",
+                                                   "sector":  "UTILITIES",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601166.SH",
+                                                   "opend_code":  "SH.601166",
+                                                   "sector":  "FINANCIALS_BANK",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "002594.SZ",
+                                                   "opend_code":  "SZ.002594",
+                                                   "sector":  "CONSUMER_DISCRETIONARY",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "300760.SZ",
+                                                   "opend_code":  "SZ.300760",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600276.SH",
+                                                   "opend_code":  "SH.600276",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601012.SH",
+                                                   "opend_code":  "SH.601012",
+                                                   "sector":  "INDUSTRIALS_CLEAN_ENERGY",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "002475.SZ",
+                                                   "opend_code":  "SZ.002475",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600030.SH",
+                                                   "opend_code":  "SH.600030",
+                                                   "sector":  "FINANCIALS_BROKERAGE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601888.SH",
+                                                   "opend_code":  "SH.601888",
+                                                   "sector":  "CONSUMER_TRAVEL",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "000858.SZ",
+                                                   "opend_code":  "SZ.000858",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600809.SH",
+                                                   "opend_code":  "SH.600809",
+                                                   "sector":  "CONSUMER_STAPLES",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "002415.SZ",
+                                                   "opend_code":  "SZ.002415",
+                                                   "sector":  "TECH",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601398.SH",
+                                                   "opend_code":  "SH.601398",
+                                                   "sector":  "FINANCIALS_BANK",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "300015.SZ",
+                                                   "opend_code":  "SZ.300015",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "603259.SH",
+                                                   "opend_code":  "SH.603259",
+                                                   "sector":  "HEALTHCARE",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600031.SH",
+                                                   "opend_code":  "SH.600031",
+                                                   "sector":  "INDUSTRIALS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600104.SH",
+                                                   "opend_code":  "SH.600104",
+                                                   "sector":  "INDUSTRIALS_AUTOS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601728.SH",
+                                                   "opend_code":  "SH.601728",
+                                                   "sector":  "COMMUNICATIONS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601668.SH",
+                                                   "opend_code":  "SH.601668",
+                                                   "sector":  "INDUSTRIALS_CONSTRUCTION",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601225.SH",
+                                                   "opend_code":  "SH.601225",
+                                                   "sector":  "ENERGY",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "600309.SH",
+                                                   "opend_code":  "SH.600309",
+                                                   "sector":  "MATERIALS",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               },
+                                               {
+                                                   "symbol":  "601919.SH",
+                                                   "opend_code":  "SH.601919",
+                                                   "sector":  "INDUSTRIALS_SHIPPING",
+                                                   "cohort":  "csi300_large_liquid_candidate"
+                                               }
+                                           ],
+                               "captured_overlap_count":  0,
+                               "missing_symbol_count":  30
+                           }
+                },
+    "selection_method":  "US: retain 28 stock names from Round27 (exclude SPY/QQQ benchmarks), plus 42 names from the 2026-10-15 Nasdaq-100 candidate snapshot, sector tagged from that snapshot. CN: 30 large/liquid CSI300 candidate names across sectors; exact historical membership still requires constituent-list validation.",
+    "membership_controls":  {
+                                "point_in_time_membership":  "UNRESOLVED",
+                                "survivorship_bias":  "PRESENT_UNTIL_HISTORICAL_MEMBERSHIP_RECONSTRUCTION",
+                                "index_snapshot_as_of":  "2026-03-31 for CSI300 factsheet/top-holdings reference; 2026-10-15 for Nasdaq100 candidate source"
+                            },
+    "strategy_rule_controls":  {
+                                   "S1":  "Round27 rule",
+                                   "S2":  "UNVALIDATED_CANDIDATE_ONLY; official rule unavailable",
+                                   "S3":  "Round27 rule",
+                                   "S4":  "Round27 rule",
+                                   "S5":  "Round27 rule",
+                                   "S6":  "Round27 rule"
+                               },
+    "data_gate":  {
+                      "futu_opend_history_quota_remaining":  28,
+                      "local_cn_tickflow_historical_cache":  "NOT_FOUND",
+                      "new_unique_us_symbols_required":  42,
+                      "new_cn_symbols_required":  30,
+                      "paid_data_calls":  "PROHIBITED",
+                      "state":  "BLOCKED_INSUFFICIENT_LOCAL_HISTORY_QUOTA_AND_NO_CN_LOCAL_CACHE"
+                  },
+    "source_notes":  [
+                         {
+                             "source":  "Nasdaq-100 candidate constituent snapshot",
+                             "url":  "https://indexes.nasdaqomx.com/Index/Weighting/NDX",
+                             "snapshot":  "2026-10-15",
+                             "verified_symbols":  42
+                         },
+                         {
+                             "source":  "CSI300 official factsheet",
+                             "url":  "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/en/000300factsheeten.pdf",
+                             "snapshot":  "2026-03-31",
+                             "use":  "Top holdings reference only; the full 30-name cohort remains subject to constituents and PIT validation."
+                         },
+                         {
+                             "source":  "Futu OpenAPI historical K-line quota",
+                             "url":  "https://openapi.futunn.com/futu-api-doc/en/quote/get-history-kl-quota.html",
+                             "observation":  "72 used, 28 remaining; read-only quota query on 2026-10-21"
+                         }
+                     ]
+}
