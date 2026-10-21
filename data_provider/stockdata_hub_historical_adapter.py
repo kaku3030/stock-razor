@@ -15,6 +15,7 @@ from .market_data_adapter import Bar, BarCallback, MarketDataAdapter, MarketData
 CN_ZONE = ZoneInfo("Asia/Shanghai")
 _PERIODS = {"15m": ("15m", 15), "1h": ("60m", 60)}
 _DAILY_TIMEFRAMES = {"1d", "1w", "1y"}
+_MAX_INTRADAY_LOOKBACK_DAYS = 4096
 
 
 class StockDataHubHistoricalAdapter(MarketDataAdapter):
@@ -58,7 +59,7 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
         period, minutes = period_info
         frame, reason, _ = self._get_fetcher().fetch_intraday(
             symbol, period=period, days=_request_days(start_cn, end_cn),
-            count=limit, use_cache=True,
+            count=limit, use_cache=start_cn is None,
         )
         if frame is None or frame.empty:
             raise LookupError(reason or f"no historical bars for {symbol}")
@@ -104,11 +105,11 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
         for _, row in frame.iterrows():
             bar_start = datetime.combine(row["date"], time.min, tzinfo=CN_ZONE)
             if timeframe == "1d":
-                bar_end = (bar_start + timedelta(days=1)).replace(hour=15)
+                bar_end = bar_start.replace(hour=15)
             elif timeframe == "1w":
-                bar_end = bar_start + timedelta(days=7)
+                bar_end = (bar_start + timedelta(days=4)).replace(hour=15)
             else:
-                bar_end = datetime(bar_start.year + 1, 1, 1, tzinfo=CN_ZONE)
+                bar_end = datetime(bar_start.year, 12, 31, 15, tzinfo=CN_ZONE)
             values = [float(row[name]) for name in ("open", "high", "low", "close", "volume")]
             if not all(np.isfinite(value) for value in values):
                 raise ValueError(f"non-finite OHLCV returned for {symbol} at {bar_start}")
@@ -248,7 +249,12 @@ def _as_utc(value: datetime) -> datetime:
 def _request_days(start: Optional[datetime], end: Optional[datetime]) -> int:
     if start is None or end is None:
         return 30
-    return max(1, min(365, (end.date() - start.date()).days + 2))
+    days = max(1, (end.date() - start.date()).days + 2)
+    if days > _MAX_INTRADAY_LOOKBACK_DAYS:
+        raise ValueError(
+            f"intraday historical range exceeds {_MAX_INTRADAY_LOOKBACK_DAYS} days"
+        )
+    return days
 
 
 def _aggregate_weeks(frame: pd.DataFrame) -> pd.DataFrame:
