@@ -162,6 +162,9 @@ def test_admission_diagnostics_explain_blocked_source_prerequisites(tmp_path):
     )
 
     diagnostics = result.admission_diagnostics()
+    assert diagnostics["data_acceptance"] == "ACCEPTED"
+    assert diagnostics["bar_state"] == "PROVISIONAL"
+    assert diagnostics["strategy_admission"] == "BLOCKED"
     assert diagnostics["decision"] == "BLOCKED"
     assert diagnostics["promotion_authorized"] is False
     assert diagnostics["minimum_source_prerequisites_met"] is False
@@ -191,6 +194,9 @@ def test_minimum_source_prerequisites_do_not_authorize_radar_promotion(tmp_path)
 
     diagnostics = result.admission_diagnostics()
     assert diagnostics["minimum_source_prerequisites_met"] is True
+    assert diagnostics["data_acceptance"] == "ACCEPTED"
+    assert diagnostics["bar_state"] == "PROVEN"
+    assert diagnostics["strategy_admission"] == "BLOCKED"
     assert diagnostics["decision"] == "BLOCKED"
     assert diagnostics["promotion_authorized"] is False
     assert diagnostics["reasons"] == ["PROMOTION_NOT_AUTHORIZED"]
