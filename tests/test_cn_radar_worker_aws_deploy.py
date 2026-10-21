@@ -29,6 +29,9 @@ def test_cn_radar_runtime_precomputes_only_on_source_sequence_change():
     assert '"can_confirm_signal": False' in INSTALL
     assert '"radar_admission": "BLOCKED"' in INSTALL
     assert '"live_trade": False' in INSTALL
+    assert '"source_acceptance_status": source_acceptance_status' in INSTALL
+    assert '"bar_state": bar_state' in INSTALL
+    assert '"strategy_admission": strategy_admission' in INSTALL
 
 
 def test_cn_radar_verifier_requires_qualified_bar_end_and_governed_currentness():
@@ -76,5 +79,7 @@ def test_cn_radar_verifier_requires_runtime_latency_telemetry_consistency():
 
 def test_cn_radar_worker_does_not_clamp_future_source_to_fake_zero_latency():
     assert "source_delta_ms >= 0" in INSTALL
+    assert "source_age_delta_seconds < 0" in INSTALL
+    assert "source emitted_at is in the future" in INSTALL
     assert "data_to_radar_latency_ms = round(source_delta_ms, 3)" in INSTALL
     assert "source_age_seconds = (" in INSTALL
