@@ -144,7 +144,7 @@ def test_source_sha_discovery_waits_for_this_deployment_source_revision():
     discover = WORKFLOW.split("      - name: Discover canonical source SHA", 1)[1].split(
         "      - name: Deploy exact worker SHA over SSM", 1
     )[0]
-    assert 'EXPECTED_SOURCE_SHA: "${{ steps.source.outputs.sha }}"' in discover
+    assert 'EXPECTED_SOURCE_SHA: "${{ steps.source.outputs.expected_source_sha }}"' in discover
     assert 'expected="${EXPECTED_SOURCE_SHA:?EXPECTED_SOURCE_SHA is required}"' in discover
     assert 'if [ "$observed" = "$expected" ]; then' in discover
     assert "CANONICAL_SOURCE_SHA_MISMATCH" in discover
@@ -377,3 +377,12 @@ def test_event_collection_declares_existing_calendar_and_blocks_unknown_calendar
     with pytest.raises(ValueError, match="EVENT_CALENDAR_NOT_VERIFIED"):
         exec(compile(prefix, "installer-prefix", "exec"), {})
     assert list(tmp_path.iterdir()) == []
+
+
+def test_worker_only_deployment_pins_existing_livefeed_without_restarting_it():
+    assert "expected_source_sha:" in WORKFLOW
+    assert 'source_revision="${REQUESTED_SOURCE_SHA:-$revision}"' in WORKFLOW
+    assert '[[ "$source_revision" =~ ^[a-f0-9]{40}$ ]]' in WORKFLOW
+    assert 'if [ "$observed" = "$expected" ]; then' in WORKFLOW
+    assert "install_us_opend_livefeed" not in WORKFLOW
+    assert "systemctl restart stock-razor-us-livefeed" not in WORKFLOW
