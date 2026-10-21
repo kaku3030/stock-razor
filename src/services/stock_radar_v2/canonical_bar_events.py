@@ -56,6 +56,25 @@ def _is_symbol_bar_quarantinable(bar: Bar) -> bool:
     }
     return bool(flags) and flags.issubset(_SYMBOL_BAR_QUARANTINE_FLAGS)
 
+def _is_symbol_health_quarantinable(health: MarketDataHealth | None) -> bool:
+    if health is None:
+        return False
+    flags = {
+        str(flag).strip().upper()
+        for flag in health.quality_flags
+        if str(flag).strip()
+    }
+    return bool(flags) and flags.issubset(_SYMBOL_BAR_QUARANTINE_FLAGS)
+
+
+def _quarantine_flags(values: object) -> str:
+    flags = {
+        str(flag).strip().upper()
+        for flag in values
+        if str(flag).strip()
+    }
+    return ",".join(sorted(flags))
+
 
 def _qualified_bar(bar: Bar, *, observed_at: datetime, minutes: int) -> bool:
     local_start = bar.bar_start.astimezone(US_EASTERN)
@@ -108,10 +127,18 @@ def record_canonical_closed_bars(
     for snapshot in source.snapshots:
         if (not snapshot.symbol.startswith("US.") or snapshot.provider != "futu"
                 or snapshot.feed != "opend" or snapshot.fallback_from or snapshot.fallback_reason
-                or not _normal(snapshot.health) or not snapshot.minute_bars
+                or not snapshot.minute_bars
                 or not 0 <= (observed_at - snapshot.as_of).total_seconds() <= max_age_seconds
                 or snapshot.as_of > source.emitted_at):
             return blocked("BAR_EVENT_SNAPSHOT_NOT_QUALIFIED")
+        if not _normal(snapshot.health):
+            if _is_symbol_health_quarantinable(snapshot.health):
+                quarantined.append(
+                    f"SYMBOL_HEALTH_QUARANTINED:{snapshot.symbol}:"
+                    f"{_quarantine_flags(snapshot.health.quality_flags)}"
+                )
+            else:
+                return blocked("BAR_EVENT_SNAPSHOT_NOT_QUALIFIED")
         latest = snapshot.minute_bars[-1]
         if (not _qualified_bar(latest, observed_at=observed_at, minutes=1)
                 or not 0 <= (observed_at - latest.bar_end).total_seconds() <= max_age_seconds):
@@ -128,10 +155,7 @@ def record_canonical_closed_bars(
                 continue
             if not _qualified_bar(bar, observed_at=observed_at, minutes=minutes):
                 if _is_symbol_bar_quarantinable(bar):
-                    flags = ",".join(sorted({
-                        str(flag).strip().upper()
-                        for flag in bar.quality_flags if str(flag).strip()
-                    }))
+                    flags = _quarantine_flags(bar.quality_flags)
                     quarantined.append(
                         f"SYMBOL_BAR_QUARANTINED:{snapshot.symbol}:{timeframe}:{flags}"
                     )
