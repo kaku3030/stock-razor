@@ -25,7 +25,6 @@ from tools.research.round16_research import SECTOR as R16_SECTOR
 
 TFS = ("D1", "1H", "15m", "5m", "1m")
 BASE_TFS = TFS
-EXCLUDED_SESSIONS = {"COHR": "2025-02-11", "ANET": "2020-03-17"}
 ARMS = ("S1", "S2_CANDIDATE", "S3", "S4", "S5", "S6")
 LEGACY = {"AAPL", "AMD", "COHR", "NVDA", "QQQ", "TSLA"}
 
@@ -49,10 +48,9 @@ def locate(symbol: str, tf: str, fresh: Path, legacy_high: Path, legacy_1m: Path
     candidate = fresh / name
     if candidate.is_file():
         return candidate
-    if symbol == "ANET" and tf == "5m":
-        quarantine = fresh / "quarantine" / name
-        if quarantine.is_file():
-            return quarantine
+    quarantine = fresh / "quarantine" / name
+    if quarantine.is_file():
+        return quarantine
     if symbol in LEGACY:
         path = (legacy_1m if tf == "1m" else legacy_high) / name
         if path.is_file():
@@ -75,45 +73,62 @@ def link_or_copy(src: Path, dst: Path) -> None:
 
 
 def stage(symbols: list[str], fresh: Path, legacy_high: Path, legacy_1m: Path,
-          raw_root: Path, effective_root: Path) -> list[dict]:
-    rows = []
+          raw_root: Path, effective_root: Path) -> tuple[list[dict], dict[str, list[str]], list[dict]]:
+    sources = []
     for symbol in symbols:
         for tf in TFS:
             src = locate(symbol, tf, fresh, legacy_high, legacy_1m)
             raw = raw_root / src.name
             link_or_copy(src, raw)
-            effective = None
-            excluded = 0
-            effective_hash = None
-            effective_rows = None
-            effective = effective_root / src.name
-            frame = pd.read_csv(src)
+            sources.append((symbol, tf, src, raw))
+    bad_rows = []
+    excluded_dates: dict[str, set[str]] = {symbol: set() for symbol in symbols}
+    for symbol, tf, src, raw in sources:
+        frame = pd.read_csv(raw)
+        frame["time_key"] = pd.to_datetime(frame.time_key, errors="raise")
+        numeric = frame[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric, errors="raise")
+        invalid = (~np.isfinite(numeric.to_numpy(dtype=float)).all(axis=1)
+                   | (numeric[["open", "high", "low", "close"]] <= 0).any(axis=1).to_numpy()
+                   | (numeric.volume < 0).to_numpy()
+                   | (numeric.high < numeric[["open", "close", "low"]].max(axis=1)).to_numpy()
+                   | (numeric.low > numeric[["open", "close", "high"]].min(axis=1)).to_numpy())
+        if invalid.any():
+            for idx in np.flatnonzero(invalid):
+                row = frame.iloc[int(idx)]
+                day = row.time_key.strftime("%Y-%m-%d")
+                excluded_dates[symbol].add(day)
+                bad_rows.append({"symbol": symbol, "timeframe": tf, "session": day,
+                                 "time_key": row.time_key.isoformat(),
+                                 "open": float(row.open), "high": float(row.high),
+                                 "low": float(row.low), "close": float(row.close),
+                                 "volume": float(row.volume), "source_path": str(src)})
+    exclusions = {symbol: sorted(days) for symbol, days in excluded_dates.items() if days}
+    rows = []
+    for symbol, tf, src, raw in sources:
+        effective = effective_root / src.name
+        days = set(exclusions.get(symbol, []))
+        if days:
+            frame = pd.read_csv(raw)
             day = pd.to_datetime(frame.time_key, errors="raise").dt.strftime("%Y-%m-%d")
-            excluded_day = EXCLUDED_SESSIONS.get(symbol)
-            if excluded_day:
-                keep = day != excluded_day
-                excluded = int((~keep).sum())
-            else:
-                keep = pd.Series(True, index=frame.index)
-            if excluded:
-                effective.parent.mkdir(parents=True, exist_ok=True)
-                tmp = effective.with_suffix(".csv.tmp")
-                frame.loc[keep].to_csv(tmp, index=False)
-                tmp.replace(effective)
-                effective_rows = int(keep.sum())
-            else:
-                link_or_copy(src, effective)
-                effective_rows = len(frame)
-            effective_hash = digest(effective)
-            rows.append({
-                "symbol": symbol, "timeframe": tf, "source_path": str(src),
-                "source_sha256": digest(src), "raw_staged_path": str(raw),
-                "raw_staged_sha256": digest(raw), "effective_path": str(effective) if effective else None,
-                "effective_sha256": effective_hash, "effective_rows": effective_rows,
-                "excluded_session": EXCLUDED_SESSIONS.get(symbol),
-                "excluded_session_rows": excluded,
-            })
-    return rows
+            keep = ~day.isin(days)
+            excluded_count = int((~keep).sum())
+            effective.parent.mkdir(parents=True, exist_ok=True)
+            tmp = effective.with_suffix(".csv.tmp")
+            frame.loc[keep].to_csv(tmp, index=False)
+            tmp.replace(effective)
+            effective_rows = int(keep.sum())
+        else:
+            link_or_copy(raw, effective)
+            excluded_count = 0
+            effective_rows = sum(1 for _ in raw.open("rb")) - 1
+        rows.append({
+            "symbol": symbol, "timeframe": tf, "source_path": str(src),
+            "source_sha256": digest(src), "raw_staged_path": str(raw),
+            "raw_staged_sha256": digest(raw), "effective_path": str(effective),
+            "effective_sha256": digest(effective), "effective_rows": effective_rows,
+            "excluded_sessions": sorted(days), "excluded_session_rows": excluded_count,
+        })
+    return rows, exclusions, bad_rows
 
 
 def configure(symbols: list[str], sectors: dict[str, str]) -> None:
@@ -129,32 +144,19 @@ def configure(symbols: list[str], sectors: dict[str, str]) -> None:
     R16_SECTOR.update(sectors)
 
 
-def strict_cohr_audit(raw: Path, out: Path) -> None:
-    checks = [
-        ("COHR", "1m", "2025-02-11"),
-        ("ANET", "5m", "2020-03-17"),
-    ]
-    evidence = []
-    for symbol, tf, day in checks:
-        path = raw / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
-        try:
-            r26.read_bars(path, "America/New_York", tf, symbol)
-        except ValueError as exc:
-            detail = str(exc)
-            if "invalid OHLC" not in detail or symbol not in detail or day not in detail:
-                raise
-            evidence.append({"symbol": symbol, "timeframe": tf, "session": day,
-                             "source": str(path), "error": detail})
-            continue
-        raise RuntimeError(f"strict input unexpectedly passed known {symbol} invalid bar")
+def strict_data_quality_audit(out: Path, exclusions: dict[str, list[str]], findings: list[dict]) -> None:
+    if not findings:
+        raise RuntimeError("input audit found no invalid OHLCV rows; expected known COHR defect was not reproduced")
     atomic_json(out / "strict_full_data_blocked.json", {
-        "status": "EXPECTED_BLOCK", "evidence": evidence,
-        "policy": "preserve raw captures; exclude each complete anomalous session across all timeframes, strategies and matched baseline",
+        "status": "EXPECTED_BLOCK", "invalid_rows": len(findings),
+        "full_sessions_excluded": exclusions, "findings": findings,
+        "policy": "preserve raw captures; remove each affected symbol's complete session across every timeframe, strategy and matched benchmark",
     })
-    (out / "strict_full_data_blocked.log").write_text(
-        "Strict validation: EXPECTED_BLOCK\n" +
-        "\n".join(f"{x['symbol']} {x['timeframe']} {x['session']}: {x['error']}" for x in evidence) + "\n",
-        encoding="utf-8")
+    lines = ["Strict raw-input validation: EXPECTED_BLOCK",
+             f"Invalid OHLCV rows: {len(findings)}",
+             f"Full-session exclusions: {json.dumps(exclusions, ensure_ascii=False, sort_keys=True)}"]
+    lines.extend(f"{x['symbol']} {x['timeframe']} {x['time_key']}: O={x['open']} H={x['high']} L={x['low']} C={x['close']} V={x['volume']}" for x in findings)
+    (out / "strict_full_data_blocked.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def combine(base_path: Path, candidate_path: Path) -> pd.DataFrame:
@@ -195,7 +197,7 @@ def combine(base_path: Path, candidate_path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def report(out: Path, symbols: list[str], combined: pd.DataFrame) -> None:
+def report(out: Path, symbols: list[str], combined: pd.DataFrame, exclusions: dict[str, list[str]]) -> None:
     full = combined[(combined.window == "full_2019_2026") & (combined.cost_bps_per_side == 10)]
     oos = combined[(combined.window == "oos_2024_2026") & (combined.cost_bps_per_side == 10)]
     fmt = lambda v: "—" if pd.isna(v) else f"{float(v):,.2f}"
@@ -203,7 +205,8 @@ def report(out: Path, symbols: list[str], combined: pd.DataFrame) -> None:
         "# Round27 US30 fixed-cohort six-arm research replay", "",
         "Status: EXPLORATORY_FIXED_SURVIVOR_COHORT. Point-in-time membership is unresolved; these are conditional research results, not general 30-stock performance claims or strategy promotion.", "",
         f"Universe: {len(symbols)} frozen symbols selected as of 2026-10-20; local Futu/OpenD QFQ/RTH, requested 2019-01-01 through 2026-10-16. Raw captures remain outside Git.", "",
-        "Official S2 history was not recovered. S2 is the Round26 candidate only. The full COHR 2025-02-11 session was excluded across all strategy arms and the matched buy-and-hold baseline. The immutable raw bar is recorded in the strict rejection log.", "",
+        "Official S2 history was not recovered. S2 is the Round26 candidate only. Data-quality audit found invalid OHLCV bars; every affected full symbol session was removed consistently across all timeframes, strategy arms and the matched buy-and-hold baseline. Raw captures remain immutable; see strict_full_data_blocked.json.", "",
+        f"Full-session exclusions: {json.dumps(exclusions, ensure_ascii=False, sort_keys=True)}.", "",
         "## 10 bps per side", "",
         "|Strategy|Window|Net P&L|PF|Max DD|Max DD %|Trades|Win rate|B&H return|B&H max DD|",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -237,16 +240,16 @@ def run(config_path: Path, fresh: Path, legacy_high: Path, legacy_1m: Path,
     raw.mkdir(parents=True, exist_ok=True)
     if effective.exists():
         shutil.rmtree(effective)
-    inputs = stage(symbols, fresh, legacy_high, legacy_1m, raw, effective)
+    inputs, exclusions, findings = stage(symbols, fresh, legacy_high, legacy_1m, raw, effective)
     if len(inputs) != 150 or any(x["source_sha256"] != x["raw_staged_sha256"] for x in inputs):
         raise ValueError("incomplete or changed raw input staging")
     atomic_json(out / "round27_input_manifest.json", {
         "schema": "stock-razor-round27-input-manifest-v1",
         "config_sha256": digest(config_path), "source": "local Futu/OpenD QFQ/RTH",
-        "full_session_exclusions": EXCLUDED_SESSIONS,
+        "full_session_exclusions": exclusions, "invalid_ohlcv_rows": len(findings),
         "files": inputs,
     })
-    strict_cohr_audit(raw, out)
+    strict_data_quality_audit(out, exclusions, findings)
     configure(symbols, sectors)
     s13 = r13.run(effective, out / "round13_baseline")
     s14 = r14.run(effective, out / "round14_fusion")
@@ -255,17 +258,29 @@ def run(config_path: Path, fresh: Path, legacy_high: Path, legacy_1m: Path,
     r26.run(effective, out / "round26_s2_candidate", "America/New_York", "end",
             exclude_invalid_session=None,
             baseline_metrics=baseline, one_minute_capture=effective)
+    candidate_status_path = out / "round26_s2_candidate" / "s2_candidate_status.json"
+    candidate_status = json.loads(candidate_status_path.read_text(encoding="utf-8"))
+    candidate_status["full_session_exclusions"] = exclusions
+    candidate_status["invalid_ohlcv_rows_removed_in_derived_capture"] = len(findings)
+    candidate_status["raw_capture_repaired"] = False
+    atomic_json(candidate_status_path, candidate_status)
+    candidate_report_path = out / "round26_s2_candidate" / "s2_candidate_report.md"
+    if candidate_report_path.exists():
+        with candidate_report_path.open("a", encoding="utf-8") as stream:
+            stream.write("\n\nRound27 data-quality sensitivity: raw capture was preserved; affected full sessions were excluded across all timeframes. Exclusions: " +
+                         json.dumps(exclusions, ensure_ascii=False, sort_keys=True) + ".\n")
     combined = combine(baseline, out / "round26_s2_candidate" / "s2_candidate_metrics.csv")
     path = out / "round27_six_strategy_comparison_all_costs.csv"
     combined.to_csv(path, index=False)
-    report(out, symbols, combined)
+    report(out, symbols, combined, exclusions)
     status = {
         "schema": "stock-razor-round27-us30-backtest-v1",
         "state": "EXPLORATORY_FIXED_SURVIVOR_COHORT",
         "symbols": symbols, "symbol_count": 30,
         "membership_controls": config["membership_controls"],
         "source": "local Futu/OpenD QFQ/RTH", "input_files": len(inputs),
-        "full_sessions_excluded": EXCLUDED_SESSIONS,
+        "full_sessions_excluded": exclusions,
+        "invalid_ohlcv_rows": len(findings),
         "round13_status": s13.get("status"), "round14_status": s14.get("status"),
         "round24_status": s24.get("status"), "s2_candidate_status": "BACKTEST_COMPUTED_NOT_VALIDATED",
         "comparison": str(path),
