@@ -285,9 +285,9 @@ def test_symbol_health_quality_flag_quarantine_preserves_other_events(tmp_path):
         result = worker(ledger, observed).poll_file(write(tmp_path, body))
         assert result.status == "PASS"
         assert result.bar_event_ingress.status == "PARTIAL"
-        assert result.bar_event_ingress.created_count == 2
+        assert result.bar_event_ingress.created_count == 4
         assert "SYMBOL_HEALTH_QUARANTINED:US.GLDM:VWAP_OUTSIDE_BAR_RANGE" in result.bar_event_ingress.reasons
-        assert ledger.pending_count() == 2
+        assert ledger.pending_count() == 4
 
 def test_all_symbols_quarantined_still_blocks_without_inserting(tmp_path):
     body, observed = export()
