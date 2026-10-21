@@ -14,7 +14,7 @@ from .market_data_adapter import Bar, BarCallback, MarketDataAdapter, MarketData
 
 CN_ZONE = ZoneInfo("Asia/Shanghai")
 _PERIODS = {"15m": ("15m", 15), "1h": ("60m", 60)}
-_DAILY_TIMEFRAMES = {"1d", "1w"}
+_DAILY_TIMEFRAMES = {"1d", "1w", "1y"}
 
 
 class StockDataHubHistoricalAdapter(MarketDataAdapter):
@@ -54,7 +54,7 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
             return self._get_daily_bars(symbol, timeframe, start_cn, end_cn, limit)
         period_info = _PERIODS.get(timeframe)
         if period_info is None:
-            raise ValueError("historical adapter supports only 15m, 1h, 1d and 1w")
+            raise ValueError("historical adapter supports only 15m, 1h, 1d, 1w and 1y")
         period, minutes = period_info
         frame, reason, _ = self._get_fetcher().fetch_intraday(
             symbol, period=period, days=_request_days(start_cn, end_cn),
@@ -73,15 +73,7 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
 
     def _get_daily_bars(self, symbol: str, timeframe: str, start: Optional[datetime],
                         end: Optional[datetime], limit: Optional[int]) -> list[Bar]:
-        request_days = _request_days(start, end)
-        if limit is not None:
-            request_days = max(request_days, limit * (7 if timeframe == "1w" else 2) + 10)
-        frame = self._get_daily_fetcher().get_daily_data(
-            symbol,
-            start_date=start.date().isoformat() if start else None,
-            end_date=end.date().isoformat() if end else None,
-            days=request_days,
-        )
+        frame = self._fetch_daily_history(symbol, timeframe, start, end, limit)
         if frame is None or frame.empty:
             raise LookupError(f"no daily historical bars for {symbol}")
         required = {"date", "open", "high", "low", "close", "volume"}
@@ -100,6 +92,8 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
             work = work[work["date"] < end.date()]
         if timeframe == "1w":
             work = _aggregate_weeks(work)
+        elif timeframe == "1y":
+            work = _aggregate_years(work)
         if limit is not None:
             work = work.tail(limit)
         return self._normalize_daily_bars(symbol, timeframe, work)
@@ -109,7 +103,12 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
         result: list[Bar] = []
         for _, row in frame.iterrows():
             bar_start = datetime.combine(row["date"], time.min, tzinfo=CN_ZONE)
-            bar_end = (bar_start + timedelta(days=1)).replace(hour=15) if timeframe == "1d" else bar_start + timedelta(days=7)
+            if timeframe == "1d":
+                bar_end = (bar_start + timedelta(days=1)).replace(hour=15)
+            elif timeframe == "1w":
+                bar_end = bar_start + timedelta(days=7)
+            else:
+                bar_end = datetime(bar_start.year + 1, 1, 1, tzinfo=CN_ZONE)
             values = [float(row[name]) for name in ("open", "high", "low", "close", "volume")]
             if not all(np.isfinite(value) for value in values):
                 raise ValueError(f"non-finite OHLCV returned for {symbol} at {bar_start}")
@@ -137,6 +136,46 @@ class StockDataHubHistoricalAdapter(MarketDataAdapter):
             ))
         self._last_health = result[-1].health if result else self._last_health
         return result
+
+    def _fetch_daily_history(self, symbol: str, timeframe: str, start: Optional[datetime],
+                             end: Optional[datetime], limit: Optional[int]) -> pd.DataFrame:
+        target = (limit or 30) * {"1d": 1, "1w": 5, "1y": 250}[timeframe]
+        fetcher = self._get_daily_fetcher()
+        frames: list[pd.DataFrame] = []
+        seen_dates: set[object] = set()
+
+        if start is not None:
+            cursor = start.date()
+            final_date = end.date() - timedelta(days=1) if end else _as_cn(self._now()).date()
+            while cursor <= final_date and len(seen_dates) < target:
+                chunk_end = min(cursor + timedelta(days=364), final_date)
+                frame = fetcher.get_daily_data(
+                    symbol, start_date=cursor.isoformat(), end_date=chunk_end.isoformat(), days=365,
+                )
+                if frame is None or frame.empty:
+                    break
+                frames.append(frame)
+                seen_dates.update(pd.to_datetime(frame["date"], errors="coerce").dropna().dt.date)
+                cursor = chunk_end + timedelta(days=1)
+            return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+        cursor_end = (end.date() - timedelta(days=1)) if end else _as_cn(self._now()).date()
+        for _ in range(32):
+            chunk_start = cursor_end - timedelta(days=364)
+            frame = fetcher.get_daily_data(
+                symbol, start_date=chunk_start.isoformat(), end_date=cursor_end.isoformat(), days=365,
+            )
+            if frame is None or frame.empty:
+                break
+            before = len(seen_dates)
+            frames.append(frame)
+            seen_dates.update(pd.to_datetime(frame["date"], errors="coerce").dropna().dt.date)
+            if len(seen_dates) == before:
+                break
+            cursor_end = chunk_start - timedelta(days=1)
+            if len(seen_dates) >= target:
+                break
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     def _normalize_bars(self, symbol: str, timeframe: str, minutes: int, frame: pd.DataFrame,
                         start: Optional[datetime], end: Optional[datetime]) -> list[Bar]:
@@ -222,3 +261,15 @@ def _aggregate_weeks(frame: pd.DataFrame) -> pd.DataFrame:
         aggregations["amount"] = "sum"
     result = work.groupby("week", sort=True, as_index=False).agg(aggregations)
     return result.rename(columns={"week": "date"})
+
+
+def _aggregate_years(frame: pd.DataFrame) -> pd.DataFrame:
+    work = frame.copy()
+    work["year"] = work["date"].map(lambda value: value.replace(month=1, day=1))
+    aggregations = {
+        "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
+    }
+    if "amount" in work.columns:
+        aggregations["amount"] = "sum"
+    result = work.groupby("year", sort=True, as_index=False).agg(aggregations)
+    return result.rename(columns={"year": "date"})
