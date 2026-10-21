@@ -10,22 +10,24 @@ TFS = ("D1", "1H", "15m", "5m", "1m")
 def main() -> int:
     ap = argparse.ArgumentParser(description="Offline data-coverage gate for Round28 mixed-market cohort.")
     ap.add_argument("--config", type=Path, required=True)
-    ap.add_argument("--us-capture-dir", type=Path, required=True)
+    ap.add_argument("--us-capture-dir", type=Path, action="append", required=True,
+                    help="capture root; repeat to combine immutable local capture batches")
     ap.add_argument("--cn-capture-dir", type=Path, required=True)
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--opend-quota-used", type=int, required=True)
     ap.add_argument("--opend-quota-remaining", type=int, required=True)
+    ap.add_argument("--cn-access-status", choices=("not-tested", "local-opend-denied", "available"), default="not-tested")
     args = ap.parse_args()
 
     cfg = json.loads(args.config.read_text(encoding="utf-8-sig"))
     markets = cfg["markets"]
     specs = (
         ("us", args.us_capture_dir, "US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"),
-        ("cn", args.cn_capture_dir, "CN_{symbol}_{tf}_qfq_20190101_20261016.csv"),
+        ("cn", [args.cn_capture_dir], "CN_{symbol}_{tf}_qfq_20190101_20261016.csv"),
     )
     details = []
     counts = {}
-    for market, root, pattern in specs:
+    for market, roots, pattern in specs:
         symbols = markets[market]["symbols"]
         present = 0
         missing = []
@@ -33,7 +35,8 @@ def main() -> int:
             symbol = item["symbol"]
             for tf in TFS:
                 name = pattern.format(symbol=symbol, tf=tf)
-                path = root / name
+                candidates = [root / name for root in roots]
+                path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
                 ok = path.is_file() and path.stat().st_size > 0
                 present += int(ok)
                 if not ok:
@@ -59,6 +62,8 @@ def main() -> int:
         blockers.append("LOCAL_OPEND_HISTORY_QUOTA_INSUFFICIENT_FOR_MISSING_US_SYMBOLS")
     if cn_missing_symbols:
         blockers.append("LOCAL_TICKFLOW_CN_HISTORICAL_CACHE_MISSING")
+    if args.cn_access_status == "local-opend-denied":
+        blockers.append("LOCAL_OPEND_CN_MARKET_ENTITLEMENT_MISSING")
     if cfg.get("membership_controls", {}).get("point_in_time_membership") != "VERIFIED":
         blockers.append("POINT_IN_TIME_UNIVERSE_MEMBERSHIP_UNVERIFIED")
     if cfg.get("strategy_rule_controls", {}).get("S2", "").startswith("UNVALIDATED"):
@@ -71,6 +76,7 @@ def main() -> int:
         "status": "BLOCKED" if blockers else "READY_FOR_BACKTEST",
         "provider_requests_made_by_this_script": 0,
         "market_data_reads_made_by_this_script": 0,
+        "cn_local_access_status": args.cn_access_status,
         "opend_history_quota": {
             "used": args.opend_quota_used,
             "remaining": args.opend_quota_remaining,
@@ -102,6 +108,7 @@ def main() -> int:
         f"- Local OpenD history quota: {args.opend_quota_used} used, {args.opend_quota_remaining} remaining; "
         f"{additional_us_needed} missing US symbols exceed remaining quota by {quota_shortfall_us_only}.",
         "- Local TickFlow A-share historical cache: not found in the inspected local capture/cache roots.",
+        f"- Local OpenD A-share entitlement trial: {args.cn_access_status}.",
         "- Provider calls made by this audit: 0. It only checked local filenames and file sizes.",
         "",
         "## Blockers",

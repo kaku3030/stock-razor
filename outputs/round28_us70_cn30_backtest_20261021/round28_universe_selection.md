@@ -4,7 +4,7 @@
 
 ## Selection method
 
-- **U.S. (70):** retain the 28 stock names from Round27 and remove its two ETF benchmarks (SPY, QQQ); add 42 names present in the Nasdaq-100 candidate snapshot dated 2026-10-15. The 28-name overlap reuses Round27's local Futu/OpenD captures. The added 42 names do not yet have Round28 capture files.
+- **U.S. (70):** retain the 28 stock names from Round27 and remove its two ETF benchmarks (SPY, QQQ); add 42 names present in the Nasdaq-100 candidate snapshot dated 2026-10-15. The 28-name overlap reuses Round27 captures. Round28 added captures now cover 32/42 names; 10 added names remain without data. Current effective coverage is 60/70 U.S. names.
 - **A-shares (30):** propose large/liquid CSI300-oriented names across sectors. The official CSI300 factsheet dated 2026-03-31 is used only as a top-holdings reference; full constituent membership and historical point-in-time membership for this exact 30-name list remain unverified.
 - **Sample window:** 2019-01-01 to 2026-10-16; D1, 1H, 15m, 5m, and 1m inputs.
 - **Accounting:** keep USD and CNY portfolios separate. Do not pool their P&L or drawdowns. Apply the same 5/10/20 bps sensitivity grid only after market-specific commissions, taxes, lot sizes, T+1, price limits, corporate actions, and fill rules are specified.

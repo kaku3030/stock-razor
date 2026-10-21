@@ -5,266 +5,35 @@
   "status": "BLOCKED",
   "provider_requests_made_by_this_script": 0,
   "market_data_reads_made_by_this_script": 0,
+  "cn_local_access_status": "local-opend-denied",
   "opend_history_quota": {
-    "used": 72,
-    "remaining": 28,
-    "missing_us_symbols": 42,
-    "us_quota_shortfall": 14
+    "used": 100,
+    "remaining": 0,
+    "missing_us_symbols": 10,
+    "us_quota_shortfall": 10
   },
   "expected_input_files": 500,
-  "present_input_files": 140,
-  "coverage_pct": 28.0,
+  "present_input_files": 300,
+  "coverage_pct": 60.0,
   "markets": {
     "us": {
       "symbol_count": 70,
       "expected_files": 350,
-      "present_files": 140,
-      "missing_files": 210,
+      "present_files": 300,
+      "missing_files": 50,
       "missing_symbols": [
         "ABNB",
-        "ADBE",
-        "ADI",
-        "ADP",
-        "ADSK",
-        "AMAT",
-        "AMGN",
-        "APP",
-        "ASML",
         "AXON",
-        "BKNG",
-        "CEG",
-        "CMCSA",
-        "CRWD",
-        "CSCO",
-        "CTAS",
-        "DASH",
-        "DDOG",
-        "GEHC",
-        "GILD",
-        "INTU",
-        "ISRG",
-        "KLAC",
-        "LRCX",
-        "MELI",
         "MPWR",
-        "NFLX",
         "NXPI",
-        "PANW",
         "PDD",
-        "PEP",
-        "PLTR",
-        "REGN",
         "ROP",
-        "SBUX",
         "SHOP",
         "SNPS",
-        "TMUS",
-        "TXN",
         "VRTX",
-        "WDC",
-        "WMT"
+        "WDC"
       ],
       "missing_detail": [
-        {
-          "symbol": "ADBE",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADBE_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADBE",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADBE_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADBE",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADBE_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADBE",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADBE_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADBE",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADBE_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADI",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADI_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADI",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADI_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADI",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADI_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADI",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADI_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADI",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADI_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADP",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADP_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADP",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADP_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADP",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADP_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADP",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADP_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADP",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADP_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADSK",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADSK_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADSK",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADSK_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADSK",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADSK_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADSK",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADSK_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ADSK",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ADSK_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMAT",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMAT_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMAT",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMAT_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMAT",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMAT_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMAT",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMAT_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMAT",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMAT_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMGN",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMGN_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMGN",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMGN_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMGN",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMGN_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMGN",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMGN_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "AMGN",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AMGN_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "APP",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_APP_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "APP",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_APP_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "APP",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_APP_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "APP",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_APP_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "APP",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_APP_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ASML",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ASML_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ASML",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ASML_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ASML",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ASML_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ASML",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ASML_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ASML",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ASML_1m_qfq_rth_20190101_20261016.csv"
-        },
         {
           "symbol": "AXON",
           "timeframe": "D1",
@@ -289,381 +58,6 @@
           "symbol": "AXON",
           "timeframe": "1m",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_AXON_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "BKNG",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_BKNG_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "BKNG",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_BKNG_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "BKNG",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_BKNG_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "BKNG",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_BKNG_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "BKNG",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_BKNG_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CEG",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CEG_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CEG",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CEG_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CEG",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CEG_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CEG",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CEG_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CEG",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CEG_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CMCSA",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CMCSA_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CMCSA",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CMCSA_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CMCSA",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CMCSA_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CMCSA",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CMCSA_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CMCSA",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CMCSA_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CRWD",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CRWD_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CRWD",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CRWD_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CRWD",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CRWD_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CRWD",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CRWD_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CRWD",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CRWD_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CSCO",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CSCO_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CSCO",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CSCO_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CSCO",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CSCO_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CSCO",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CSCO_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CSCO",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CSCO_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CTAS",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CTAS_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CTAS",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CTAS_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CTAS",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CTAS_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CTAS",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CTAS_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "CTAS",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_CTAS_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DASH",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DASH_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DASH",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DASH_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DASH",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DASH_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DASH",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DASH_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DASH",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DASH_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DDOG",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DDOG_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DDOG",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DDOG_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DDOG",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DDOG_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DDOG",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DDOG_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "DDOG",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_DDOG_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GEHC",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GEHC_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GEHC",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GEHC_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GEHC",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GEHC_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GEHC",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GEHC_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GEHC",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GEHC_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GILD",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GILD_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GILD",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GILD_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GILD",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GILD_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GILD",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GILD_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "GILD",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_GILD_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "INTU",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_INTU_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "INTU",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_INTU_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "INTU",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_INTU_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "INTU",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_INTU_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "INTU",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_INTU_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ISRG",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ISRG_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ISRG",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ISRG_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ISRG",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ISRG_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ISRG",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ISRG_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "ISRG",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ISRG_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "KLAC",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_KLAC_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "KLAC",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_KLAC_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "KLAC",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_KLAC_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "KLAC",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_KLAC_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "KLAC",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_KLAC_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "LRCX",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_LRCX_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "LRCX",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_LRCX_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "LRCX",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_LRCX_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "LRCX",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_LRCX_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "LRCX",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_LRCX_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "MELI",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MELI_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "MELI",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MELI_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "MELI",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MELI_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "MELI",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MELI_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "MELI",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MELI_1m_qfq_rth_20190101_20261016.csv"
         },
         {
           "symbol": "MPWR",
@@ -691,31 +85,6 @@
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_MPWR_1m_qfq_rth_20190101_20261016.csv"
         },
         {
-          "symbol": "NFLX",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NFLX_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "NFLX",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NFLX_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "NFLX",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NFLX_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "NFLX",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NFLX_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "NFLX",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NFLX_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
           "symbol": "NXPI",
           "timeframe": "D1",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NXPI_D1_qfq_rth_20190101_20261016.csv"
@@ -739,31 +108,6 @@
           "symbol": "NXPI",
           "timeframe": "1m",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_NXPI_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PANW",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PANW_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PANW",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PANW_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PANW",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PANW_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PANW",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PANW_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PANW",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PANW_1m_qfq_rth_20190101_20261016.csv"
         },
         {
           "symbol": "PDD",
@@ -791,81 +135,6 @@
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PDD_1m_qfq_rth_20190101_20261016.csv"
         },
         {
-          "symbol": "PEP",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PEP_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PEP",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PEP_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PEP",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PEP_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PEP",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PEP_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PEP",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PEP_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PLTR",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PLTR_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PLTR",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PLTR_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PLTR",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PLTR_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PLTR",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PLTR_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "PLTR",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_PLTR_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "REGN",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_REGN_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "REGN",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_REGN_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "REGN",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_REGN_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "REGN",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_REGN_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "REGN",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_REGN_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
           "symbol": "ROP",
           "timeframe": "D1",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ROP_D1_qfq_rth_20190101_20261016.csv"
@@ -889,31 +158,6 @@
           "symbol": "ROP",
           "timeframe": "1m",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_ROP_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "SBUX",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SBUX_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "SBUX",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SBUX_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "SBUX",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SBUX_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "SBUX",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SBUX_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "SBUX",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SBUX_1m_qfq_rth_20190101_20261016.csv"
         },
         {
           "symbol": "SHOP",
@@ -966,56 +210,6 @@
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_SNPS_1m_qfq_rth_20190101_20261016.csv"
         },
         {
-          "symbol": "TMUS",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TMUS_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TMUS",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TMUS_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TMUS",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TMUS_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TMUS",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TMUS_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TMUS",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TMUS_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TXN",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TXN_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TXN",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TXN_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TXN",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TXN_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TXN",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TXN_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "TXN",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_TXN_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
           "symbol": "VRTX",
           "timeframe": "D1",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_VRTX_D1_qfq_rth_20190101_20261016.csv"
@@ -1039,31 +233,6 @@
           "symbol": "VRTX",
           "timeframe": "1m",
           "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_VRTX_1m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "WMT",
-          "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_WMT_D1_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "WMT",
-          "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_WMT_1H_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "WMT",
-          "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_WMT_15m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "WMT",
-          "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_WMT_5m_qfq_rth_20190101_20261016.csv"
-        },
-        {
-          "symbol": "WMT",
-          "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round27_us30_20261021_effective\\US_WMT_1m_qfq_rth_20190101_20261016.csv"
         },
         {
           "symbol": "WDC",
@@ -1158,752 +327,752 @@
         {
           "symbol": "600519.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600519.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600519.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600519.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600519.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600519.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600519.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600519.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600519.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600519.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600519.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600519.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600519.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600519.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600519.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300750.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300750.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300750.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300750.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300750.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300750.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300750.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300750.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300750.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300750.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300750.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300750.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300750.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300750.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300750.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300308.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300308.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300308.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300308.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300308.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300308.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300308.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300308.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300308.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300308.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300308.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300308.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300308.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300308.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300308.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601318.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601318.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601318.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601318.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601318.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601318.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601318.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601318.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601318.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601318.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601318.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601318.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601318.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601318.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601318.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601899.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601899.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601899.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601899.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601899.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601899.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601899.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601899.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601899.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601899.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601899.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601899.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601899.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601899.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601899.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600036.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600036.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600036.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600036.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600036.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600036.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600036.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600036.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600036.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600036.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600036.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600036.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600036.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600036.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600036.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300502.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300502.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300502.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300502.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300502.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300502.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300502.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300502.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300502.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300502.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300502.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300502.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300502.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300502.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300502.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000333.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000333.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000333.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000333.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000333.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000333.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000333.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000333.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000333.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000333.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000333.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000333.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000333.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000333.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000333.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600900.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600900.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600900.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600900.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600900.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600900.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600900.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600900.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600900.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600900.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600900.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600900.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600900.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600900.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600900.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601166.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601166.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601166.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601166.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601166.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601166.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601166.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601166.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601166.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601166.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601166.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601166.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601166.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601166.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601166.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002594.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002594.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002594.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002594.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002594.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002594.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002594.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002594.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002594.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002594.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002594.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002594.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002594.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002594.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002594.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300760.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300760.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300760.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300760.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300760.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300760.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300760.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300760.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300760.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300760.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300760.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300760.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300760.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300760.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300760.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600276.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600276.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600276.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600276.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600276.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600276.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600276.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600276.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600276.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600276.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600276.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600276.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600276.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600276.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600276.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601012.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601012.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601012.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601012.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601012.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601012.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601012.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601012.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601012.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601012.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601012.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601012.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601012.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601012.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601012.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002475.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002475.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002475.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002475.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002475.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002475.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002475.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002475.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002475.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002475.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002475.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002475.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002475.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002475.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002475.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600030.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600030.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600030.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600030.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600030.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600030.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600030.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600030.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600030.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600030.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600030.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600030.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600030.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600030.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600030.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601888.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601888.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601888.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601888.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601888.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601888.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601888.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601888.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601888.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601888.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601888.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601888.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601888.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601888.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601888.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000858.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000858.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000858.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000858.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000858.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000858.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000858.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000858.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000858.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000858.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000858.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000858.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "000858.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_000858.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_000858.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600809.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600809.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600809.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600809.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600809.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600809.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600809.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600809.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600809.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600809.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600809.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600809.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600809.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600809.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600809.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002415.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002415.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002415.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002415.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002415.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002415.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002415.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002415.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002415.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002415.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002415.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002415.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "002415.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_002415.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_002415.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601398.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601398.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601398.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601398.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601398.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601398.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601398.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601398.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601398.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601398.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601398.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601398.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601398.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601398.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601398.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300015.SZ",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300015.SZ_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300015.SZ_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300015.SZ",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300015.SZ_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300015.SZ_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300015.SZ",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300015.SZ_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300015.SZ_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300015.SZ",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300015.SZ_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300015.SZ_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "300015.SZ",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_300015.SZ_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_300015.SZ_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "603259.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_603259.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_603259.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "603259.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_603259.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_603259.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "603259.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_603259.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_603259.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "603259.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_603259.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_603259.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "603259.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_603259.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_603259.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600031.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600031.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600031.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600031.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600031.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600031.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600031.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600031.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600031.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600031.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600031.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600031.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600031.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600031.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600031.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600104.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600104.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600104.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600104.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600104.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600104.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600104.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600104.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600104.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600104.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600104.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600104.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600104.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600104.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600104.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601728.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601728.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601728.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601728.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601728.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601728.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601728.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601728.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601728.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601728.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601728.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601728.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601728.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601728.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601728.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601668.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601668.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601668.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601668.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601668.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601668.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601668.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601668.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601668.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601668.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601668.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601668.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601668.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601668.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601668.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601225.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601225.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601225.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601225.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601225.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601225.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601225.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601225.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601225.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601225.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601225.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601225.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601225.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601225.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601225.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600309.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600309.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600309.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600309.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600309.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600309.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600309.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600309.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600309.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600309.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600309.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600309.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "600309.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_600309.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_600309.SH_1m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601919.SH",
           "timeframe": "D1",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601919.SH_D1_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601919.SH_D1_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601919.SH",
           "timeframe": "1H",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601919.SH_1H_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601919.SH_1H_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601919.SH",
           "timeframe": "15m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601919.SH_15m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601919.SH_15m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601919.SH",
           "timeframe": "5m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601919.SH_5m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601919.SH_5m_qfq_20190101_20261016.csv"
         },
         {
           "symbol": "601919.SH",
           "timeframe": "1m",
-          "path": "C:\\Users\\77896\\Documents\\stock-razor-tickflow-captures\\round28_us70_cn30_20261021\\CN_601919.SH_1m_qfq_20190101_20261016.csv"
+          "path": "C:\\Users\\77896\\Documents\\stock-razor-opend-captures\\round28_us70_local_opend_20261021\\CN_601919.SH_1m_qfq_20190101_20261016.csv"
         }
       ]
     }
@@ -1911,6 +1080,7 @@
   "blockers": [
     "LOCAL_OPEND_HISTORY_QUOTA_INSUFFICIENT_FOR_MISSING_US_SYMBOLS",
     "LOCAL_TICKFLOW_CN_HISTORICAL_CACHE_MISSING",
+    "LOCAL_OPEND_CN_MARKET_ENTITLEMENT_MISSING",
     "POINT_IN_TIME_UNIVERSE_MEMBERSHIP_UNVERIFIED",
     "OFFICIAL_S2_RULE_UNAVAILABLE"
   ],

@@ -585,12 +585,14 @@
                                    "S6":  "Round27 rule"
                                },
     "data_gate":  {
-                      "futu_opend_history_quota_remaining":  28,
+                      "futu_opend_history_quota_remaining":  0,
                       "local_cn_tickflow_historical_cache":  "NOT_FOUND",
-                      "new_unique_us_symbols_required":  42,
+                      "new_unique_us_symbols_required":  10,
                       "new_cn_symbols_required":  30,
                       "paid_data_calls":  "PROHIBITED",
-                      "state":  "BLOCKED_INSUFFICIENT_LOCAL_HISTORY_QUOTA_AND_NO_CN_LOCAL_CACHE"
+                      "local_opend_cn_market_entitlement":  "DENIED",
+                      "futu_opend_history_quota_used":  100,
+                      "state":  "BLOCKED_US_HISTORY_QUOTA_EXHAUSTED_CN_OPEND_ENTITLEMENT_DENIED_PIT_MEMBERSHIP_UNVERIFIED_S2_RULE_UNAVAILABLE"
                   },
     "source_notes":  [
                          {
