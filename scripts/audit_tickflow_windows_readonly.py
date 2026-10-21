@@ -102,7 +102,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
     if len(sizes) != 1:
         raise ValueError("compact column lengths mismatch")
     count = sizes.pop()
-    if not 4 <= count <= PERIOD_COUNTS[timeframe]:
+    min_count = 1 if timeframe == "60m" else 4
+    if not min_count <= count <= PERIOD_COUNTS[timeframe]:
         raise ValueError("out-of-bounds sample size")
 
     now_cn = now_utc.astimezone(CN)
@@ -266,10 +267,20 @@ def main() -> int:
             for timeframe in requested:
                 start = time.perf_counter()
                 try:
-                    frame = client.klines.get(
-                        symbol, period=timeframe, count=PERIOD_COUNTS[timeframe],
-                        as_dataframe=False, adjust="none",
-                    )
+                    if timeframe == "1d":
+                        # D1 is calendar-history data; intraday periods must use
+                        # TickFlow's dedicated session endpoint.
+                        frame = client.klines.get(
+                            symbol, period=timeframe,
+                            count=PERIOD_COUNTS[timeframe],
+                            as_dataframe=False, adjust="none",
+                        )
+                    else:
+                        frame = client.klines.intraday(
+                            symbol, period=timeframe,
+                            count=PERIOD_COUNTS[timeframe],
+                            as_dataframe=False,
+                        )
                     record = assess_compact(frame, timeframe, datetime.now(timezone.utc))
                 except Exception as exc:
                     record = {"status": "BLOCKED",
