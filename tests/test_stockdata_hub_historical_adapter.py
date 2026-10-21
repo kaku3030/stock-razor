@@ -65,7 +65,7 @@ def test_one_hour_maps_to_stockdata_hub_60m():
 
 
 def test_unsupported_period_and_invalid_ohlcv_fail_closed():
-    with pytest.raises(ValueError, match="only 15m, 1h, 1d and 1w"):
+    with pytest.raises(ValueError, match="only 15m, 1h, 1d, 1w and 1y"):
         StockDataHubHistoricalAdapter(_Fetcher(_frame())).get_bars("600519", "5m")
 
     invalid = _frame()
@@ -100,3 +100,15 @@ def test_weekly_aggregates_trading_days_without_cross_week_leakage():
     assert bars[0].low == 9
     assert bars[0].close == 12
     assert bars[0].volume == 220
+
+
+def test_yearly_aggregates_calendar_years():
+    frame = _daily_frame()
+    frame.loc[len(frame)] = {"date": "2025-12-31", "open": 8, "high": 9, "low": 7, "close": 8.5, "volume": 80}
+    adapter = StockDataHubHistoricalAdapter(daily_fetcher=_DailyFetcher(frame))
+
+    bars = adapter.get_bars("000001", "1y")
+
+    assert [bar.bar_start.date().isoformat() for bar in bars] == ["2025-01-01", "2026-01-01"]
+    assert bars[0].open == 8
+    assert bars[0].close == 8.5
