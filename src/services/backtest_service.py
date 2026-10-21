@@ -8,6 +8,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
 from sqlalchemy import and_, select
 
 from data_provider.base import canonical_stock_code, normalize_stock_code
@@ -834,6 +835,43 @@ class BacktestService:
         refill_code = str(code or "").strip()
         if not refill_code:
             return
+
+        try:
+            from data_provider import StockDataHubHistoricalAdapter
+
+            # Replay/backtest-only path: use the bounded long-history adapter
+            # first, while leaving realtime/provider-manager routing unchanged.
+            end_date = analysis_date + timedelta(days=max(eval_window_days * 2, 30))
+            bars = StockDataHubHistoricalAdapter().get_bars(
+                refill_code,
+                "1d",
+                start=datetime.combine(analysis_date, datetime.min.time()),
+                end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+            )
+            df = pd.DataFrame(
+                [
+                    {
+                        "date": bar.bar_start.date(),
+                        "open": bar.open,
+                        "high": bar.high,
+                        "low": bar.low,
+                        "close": bar.close,
+                        "volume": bar.volume,
+                        "amount": bar.amount,
+                    }
+                    for bar in bars
+                    if bar.is_closed and bar.is_complete
+                ]
+            )
+            if not df.empty:
+                self.db.save_daily_data(
+                    df,
+                    code=refill_code,
+                    data_source="stockdata-hub+tencent-daily",
+                )
+                return
+        except Exception as exc:
+            logger.warning(f"长历史适配器补全日线失败({refill_code})，回退现有管理器: {exc}")
 
         try:
             from data_provider.base import DataFetcherManager
