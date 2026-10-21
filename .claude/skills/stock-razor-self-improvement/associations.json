@@ -258,6 +258,22 @@
         "CN-003",
         "ENG-001"
       ]
+    },
+    {
+      "id": "CN-005",
+      "phrases": [
+        "A股200标的扫描一个股票行数不足导致整批失败",
+        "TickFlow expanded scan sparse symbol aborts whole cache",
+        "S6_15M_NORMALIZE ROW_COUNT_BELOW_MIN",
+        "AUTO_200 15m insufficient history",
+        "non-core scan symbol fewer than four rows",
+        "TickFlow 扫描个别标的无数据导致其他有效历史数据也不可读"
+      ],
+      "related": [
+        "CN-001",
+        "CN-003",
+        "ENG-001"
+      ]
     }
   ]
 }
