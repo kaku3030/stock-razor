@@ -237,6 +237,49 @@ def test_actual_exchange_calendar_rejects_false_active_session(tmp_path, closed_
         assert ledger.pending_count() == 0
 
 
+
+def test_symbol_quality_flags_quarantine_one_symbol_without_blocking_valid_events(tmp_path):
+    from copy import deepcopy
+
+    body, observed = export()
+    quarantined = deepcopy(body["symbols"]["US.AMD"])
+    quarantined["symbol"] = "US.QQQ"
+    for bars in quarantined["timeframes"].values():
+        for bar in bars:
+            bar["symbol"] = "US.QQQ"
+    for timeframe in ("15m", "1h"):
+        latest = quarantined["timeframes"][timeframe][-1]
+        latest["quality_flags"] = ["VWAP_OUTSIDE_BAR_RANGE", "PARTIAL_TURNOVER"]
+        latest["amount"] = None
+    body["symbols"]["US.QQQ"] = quarantined
+
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "PASS"
+        assert result.bar_event_ingress.status == "PARTIAL"
+        assert result.bar_event_ingress.created_count == 2
+        assert ledger.pending_count() == 2
+        assert any(
+            reason.startswith("SYMBOL_BAR_QUARANTINED:US.QQQ:15m:")
+            for reason in result.bar_event_ingress.reasons
+        )
+        assert result.to_dict()["admission_diagnostics"]["decision"] == "BLOCKED"
+
+
+def test_all_symbols_quarantined_still_blocks_without_inserting(tmp_path):
+    body, observed = export()
+    for timeframe in ("15m", "1h"):
+        latest = body["symbols"]["US.AMD"]["timeframes"][timeframe][-1]
+        latest["quality_flags"] = ["VWAP_OUTSIDE_BAR_RANGE", "PARTIAL_TURNOVER"]
+        latest["amount"] = None
+
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "BLOCKED"
+        assert result.bar_event_ingress.status == "BLOCKED"
+        assert "BAR_EVENT_NO_QUALIFIED_SYMBOLS" in result.bar_event_ingress.reasons
+        assert ledger.pending_count() == 0
+
 def test_all_symbols_validate_before_any_event_is_persisted(tmp_path):
     body, observed = export()
     from copy import deepcopy
