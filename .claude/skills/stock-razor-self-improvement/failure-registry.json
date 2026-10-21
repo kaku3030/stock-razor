@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-20T15:14:06Z",
+  "last_reconciled_utc": "2026-10-21T04:12:12Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -223,6 +223,21 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39443918486",
       "regression_evidence": "tests/test_engineering_autonomy_loop.py",
       "mandatory_action": "Keep --noconftest on the exact reviewed pytest-only queue commands. Preserve exact queue fingerprint/cache checks; use fresh runs after queue changes. PASS applies only to fixed offline queue execution, not AWS deployment, continuous AI coding or trading.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-004",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "WINDOWS_LIVE_1M_FLOAT_DRIFT",
+        "RESEARCH_PROGRESS_OVERSTATED"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Windows standalone audit counted same-session 1m ETF float-drift rows as research-label eligible before post-close, while the isolated cache builder only permits the 1m float-tolerance path after 15:02 China time. This overstated standalone live research coverage; it did not change production cache, Radar or trading admission.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/951",
+      "regression_evidence": "tests/test_tickflow_windows_readonly_audit.py",
+      "mandatory_action": "Keep live-session 1m drift out of research-eligible labels, preserve the post-close research-only route, and verify the exact protected-main revision after PR #951 merges. Do not repeat provider reads for this offline classification defect.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]

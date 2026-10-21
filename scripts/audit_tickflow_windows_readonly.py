@@ -157,9 +157,9 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 if stamp > cutoff and timeframe != "1d":
                     future_or_forming += 1
                     continue
-                # Match the deployed collector's constrained *research-only*
-                # classification, including the mandatory ETF quote lattice.
-                # Neither native floats nor trading permissions are changed.
+                # Keep this diagnostic aligned with the isolated cache builder:
+                # current-session 1m drift remains quarantined until post-close.
+                # No provider values are rounded or promoted to strict status.
                 if (_vendor_ohlc_float_gap_bucket(*nums[:4])
                         != "WITHIN_1E_MINUS_5"
                         or not _vendor_etf_tick_lattice_shape_valid(*nums[:4])):
@@ -168,7 +168,9 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                 tiny_vendor_float_drift_rows += 1
                 if stamp.date() == now_cn.date():
                     same_session_float_drift_rows += 1
-                    if timeframe in ("1m", "5m", "15m", "60m"):
+                    if (timeframe in ("5m", "15m", "60m")
+                            or (timeframe == "1m" and
+                                (now_cn.hour, now_cn.minute) >= (15, 2))):
                         research_eligible.add(stamp)
                 continue
             if timeframe == "1d":

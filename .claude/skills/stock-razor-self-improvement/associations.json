@@ -246,6 +246,18 @@
       "related": [
         "ENG-003"
       ]
+    },
+    {
+      "id": "CN-004",
+      "phrases": [
+        "live 1m float drift research eligibility",
+        "research_progress_status overstated",
+        "Windows audit overstates one-minute research coverage"
+      ],
+      "related": [
+        "CN-003",
+        "ENG-001"
+      ]
     }
   ]
 }
