@@ -11,6 +11,7 @@ import os
 import tempfile
 import unittest
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
@@ -123,6 +124,36 @@ class BacktestServiceTestCase(unittest.TestCase):
                 ]
             )
             session.commit()
+
+    def test_daily_refill_uses_research_history_adapter_before_manager_fallback(self) -> None:
+        bars = [
+            SimpleNamespace(
+                bar_start=datetime(2024, 1, 2),
+                open=10.0,
+                high=11.0,
+                low=9.0,
+                close=10.5,
+                volume=100.0,
+                amount=None,
+                is_closed=True,
+                is_complete=True,
+            )
+        ]
+        adapter = SimpleNamespace(get_bars=lambda *args, **kwargs: bars)
+
+        with patch("data_provider.StockDataHubHistoricalAdapter", return_value=adapter), \
+                patch("data_provider.base.DataFetcherManager") as manager_cls:
+            BacktestService(self.db)._try_fill_daily_data(
+                code="000001",
+                analysis_date=date(2024, 1, 2),
+                eval_window_days=3,
+            )
+
+        manager_cls.assert_not_called()
+        with self.db.get_session() as session:
+            row = session.query(StockDaily).filter(StockDaily.code == "000001").one()
+            self.assertEqual(row.date, date(2024, 1, 2))
+            self.assertEqual(row.data_source, "stockdata-hub+tencent-daily")
 
     def _seed_analysis(
         self,
