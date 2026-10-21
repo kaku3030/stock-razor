@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] TickFlow minute-period single-symbol recovery now uses the intraday endpoint; D1 remains on the history endpoint.
+
 - [修复] Windows TickFlow 五周期只读审计将分钟K线改走专用 intraday 接口，并接受盘中部分 60m 行；最终闭合与交易准入仍保持未验证/阻断。
 
 - [修复] Engineering Autonomy 120m 的固定测试命令禁用全局 `tests/conftest.py`，保持 pytest-only 云端环境可执行并防止缺少应用依赖时队列虚报完成。
