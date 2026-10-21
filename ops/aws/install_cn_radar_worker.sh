@@ -153,6 +153,13 @@ while True:
                    source_stat.st_ino, source_stat.st_mtime_ns)
         if key == last_key and last_evaluation is not None:
             evaluation = last_evaluation
+            analysis_status = "PASS"
+            if isinstance(evaluation, dict):
+                bar_state = (
+                    "PROVEN"
+                    if evaluation.get("bar_finality") == "PROVEN"
+                    else "PROVISIONAL"
+                )
             poll_status = "UNCHANGED"
         else:
             analysis_started = time.perf_counter()
