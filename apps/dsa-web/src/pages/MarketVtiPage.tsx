@@ -32,6 +32,12 @@ const MarketVtiPage: React.FC = () => {
   const sourceAge = typeof bridgeState?.sourceAgeSeconds === 'number'
     ? bridgeState.sourceAgeSeconds.toFixed(1) + 's'
     : '--';
+  const dataAcceptance = bridgeState?.dataAcceptance ?? 'UNKNOWN';
+  const barState = bridgeState?.barState ?? 'UNKNOWN';
+  const strategyAdmission = bridgeState?.strategyAdmission ?? 'UNKNOWN';
+  const feedConnection = bridgeState?.feedConnection ?? 'UNKNOWN';
+  const reconnectStatus = bridgeState?.reconnectStatus ?? 'UNKNOWN';
+  const provisional = barState.toUpperCase() === 'PROVISIONAL';
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 sm:px-6">
@@ -95,12 +101,17 @@ const MarketVtiPage: React.FC = () => {
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
         {[
           [t('vti.status'), bridgeState?.status ?? '--'],
           [t('vti.source'), bridgeState?.source ?? '--'],
           [t('vti.cache'), bridgeState?.cacheStatus ?? '--'],
           [t('vti.sourceAge'), sourceAge],
+          ['数据接收', dataAcceptance],
+          ['K线状态', barState],
+          ['策略放行', strategyAdmission],
+          ['连接状态', feedConnection],
+          ['恢复状态', reconnectStatus],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-subtle bg-surface/70 px-3 py-2">
             <div className="text-[11px] uppercase tracking-wide text-muted-text">{label}</div>
@@ -110,6 +121,20 @@ const MarketVtiPage: React.FC = () => {
           </div>
         ))}
       </section>
+
+      <div
+        className={
+          'rounded-xl border px-3 py-2 text-xs ' +
+          (provisional
+            ? 'border-warning/40 bg-warning/10 text-warning'
+            : 'border-subtle bg-surface/60 text-secondary-text')
+        }
+        role="status"
+      >
+        {provisional
+          ? '当前 K 线仍为临时状态，仅用于盯盘显示；不会触发策略或模拟成交。'
+          : '策略放行状态由服务端数据质量门控决定；缺失字段显示 UNKNOWN。'}
+      </div>
 
       <section className="rounded-2xl border border-subtle bg-surface/80 p-3 shadow-sm">
         <div className="mb-2 flex items-center justify-between px-1">
