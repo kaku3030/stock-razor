@@ -150,3 +150,10 @@ def test_engineering_workflows_run_fast_gate_before_tasks(file_name, next_step):
     assert "python scripts/self_improvement_gate.py --check-registry" in guard
     assert "python scripts/self_improvement_gate.py --brief" in guard
     assert "AUTONOMY_MAIN_MOVED_OR_UNKNOWN" in guard
+
+
+def test_cn_004_live_1m_drift_audit_fix_is_mitigated():
+    registry = gate.load_registry()
+    item = next(row for row in registry["records"] if row["id"] == "CN-004")
+    assert item["status"] == "MITIGATED"
+    assert item["regression_evidence"] == "tests/test_tickflow_windows_readonly_audit.py"
