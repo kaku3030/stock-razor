@@ -22,6 +22,12 @@ export type VtiBarsResponse = {
   canonicalAuthority: boolean;
   radarAdmission?: string;
   liveTrade: boolean;
+  /** Runtime provenance fields are optional until the server bridge exposes them. */
+  dataAcceptance?: string;
+  barState?: string;
+  strategyAdmission?: string;
+  feedConnection?: string;
+  reconnectStatus?: string;
 };
 
 type RawResponse = {
@@ -43,6 +49,11 @@ type RawResponse = {
   canonical_authority?: boolean;
   radar_admission?: string;
   live_trade?: boolean;
+  data_acceptance?: string;
+  bar_state?: string;
+  strategy_admission?: string;
+  feed_connection?: string;
+  reconnect_status?: string;
 };
 
 export const vtiApi = {
@@ -82,6 +93,11 @@ export const vtiApi = {
       canonicalAuthority: Boolean(data.canonical_authority),
       radarAdmission: data.radar_admission,
       liveTrade: Boolean(data.live_trade),
+      dataAcceptance: data.data_acceptance,
+      barState: data.bar_state,
+      strategyAdmission: data.strategy_admission,
+      feedConnection: data.feed_connection,
+      reconnectStatus: data.reconnect_status,
     };
   },
 };
