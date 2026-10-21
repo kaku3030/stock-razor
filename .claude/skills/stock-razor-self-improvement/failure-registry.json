@@ -239,6 +239,21 @@
       "regression_evidence": "tests/test_tickflow_windows_readonly_audit.py",
       "mandatory_action": "If live-session 1m drift becomes research-eligible before post-close on main, diagnose the new deviation against the exact source revision. Preserve the post-close research-only route and NOT_VERIFIED finality; do not repeat provider reads for the fixed classification defect.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-005",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "ROW_COUNT_BELOW_MIN",
+        "S6_15M_NORMALIZE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Expanded AUTO_200 scan failed atomically when one non-core symbol returned fewer than four 15m rows; the TickFlow cache was published BLOCKED and its sequence did not advance, preventing valid sibling history from being read. Observed in read-only audit run 39584089911 at main SHA 4e89f400175da0569455717901d782bf5c5b86ea.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39584089911",
+      "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
+      "mandatory_action": "For expanded scans only, quarantine a non-core symbol/timeframe with fewer than four rows as explicit NO_DATA while preserving valid siblings; continue to fail closed for core symbols and all other malformed provider responses. Verify no-data reads, sequence/cache acceptance, and historical consumer behavior before deployment.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

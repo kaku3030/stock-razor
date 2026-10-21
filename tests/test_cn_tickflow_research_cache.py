@@ -289,6 +289,70 @@ def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
                               sequence=1,symbols=syms)
 
 
+def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings(tmp_path):
+    symbol = "100000.SZ"
+    class SparseKlines(FakeKlines):
+        def get(self, requested, *, period, count, as_dataframe, adjust):
+            result = super().get(
+                requested, period=period, count=count,
+                as_dataframe=as_dataframe, adjust=adjust,
+            )
+            if requested == symbol and period == "15m":
+                return {key: values[:3] for key, values in result.items()}
+            return result
+
+    fake = FakeClient()
+    fake.klines = SparseKlines()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=(symbol, "100001.SZ"), allow_scan_symbols=True,
+    )
+    assert snapshot["status"] == "PASS_RESEARCH_ONLY"
+    assert snapshot["symbols"][symbol]["15m"] == {
+        "status": "NO_DATA",
+        "period_availability": "INSUFFICIENT_HISTORY",
+        "rows": [],
+    }
+    path = tmp_path / "sparse-scan.json"
+    atomic_publish(str(path), snapshot)
+    missing = read_cn_tickflow_research_data(
+        symbol, "15m", 5, path=str(path), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    valid = read_cn_tickflow_research_data(
+        symbol, "60m", 5, path=str(path), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert missing["status"] == "NO_DATA"
+    assert missing["period_availability"] == "INSUFFICIENT_HISTORY"
+    assert missing["provider_requests"] == 0
+    assert valid["status"] == "PASS_HISTORICAL_ONLY"
+    assert len(valid["rows"]) == 4
+    assert missing["radar_admission"] == valid["radar_admission"] == "BLOCKED"
+    assert missing["live_trade"] is valid["live_trade"] is False
+
+
+def test_sparse_fixed_core_symbol_still_fails_closed():
+    symbol = "159611.SZ"
+    class SparseCoreKlines(FakeKlines):
+        def get(self, requested, *, period, count, as_dataframe, adjust):
+            result = super().get(
+                requested, period=period, count=count,
+                as_dataframe=as_dataframe, adjust=adjust,
+            )
+            if requested == symbol and period == "15m":
+                return {key: values[:3] for key, values in result.items()}
+            return result
+
+    fake = FakeClient()
+    fake.klines = SparseCoreKlines()
+    with pytest.raises(ValueError, match="insufficient history"):
+        build_observation(
+            fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+            symbols=(symbol,), allow_scan_symbols=True,
+        )
+
+
 def test_scan_capacity_accepts_twenty_explicit_symbols_and_reader_sees_all(tmp_path):
     symbols = tuple(f"{100000 + index:06d}.SZ" for index in range(TEST_SCAN_SYMBOLS))
     assert resolve_scan_symbols(",".join(symbols)) == symbols

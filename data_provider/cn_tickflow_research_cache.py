@@ -530,6 +530,19 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 # complete bounded snapshot at publish time.
                 bars=bars[-n:]
             except Exception as exc:
+                # A bounded expanded scan may include newly listed or
+                # illiquid symbols with fewer than four historical rows.
+                # Preserve valid sibling symbols, but never hide a gap in the
+                # fixed core set used for held-symbol validation.
+                if (allow_scan_symbols and symbol not in SYMBOLS
+                        and type(exc) is ValueError
+                        and str(exc) == "insufficient history"):
+                    frames[interval] = {
+                        "status": "NO_DATA",
+                        "period_availability": "INSUFFICIENT_HISTORY",
+                        "rows": [],
+                    }
+                    continue
                 exc._tickflow_stage=stage
                 raise
             frames[interval]={"rows":bars,
@@ -692,6 +705,14 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
     reject_reason="FRAME_OR_PERIOD_MISSING"
     try:
         raw=cached_symbols[symbol][timeframe]
+        if isinstance(raw,dict) and raw.get("status")=="NO_DATA":
+            if (symbol in SYMBOLS
+                    or set(raw) != {"status", "period_availability", "rows"}
+                    or raw.get("period_availability")!="INSUFFICIENT_HISTORY"
+                    or raw.get("rows")!=[]):
+                return invalid_cache("FRAME_NO_DATA_INVALID")
+            return {**base,"status":"NO_DATA",
+                    "period_availability":"INSUFFICIENT_HISTORY"}
         if (isinstance(raw,dict)
                 and raw.get("status")=="QC_ONLY_NOT_COLLECTED"
                 and timeframe in ("1m","5m")):
