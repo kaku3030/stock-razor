@@ -1,0 +1,8 @@
+Strict validation: EXPECTED_BLOCK
+Exit code: 1
+Failure: invalid OHLC row in local OpenD capture; strict full-data replay rejected the source without altering it.
+File: data\round24_s2_1m_opend_probe_20261020\US_COHR_1m_qfq_rth_20190101_20261016.csv
+Bar: 2025-02-11 09:31 America/New_York
+Open=91.67, High=91.67, Low=91.67, Close=93.66, Volume=22
+Reason: Close > High.
+Policy: No bar repair and no single-row drop. The separately labeled sensitivity replay excludes the complete COHR session 2025-02-11 across timeframes.
