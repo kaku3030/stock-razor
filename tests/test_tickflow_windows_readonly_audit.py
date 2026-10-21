@@ -74,6 +74,14 @@ def test_morning_first_60m_due_guard():
     assert second["due_count"] == second["due_labels_present"] == 1
 
 
+def test_partial_current_day_60m_sample_accepts_one_row_research_only():
+    c = compact(["2026-10-15 10:30"])
+    answer = audit.assess_compact(c, "60m", clock("2026-10-15 10:32"))
+    assert answer["due_count"] == answer["due_labels_present"] == 1
+    assert answer["status"] == "PASS_RESEARCH_ONLY"
+    assert answer["exchange_bar_finality"] == "NOT_VERIFIED"
+
+
 def test_daily_date_never_promoted_to_today_closed_bar():
     c = compact([
         "2026-10-12 00:00", "2026-10-13 00:00",
@@ -122,6 +130,50 @@ def test_cli_requires_explicit_opt_in_and_makes_zero_provider_calls(monkeypatch,
     printed = capsys.readouterr().out
     assert json.loads(printed)["provider_requests"] == 0
     assert "NOT_EXECUTED_OPT_IN_REQUIRED" in printed
+
+
+def test_cli_routes_intraday_to_session_endpoint_and_daily_to_history(
+    monkeypatch, capsys,
+):
+    calls = []
+
+    class FakeKlines:
+        def intraday(self, symbol, *, period, count, as_dataframe):
+            calls.append(("intraday", symbol, period, count, as_dataframe))
+            return {}
+
+        def get(self, symbol, *, period, count, as_dataframe, adjust):
+            calls.append(("history", symbol, period, count, as_dataframe, adjust))
+            return {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs == {"api_key": "fixture-key", "timeout": 8.0,
+                              "max_retries": 0}
+            self.klines = FakeKlines()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(audit, "SYMBOLS", ("159611.SZ",))
+    monkeypatch.setattr(audit.importlib.metadata, "version",
+                        lambda name: "0.1.25")
+    monkeypatch.setattr(audit, "read_windows_credential", lambda: "fixture-key")
+    monkeypatch.setattr(audit, "assess_compact",
+                        lambda frame, timeframe, now: {"status": "PASS_RESEARCH_ONLY"})
+    monkeypatch.setitem(sys.modules, "tickflow", SimpleNamespace(TickFlow=FakeClient))
+    monkeypatch.setattr(sys, "argv", ["probe", "--execute", "--timeframe", "all"])
+
+    assert audit.main() == 0
+    capsys.readouterr()
+
+    assert [(call[0], call[2]) for call in calls] == [
+        ("intraday", "1m"),
+        ("intraday", "5m"),
+        ("intraday", "15m"),
+        ("intraday", "60m"),
+        ("history", "1d"),
+    ]
 
 
 def test_only_exception_class_is_projected_to_logs():

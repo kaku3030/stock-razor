@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] Windows TickFlow 五周期只读审计将分钟K线改走专用 intraday 接口，并接受盘中部分 60m 行；最终闭合与交易准入仍保持未验证/阻断。
+
 - [修复] Engineering Autonomy 120m 的固定测试命令禁用全局 `tests/conftest.py`，保持 pytest-only 云端环境可执行并防止缺少应用依赖时队列虚报完成。
 
 - [改进] STOCK RAZOR 跨窗口同步 V1.4.1 新增固定 GitHub 最新讨论索引 `#924/6269031171`，一条直读快速发现当前去敏工程事件，无需浏览整段 PR 历史或等待 AWS Actions 排队；重要讨论由当前连接窗口同步写入 append-only 事件与固定指针并独立验证，私人聊天全文不上传公开仓库。
