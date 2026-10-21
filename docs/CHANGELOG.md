@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] Radar 研究计算与源闭合/实时证明分开报告；源证明未齐时事件仍阻断且零写入，重复轮询保留事件门禁与隔离原因。
+
 - [修复] US Radar 隔离已知单标的成交额质量异常，保留正常闭合间隔与隔离诊断，并支持固定现有 LiveFeed SHA 的独立 worker 部署。
 
 - [新功能] 扩展未注册到运行时路由的 `StockDataHubHistoricalAdapter`，供 Replay Lab 只读读取 A 股 15m/1h 历史与 stockdata-hub 缓存，并复用现有日线适配器分页提供 1d/1w/1y 回测数据；未改变 TickFlow/OpenD、交易或 Radar 门禁。

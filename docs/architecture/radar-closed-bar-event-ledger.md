@@ -108,3 +108,20 @@ gates are verified. This option does not authorize LiveFeed restarts or trading.
 Rollback: deploy the previous reviewed worker revision with the same exact source
 pin through the controlled deployment path; retain the event StateDirectory and
 receipt rows. Do not delete the ledger or relax admission to recover availability.
+
+
+### Research evaluation is separate from source/event readiness
+
+A fresh, schema-valid canonical source can support provisional technical research
+when delivery_mode is UNKNOWN or bar_closure is UNPROVEN. The poll then reports
+PASS (or UNCHANGED for a repeated sequence), while bar_event_ingress remains
+BLOCKED with BAR_EVENT_SOURCE_NOT_QUALIFIED and zero writes. The explicit
+source readiness and all signal/paper/live admission values remain unchanged.
+No inferred closure or realtime entitlement is substituted.
+
+The next source sequence is evaluated again; once existing source proof qualifies,
+normal fresh closed events can enter and dedupe. Repeated sequence diagnostics
+retain BLOCKED/PARTIAL event readiness and reasons, with zero per-poll event counts.
+Structural failures, stale/future source data, SHA/sequence violations,
+queue/storage failures and fact conflicts still block the poll and remain retryable.
+Read-only technical research PASS never means event, signal or trading readiness.
