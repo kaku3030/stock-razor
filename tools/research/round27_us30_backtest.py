@@ -144,6 +144,77 @@ def configure(symbols: list[str], sectors: dict[str, str]) -> None:
     R16_SECTOR.update(sectors)
 
 
+def _confirmation_flags_at_signals(frames: dict[str, pd.DataFrame], signal_times: pd.Series) -> dict[str, list[bool]]:
+    """Evaluate Round14's prior-bar SRVP rule only at actual signal times."""
+    h1 = frames["1H"].reset_index(drop=True)
+    m15 = frames["15m"].reset_index(drop=True)
+    h1_times = pd.to_datetime(h1.time_key)
+    m15_times = pd.to_datetime(m15.time_key)
+    h1_lookup = {pd.Timestamp(ts): i for i, ts in enumerate(h1_times)}
+    m15_lookup = {pd.Timestamp(ts): i for i, ts in enumerate(m15_times)}
+    h1_cache: dict[int, tuple[float, float, float]] = {}
+    m15_cache: dict[int, tuple[float, float, float]] = {}
+    def profile_at(frame: pd.DataFrame, index: int, cache: dict[int, tuple[float, float, float]]) -> tuple[float, float, float]:
+        if index < r14.LOOKBACK:
+            return (float("nan"),) * 3
+        if index not in cache:
+            cache[index] = r14._profile(frame.iloc[index-r14.LOOKBACK:index])
+        return cache[index]
+    def near_val(frame: pd.DataFrame, index: int, cache: dict[int, tuple[float, float, float]]) -> bool:
+        poc, val, vah = profile_at(frame, index, cache)
+        if not np.isfinite([poc, val, vah]).all():
+            return False
+        row = frame.iloc[index]
+        return bool(row.low <= val + (vah-val)*0.25 and row.close > val and row.close > row.open)
+    one_hour, fifteen = [], []
+    for value in pd.to_datetime(signal_times):
+        ts = pd.Timestamp(value)
+        i1 = h1_lookup.get(ts)
+        i15 = m15_lookup.get(ts)
+        one_hour.append(False if i1 is None else near_val(h1, i1, h1_cache))
+        confirmed15 = False
+        if i15 is not None and near_val(m15, i15, m15_cache):
+            prior = int(h1_times.searchsorted(ts, side="left")) - 1
+            if prior >= 0:
+                poc, val, _ = profile_at(h1, prior, h1_cache)
+                latest = h1.iloc[prior]
+                confirmed15 = bool(np.isfinite([poc, val]).all() and latest.close >= val and latest.close >= poc)
+        fifteen.append(confirmed15)
+    return {"srvp_1h_confirm": one_hour, "srvp_15m_confirm": fifteen}
+
+def build_signal_cache(capture: Path, out: Path, symbols: list[str]) -> list[dict]:
+    """Build only the Round13/14 signal cache required by Round24; skip redundant legacy P&L curves."""
+    baseline = out / "round13_baseline"
+    fusion = out / "round14_fusion"
+    baseline.mkdir(parents=True, exist_ok=True)
+    fusion.mkdir(parents=True, exist_ok=True)
+    source_manifest = []
+    radar_frames = []
+    for symbol in symbols:
+        frames = {tf: r13._read(capture / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv")
+                  for tf in ("D1", "1H", "15m", "5m")}
+        hashes = {}
+        for tf in frames:
+            path = capture / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
+            hashes[tf] = digest(path)
+            source_manifest.append({"symbol": symbol, "timeframe": tf, "sha256": hashes[tf]})
+        featured = {tf: r13._with_regime(r13._indicators(frame)) for tf, frame in frames.items()}
+        signals = r13._signals(symbol, featured, hashes)
+        if signals:
+            frame = pd.DataFrame(signals)
+            frame["market_regime"] = [r13._regime(featured["D1"], featured["1H"], pd.Timestamp(ts))
+                                       for ts in frame.signal_time]
+            confirms = _confirmation_flags_at_signals(frames, frame.signal_time)
+            frame["srvp_1h_confirm"] = confirms["srvp_1h_confirm"]
+            frame["srvp_15m_confirm"] = confirms["srvp_15m_confirm"]
+            radar_frames.append(frame)
+    radar = pd.concat(radar_frames, ignore_index=True) if radar_frames else pd.DataFrame()
+    radar.drop(columns=["srvp_1h_confirm", "srvp_15m_confirm"], errors="ignore").to_csv(baseline / "round13_signal_ledger.csv", index=False)
+    radar.to_csv(fusion / "round14_srvp_confirmation_ledger.csv", index=False)
+    (baseline / "round13_status.json").write_text(json.dumps({"status": "SIGNALS_ONLY_FOR_ROUND24", "source_manifest": source_manifest}, indent=2), encoding="utf-8")
+    (fusion / "round14_srvp_fusion_status.json").write_text(json.dumps({"status": "CONFIRMATIONS_ONLY_FOR_ROUND24", "source_manifest": source_manifest}, indent=2), encoding="utf-8")
+    return source_manifest
+
 def strict_data_quality_audit(out: Path, exclusions: dict[str, list[str]], findings: list[dict]) -> None:
     if not findings:
         raise RuntimeError("input audit found no invalid OHLCV rows; expected known COHR defect was not reproduced")
@@ -162,8 +233,9 @@ def strict_data_quality_audit(out: Path, exclusions: dict[str, list[str]], findi
 def combine(base_path: Path, candidate_path: Path) -> pd.DataFrame:
     base = pd.read_csv(base_path)
     candidate = pd.read_csv(candidate_path)
-    candidate["strategy"] = "S2_CANDIDATE"
+    candidate = candidate[candidate.strategy == "S2_CANDIDATE"].copy()
     source = pd.concat([base, candidate], ignore_index=True, sort=False)
+    source = source[source.strategy.isin(ARMS)].copy()
     rows = []
     for window in ("full_2019_2026", "train_2019_2023", "oos_2024_2026"):
         for cost in (5.0, 10.0, 20.0):
@@ -189,7 +261,7 @@ def combine(base_path: Path, candidate_path: Path) -> pd.DataFrame:
                              "buy_hold_return": bh, "buy_hold_max_drawdown_pct": bhdd})
             x = g.iloc[0]
             rows.append({"strategy": "BUY_HOLD_EQUAL_WEIGHT", "window": window,
-                         "cost_bps_per_side": 0.0, "status": "30_SYMBOL_MATCHED_BENCHMARK",
+                         "cost_bps_per_side": cost, "status": "30_SYMBOL_MATCHED_BENCHMARK",
                          "net_pnl": 100000.0 * bh, "profit_factor": None,
                          "max_drawdown": x.buy_hold_max_drawdown, "max_drawdown_pct": bhdd,
                          "trades": None, "win_rate": None,
@@ -219,7 +291,7 @@ def report(out: Path, symbols: list[str], combined: pd.DataFrame, exclusions: di
             x = m.iloc[0]
             lines.append(f"|{strategy}|{name}|{fmt(x.get('net_pnl'))}|{fmt(x.get('profit_factor'))}|{fmt(x.get('max_drawdown'))}|{fmt(x.get('max_drawdown_pct'))}|{fmt(x.get('trades'))}|{fmt(x.get('win_rate'))}|{fmt(x.get('buy_hold_return'))}|{fmt(x.get('buy_hold_max_drawdown_pct'))}|")
     lines += [
-        "", "All 5/10/20 bps per-side costs and training/OOS windows are in round27_six_strategy_comparison_all_costs.csv. Detailed ledgers and audit outputs are in round13_baseline, round14_fusion, round24_six_strategy, and round26_s2_candidate.", "",
+        "", "All 5/10/20 bps per-side costs and training/OOS windows are in round27_six_strategy_comparison_all_costs.csv. Detailed ledgers and audit outputs are in round24_six_strategy and round26_s2_candidate.", "",
         "The 30 names are a fixed survivor cohort, not point-in-time constituents. Provider finality, timestamp semantics, corporate-action point-in-time handling and independent quality signoff remain unresolved.", "",
         "TRADE_EXECUTION=NO; RADAR_ADMISSION=BLOCKED; PAPER_AUTO_READY=NO; LIVE_TRADE=NO.", "",
     ]
@@ -251,8 +323,9 @@ def run(config_path: Path, fresh: Path, legacy_high: Path, legacy_1m: Path,
     })
     strict_data_quality_audit(out, exclusions, findings)
     configure(symbols, sectors)
-    s13 = r13.run(effective, out / "round13_baseline")
-    s14 = r14.run(effective, out / "round14_fusion")
+    cache_manifest = build_signal_cache(effective, out, symbols)
+    s13 = {"status": "SIGNALS_ONLY_FOR_ROUND24", "source_manifest": cache_manifest}
+    s14 = {"status": "CONFIRMATIONS_ONLY_FOR_ROUND24", "source_manifest": cache_manifest}
     s24 = r24.run(effective, out / "round24_six_strategy", out)
     baseline = out / "round24_six_strategy" / "round24_strategy_metrics.csv"
     r26.run(effective, out / "round26_s2_candidate", "America/New_York", "end",

@@ -97,7 +97,7 @@ def _portfolio_curve(trades: pd.DataFrame, prepared: dict[str, dict[str, pd.Data
     cash_changes = pd.Series(0.0, index=timestamps, dtype=float)
     holdings_value = pd.Series(0.0, index=timestamps, dtype=float)
     open_cost = pd.Series(0.0, index=timestamps, dtype=float)
-    close_by_symbol = {symbol: prepared[symbol]["5m"].set_index("time_key").close.reindex(timestamps) for symbol in prepared}
+    close_by_symbol = {symbol: prepared[symbol]["5m"].set_index("time_key").close.reindex(timestamps).ffill() for symbol in prepared}
     for _, trade in trades.iterrows():
         symbol = str(trade.symbol)
         entry_time = pd.Timestamp(trade.entry_time)
