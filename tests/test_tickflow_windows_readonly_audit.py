@@ -277,3 +277,30 @@ def test_research_exit_flag_is_explicit_opt_in(monkeypatch, capsys):
     result=json.loads(capsys.readouterr().out)
     assert result["provider_requests"]==0
     assert result["status"]=="NOT_EXECUTED_OPT_IN_REQUIRED"
+
+
+def test_live_1m_vendor_float_drift_is_not_research_eligible():
+    # The live cache quarantines same-session 1m float drift until post-close.
+    # Keep the standalone Windows audit's research coverage equally strict.
+    c = compact([
+        "2026-10-20 14:58", "2026-10-20 14:59",
+        "2026-10-21 11:24", "2026-10-21 11:25",
+    ])
+    c["low"][-1] = 1.050000001
+    out = audit.assess_compact(c, "1m", clock("2026-10-21 11:27:00"))
+    assert out["same_session_float_drift_rows"] == 1
+    assert out["research_due_labels_present"] == 1
+    assert out["research_due_labels_missing"] == out["due_count"] - 1
+    assert out["research_progress_status"] == "BLOCKED_UNVERIFIED"
+
+
+def test_post_close_1m_vendor_float_drift_is_research_eligible():
+    c = compact([
+        "2026-10-20 14:58", "2026-10-20 14:59",
+        "2026-10-21 14:59", "2026-10-21 15:00",
+    ])
+    c["low"][-1] = 1.050000001
+    out = audit.assess_compact(c, "1m", clock("2026-10-21 15:03:00"))
+    assert out["same_session_float_drift_rows"] == 1
+    assert out["research_due_labels_present"] == 2
+    assert out["exchange_bar_finality"] == "NOT_VERIFIED"
