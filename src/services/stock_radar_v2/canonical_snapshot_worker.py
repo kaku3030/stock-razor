@@ -144,6 +144,15 @@ class CanonicalRadarEvaluation:
             "bar_event_ingress_status": (
                 self.bar_event_ingress.status if self.bar_event_ingress else None
             ),
+            "bar_event_created_count": (
+                self.bar_event_ingress.created_count if self.bar_event_ingress else 0
+            ),
+            "bar_event_duplicate_count": (
+                self.bar_event_ingress.duplicate_count if self.bar_event_ingress else 0
+            ),
+            "bar_event_reasons": (
+                list(self.bar_event_ingress.reasons) if self.bar_event_ingress else []
+            ),
             "bar_event_quarantine_reasons": [
                 reason for reason in (
                     self.bar_event_ingress.reasons if self.bar_event_ingress else ()
@@ -614,6 +623,20 @@ class CanonicalSnapshotRadarWorker:
             )
             for item in cached_symbols
         )
+        previous_ingress = (
+            self._last_successful_evaluation.bar_event_ingress
+            if self._last_successful_evaluation is not None else None
+        )
+        unchanged_ingress = (
+            CanonicalBarEventIngressResult(
+                previous_ingress.status
+                if previous_ingress is not None
+                and previous_ingress.status in {"BLOCKED", "PARTIAL"}
+                else "UNCHANGED",
+                reasons=previous_ingress.reasons if previous_ingress else (),
+            )
+            if self._event_ledger is not None else None
+        )
         return CanonicalRadarEvaluation(
             status="UNCHANGED",
             source_repo_sha=source.repo_sha,
@@ -626,17 +649,7 @@ class CanonicalSnapshotRadarWorker:
             source_live_trade=source.live_trade,
             symbols=refreshed_symbols,
             reasons=("SOURCE_SEQUENCE_UNCHANGED",),
-            bar_event_ingress=(
-                CanonicalBarEventIngressResult(
-                    "UNCHANGED", reasons=(
-                        self._last_successful_evaluation.bar_event_ingress.reasons
-                        if self._last_successful_evaluation is not None
-                        and self._last_successful_evaluation.bar_event_ingress is not None
-                        else ()
-                    ),
-                )
-                if self._event_ledger is not None else None
-            ),
+            bar_event_ingress=unchanged_ingress,
         )
 
     def poll_file(
@@ -705,8 +718,21 @@ class CanonicalSnapshotRadarWorker:
             )
             evaluation = replace(evaluation, bar_event_ingress=ingress)
             if ingress.status == "BLOCKED":
-                # Do not cache/advance a source whose events are not durably recorded.
-                return replace(evaluation, status="BLOCKED", reasons=(*evaluation.reasons, *ingress.reasons))
+                if ingress.reasons == ("BAR_EVENT_SOURCE_NOT_QUALIFIED",):
+                    # Fresh schema-valid observations still support research.
+                    # Event intake remains explicitly BLOCKED with zero writes.
+                    # A source proof change publishes a new sequence and retries
+                    # intake; this never promotes source or trading admission.
+                    evaluation = replace(
+                        evaluation, reasons=(*evaluation.reasons, *ingress.reasons),
+                    )
+                else:
+                    # Persistence/structural errors remain retryable; do not
+                    # advance their source watermark or hide the failure.
+                    return replace(
+                        evaluation, status="BLOCKED",
+                        reasons=(*evaluation.reasons, *ingress.reasons),
+                    )
         if evaluation.status == "PASS":
             self._last_runtime_instance_id = source.runtime_instance_id
             self._last_sequence = source.sequence

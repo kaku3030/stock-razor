@@ -101,7 +101,7 @@ def test_new_sequence_only_records_newly_closed_15m_not_old_1h(tmp_path):
 
 
 @pytest.mark.parametrize("mutation", [
-    "unknown_delivery", "unproven_closure", "wrong_sha", "closed_session",
+    "wrong_sha", "closed_session",
     "extended_session", "snapshot_stale", "snapshot_future", "fresh_export_old_bars",
     "future_export", "stale_export", "wrong_provider", "fallback", "snapshot_health",
     "missing_amount", "bad_turnover", "partial", "unclosed", "historical", "bar_health",
@@ -478,4 +478,36 @@ def test_quarantined_bar_is_reconsidered_when_new_sequence_repairs_it(tmp_path):
         assert repaired.status == "PASS"
         assert repaired.bar_event_ingress.created_count == 1
         assert repaired.bar_event_ingress.duplicate_count == 1
+        assert ledger.pending_count() == 2
+
+
+@pytest.mark.parametrize("source_field,unqualified_value,qualified_value", [
+    ("bar_closure", "UNPROVEN", "PROVEN"),
+    ("delivery_mode", "UNKNOWN", "REALTIME"),
+])
+def test_unproven_source_keeps_research_running_and_events_blocked(
+    tmp_path, source_field, unqualified_value, qualified_value
+):
+    body, observed = export()
+    body[source_field] = unqualified_value
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        poller = worker(ledger, observed)
+        path = write(tmp_path, body)
+        result = poller.poll_file(path)
+        assert result.status == "PASS"
+        assert result.bar_event_ingress.status == "BLOCKED"
+        assert result.bar_event_ingress.reasons == ("BAR_EVENT_SOURCE_NOT_QUALIFIED",)
+        assert result.symbols
+        assert ledger.pending_count() == 0
+        assert result.admission_diagnostics()["decision"] == "BLOCKED"
+        unchanged = poller.poll_file(path)
+        assert unchanged.status == "UNCHANGED"
+        assert unchanged.bar_event_ingress.status == "BLOCKED"
+        assert unchanged.bar_event_ingress.reasons == result.bar_event_ingress.reasons
+        body[source_field] = qualified_value
+        body["sequence"] += 1
+        restored = poller.poll_file(write(tmp_path, body))
+        assert restored.status == "PASS"
+        assert restored.bar_event_ingress.created_count == 2
+        assert restored.admission_diagnostics()["bar_event_created_count"] == 2
         assert ledger.pending_count() == 2
