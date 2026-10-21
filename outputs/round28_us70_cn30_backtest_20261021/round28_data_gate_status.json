@@ -1084,5 +1084,39 @@
     "POINT_IN_TIME_UNIVERSE_MEMBERSHIP_UNVERIFIED",
     "OFFICIAL_S2_RULE_UNAVAILABLE"
   ],
-  "policy": "No paid history request; no market fallback; no strategy promotion. US and CN P&L remain separate."
+  "policy": "No paid history request; no market fallback; no strategy promotion. US and CN P&L remain separate.",
+  "partial_backtest": {
+    "status": "EXPLORATORY_US_ONLY_DATA_AVAILABLE_SUBSET",
+    "symbols": 60,
+    "expected_us_symbols": 70,
+    "input_files": 300,
+    "included_markets": "US only",
+    "excluded_us_symbols": 10,
+    "excluded_cn_symbols": 30,
+    "invalid_ohlcv_rows": 467,
+    "affected_symbols": 23,
+    "affected_symbol_sessions": 420,
+    "strategies": [
+      "S1",
+      "S2_CANDIDATE",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ],
+    "cost_bps_per_side": [
+      5,
+      10,
+      20
+    ],
+    "windows": [
+      "full_2019_2026",
+      "train_2019_2023",
+      "oos_2024_2026"
+    ],
+    "official_s2_rule": "UNAVAILABLE; candidate output not validated",
+    "report": "../round28_us60_us_only_exploratory_20261021/round28_us60_backtest_report.md",
+    "comparison": "../round28_us60_us_only_exploratory_20261021/round28_us60_six_strategy_comparison_all_costs.csv",
+    "full_100_name_gate": "BLOCKED"
+  }
 }

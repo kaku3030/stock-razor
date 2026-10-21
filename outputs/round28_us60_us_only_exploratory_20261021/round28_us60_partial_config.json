@@ -1,0 +1,388 @@
+{
+  "schema": "stock-razor-round28-us70-cn30-candidate-v0.1",
+  "universe_id": "round28-us70-cn30-mixed-market-candidate",
+  "as_of": "2026-10-21",
+  "purpose": "research_only",
+  "status": "EXPLORATORY_PARTIAL_US_ONLY_60_OF_70",
+  "promotion_status": "NOT_APPROVED",
+  "market_separation": "Report US and CN independently; never combine USD and CNY P&L or drawdown.",
+  "requested_window": {
+    "start": "2019-01-01",
+    "end": "2026-10-16"
+  },
+  "timeframes": [
+    "D1",
+    "1H",
+    "15m",
+    "5m",
+    "1m"
+  ],
+  "markets": {
+    "us": {
+      "currency": "USD",
+      "source_id": "authorized_local_futu_opend",
+      "adjustment": "QFQ",
+      "session": "RTH",
+      "symbols": [
+        {
+          "symbol": "NVDA",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "AMD",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "AAPL",
+          "sector": "TECH",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "TSLA",
+          "sector": "AUTO",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "ANET",
+          "sector": "NETWORKING",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "MRVL",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "QCOM",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "TSM",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "COHR",
+          "sector": "OPTICAL_NETWORKING",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "VRT",
+          "sector": "DATACENTER_INFRASTRUCTURE",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "MSFT",
+          "sector": "TECH",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "AMZN",
+          "sector": "CONSUMER_INTERNET",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "GOOGL",
+          "sector": "COMMUNICATION_SERVICES",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "META",
+          "sector": "COMMUNICATION_SERVICES",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "AVGO",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "MU",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "INTC",
+          "sector": "SEMIS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "ORCL",
+          "sector": "SOFTWARE",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "CRM",
+          "sector": "SOFTWARE",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "JPM",
+          "sector": "FINANCIALS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "XOM",
+          "sector": "ENERGY",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "CVX",
+          "sector": "ENERGY",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "LLY",
+          "sector": "HEALTHCARE",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "UNH",
+          "sector": "HEALTHCARE",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "CAT",
+          "sector": "INDUSTRIALS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "BA",
+          "sector": "INDUSTRIALS",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "HD",
+          "sector": "CONSUMER_DISCRETIONARY",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "COST",
+          "sector": "CONSUMER_STAPLES",
+          "cohort": "round27_us30_stock_overlap"
+        },
+        {
+          "symbol": "ADBE",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "ADI",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "ADP",
+          "sector": "BUSINESS_SERVICES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "ADSK",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "AMAT",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "AMGN",
+          "sector": "HEALTHCARE",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "APP",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "ASML",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "BKNG",
+          "sector": "CONSUMER_DISCRETIONARY",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "CEG",
+          "sector": "UTILITIES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "CMCSA",
+          "sector": "COMMUNICATION_SERVICES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "CRWD",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "CSCO",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "CTAS",
+          "sector": "INDUSTRIALS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "DASH",
+          "sector": "CONSUMER_DISCRETIONARY",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "DDOG",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "GEHC",
+          "sector": "HEALTHCARE",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "GILD",
+          "sector": "HEALTHCARE",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "INTU",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "ISRG",
+          "sector": "HEALTHCARE",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "KLAC",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "LRCX",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "MELI",
+          "sector": "CONSUMER_DISCRETIONARY",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "NFLX",
+          "sector": "COMMUNICATION_SERVICES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "PANW",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "PEP",
+          "sector": "CONSUMER_STAPLES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "PLTR",
+          "sector": "TECH",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "REGN",
+          "sector": "HEALTHCARE",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "SBUX",
+          "sector": "CONSUMER_DISCRETIONARY",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "TMUS",
+          "sector": "COMMUNICATION_SERVICES",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "TXN",
+          "sector": "SEMIS",
+          "cohort": "nasdaq100_20261015_candidate"
+        },
+        {
+          "symbol": "WMT",
+          "sector": "CONSUMER_STAPLES",
+          "cohort": "nasdaq100_20261015_candidate"
+        }
+      ],
+      "captured_overlap_count": 28,
+      "missing_symbol_count": 42
+    }
+  },
+  "selection_method": "US: retain 28 stock names from Round27 (exclude SPY/QQQ benchmarks), plus 42 names from the 2026-10-15 Nasdaq-100 candidate snapshot, sector tagged from that snapshot. CN: 30 large/liquid CSI300 candidate names across sectors; exact historical membership still requires constituent-list validation.",
+  "membership_controls": {
+    "point_in_time_membership": "UNRESOLVED",
+    "survivorship_bias": "PRESENT_UNTIL_HISTORICAL_MEMBERSHIP_RECONSTRUCTION",
+    "index_snapshot_as_of": "2026-03-31 for CSI300 factsheet/top-holdings reference; 2026-10-15 for Nasdaq100 candidate source"
+  },
+  "strategy_rule_controls": {
+    "S1": "Round27 rule",
+    "S2": "UNVALIDATED_CANDIDATE_ONLY; official rule unavailable",
+    "S3": "Round27 rule",
+    "S4": "Round27 rule",
+    "S5": "Round27 rule",
+    "S6": "Round27 rule"
+  },
+  "data_gate": {
+    "futu_opend_history_quota_remaining": 0,
+    "local_cn_tickflow_historical_cache": "NOT_FOUND",
+    "new_unique_us_symbols_required": 10,
+    "new_cn_symbols_required": 30,
+    "paid_data_calls": "PROHIBITED",
+    "local_opend_cn_market_entitlement": "DENIED",
+    "futu_opend_history_quota_used": 100,
+    "state": "BLOCKED_US_HISTORY_QUOTA_EXHAUSTED_CN_OPEND_ENTITLEMENT_DENIED_PIT_MEMBERSHIP_UNVERIFIED_S2_RULE_UNAVAILABLE"
+  },
+  "source_notes": [
+    {
+      "source": "Nasdaq-100 candidate constituent snapshot",
+      "url": "https://indexes.nasdaqomx.com/Index/Weighting/NDX",
+      "snapshot": "2026-10-15",
+      "verified_symbols": 42
+    },
+    {
+      "source": "CSI300 official factsheet",
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/en/000300factsheeten.pdf",
+      "snapshot": "2026-03-31",
+      "use": "Top holdings reference only; the full 30-name cohort remains subject to constituents and PIT validation."
+    },
+    {
+      "source": "Futu OpenAPI historical K-line quota",
+      "url": "https://openapi.futunn.com/futu-api-doc/en/quote/get-history-kl-quota.html",
+      "observation": "72 used, 28 remaining; read-only quota query on 2026-10-21"
+    }
+  ],
+  "scope_note": "Partial U.S.-only data-available subset from Round28; excludes 10 missing U.S. candidates and all 30 A-shares. Not the requested 100-symbol cohort.",
+  "excluded_missing_us_symbols": [
+    "ABNB",
+    "AXON",
+    "MPWR",
+    "NXPI",
+    "PDD",
+    "ROP",
+    "SHOP",
+    "SNPS",
+    "VRTX",
+    "WDC"
+  ]
+}

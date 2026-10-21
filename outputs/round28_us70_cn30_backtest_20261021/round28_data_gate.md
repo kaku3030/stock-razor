@@ -20,6 +20,15 @@ Status: **BLOCKED**
 
 ## Interpretation
 
-This is a candidate-universe and input-availability audit, not a strategy backtest. Round27 results for 30 US names cannot be relabeled as a 70 US + 30 A-share result. S2 remains an unvalidated candidate because its official frozen rules are unavailable. No USD and CNY P&L, costs, or drawdowns are combined.
+This gate still blocks the requested full 70 US + 30 A-share backtest. A separate 60-US-only exploratory replay has now completed using available local files; it is not a 100-name result. S2 remains an unvalidated candidate because its official frozen rules are unavailable. No USD and CNY P&L, costs, or drawdowns are combined.
 
 See `round28_data_gate_status.json` for the per-symbol/timeframe missing-input list.
+
+## Available-subset exploratory replay
+
+- Completed a separate 60/70 U.S.-only replay using local QFQ/RTH captures. It includes 300 input files across D1/1H/15m/5m/1m, with ten U.S. names and all 30 A-shares excluded.
+- The input audit found 467 invalid OHLCV rows across 23 symbols and 420 symbol-session pairs. Each affected full session was excluded consistently from all timeframes, strategies, and matched buy-and-hold.
+- The report includes S1, S3-S6 and the Round26 S2 candidate; S2 is explicitly unvalidated because the official frozen rule is unavailable. Metrics cover 5/10/20 bps per side and full/train/OOS windows.
+- This remains exploratory: current-universe survivorship and point-in-time membership, provider finality, timestamp semantics, and independent data-quality signoff are unresolved.
+
+See ../round28_us60_us_only_exploratory_20261021/round28_us60_backtest_report.md and round28_us60_us_only_exploratory_20261021/round28_us60_six_strategy_comparison_all_costs.csv.

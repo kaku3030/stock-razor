@@ -24,10 +24,12 @@ The first 28 are the Round27 stock cohort. The remaining 42 are drawn from the N
 
 ## Data gate observed 2026-10-21
 
-- 140/500 required market/timeframe files exist: 28 U.S. symbols × 5 frames.
-- 42 U.S. symbols × 5 frames are missing. Local OpenD history quota reports 72 used and 28 remaining; this is 14 short of the missing U.S. symbols alone.
-- 30 A-share symbols × 5 frames are missing. No local TickFlow historical capture/cache was found in the inspected capture/cache locations. TickFlow's history batch path is explicitly paid and gated; no request was made.
-- No Round28 strategy backtest, cost stress test, or out-of-sample run is claimed. Round27's U.S. 30-stock results are not substituted for this cohort.
+- 300/500 required market/timeframe files exist: 60/70 U.S. symbols × 5 frames; ten U.S. symbols remain missing.
+- Local OpenD history quota is exhausted: 100 used, 0 remaining. The ten missing U.S. symbols exceed the remaining quota.
+- 0/150 A-share files exist. The local OpenD A-share request was denied by account entitlement. No local TickFlow historical cache was found in the inspected paths; its paid historical route was not called.
+- A 60-name U.S.-only exploratory replay is complete. It excludes the ten missing U.S. names and all 30 A-shares, and does not satisfy the 100-name objective. See ../round28_us60_us_only_exploratory_20261021/round28_us60_backtest_report.md.
+- That subset audit found 467 invalid OHLCV rows across 23 symbols and 420 symbol-session pairs. Affected sessions were removed consistently across all frames and arms. S2 remains an unvalidated candidate; its official rule is unavailable.
+- Point-in-time membership, provider finality, timestamp semantics, and independent data-quality signoff remain unresolved. The full 100-name gate stays BLOCKED.
 
 ## References
 
