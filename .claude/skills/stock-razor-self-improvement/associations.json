@@ -288,6 +288,22 @@
         "ENG-001",
         "ENG-002"
       ]
+    },
+    {
+      "id": "CN-006",
+      "phrases": [
+        "A股15m历史覆盖不足",
+        "15-minute history lookback 365",
+        "INTRADAY_RANGE_CLIPPED",
+        "LOOKBACK_365",
+        "分钟线历史起点太晚",
+        "15m 1h 回溯2016"
+      ],
+      "related": [
+        "CN-003",
+        "CN-001",
+        "ENG-001"
+      ]
     }
   ]
 }
