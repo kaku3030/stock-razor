@@ -49,7 +49,11 @@ _SYMBOL_BAR_QUARANTINE_FLAGS = frozenset({
 
 
 def _is_symbol_bar_quarantinable(bar: Bar) -> bool:
-    flags = {str(flag).strip().upper() for flag in bar.quality_flags if str(flag).strip()}
+    flags = {
+        str(flag).strip().upper()
+        for flag in bar.quality_flags
+        if str(flag).strip()
+    }
     return bool(flags) and flags.issubset(_SYMBOL_BAR_QUARANTINE_FLAGS)
 
 
@@ -154,9 +158,9 @@ def record_canonical_closed_bars(
             except ValueError:
                 return blocked("BAR_EVENT_CANDIDATE_INVALID")
     if not candidates:
-        return blocked(
-            "BAR_EVENT_NO_QUALIFIED_SYMBOLS",
-            reasons=tuple(quarantined),
+        return CanonicalBarEventIngressResult(
+            "BLOCKED", 0, 0,
+            ("BAR_EVENT_NO_QUALIFIED_SYMBOLS", *quarantined),
         )
     created = duplicates = 0
     try:
