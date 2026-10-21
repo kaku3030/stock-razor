@@ -266,6 +266,29 @@ def test_symbol_quality_flags_quarantine_one_symbol_without_blocking_valid_event
         assert result.to_dict()["admission_diagnostics"]["decision"] == "BLOCKED"
 
 
+
+def test_symbol_health_quality_flag_quarantine_preserves_other_events(tmp_path):
+    from copy import deepcopy
+
+    body, observed = export()
+    quarantined = deepcopy(body["symbols"]["US.AMD"])
+    quarantined["symbol"] = "US.GLDM"
+    quarantined["health"]["score"] = 49
+    quarantined["health"]["signal_permission"] = "blocked"
+    quarantined["health"]["quality_flags"] = ["VWAP_OUTSIDE_BAR_RANGE"]
+    for bars in quarantined["timeframes"].values():
+        for bar in bars:
+            bar["symbol"] = "US.GLDM"
+    body["symbols"]["US.GLDM"] = quarantined
+
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "PASS"
+        assert result.bar_event_ingress.status == "PARTIAL"
+        assert result.bar_event_ingress.created_count == 2
+        assert "SYMBOL_HEALTH_QUARANTINED:US.GLDM:VWAP_OUTSIDE_BAR_RANGE" in result.bar_event_ingress.reasons
+        assert ledger.pending_count() == 2
+
 def test_all_symbols_quarantined_still_blocks_without_inserting(tmp_path):
     body, observed = export()
     for timeframe in ("15m", "1h"):
