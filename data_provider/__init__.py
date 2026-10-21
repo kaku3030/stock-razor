@@ -14,6 +14,10 @@ _LAZY_EXPORTS = {
     "BaseFetcher": (".base", "BaseFetcher"),
     "DataFetcherManager": (".base", "DataFetcherManager"),
     "SinaResearchFetcher": (".sina_research_fetcher", "SinaResearchFetcher"),
+    "StockDataHubHistoricalAdapter": (
+        ".stockdata_hub_historical_adapter",
+        "StockDataHubHistoricalAdapter",
+    ),
     "EfinanceFetcher": (".efinance_fetcher", "EfinanceFetcher"),
     "TencentFetcher": (".tencent_fetcher", "TencentFetcher"),
     "AkshareFetcher": (".akshare_fetcher", "AkshareFetcher"),
