@@ -1,0 +1,298 @@
+#!/usr/bin/env python
+"""Local-only fixed-cohort Round27 US30 backtest orchestrator."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tools.research import round10_radar_replay as r10
+from tools.research import round11_radar_research as r11
+from tools.research import round13_radar_research as r13
+from tools.research import round14_srvp_fusion as r14
+from tools.research import round24_six_strategy_backtest as r24
+from tools.research import round26_s2_candidate_replay as r26
+from tools.research.round16_research import SECTOR as R16_SECTOR
+
+TFS = ("D1", "1H", "15m", "5m", "1m")
+BASE_TFS = TFS
+EXCLUDED_SESSIONS = {"COHR": "2025-02-11", "ANET": "2020-03-17"}
+ARMS = ("S1", "S2_CANDIDATE", "S3", "S4", "S5", "S6")
+LEGACY = {"AAPL", "AMD", "COHR", "NVDA", "QQQ", "TSLA"}
+
+
+def digest(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def atomic_json(path: Path, obj: dict) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def locate(symbol: str, tf: str, fresh: Path, legacy_high: Path, legacy_1m: Path) -> Path:
+    name = f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
+    candidate = fresh / name
+    if candidate.is_file():
+        return candidate
+    if symbol == "ANET" and tf == "5m":
+        quarantine = fresh / "quarantine" / name
+        if quarantine.is_file():
+            return quarantine
+    if symbol in LEGACY:
+        path = (legacy_1m if tf == "1m" else legacy_high) / name
+        if path.is_file():
+            return path
+    raise FileNotFoundError(f"missing Round27 input {symbol}/{tf}: {name}")
+
+
+def link_or_copy(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        if digest(src) == digest(dst):
+            return
+        dst.unlink()
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+    if digest(src) != digest(dst):
+        raise IOError(f"staged input hash mismatch: {src}")
+
+
+def stage(symbols: list[str], fresh: Path, legacy_high: Path, legacy_1m: Path,
+          raw_root: Path, effective_root: Path) -> list[dict]:
+    rows = []
+    for symbol in symbols:
+        for tf in TFS:
+            src = locate(symbol, tf, fresh, legacy_high, legacy_1m)
+            raw = raw_root / src.name
+            link_or_copy(src, raw)
+            effective = None
+            excluded = 0
+            effective_hash = None
+            effective_rows = None
+            effective = effective_root / src.name
+            frame = pd.read_csv(src)
+            day = pd.to_datetime(frame.time_key, errors="raise").dt.strftime("%Y-%m-%d")
+            excluded_day = EXCLUDED_SESSIONS.get(symbol)
+            if excluded_day:
+                keep = day != excluded_day
+                excluded = int((~keep).sum())
+            else:
+                keep = pd.Series(True, index=frame.index)
+            if excluded:
+                effective.parent.mkdir(parents=True, exist_ok=True)
+                tmp = effective.with_suffix(".csv.tmp")
+                frame.loc[keep].to_csv(tmp, index=False)
+                tmp.replace(effective)
+                effective_rows = int(keep.sum())
+            else:
+                link_or_copy(src, effective)
+                effective_rows = len(frame)
+            effective_hash = digest(effective)
+            rows.append({
+                "symbol": symbol, "timeframe": tf, "source_path": str(src),
+                "source_sha256": digest(src), "raw_staged_path": str(raw),
+                "raw_staged_sha256": digest(raw), "effective_path": str(effective) if effective else None,
+                "effective_sha256": effective_hash, "effective_rows": effective_rows,
+                "excluded_session": EXCLUDED_SESSIONS.get(symbol),
+                "excluded_session_rows": excluded,
+            })
+    return rows
+
+
+def configure(symbols: list[str], sectors: dict[str, str]) -> None:
+    r10.SYMBOLS = tuple(symbols)
+    r10.SECTOR.clear()
+    r10.SECTOR.update(sectors)
+    r11.ROUND10_SYMBOLS = r11.SYMBOLS = tuple(symbols)
+    r13.ROUND10_SYMBOLS = r13.SYMBOLS = tuple(symbols)
+    r14.SYMBOLS = r24.SYMBOLS = r26.SYMBOLS = tuple(symbols)
+    r26.SECTOR.clear()
+    r26.SECTOR.update(sectors)
+    R16_SECTOR.clear()
+    R16_SECTOR.update(sectors)
+
+
+def strict_cohr_audit(raw: Path, out: Path) -> None:
+    checks = [
+        ("COHR", "1m", "2025-02-11"),
+        ("ANET", "5m", "2020-03-17"),
+    ]
+    evidence = []
+    for symbol, tf, day in checks:
+        path = raw / f"US_{symbol}_{tf}_qfq_rth_20190101_20261016.csv"
+        try:
+            r26.read_bars(path, "America/New_York", tf, symbol)
+        except ValueError as exc:
+            detail = str(exc)
+            if "invalid OHLC" not in detail or symbol not in detail or day not in detail:
+                raise
+            evidence.append({"symbol": symbol, "timeframe": tf, "session": day,
+                             "source": str(path), "error": detail})
+            continue
+        raise RuntimeError(f"strict input unexpectedly passed known {symbol} invalid bar")
+    atomic_json(out / "strict_full_data_blocked.json", {
+        "status": "EXPECTED_BLOCK", "evidence": evidence,
+        "policy": "preserve raw captures; exclude each complete anomalous session across all timeframes, strategies and matched baseline",
+    })
+    (out / "strict_full_data_blocked.log").write_text(
+        "Strict validation: EXPECTED_BLOCK\n" +
+        "\n".join(f"{x['symbol']} {x['timeframe']} {x['session']}: {x['error']}" for x in evidence) + "\n",
+        encoding="utf-8")
+
+
+def combine(base_path: Path, candidate_path: Path) -> pd.DataFrame:
+    base = pd.read_csv(base_path)
+    candidate = pd.read_csv(candidate_path)
+    candidate["strategy"] = "S2_CANDIDATE"
+    source = pd.concat([base, candidate], ignore_index=True, sort=False)
+    rows = []
+    for window in ("full_2019_2026", "train_2019_2023", "oos_2024_2026"):
+        for cost in (5.0, 10.0, 20.0):
+            g = source[(source.window == window) & (source.cost_bps_per_side == cost)]
+            if g.empty:
+                raise ValueError(f"missing metrics {window}/{cost}")
+            bhs = g.buy_hold_return.dropna().to_numpy(dtype=float)
+            if len(bhs) == 0 or not np.allclose(bhs, bhs[0], rtol=0, atol=1e-9):
+                raise ValueError(f"buy-and-hold mismatch in {window}/{cost}")
+            bh, bhdd = float(bhs[0]), float(g.buy_hold_max_drawdown_pct.dropna().iloc[0])
+            for strategy in ARMS:
+                match = g[g.strategy == strategy]
+                if match.empty:
+                    rows.append({"strategy": strategy, "window": window, "cost_bps_per_side": cost,
+                                 "status": "OFFICIAL_S2_RULE_NOT_FOUND" if strategy == "S2_CANDIDATE" else "NOT_COMPUTED"})
+                    continue
+                x = match.iloc[0]
+                rows.append({"strategy": strategy, "window": window, "cost_bps_per_side": cost,
+                             "status": "CANDIDATE_UNVALIDATED" if strategy == "S2_CANDIDATE" else "ROUND24_METHOD_30_SYMBOL",
+                             "net_pnl": x.net_pnl, "profit_factor": x.profit_factor,
+                             "max_drawdown": x.max_drawdown, "max_drawdown_pct": x.max_drawdown_pct,
+                             "trades": x.trades, "win_rate": x.win_rate,
+                             "buy_hold_return": bh, "buy_hold_max_drawdown_pct": bhdd})
+            x = g.iloc[0]
+            rows.append({"strategy": "BUY_HOLD_EQUAL_WEIGHT", "window": window,
+                         "cost_bps_per_side": 0.0, "status": "30_SYMBOL_MATCHED_BENCHMARK",
+                         "net_pnl": 100000.0 * bh, "profit_factor": None,
+                         "max_drawdown": x.buy_hold_max_drawdown, "max_drawdown_pct": bhdd,
+                         "trades": None, "win_rate": None,
+                         "buy_hold_return": bh, "buy_hold_max_drawdown_pct": bhdd})
+    return pd.DataFrame(rows)
+
+
+def report(out: Path, symbols: list[str], combined: pd.DataFrame) -> None:
+    full = combined[(combined.window == "full_2019_2026") & (combined.cost_bps_per_side == 10)]
+    oos = combined[(combined.window == "oos_2024_2026") & (combined.cost_bps_per_side == 10)]
+    fmt = lambda v: "—" if pd.isna(v) else f"{float(v):,.2f}"
+    lines = [
+        "# Round27 US30 fixed-cohort six-arm research replay", "",
+        "Status: EXPLORATORY_FIXED_SURVIVOR_COHORT. Point-in-time membership is unresolved; these are conditional research results, not general 30-stock performance claims or strategy promotion.", "",
+        f"Universe: {len(symbols)} frozen symbols selected as of 2026-10-20; local Futu/OpenD QFQ/RTH, requested 2019-01-01 through 2026-10-16. Raw captures remain outside Git.", "",
+        "Official S2 history was not recovered. S2 is the Round26 candidate only. The full COHR 2025-02-11 session was excluded across all strategy arms and the matched buy-and-hold baseline. The immutable raw bar is recorded in the strict rejection log.", "",
+        "## 10 bps per side", "",
+        "|Strategy|Window|Net P&L|PF|Max DD|Max DD %|Trades|Win rate|B&H return|B&H max DD|",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for name, frame in (("Full", full), ("OOS", oos)):
+        for strategy in ("S1", "S2_CANDIDATE", "S3", "S4", "S5", "S6", "BUY_HOLD_EQUAL_WEIGHT"):
+            m = frame[frame.strategy == strategy]
+            if m.empty:
+                continue
+            x = m.iloc[0]
+            lines.append(f"|{strategy}|{name}|{fmt(x.get('net_pnl'))}|{fmt(x.get('profit_factor'))}|{fmt(x.get('max_drawdown'))}|{fmt(x.get('max_drawdown_pct'))}|{fmt(x.get('trades'))}|{fmt(x.get('win_rate'))}|{fmt(x.get('buy_hold_return'))}|{fmt(x.get('buy_hold_max_drawdown_pct'))}|")
+    lines += [
+        "", "All 5/10/20 bps per-side costs and training/OOS windows are in round27_six_strategy_comparison_all_costs.csv. Detailed ledgers and audit outputs are in round13_baseline, round14_fusion, round24_six_strategy, and round26_s2_candidate.", "",
+        "The 30 names are a fixed survivor cohort, not point-in-time constituents. Provider finality, timestamp semantics, corporate-action point-in-time handling and independent quality signoff remain unresolved.", "",
+        "TRADE_EXECUTION=NO; RADAR_ADMISSION=BLOCKED; PAPER_AUTO_READY=NO; LIVE_TRADE=NO.", "",
+    ]
+    (out / "round27_us30_backtest_report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def run(config_path: Path, fresh: Path, legacy_high: Path, legacy_1m: Path,
+        raw: Path, effective: Path, out: Path) -> dict:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    items = config["markets"]["us"]["symbols"]
+    symbols = [x["symbol"] for x in items]
+    sectors = {x["symbol"]: x["sector"] for x in items}
+    if len(symbols) != 30 or len(set(symbols)) != 30:
+        raise ValueError("Round27 config must contain 30 unique symbols")
+    if config["membership_controls"]["point_in_time_membership"] != "UNRESOLVED":
+        raise ValueError("unexpected membership state")
+    out.mkdir(parents=True, exist_ok=True)
+    raw.mkdir(parents=True, exist_ok=True)
+    if effective.exists():
+        shutil.rmtree(effective)
+    inputs = stage(symbols, fresh, legacy_high, legacy_1m, raw, effective)
+    if len(inputs) != 150 or any(x["source_sha256"] != x["raw_staged_sha256"] for x in inputs):
+        raise ValueError("incomplete or changed raw input staging")
+    atomic_json(out / "round27_input_manifest.json", {
+        "schema": "stock-razor-round27-input-manifest-v1",
+        "config_sha256": digest(config_path), "source": "local Futu/OpenD QFQ/RTH",
+        "full_session_exclusions": EXCLUDED_SESSIONS,
+        "files": inputs,
+    })
+    strict_cohr_audit(raw, out)
+    configure(symbols, sectors)
+    s13 = r13.run(effective, out / "round13_baseline")
+    s14 = r14.run(effective, out / "round14_fusion")
+    s24 = r24.run(effective, out / "round24_six_strategy", out)
+    baseline = out / "round24_six_strategy" / "round24_strategy_metrics.csv"
+    r26.run(effective, out / "round26_s2_candidate", "America/New_York", "end",
+            exclude_invalid_session=None,
+            baseline_metrics=baseline, one_minute_capture=effective)
+    combined = combine(baseline, out / "round26_s2_candidate" / "s2_candidate_metrics.csv")
+    path = out / "round27_six_strategy_comparison_all_costs.csv"
+    combined.to_csv(path, index=False)
+    report(out, symbols, combined)
+    status = {
+        "schema": "stock-razor-round27-us30-backtest-v1",
+        "state": "EXPLORATORY_FIXED_SURVIVOR_COHORT",
+        "symbols": symbols, "symbol_count": 30,
+        "membership_controls": config["membership_controls"],
+        "source": "local Futu/OpenD QFQ/RTH", "input_files": len(inputs),
+        "full_sessions_excluded": EXCLUDED_SESSIONS,
+        "round13_status": s13.get("status"), "round14_status": s14.get("status"),
+        "round24_status": s24.get("status"), "s2_candidate_status": "BACKTEST_COMPUTED_NOT_VALIDATED",
+        "comparison": str(path),
+        "unresolved": ["point_in_time_membership", "survivorship_bias", "bar_timestamp_semantics",
+                       "provider_finality", "independent_data_quality_signoff"],
+        "safety": {"TRADE_EXECUTION": "NO", "RADAR_ADMISSION": "BLOCKED",
+                   "PAPER_AUTO_READY": "NO", "LIVE_TRADE": "NO"},
+    }
+    atomic_json(out / "round27_us30_backtest_status.json", status)
+    return status
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", type=Path, required=True)
+    ap.add_argument("--capture-root", type=Path, required=True)
+    ap.add_argument("--legacy-high-capture", type=Path, required=True)
+    ap.add_argument("--legacy-one-minute-capture", type=Path, required=True)
+    ap.add_argument("--raw-root", type=Path, required=True)
+    ap.add_argument("--effective-root", type=Path, required=True)
+    ap.add_argument("--out", type=Path, required=True)
+    a = ap.parse_args()
+    status = run(a.config, a.capture_root, a.legacy_high_capture, a.legacy_one_minute_capture,
+                 a.raw_root, a.effective_root, a.out)
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
