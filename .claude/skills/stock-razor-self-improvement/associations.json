@@ -246,6 +246,19 @@
       "related": [
         "ENG-003"
       ]
+    },
+    {
+      "id": "CN-004",
+      "phrases": [
+        "??1m??????????",
+        "Windows????1m????",
+        "live 1m float drift research eligibility",
+        "research_progress_status overstated"
+      ],
+      "related": [
+        "CN-003",
+        "ENG-001"
+      ]
     }
   ]
 }
