@@ -79,3 +79,32 @@ Offline coverage executes the extracted real installer prefix with default-off a
 - The optional intake/consumer are not enabled in a runtime launcher or AWS. Exporter → poller → reopened SQLite → offline GenerationBackend → durable result/ACK is covered; no live model or Discord sink is wired.
 - `RADAR_ADMISSION=BLOCKED`, `SOURCE_ARBITER_ADMISSION=BLOCKED`, `PAPER_AUTO_READY=NO`, and `LIVE_TRADE=NO` remain required.
 - Local and CI tests prove code behavior only. Exact-main integration, actual AWS persistence/restart, AI dedupe, notification receipt, and cloud closed-bar evidence remain `NOT_VERIFIED`.
+
+
+## Symbol quality isolation and worker-only deployment
+
+Known turnover-derived quality flags (VWAP_OUTSIDE_BAR_RANGE and PARTIAL_TURNOVER)
+quarantine only the affected symbol/timeframe. A known snapshot-health failure
+skips that whole symbol before any event candidate is made. Unknown health flags,
+bad provenance, invalid timestamps, incomplete grids, and storage/queue/conflict
+failures retain batch-wide fail-closed behavior. Known flags never mask structural
+bar failures. No quarantined facts are labelled PASS or persisted as valid events.
+
+Healthy polls between 15m/1h boundaries report NO_NEW_CLOSED_BAR, not a data
+failure. PARTIAL identifies valid intake with explicit isolation reasons.
+All due candidates quarantined, or all snapshots quarantined, remains BLOCKED.
+The next source sequence rechecks isolation; repaired bars inside the freshness
+window can enter once, while existing facts dedupe. Unchanged polls keep isolation
+reasons, exposed in admission_diagnostics.bar_event_quarantine_reasons.
+
+The existing Radar deployment workflow accepts optional expected_source_sha.
+It defaults to expected main, preserving old callers. An explicit full SHA pins
+the already-running LiveFeed; the remote heartbeat must match exactly before
+installation. This updates only the isolated Radar worker, avoiding an acquisition
+restart during RTH. Worker and source versions are intentionally independent;
+their exact identities, schema loading, daily-history lineage and unchanged safety
+gates are verified. This option does not authorize LiveFeed restarts or trading.
+
+Rollback: deploy the previous reviewed worker revision with the same exact source
+pin through the controlled deployment path; retain the event StateDirectory and
+receipt rows. Do not delete the ledger or relax admission to recover availability.

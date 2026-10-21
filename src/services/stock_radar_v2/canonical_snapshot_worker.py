@@ -141,6 +141,15 @@ class CanonicalRadarEvaluation:
             "bar_closure_proven": bar_closure_proven,
             "source_radar_admission": self.source_radar_admission,
             "source_live_trade": self.source_live_trade,
+            "bar_event_ingress_status": (
+                self.bar_event_ingress.status if self.bar_event_ingress else None
+            ),
+            "bar_event_quarantine_reasons": [
+                reason for reason in (
+                    self.bar_event_ingress.reasons if self.bar_event_ingress else ()
+                )
+                if reason.startswith(("SYMBOL_BAR_QUARANTINED:", "SYMBOL_HEALTH_QUARANTINED:"))
+            ],
             "research_state_symbols": research_state_symbols,
             "no_canonical_bar_symbols": no_canonical_bar_symbols,
             "normal_health_symbols": normal_health_symbols,
@@ -617,8 +626,17 @@ class CanonicalSnapshotRadarWorker:
             source_live_trade=source.live_trade,
             symbols=refreshed_symbols,
             reasons=("SOURCE_SEQUENCE_UNCHANGED",),
-            bar_event_ingress=(CanonicalBarEventIngressResult("UNCHANGED")
-                               if self._event_ledger is not None else None),
+            bar_event_ingress=(
+                CanonicalBarEventIngressResult(
+                    "UNCHANGED", reasons=(
+                        self._last_successful_evaluation.bar_event_ingress.reasons
+                        if self._last_successful_evaluation is not None
+                        and self._last_successful_evaluation.bar_event_ingress is not None
+                        else ()
+                    ),
+                )
+                if self._event_ledger is not None else None
+            ),
         )
 
     def poll_file(

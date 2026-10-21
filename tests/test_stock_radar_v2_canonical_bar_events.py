@@ -285,9 +285,9 @@ def test_symbol_health_quality_flag_quarantine_preserves_other_events(tmp_path):
         result = worker(ledger, observed).poll_file(write(tmp_path, body))
         assert result.status == "PASS"
         assert result.bar_event_ingress.status == "PARTIAL"
-        assert result.bar_event_ingress.created_count == 4
+        assert result.bar_event_ingress.created_count == 2
         assert "SYMBOL_HEALTH_QUARANTINED:US.GLDM:VWAP_OUTSIDE_BAR_RANGE" in result.bar_event_ingress.reasons
-        assert ledger.pending_count() == 4
+        assert ledger.pending_count() == 2
 
 def test_all_symbols_quarantined_still_blocks_without_inserting(tmp_path):
     body, observed = export()
@@ -392,3 +392,90 @@ def test_exporter_to_durable_ai_receipt_offline_vertical_slice(tmp_path):
         assert ledger.pending_count() == 0
         assert backend.calls == 1
         assert result.to_dict()["live_trade"] is False
+
+
+def test_healthy_poll_between_closures_is_not_blocked(tmp_path):
+    body, observed = export(count=80)
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "PASS"
+        assert result.bar_event_ingress.status == "NO_NEW_CLOSED_BAR"
+        assert ledger.pending_count() == 0
+
+
+def test_quarantined_snapshot_does_not_block_clean_symbol_between_closures(tmp_path):
+    from copy import deepcopy
+
+    body, observed = export(count=80)
+    bad = deepcopy(body["symbols"]["US.AMD"])
+    bad["symbol"] = "US.GLDM"
+    bad["health"].update(score=49, signal_permission="blocked",
+                         quality_flags=["VWAP_OUTSIDE_BAR_RANGE"])
+    for bars in bad["timeframes"].values():
+        for bar in bars:
+            bar["symbol"] = "US.GLDM"
+    body["symbols"]["US.GLDM"] = bad
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        poller = worker(ledger, observed)
+        path = write(tmp_path, body)
+        result = poller.poll_file(path)
+        assert result.status == "PASS"
+        assert result.bar_event_ingress.status == "PARTIAL"
+        assert ledger.pending_count() == 0
+        unchanged = poller.poll_file(path)
+        assert unchanged.status == "UNCHANGED"
+        assert unchanged.bar_event_ingress.reasons == result.bar_event_ingress.reasons
+        diagnostics = unchanged.admission_diagnostics()
+        assert diagnostics["bar_event_quarantine_reasons"] == list(result.bar_event_ingress.reasons)
+        assert diagnostics["decision"] == "BLOCKED"
+
+
+@pytest.mark.parametrize("mutation", ["wrong_provider", "future_receipt", "fallback"])
+def test_known_quality_flag_does_not_hide_structural_failure(tmp_path, mutation):
+    body, observed = export()
+    bar = body["symbols"]["US.AMD"]["timeframes"]["15m"][-1]
+    bar["quality_flags"] = ["PARTIAL_TURNOVER"]
+    bar["amount"] = None
+    if mutation == "wrong_provider":
+        bar["provider"] = "other"
+    elif mutation == "future_receipt":
+        bar["received_at_utc"] = (observed + timedelta(seconds=1)).isoformat()
+    else:
+        bar["fallback_from"] = "other"
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "BLOCKED"
+        assert ledger.pending_count() == 0
+
+
+def test_all_snapshot_health_quarantined_never_records_events(tmp_path):
+    body, observed = export()
+    body["symbols"]["US.AMD"]["health"].update(
+        score=49, signal_permission="blocked",
+        quality_flags=["VWAP_OUTSIDE_BAR_RANGE"],
+    )
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        result = worker(ledger, observed).poll_file(write(tmp_path, body))
+        assert result.status == "BLOCKED"
+        assert "BAR_EVENT_NO_QUALIFIED_SYMBOLS" in result.bar_event_ingress.reasons
+        assert ledger.pending_count() == 0
+
+
+def test_quarantined_bar_is_reconsidered_when_new_sequence_repairs_it(tmp_path):
+    body, observed = export()
+    bar = body["symbols"]["US.AMD"]["timeframes"]["15m"][-1]
+    bar["quality_flags"] = ["PARTIAL_TURNOVER"]
+    bar["amount"] = None
+    with RadarBarEventLedger(tmp_path / "events.sqlite") as ledger:
+        poller = worker(ledger, observed)
+        first = poller.poll_file(write(tmp_path, body))
+        assert first.status == "PASS"
+        assert first.bar_event_ingress.created_count == 1
+        bar["quality_flags"] = []
+        bar["amount"] = 1507500
+        body["sequence"] += 1
+        repaired = poller.poll_file(write(tmp_path, body))
+        assert repaired.status == "PASS"
+        assert repaired.bar_event_ingress.created_count == 1
+        assert repaired.bar_event_ingress.duplicate_count == 1
+        assert ledger.pending_count() == 2

@@ -274,6 +274,20 @@
         "CN-003",
         "ENG-001"
       ]
+    },
+    {
+      "id": "US-006",
+      "phrases": [
+        "Radar blocked one bad symbol whole batch",
+        "BAR_EVENT_SNAPSHOT_NOT_QUALIFIED",
+        "NO_NEW_CLOSED_BAR falsely blocked",
+        "单标的健康异常拖垮整批雷达"
+      ],
+      "related": [
+        "US-003",
+        "ENG-001",
+        "ENG-002"
+      ]
     }
   ]
 }

@@ -254,6 +254,21 @@
       "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
       "mandatory_action": "For expanded scans only, quarantine a non-core symbol/timeframe with fewer than four rows as explicit NO_DATA while preserving valid siblings; continue to fail closed for core symbols and all other malformed provider responses. Verify no-data reads, sequence/cache acceptance, and historical consumer behavior before deployment.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-006",
+      "owner": "Main Control",
+      "severity": "P0",
+      "signature_tokens": [
+        "BAR_EVENT_SNAPSHOT_NOT_QUALIFIED",
+        "BAR_EVENT_NO_QUALIFIED_SYMBOLS"
+      ],
+      "status": "OPEN",
+      "diagnosis": "Known symbol-local turnover quality flags aborted valid sibling intake. Initial PR #961 also failed to skip quarantined snapshots and incorrectly blocked healthy inter-closure polls. Adversarial tests reproduced five failures before convergence.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/961",
+      "regression_evidence": "tests/test_stock_radar_v2_canonical_bar_events.py",
+      "mandatory_action": "Skip known unhealthy snapshots, isolate flagged closed bars without masking structural errors, retain quarantine diagnostics, allow healthy NO_NEW_CLOSED_BAR polls; verify exact deployed worker/source SHA and cloud readback before marking resolved.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }
