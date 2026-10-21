@@ -15,6 +15,9 @@ def test_installer_is_read_only_and_fail_closed():
     assert "OpenUSTradeContext" not in INSTALLER
     assert "OpenSecTradeContext" not in INSTALLER
     assert "adapter_diagnostics" in INSTALLER
+    assert 'SemanticStreamKey("futu","us",c,"K_1M","1m",session_mode="ALL")' in INSTALLER
+    assert '"latest_push_observations":push_observations' in INSTALLER
+    assert '"bar_closure":"UNPROVEN"' in INSTALLER
 
 def test_deploy_binds_exact_sha_and_requires_heartbeat():
     # The GitHub runner no longer prints raw heartbeat into public logs.
@@ -503,3 +506,4 @@ def test_livefeed_callback_wakes_the_single_writer_without_provider_rpc_in_callb
     assert '"wakeup_mode":"CALLBACK_EVENT_WITH_PERIODIC_HEALTH_DEADLINE"' in runtime
     assert '"radar_admission":"BLOCKED"' in runtime
     assert '"live_trade":False' in runtime
+

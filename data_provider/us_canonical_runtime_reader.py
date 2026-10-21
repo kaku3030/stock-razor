@@ -112,6 +112,76 @@ def _safety_contract(payload: dict) -> bool:
     )
 
 
+def _qualified_latest_push_observations(
+    raw: object,
+    *,
+    allowed_symbols: object,
+    now_utc: datetime,
+    fresh_seconds: int = 90,
+) -> dict[str, dict]:
+    """Return bounded, validated forming K1M observations, never closed bars."""
+
+    if not isinstance(raw, dict) or len(raw) > 20:
+        return {}
+    allowed = set()
+    if isinstance(allowed_symbols, list) and len(allowed_symbols) <= 200:
+        allowed = {
+            symbol for value in allowed_symbols
+            if (symbol := _normalize_symbol(value)) is not None
+        }
+    result: dict[str, dict] = {}
+    for raw_symbol, item in raw.items():
+        symbol = _normalize_symbol(raw_symbol)
+        if symbol is None or symbol not in allowed or not isinstance(item, dict):
+            continue
+        if item.get("symbol") != symbol:
+            continue
+        time_key = item.get("time_key")
+        if not isinstance(time_key, str) or not 1 <= len(time_key) <= 32:
+            continue
+        received_at = _aware_timestamp(item.get("received_at_utc"))
+        if received_at is None:
+            continue
+        age_seconds = (now_utc - received_at).total_seconds()
+        if age_seconds < -5:
+            continue
+        values: dict[str, float] = {}
+        valid = True
+        for field in ("open", "high", "low", "close", "volume"):
+            value = item.get(field)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+            ):
+                valid = False
+                break
+            values[field] = float(value)
+        if not valid:
+            continue
+        open_, high, low, close, volume = (
+            values[name] for name in ("open", "high", "low", "close", "volume")
+        )
+        if (
+            min(open_, high, low, close) <= 0
+            or volume < 0
+            or high < max(open_, close, low) - 1e-5
+            or low > min(open_, close, high) + 1e-5
+        ):
+            continue
+        result[symbol] = {
+            "symbol": symbol,
+            "time_key": time_key,
+            "received_at_utc": received_at.isoformat(),
+            "age_seconds": max(0.0, age_seconds),
+            "freshness_status": "FRESH" if age_seconds <= fresh_seconds else "STALE",
+            **values,
+            "bar_closure": "UNPROVEN",
+            "research_eligible": False,
+        }
+    return result
+
+
 def _snapshot_path(path: str | None) -> str:
     return path or os.environ.get(
         "STOCK_RAZOR_US_CANONICAL_SNAPSHOT_PATH",
@@ -377,6 +447,26 @@ def read_us_livefeed_health(
             }
     healthy = heartbeat_fresh and controller_connected and export_pass
     status = "HEALTHY" if healthy else ("STALE" if not heartbeat_fresh else "DEGRADED")
+    latest_push_observations = _qualified_latest_push_observations(
+        heartbeat.get("latest_push_observations"),
+        allowed_symbols=heartbeat.get("symbols"),
+        now_utc=now,
+    )
+    latest_push_status = (
+        "FRESH"
+        if any(item["freshness_status"] == "FRESH" for item in latest_push_observations.values())
+        else "STALE" if latest_push_observations else "UNAVAILABLE"
+    )
+    snapshot_export = heartbeat.get("canonical_snapshot_export")
+    snapshot_sequence = (
+        snapshot_export.get("sequence")
+        if isinstance(snapshot_export, dict)
+        and type(snapshot_export.get("sequence")) is int
+        and snapshot_export["sequence"] > 0
+        else None
+    )
+    last_push = _aware_timestamp(heartbeat.get("last_push_utc"))
+    last_push_age = (now - last_push).total_seconds() if last_push else None
     # Operational heartbeat and provider market evidence are independent.
     # A live service cannot certify realtime bars by heartbeat alone.
     source_identity_matched = (
@@ -401,13 +491,19 @@ def read_us_livefeed_health(
         "repo_sha": heartbeat.get("repo_sha"),
         "runtime_instance_id": heartbeat.get("runtime_instance_id"),
         "sequence": heartbeat.get("sequence"),
+        "canonical_snapshot_sequence": snapshot_sequence,
         "emitted_at_utc": heartbeat.get("emitted_at_utc"),
         "controller_lifecycle": heartbeat.get("controller_lifecycle"),
         "market_state_us": heartbeat.get("market_state_us"),
         "cache_session_us": heartbeat.get("cache_session_us"),
         "delivery_mode": heartbeat.get("delivery_mode"),
         "bar_closure": heartbeat.get("bar_closure"),
-        "last_push_utc": heartbeat.get("last_push_utc"),
+        "last_push_utc": last_push.isoformat() if last_push else None,
+        "last_push_age_seconds": (
+            max(0.0, last_push_age) if last_push_age is not None and last_push_age >= -5 else None
+        ),
+        "latest_push_status": latest_push_status,
+        "latest_push_observations": latest_push_observations,
         "event_count": heartbeat.get("event_count"),
         "accepted_event_count": heartbeat.get("accepted_event_count"),
         "provider_callback_latency_ms": (

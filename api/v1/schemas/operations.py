@@ -30,6 +30,19 @@ class OperationsStatusResponse(BaseModel):
     pending_acceptance: list[str]
 
 
+class USLiveMonitorResponse(BaseModel):
+    """Read-only projection of the cloud OpenD canonical cache."""
+
+    source: Literal["CLOUD_CANONICAL_OPEND_CACHE"]
+    status: str
+    source_identity_matched: bool
+    source_sequence_matched: bool
+    health: dict[str, object]
+    market: dict[str, object]
+    radar_admission: Literal["BLOCKED"] = "BLOCKED"
+    live_trade: Literal[False] = False
+
+
 class PaperOperatorAction(BaseModel):
     """Capability disclosure, not an execution permission."""
 

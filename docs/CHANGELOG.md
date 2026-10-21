@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
-## [Unreleased]
+## [Unreleased]\n\n- Add a separate OpenD extended-hours callback panel. The service requests Session.ALL and exposes a bounded, sanitized latest forming observation with receipt age and UNPROVEN closure; canonical closed bars and Radar admission remain unchanged.\n\n- [改进] OpenD 监控仅在 health 与 canonical snapshot 的 runtime/SHA 身份和导出序列一致时报告源级实时证据。\n
 
 - [??] Windows TickFlow ?????????????????? 1m ????????????????????????K ??????????
 

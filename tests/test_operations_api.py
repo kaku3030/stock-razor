@@ -1,6 +1,104 @@
 from api.v1.endpoints.operations import operations_status, paper_operator_controls, router
 
 
+def test_us_live_monitor_requires_fresh_matching_source_identity(monkeypatch):
+    import api.v1.endpoints.operations as operations
+
+    monkeypatch.setattr(operations, "read_us_livefeed_health", lambda: {
+        "status": "HEALTHY",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
+        "realtime_delivery_evidence": True,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "source_path": "C:/private/heartbeat.json",
+    })
+    monkeypatch.setattr(operations, "read_us_market_snapshots", lambda symbols: {
+        "status": "PASS",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 25,
+        "symbols": {"US.AMD": {"latest": {"1m": {"close": 123.0}}}},
+        "data_available": True,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+        "source_path": "C:/private/market.json",
+    })
+
+    response = operations.us_live_monitor()
+
+    assert response.status == "REALTIME_SOURCE_EVIDENCE"
+    assert response.source == "CLOUD_CANONICAL_OPEND_CACHE"
+    assert response.source_identity_matched is True
+    assert response.source_sequence_matched is True
+    assert response.market["symbols"]["US.AMD"]["latest"]["1m"]["close"] == 123.0
+    assert response.radar_admission == "BLOCKED"
+    assert response.live_trade is False
+    assert "source_path" not in response.health
+    assert "source_path" not in response.market
+
+
+def test_us_live_monitor_blocks_mismatched_runtime_identity(monkeypatch):
+    import api.v1.endpoints.operations as operations
+
+    monkeypatch.setattr(operations, "read_us_livefeed_health", lambda: {
+        "status": "HEALTHY",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
+        "realtime_delivery_evidence": True,
+        "source_path": "C:/private/heartbeat.json",
+    })
+    monkeypatch.setattr(operations, "read_us_market_snapshots", lambda symbols: {
+        "status": "PASS",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-old",
+        "sequence": 25,
+        "symbols": {},
+        "source_path": "C:/private/market.json",
+    })
+
+    response = operations.us_live_monitor()
+
+    assert response.status == "BLOCKED_OR_STALE"
+    assert response.source_identity_matched is False
+    assert response.source_sequence_matched is True
+    assert response.radar_admission == "BLOCKED"
+    assert response.live_trade is False
+
+
+def test_us_live_monitor_blocks_sequence_mismatch_even_when_runtime_identity_matches(monkeypatch):
+    import api.v1.endpoints.operations as operations
+
+    monkeypatch.setattr(operations, "read_us_livefeed_health", lambda: {
+        "status": "HEALTHY",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 50,
+        "canonical_snapshot_sequence": 25,
+        "realtime_delivery_evidence": True,
+    })
+    monkeypatch.setattr(operations, "read_us_market_snapshots", lambda symbols: {
+        "status": "PASS",
+        "repo_sha": "a" * 40,
+        "runtime_instance_id": "runtime-1",
+        "sequence": 26,
+        "symbols": {},
+        "data_available": True,
+    })
+
+    response = operations.us_live_monitor()
+
+    assert response.source_identity_matched is True
+    assert response.source_sequence_matched is False
+    assert response.status == "BLOCKED_OR_STALE"
+    assert response.radar_admission == "BLOCKED"
+    assert response.live_trade is False
+
+
 def test_operations_status_is_fail_closed(monkeypatch):
     for key in (
         "RADAR_ADMISSION",
@@ -8,6 +106,7 @@ def test_operations_status_is_fail_closed(monkeypatch):
         "PAPER_AUTO_READY",
         "TELEGRAM_BOT_TOKEN",
         "TELEGRAM_CHAT_ID",
+        "DISCORD_WEBHOOK_URL",
         "DISCORD_RADAR_WEBHOOK_URL",
         "NOTIFICATION_REPORT_CHANNELS",
         "NOTIFICATION_ALERT_CHANNELS",
@@ -36,6 +135,8 @@ def test_operations_status_is_fail_closed(monkeypatch):
 
 
 def test_operations_status_reports_configured_notification_channel(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("DISCORD_RADAR_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
 
@@ -65,6 +166,7 @@ def test_operations_status_reports_radar_discord_webhook(monkeypatch):
 
 
 def test_operations_status_reports_effective_notification_routes(monkeypatch):
+    monkeypatch.delenv("DISCORD_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
     monkeypatch.setenv("DISCORD_RADAR_WEBHOOK_URL", "https://discord.example/radar")
@@ -190,3 +292,26 @@ def test_operation_effective_admission_ignores_permissive_env(monkeypatch):
     assert payload.source_arbiter_admission == "BLOCKED"
     assert payload.paper_auto_ready is False
     assert payload.live_trade is False
+
+
+def test_monitor_health_projection_allowlists_push_observations():
+    import api.v1.endpoints.operations as operations
+
+    projected = operations._monitor_health_projection({
+        "latest_push_observations": {
+            "US.QQQ": {
+                "symbol": "US.QQQ",
+                "time_key": "2026-10-20 06:30:00",
+                "received_at_utc": "2026-10-20T10:29:07Z",
+                "open": 715.5,
+                "close": 715.5082,
+                "bar_closure": "UNPROVEN",
+                "research_eligible": False,
+                "private_path": "/private/file",
+            },
+        },
+        "private_path": "/private/heartbeat",
+    })
+    assert projected["latest_push_observations"]["US.QQQ"]["close"] == 715.5082
+    assert "private_path" not in projected
+    assert "private_path" not in projected["latest_push_observations"]["US.QQQ"]

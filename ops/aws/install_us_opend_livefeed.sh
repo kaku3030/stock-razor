@@ -60,7 +60,7 @@ print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
 
 cat >"$INSTALL_ROOT/run.py" <<'PY'
-import json, os, socket, threading, time, uuid
+import json, math, os, socket, threading, time, uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import futu as ft
@@ -142,6 +142,7 @@ accepted_event_count=0
 data_event_count=0
 last_push_utc=None
 latest_time_keys={}
+latest_push_observations={}
 evidence_lock=threading.Lock()
 data_wakeup=DataArrivalWake()
 def read_data_event_count():
@@ -164,10 +165,23 @@ def on_event_accepted(event):
             key=event.semantic_stream_key
             if key is not None and event.provider_timestamp_raw:
                 latest_time_keys[key.symbol]=str(event.provider_timestamp_raw)
+                if key.symbol in CODES and event.payload is not None:
+                    observation={
+                        "symbol":key.symbol,
+                        "time_key":str(event.provider_timestamp_raw)[:32],
+                        "received_at_utc":event.observed_at_utc.isoformat(),
+                        "bar_closure":"UNPROVEN",
+                    }
+                    for field in ("open","high","low","close","volume"):
+                        value=event.payload.get(field)
+                        if (isinstance(value,(int,float)) and not isinstance(value,bool)
+                                and math.isfinite(value)):
+                            observation[field]=float(value)
+                    latest_push_observations[key.symbol]=observation
             # Callback never drains or opens a new provider request.
             data_wakeup.notify()
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
-streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
+streams=[SemanticStreamKey("futu","us",c,"K_1M","1m",session_mode="ALL") for c in CODES]
 bridge.start(streams)
 # Candidate changes are OBSERVED ONLY. Never add a provider call here.
 preview_csv=os.environ.get("STOCK_RAZOR_OPEND_PREVIEW_CANDIDATES")
@@ -177,7 +191,7 @@ elif len(preview_csv)>4096:
     preview_desired=None
 else:
     preview_desired=tuple(
-        SemanticStreamKey("futu","us",code,"K_1M","1m")
+        SemanticStreamKey("futu","us",code,"K_1M","1m",session_mode="ALL")
         for code in preview_csv.split(",")
     )
 def fetch_history_page(symbol,start_date,end_date,page_req_key):
@@ -535,6 +549,10 @@ try:
             accepted_count=accepted_event_count
             push_utc=last_push_utc
             time_keys=dict(latest_time_keys)
+            push_observations={
+                symbol:dict(observation)
+                for symbol,observation in latest_push_observations.items()
+            }
         postclose_seeded_this_pass=0
         local_now=now.astimezone(ZoneInfo("America/New_York"))
         local_day=local_now.date().isoformat()
@@ -798,7 +816,8 @@ try:
           "controller_failure_class":snap.controller.failure_class.value,
           "controller_findings_tail":list(snap.controller.findings[-20:]),
           "event_count":data_count,"accepted_event_count":accepted_count,
-          "last_push_utc":push_utc,"market_state_us":market_state,
+          "last_push_utc":push_utc,"latest_push_observations":push_observations,
+          "market_state_us":market_state,
           "cache_session_us":cache_session,
           "producer_loop_observation":{
               "wakeup_mode":"CALLBACK_EVENT_WITH_PERIODIC_HEALTH_DEADLINE",
@@ -888,3 +907,4 @@ systemctl enable "$SERVICE_NAME"
 require_safe_us_restart_window
 systemctl restart "$SERVICE_NAME"
 systemctl is-active "$SERVICE_NAME"
+
