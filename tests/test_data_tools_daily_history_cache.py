@@ -150,6 +150,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=db), \
              patch("src.agent.tools.data_tools._get_db", return_value=db), \
+             patch("src.services.history_loader._get_historical_adapter", side_effect=RuntimeError("disabled in fallback test")), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=60)
 
@@ -170,6 +171,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=db), \
              patch("src.agent.tools.data_tools._get_db", return_value=db), \
+             patch("src.services.history_loader._get_historical_adapter", side_effect=RuntimeError("disabled in fallback test")), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=60)
 
@@ -188,6 +190,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=broken_db), \
              patch("src.agent.tools.data_tools._get_db", return_value=broken_db), \
+             patch("src.services.history_loader._get_historical_adapter", side_effect=RuntimeError("disabled in fallback test")), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=60)
 
@@ -217,6 +220,7 @@ class DailyHistoryCacheToolTest(unittest.TestCase):
 
         with patch("src.storage.get_db", return_value=db), \
              patch("src.agent.tools.data_tools._get_db", return_value=db), \
+             patch("src.services.history_loader._get_historical_adapter", side_effect=RuntimeError("disabled in fallback test")), \
              patch("src.services.history_loader._get_fetcher_manager", return_value=manager):
             result = self._run_with_frozen_date(target, "600519", days=999)
 

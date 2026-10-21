@@ -57,6 +57,42 @@ def _get_fetcher_manager():
     return _fetcher_singleton
 
 
+def _get_historical_adapter():
+    from data_provider import StockDataHubHistoricalAdapter
+
+    return StockDataHubHistoricalAdapter()
+
+
+def _load_from_historical_adapter(
+    stock_code: str, *, start: date, end: date, days: int,
+) -> Optional[pd.DataFrame]:
+    adapter = _get_historical_adapter()
+    bars = adapter.get_bars(
+        stock_code,
+        "1d",
+        start=datetime.combine(start, datetime.min.time()),
+        end=datetime.combine(end + timedelta(days=1), datetime.min.time()),
+        limit=days,
+    )
+    if not bars:
+        return None
+    return pd.DataFrame(
+        [
+            {
+                "date": bar.bar_start.date(),
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "amount": bar.amount,
+            }
+            for bar in bars
+            if bar.is_closed and bar.is_complete
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # DB-first history loader
 # ---------------------------------------------------------------------------
@@ -169,7 +205,18 @@ def load_history_df(
     except Exception as e:
         logger.debug("load_history_df(%s): DB read failed: %s", stock_code, e)
 
-    # --- 2. Network fallback via singleton DataFetcherManager -------------
+    # --- 2. Research historical adapter fallback ---------------------------
+    try:
+        _, normalized_code = _history_code_candidates(stock_code)
+        df = _load_from_historical_adapter(
+            normalized_code, start=start, end=end, days=days,
+        )
+        if df is not None and not df.empty:
+            return df, "stockdata-hub+tencent-daily"
+    except Exception as e:
+        logger.warning("load_history_df(%s): historical adapter failed: %s", stock_code, e)
+
+    # --- 3. Existing provider-manager fallback -----------------------------
     try:
         manager = _get_fetcher_manager()
         df, source = manager.get_daily_data(stock_code, days=days)
