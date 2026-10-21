@@ -54,6 +54,8 @@ type RawResponse = {
   strategy_admission?: string;
   feed_connection?: string;
   reconnect_status?: string;
+  bar_closure?: string;
+  delivery_mode?: string;
 };
 
 export const vtiApi = {
@@ -93,11 +95,11 @@ export const vtiApi = {
       canonicalAuthority: Boolean(data.canonical_authority),
       radarAdmission: data.radar_admission,
       liveTrade: Boolean(data.live_trade),
-      dataAcceptance: data.data_acceptance,
-      barState: data.bar_state,
-      strategyAdmission: data.strategy_admission,
-      feedConnection: data.feed_connection,
-      reconnectStatus: data.reconnect_status,
+      dataAcceptance: data.data_acceptance ?? (data.source_status === 'PASS' ? 'ACCEPTED' : 'BLOCKED'),
+      barState: data.bar_state ?? (data.bar_closure === 'PROVEN' ? 'PROVEN' : 'PROVISIONAL'),
+      strategyAdmission: data.strategy_admission ?? data.radar_admission ?? 'BLOCKED',
+      feedConnection: data.feed_connection ?? (data.delivery_mode === 'REALTIME' ? 'CONNECTED' : 'UNKNOWN'),
+      reconnectStatus: data.reconnect_status ?? 'NOT_EXPOSED',
     };
   },
 };
