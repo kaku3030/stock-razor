@@ -103,10 +103,16 @@ class _BatchKlinesFacade:
                         # Recover only a small number of omitted batch entries.
                         # Larger gaps fail closed to cap provider calls and cost.
                         try:
-                            frame = client.klines.get(
-                                symbol, period=period, count=count,
-                                as_dataframe=False, adjust="none",
-                            )
+                            if period == "1d":
+                                frame = client.klines.get(
+                                    symbol, period=period, count=count,
+                                    as_dataframe=False, adjust="none",
+                                )
+                            else:
+                                frame = client.klines.intraday(
+                                    symbol, period=period, count=count,
+                                    as_dataframe=False,
+                                )
                         except Exception:
                             failure = _BatchSymbolFallbackError(
                                 "batch symbol fallback failed"

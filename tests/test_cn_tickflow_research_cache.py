@@ -43,10 +43,17 @@ def frame(period,day="2026-10-09"):
 class FakeKlines:
     def __init__(self):
         self.calls=[]
+        self.intraday_calls=[]
         self.batch_calls=[]
         self.intraday_batch_calls=[]
     def get(self,symbol,*,period,count,as_dataframe,adjust):
         self.calls.append((symbol,period,count,as_dataframe,adjust))
+        df = frame(period)
+        return {key: df[key].tolist() for key in
+                ("timestamp","open","high","low","close","volume","amount")}
+
+    def intraday(self,symbol,*,period,count,as_dataframe):
+        self.intraday_calls.append((symbol,period,count,as_dataframe))
         df = frame(period)
         return {key: df[key].tolist() for key in
                 ("timestamp","open","high","low","close","volume","amount")}
@@ -110,8 +117,8 @@ def test_batch_missing_symbols_fall_back_only_for_missing_entries():
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
     calls=[call for call in fake.klines.calls if call[1]=="1m"]
-    assert len(calls)==5
-    assert sum(call[0]=="159363.SZ" for call in calls)==2
+    assert len(calls)==4
+    assert fake.klines.intraday_calls==[("159363.SZ","1m",240,False)]
     assert len(snap["symbols"]["159363.SZ"]["1m"]["rows"])==4
     assert all(row["bar_finality"]=="NOT_VERIFIED"
                for row in snap["symbols"]["159363.SZ"]["1m"]["rows"])
@@ -122,6 +129,7 @@ def test_batch_missing_symbol_fallback_failure_fails_closed():
 
     fake=FakeClient()
     original_get=fake.klines.get
+    original_intraday=fake.klines.intraday
 
     def partial_batch(symbols, **kwargs):
         result={
@@ -135,14 +143,14 @@ def test_batch_missing_symbol_fallback_failure_fails_closed():
             result.pop("159363.SZ")
         return result
 
-    def failing_get(symbol, *, period, count, as_dataframe, adjust):
+    def failing_intraday(symbol, *, period, count, as_dataframe):
         if symbol=="159363.SZ" and period=="1m":
             raise RuntimeError("provider failure")
-        return original_get(symbol,period=period,count=count,
-                            as_dataframe=as_dataframe,adjust=adjust)
+        return original_intraday(symbol,period=period,count=count,
+                                 as_dataframe=as_dataframe)
 
     fake.klines.intraday_batch=partial_batch
-    fake.klines.get=failing_get
+    fake.klines.intraday=failing_intraday
     with pytest.raises(RuntimeError) as caught:
         build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                           include_supplemental=True,use_batch=True)
@@ -168,7 +176,8 @@ def test_batch_missing_symbols_across_periods_use_bounded_fallback_budget():
     )
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
-    assert len(fake.klines.calls)==25
+    assert len(fake.klines.calls) == 21
+    assert len(fake.klines.intraday_calls) == 4
     assert all(
         period in observed
         for observed in snap["symbols"].values()
