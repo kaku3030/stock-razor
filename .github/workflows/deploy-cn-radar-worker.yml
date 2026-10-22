@@ -108,35 +108,45 @@ jobs:
           # BOTH verify before any systemd restart occurs.
           read -r -d '' remote <<REMOTE || true
           set -eu
+          stage_code=REMOTE_INIT
+          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "CN_RADAR_STAGE=%s\\nCN_RADAR_REMOTE_EXIT_CODE=%s\\n" "\$stage_code" "\$rc" >&2; fi; if [ -n "\${stage:-}" ]; then rm -rf "\$stage"; fi' EXIT
+          printf 'CN_RADAR_STAGE=REMOTE_STARTED\\n' >&2
           umask 077
+          stage_code=TEMP_DIR
           if ! stage=\$(mktemp -d); then
             echo 'CN_RADAR_STAGE=TEMP_DIR' >&2
             exit 1
           fi
-          trap 'rm -rf "\$stage"' EXIT
+          stage_code=INSTALL_DOWNLOAD
           if ! curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
             echo 'CN_RADAR_STAGE=INSTALL_DOWNLOAD' >&2; exit 1
           fi
+          stage_code=INSTALL_HASH
           if ! printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null; then
             echo 'CN_RADAR_STAGE=INSTALL_HASH' >&2; exit 1
           fi
+          stage_code=VERIFY_DOWNLOAD
           if ! curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"; then
             echo 'CN_RADAR_STAGE=VERIFY_DOWNLOAD' >&2; exit 1
           fi
+          stage_code=VERIFY_HASH
           if ! printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null; then
             echo 'CN_RADAR_STAGE=VERIFY_HASH' >&2; exit 1
           fi
+          stage_code=INSTALL
           if ! SOURCE_PROVIDER='$SOURCE_PROVIDER' REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
             echo 'CN_RADAR_INSTALL=FAILED' >&2
             exit 1
           fi
           # Runtime SHA, research-only flags and service sandbox are verified privately.
+          stage_code=ACCEPTANCE
           if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_PROVIDER' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
             echo 'CN_RADAR_ACCEPTANCE=FAILED' >&2
             exit 1
           fi
+          stage_code=VERIFY_OUTPUT
           if ! grep -Fx enabled "\$stage/verify.log" >/dev/null ||
              ! grep -Fx active "\$stage/verify.log" >/dev/null ||
              ! grep -Fx CN_RADAR_WORKER_VERIFY=PASS "\$stage/verify.log" >/dev/null ||
@@ -189,7 +199,7 @@ jobs:
               --query ResponseCode --output text 2>/dev/null || true)"
             [[ "$response_code" =~ ^-?[0-9]+$ ]] || response_code=UNKNOWN
             failure_class=REMOTE_COMMAND
-            for candidate in TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
+            for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH INSTALL ACCEPTANCE VERIFY_OUTPUT; do
               if grep -Fxq "CN_RADAR_STAGE=$candidate" <<< "$stderr"; then
                 failure_class="$candidate"
                 break

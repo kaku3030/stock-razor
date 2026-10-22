@@ -95,12 +95,15 @@ def test_cn_radar_workflow_reports_only_whitelisted_ssm_failure_evidence():
 def test_cn_radar_remote_command_reports_only_fixed_preflight_stages():
     for stage in ("INSTALL_DOWNLOAD", "INSTALL_HASH", "VERIFY_DOWNLOAD", "VERIFY_HASH", "VERIFY_OUTPUT"):
         assert f"CN_RADAR_STAGE={stage}" in WORKFLOW
-    assert "for candidate in TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT" in WORKFLOW
+    assert "for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH INSTALL ACCEPTANCE VERIFY_OUTPUT" in WORKFLOW
     assert "printf '%s\\n' \"$stderr\"" not in WORKFLOW
 
 
 def test_cn_radar_remote_temp_directory_failure_has_fixed_stage_code():
     assert r"if ! stage=\$(mktemp -d); then" in WORKFLOW
     assert "CN_RADAR_STAGE=TEMP_DIR" in WORKFLOW
+    assert "CN_RADAR_STAGE=REMOTE_STARTED" in WORKFLOW
+    assert "CN_RADAR_REMOTE_EXIT_CODE=%s" in WORKFLOW
+    assert "stage_code=REMOTE_INIT" in WORKFLOW
     assert "TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW
     assert "stage_code=REMOTE_SETUP" not in WORKFLOW
