@@ -52,6 +52,8 @@ def test_cn_radar_workflow_uses_exact_main_and_ssm():
     assert "install_cn_radar_worker.sh" in WORKFLOW
     assert "verify_cn_radar_worker.sh" in WORKFLOW
     assert "CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS" in WORKFLOW
+    assert "CN_RADAR_SSM_PREFLIGHT=PASS" in WORKFLOW
+    assert "AWS-RunShellScript" in WORKFLOW
 
 
 def test_cn_radar_worker_emits_truthful_runtime_latency_telemetry():
@@ -123,3 +125,9 @@ def test_cn_radar_failure_classes_are_fixed_and_report_only_lengths():
     assert "CN_RADAR_SSM_STDOUT_CHARS=%s" in WORKFLOW
     assert "CN_RADAR_SSM_STDERR_CHARS=%s" in WORKFLOW
     assert '<<< "$evidence"' in WORKFLOW
+
+
+def test_cn_radar_ssm_preflight_is_fixed_and_precedes_deployment_payload():
+    assert "CN_RADAR_SSM_PROBE=PASS" in WORKFLOW
+    assert WORKFLOW.index("CN_RADAR_SSM_PREFLIGHT=PASS") < WORKFLOW.index("The two immutable commit-path downloads")
+    assert "CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED" in WORKFLOW
