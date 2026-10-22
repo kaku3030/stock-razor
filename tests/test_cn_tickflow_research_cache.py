@@ -1025,3 +1025,53 @@ def test_normalizer_splits_below_minimum_and_above_bound_row_counts():
         normalize_bars(too_few,"60m",now_utc=NOW)
     with pytest.raises(ValueError,match="history exceeds configured bound"):
         normalize_bars(too_many,"60m",now_utc=NOW)
+
+
+def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings_batch(tmp_path):
+    sparse = "100000.SZ"
+    valid = "100001.SZ"
+
+    class SparseBatchKlines(FakeKlines):
+        def batch(self, symbols, **kwargs):
+            result = super().batch(symbols, **kwargs)
+            if kwargs["period"] == "15m":
+                frame = result[sparse]
+                result[sparse] = {
+                    key: values[:3] if isinstance(values, list) else values
+                    for key, values in frame.items()
+                }
+            return result
+
+    fake = FakeClient()
+    fake.klines = SparseBatchKlines()
+    snapshot = build_observation(
+        fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
+        symbols=(sparse, valid), allow_scan_symbols=True, use_batch=True,
+    )
+
+    assert snapshot["status"] == "PASS_RESEARCH_ONLY"
+    assert snapshot["symbols"][sparse]["15m"] == {
+        "status": "NO_DATA",
+        "period_availability": "INSUFFICIENT_HISTORY",
+        "rows": [],
+    }
+    assert len(snapshot["symbols"][sparse]["60m"]["rows"]) == 4
+    assert len(snapshot["symbols"][valid]["15m"]["rows"]) == len(TIMES["15m"])
+    path = tmp_path / "sparse-batch-scan.json"
+    atomic_publish(str(path), snapshot)
+    missing = read_cn_tickflow_research_data(
+        sparse, "15m", 5, path=str(path), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    sibling = read_cn_tickflow_research_data(
+        valid, "15m", 5, path=str(path), now_utc=NOW,
+        research_mode="historical_only",
+    )
+    assert missing["status"] == "NO_DATA"
+    assert missing["period_availability"] == "INSUFFICIENT_HISTORY"
+    assert sibling["status"] == "PASS_HISTORICAL_ONLY"
+    assert len(sibling["rows"]) == 5
+    assert missing["provider_requests"] == sibling["provider_requests"] == 0
+    assert missing["radar_admission"] == sibling["radar_admission"] == "BLOCKED"
+    assert missing["live_trade"] is sibling["live_trade"] is False
+
