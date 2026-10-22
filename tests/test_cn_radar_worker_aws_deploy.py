@@ -3,6 +3,7 @@ from pathlib import Path
 
 INSTALL = Path("ops/aws/install_cn_radar_worker.sh").read_text(encoding="utf-8")
 VERIFY = Path("ops/aws/verify_cn_radar_worker.sh").read_text(encoding="utf-8")
+REMOTE = Path("ops/aws/deploy_cn_radar_remote.sh").read_text(encoding="utf-8")
 WORKFLOW = Path(".github/workflows/deploy-cn-radar-worker.yml").read_text(encoding="utf-8")
 
 
@@ -49,8 +50,10 @@ def test_cn_radar_workflow_uses_exact_main_and_ssm():
     assert "Deploy Read-Only CN Radar Worker" in WORKFLOW
     assert "actions/checkout@v4" in WORKFLOW
     assert "aws-actions/configure-aws-credentials@v4" in WORKFLOW
-    assert "install_cn_radar_worker.sh" in WORKFLOW
-    assert "verify_cn_radar_worker.sh" in WORKFLOW
+    assert "deploy_cn_radar_remote.sh" in WORKFLOW
+    assert "DEPLOY_SHA" in WORKFLOW
+    assert "install_cn_radar_worker.sh" in REMOTE
+    assert "verify_cn_radar_worker.sh" in REMOTE
     assert "CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS" in WORKFLOW
     assert "CN_RADAR_SSM_PREFLIGHT=PASS" in WORKFLOW
     assert "AWS-RunShellScript" in WORKFLOW
@@ -96,19 +99,18 @@ def test_cn_radar_workflow_reports_only_whitelisted_ssm_failure_evidence():
 
 def test_cn_radar_remote_command_reports_only_fixed_preflight_stages():
     for stage in ("INSTALL_DOWNLOAD", "INSTALL_HASH", "VERIFY_DOWNLOAD", "VERIFY_HASH", "VERIFY_OUTPUT"):
-        assert f"CN_RADAR_STAGE={stage}" in WORKFLOW
-    assert "for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH INSTALL ACCEPTANCE VERIFY_OUTPUT" in WORKFLOW
+        assert f"CN_RADAR_STAGE={stage}" in REMOTE
+    assert "for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR DEPLOY_HELPER_DOWNLOAD DEPLOY_HELPER_HASH DEPLOY_HELPER_RUN INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH INSTALL ACCEPTANCE VERIFY_OUTPUT" in WORKFLOW
     assert "printf '%s\\n' \"$stderr\"" not in WORKFLOW
 
 
 def test_cn_radar_remote_temp_directory_failure_has_fixed_stage_code():
-    assert r"if ! stage=\$(mktemp -d); then" in WORKFLOW
-    assert "CN_RADAR_STAGE=TEMP_DIR" in WORKFLOW
-    assert "CN_RADAR_STAGE=REMOTE_STARTED" in WORKFLOW
-    assert "CN_RADAR_REMOTE_EXIT_CODE=%s" in WORKFLOW
-    assert "stage_code=REMOTE_INIT" in WORKFLOW
-    assert "TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW
-    assert "stage_code=REMOTE_SETUP" not in WORKFLOW
+    assert 'if ! stage_dir="$(mktemp -d)"; then' in REMOTE
+    assert "CN_RADAR_STAGE=TEMP_DIR" in REMOTE
+    assert "CN_RADAR_REMOTE_EXIT_CODE=%s" in REMOTE
+    assert "stage=REMOTE_INIT" in REMOTE
+    assert "for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR DEPLOY_HELPER_DOWNLOAD" in WORKFLOW
+    assert "stage=REMOTE_SETUP" not in REMOTE
 
 
 def test_cn_radar_failure_readback_retries_both_bounded_ssm_streams():

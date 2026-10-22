@@ -75,7 +75,7 @@ def test_main_moving_after_oidc_prevents_ssm_dispatch(tmp_path):
     marker = tmp_path / "aws-called"
     result = run(code, {"PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
                         "REPO_REF": SHA, "MOCK_MAIN": "b" * 40,
-                        "INSTALL_SHA": "c" * 64, "VERIFY_SHA": "d" * 64,
+                        "INSTALL_SHA": "c" * 64, "VERIFY_SHA": "d" * 64, "DEPLOY_SHA": "e" * 64,
                         "GITHUB_REPOSITORY": "fixture/repo", "AWS_MARKER": str(marker)})
     assert result.returncode == 2
     assert "CN_RADAR_PRE_SSM_MAIN_MOVED_ABORT" in result.stderr
@@ -95,12 +95,11 @@ def test_both_download_hashes_verify_before_install_and_logs_stay_private(tmp_pa
     if tamper:
         (install_path if tamper == "install" else verify_path).write_text("echo PRIVATE_CANARY\n")
     executable(tmp_path / "curl", 'for arg in "$@"; do case "$arg" in *install_cn_radar_worker.sh) source="$INSTALL_SOURCE";; *verify_cn_radar_worker.sh) source="$VERIFY_SOURCE";; esac; done\nfor arg in "$@"; do target="$arg"; done\ncp "$source" "$target"\n')
-    code = next(s["run"] for s in steps() if s.get("id") == "deploy")
-    remote = code.split("remote <<REMOTE || true\n", 1)[1].split("\nREMOTE", 1)[0]
-    remote = remote.replace("\\$", "$").replace("$REPO_REF", SHA)
-    remote = remote.replace("$INSTALL_SHA", hashes["install"]).replace("$VERIFY_SHA", hashes["verify"])
+    remote = Path("ops/aws/deploy_cn_radar_remote.sh").read_text(encoding="utf-8")
     marker = tmp_path / "installed"
     result = run(remote, {"PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+                          "SOURCE_PROVIDER": "tickflow", "REPO_REF": SHA,
+                          "INSTALL_SHA": hashes["install"], "VERIFY_SHA": hashes["verify"],
                           "INSTALL_SOURCE": str(install_path), "VERIFY_SOURCE": str(verify_path),
                           "INSTALL_MARKER": str(marker)})
     assert (result.returncode == 0) is (tamper is None)
