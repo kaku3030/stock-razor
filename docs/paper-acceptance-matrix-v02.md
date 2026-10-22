@@ -145,4 +145,121 @@ Exit evidence:
 Required:
 
 - cloud source identity and exact source revision;
-- timestamp/currentness and close}Û-¢G§²ÚîÆ­yÙÐè=É‘•É%¹Ñ•¹Ð°½¹Ñ•áÐèI¥Í­½¹Ñ•áÐ¤€´ø9½¹”è4(€€€€€€€¥˜Í•±˜¹É•½¹¥±¥…Ñ¥½¸¥Ì9½¹”èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰É•½¹¥±¥…Ñ¥½¸¥ÌÉ•ÅÕ¥É•ˆ¤4(€€€€€€€Í•±˜¹É¥Í­}Õ…É¹¡•¬¡¥¹Ñ•¹Ð±Í•±˜¹É•½¹¥±¥…Ñ¥½¸±½¹Ñ•áÐ¤4(€€€€€€€¥˜Í•±˜¹ÍÑ½É”¹¡…Í}…µ‰¥Õ½ÕÍ}ÍÕ‰µ¥ÍÍ¥½¸ ¤èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰Á•¹‘¥¹œµÕÑ…Ñ¥½¸É•ÅÕ¥É•ÌÉ•Íå¹Œˆ¤4(€€€‘•˜É•½¹¥±”¡Í•±˜¤€´øI•½¹¥±¥…Ñ¥½¹M¹…ÁÍ¡½Ðè4(€€€€€€€‰…±…¹”€ôÍ•±˜¹±•‘•È¹‰…±…¹” ¤4(€€€€€€€¥˜‰…±…¹”¹ÍÑ…ÑÕÌ€ôô€‰-9=]8ˆè4(€€€€€€€€€€€Á½Í¥Ñ¥½¹Ì€ôÑÕÁ±”¡A½Í¥Ñ¥½¹M¹…ÁÍ¡½Ð¡À¹Íåµ‰½°°À¹ÅÑä°À¹µ…É­•Ñ}Ù…±Õ”¤™½ÈÀ¥¸Í•±˜¹±•‘•È¹Á½Í¥Ñ¥½¹Ì ¤¤4(€€€€€€€€€€€¹½Ü€ô‰…±…¹”¹…Í}½˜4(€€€€€€€€€€€…½Õ¹Ð€ô½Õ¹ÑM¹…ÁÍ¡½Ð ‰Á…Á•Èˆ°‰…±…¹”¹‰Õå¥¹}Á½Ý•È°‰…±…¹”¹•ÅÕ¥Ñä°¹½Ü°€‰Á…Á•Èˆ¤4(€€€€€€€€€€€Í¹…ÁÍ¡½Ð€ôI•½¹¥±¥…Ñ¥½¹M¹…ÁÍ¡½Ð¡…½Õ¹Ð°Á½Í¥Ñ¥½¹Ì°…Í}½˜õ¹½Ü¤4(€€€€€€€•±Í”è4(€€€€€€€€€€€Í¹…ÁÍ¡½ÐõÍ•±˜¹…‘…ÁÑ•È¹É•½¹¥±” ¤4(€€€€€€€Í•±˜¹É•½¹¥±¥…Ñ¥½¸õÍ¹…ÁÍ¡½Ð4(€€€€€€€¥˜Í¹…ÁÍ¡½Ð¹…Í}½˜¥Ì9½¹”½È¹½ÐÍ¹…ÁÍ¡½Ð¹½µÁ±•Ñ”½È…¹ä¡È¹¥‘•¹Ñ¥Ñä€„ôÍ¹…ÁÍ¡½Ð¹…½Õ¹Ð¹…½Õ¹Ñ}¥½ÈÈ¹Í½ÕÉ”€„ôÍ¹…ÁÍ¡½Ð¹…½Õ¹Ð¹Í½ÕÉ”½È¹½ÐÈ¹½µÁ±•Ñ”½È¹½ÐÈ¹™É•Í ™½ÈÈ¥¸Í¹…ÁÍ¡½Ð¹É•Í½ÕÉ•Ì ¤¤èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰É•½¹¥±¥…Ñ¥½¸¥Ì¥¹½µÁ±•Ñ”½ÈÍÑ…±”ˆ¤4(€€€€€€€É•ÑÕÉ¸Í¹…ÁÍ¡½Ð4(€€€‘•˜ÍÕ‰µ¥Ð¡Í•±˜°¥¹Ñ•¹Ðè=É‘•É%¹Ñ•¹Ð°½¹Ñ•áÐèI¥Í­½¹Ñ•áÐ¤€´ø=É‘•ÉI•½Éè4(€€€€€€€¥˜¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥¥¸Í•±˜¹É•½É‘Ì½È…¹ä¡”¹¥¹Ñ•¹Ñ}¥ôõ¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥™½È”¥¸Í•±˜¹©½ÕÉ¹…°¤èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰‘ÕÁ±¥…Ñ”¥¹Ñ•¹Ñ}¥ˆ¤4(€€€€€€€¥˜Í•±˜¹É•½¹¥±¥…Ñ¥½¸¥Ì9½¹”èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰ÍÑ…ÉÑÕÀÉ•½¹¥±¥…Ñ¥½¸¥ÌÉ•ÅÕ¥É•ˆ¤4(€€€€€€€Í•±˜¹É¥Í­}Õ…É¹¡•¬¡¥¹Ñ•¹Ð±Í•±˜¹É•½¹¥±¥…Ñ¥½¸±½¹Ñ•áÐ¤4(€€€€€€€±•‘•É}­¹½Ý¸€ôÍ•±˜¹±•‘•È¹‰…±…¹” ¤¹ÍÑ…ÑÕÌ€ôô€‰-9=]8ˆ4(€€€€€€€…Í¡}É•Í•ÉÙ•€ô±•‘•É}­¹½Ý¸…¹¥¹Ñ•¹Ð¹Í¥‘”¥ÌM¥‘”¹	Ud4(€€€€€€€€Œ¡•¬…¹‘ÕÉ…‰±äÉ•Í•ÉÙ”€©‰•™½É”¨ÝÉ¥Ñ¥¹œMU	5%QQ%9½È½¹Ñ…Ñ¥¹œ4(€€€€€€€€Œ…¹ä…‘…ÁÑ•È¸=Ñ¡•ÉÝ¥Í”„¡…Éµ±•ÍÌ¥¹ÍÕ™™¥¥•¹Ðµ…Í É•©•Ñ¥½¸±•…Ù•Ì4(€€€€€€€€Œ…¸…µ‰¥Õ½ÕÌ½É‘•È©½ÕÉ¹…°Ñ¡…ÐÕ¹¹••ÍÍ…É¥±ä‰±½­Ì±…Ñ•ÈÉ•½Ù•Éä¸4(€€€€€€€¥˜…Í¡}É•Í•ÉÙ•è4(€€€€€€€€€€€Í•±˜¹±•‘•È¹É•Í•ÉÙ”¡¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥°¥¹Ñ•¹Ð¹ÅÑä€¨¥¹Ñ•¹Ð¹±¥µ¥Ñ}ÁÉ¥”°½¹Ñ•áÐ¹¹½Ü¤4(€€€€€€€ÑÉäè4(€€€€€€€€€€€Í•±˜¹ÍÑ½É”¹Í…Ù•}¥¹Ñ•¹Ð¡¥¹Ñ•¹Ð¤4(€€€€€€€•á•ÁÐá•ÁÑ¥½¸è4(€€€€€€€€€€€¥˜…Í¡}É•Í•ÉÙ•è4(€€€€€€€€€€€€€€€Í•±˜¹±•‘•È¹É•±•…Í”¡¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥°½¹Ñ•áÐ¹¹½Ü¤4(€€€€€€€€€€€É…¥Í”4(€€€€€€€É•½Éõ=É‘•ÉI•½É¡¥¹Ñ•¹Ð¤ìÍ•±˜¹É•½É‘Ím¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥‘tõÉ•½É4(€€€€€€€Í•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹Y1%Q±½¹Ñ•áÐ¹¹½Ü¤ìÍ•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹MU	5%QQ%9±½¹Ñ•áÐ¹¹½Ü¤4(€€€€€€€ÑÉäè‰É½­•É}½É‘•É}¥±™¥±±ÌõÍ•±˜¹…‘…ÁÑ•È¹Á±…”¡¥¹Ñ•¹Ð¤4(€€€€€€€•á•ÁÐA…Á•É=É‘•ÉI•©•Ñ•è4(€€€€€€€€€€€¥˜…Í¡}É•Í•ÉÙ•è4(€€€€€€€€€€€€€€€Í•±˜¹±•‘•È¹É•±•…Í”¡¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥°½¹Ñ•áÐ¹¹½Ü¤4(€€€€€€€€€€€Í•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹I)Q±½¹Ñ•áÐ¹¹½Ü¤ìÉ•ÑÕÉ¸É•½É4(€€€€€€€¥˜¹½Ð‰É½­•É}½É‘•É}¥èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰Á…Á•È‰É½­•È½É‘•È¥‘•¹Ñ¥Ñä¥Ìµ¥ÍÍ¥¹œˆ¤4(€€€€€€€™¥±±ÌõÑÕÁ±”¡™¥±±Ì¤ìÍ••¸õÍ•Ð ¤ìÙ…±¥‘…Ñ•õmtìÑ½Ñ…°õ•¥µ…° ˆÀˆ¤4(€€€€€€€™½È™¥±±}¥±ÅÕ…¹Ñ¥Ñä±ÁÉ¥”¥¸™¥±±Ìè4(€€€€€€€€€€€ÅÕ…¹Ñ¥Ñäõ}‘•¥µ…°¡ÅÕ…¹Ñ¥Ñä°‰™¥±°ÅÕ…¹Ñ¥Ñäˆ¤ìÁÉ¥”õ}‘•¥µ…°¡ÁÉ¥”°‰™¥±°ÁÉ¥”ˆ¤4(€€€€€€€€€€€¥˜¹½Ð™¥±±}¥½È™¥±±}¥¥¸Í••¸½ÈÍ•±˜¹ÍÑ½É”¹™¥±±}•á¥ÍÑÌ¡™¥±±}¥¤½ÈÁÉ¥”ðôÀ½ÈÅÕ…¹Ñ¥ÑäðôÀ½ÈÑ½Ñ…°­ÅÕ…¹Ñ¥Ñäù¥¹Ñ•¹Ð¹ÅÑäèÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰¥¹Ù…±¥½È‘ÕÁ±¥…Ñ”Á…Á•È™¥±°ˆ¤4(€€€€€€€€€€€¥˜±•‘•É}­¹½Ý¸…¹Í•±˜¹±•‘•È¹¡…Í}™¥±±}É••¥ÁÐ¡™¥±±}¥¤è4(€€€€€€€€€€€€€€€€Œ=™™±¥¹”Í••‘¥¹œ½ÈÉ•Á±…ä…¸¡…Ù”±•¥Ñ¥µ…Ñ”±•‘•È™¥±±Ì4(€€€€€€€€€€€€€€€€Œ…‰Í•¹Ð™É½´Ñ¡”½É‘•È©½ÕÉ¹…°¸9•Ù•ÈÉ•½É„™…±Í”%114(€€€€€€€€€€€€€€€€Œ©½ÕÉ¹…°‰•™½É”‘¥Í½Ù•É¥¹œÑ¡¥Ì¥¹‘•Á•¹‘•¹Ð½±±¥Í¥½¸¸4(€€€€€€€€€€€€€€€É…¥Í”á•ÕÑ¥½¹	±½­• ‰™¥±°¥‘•¹Ñ¥Ñä…±É•…‘ä•á¥ÍÑÌ¥¸Á…Á•È±•‘•ÈìÉ•½¹¥±¥…Ñ¥½¸É•ÅÕ¥É•ˆ¤4(€€€€€€€€€€€€Œ… 1%5%P•á•ÕÑ¥½¸µÕÍÐ¡½¹½ÈÑ¡”Í¥‘”µÍÁ•¥™¥Œ±¥µ¥Ð°¹½Ð4(€€€€€€€€€€€€Œµ•É•±ä…Ù•É…”½ÕÐ…¸¥¹Ù…±¥ÁÉ¥”Ý¥Ñ „™…Ù½É…‰±”™¥±°¸4(€€€€€€€€€€€€ŒI•©•ÐÑ¡”•¹Ñ¥É”Íå¹Ñ¡•Ñ¥Œ‰…Ñ ‰•™½É”©½ÕÉ¹…°AQ¸4(€€€€€€€€€€€¥˜€¡¥¹Ñ•¹Ð¹Í¥‘”¥ÌM¥‘”¹	Ud…¹ÁÉ¥”€ø¥¹Ñ•¹Ð¹±¥µ¥Ñ}ÁÉ¥”¤½È€ 4(€€€€€€€€€€€€€€€¥¹Ñ•¹Ð¹Í¥‘”¥ÌM¥‘”¹M10…¹ÁÉ¥”€ð¥¹Ñ•¹Ð¹±¥µ¥Ñ}ÁÉ¥”4(€€€€€€€€€€€€¤è4(€€€€€€€€€€€€€€€É…¥Í”á•ÕÑ¥½¹	±½­• ‰Á…Á•È™¥±°Ù¥½±…Ñ•ÌÍ¥‘”µÍÁ•¥™¥Œ±¥µ¥ÐÁÉ¥”ìÉ•½¹¥±¥…Ñ¥½¸É•ÅÕ¥É•ˆ¤4(€€€€€€€€€€€Í••¸¹…‘¡™¥±±}¥¤ìÑ½Ñ…°¬õÅÕ…¹Ñ¥ÑäìÙ…±¥‘…Ñ•¹…ÁÁ•¹ ¡™¥±±}¥±ÅÕ…¹Ñ¥Ñä±ÁÉ¥”¤¤4(€€€€€€€€Œ¡•¬Ñ¡”•¹Ñ¥É”É•ÑÕÉ¹•‰…Ñ ……¥¹ÍÐÑ¡”…±É•…‘äÉ•Í•ÉÙ•4(€€€€€€€€Œ…Í €¼½Ý¹•Á½Í¥Ñ¥½¸	=I…ÁÁ•¹‘¥¹œ•Ù•¸Ñ¡”™¥ÉÍÐ%11½È4(€€€€€€€€ŒAIQ%0©½ÕÉ¹…°•Ù•¹Ð¸¸½Ù•Èµ±¥µ¥ÐÍå¹Ñ¡•Ñ¥ŒÉ••¥ÁÐµÕÍÐ±•…Ù”4(€€€€€€€€ŒÑ¡”ÍÕ‰µ¥ÍÍ¥½¸Á•¹‘¥¹œÉ•½¹¥±¥…Ñ¥½¸°¹•Ù•È±…¥´„‘ÕÉ…‰±”™¥±°4(€€€€€€€€ŒÝ¡¥±”Ñ¡”¥¹‘•Á•¹‘•¹Ð±•‘•ÈÉ•©•ÑÌ¥Ð¸4(€€€€€€€¥˜±•‘•É}­¹½Ý¸…¹Ù…±¥‘…Ñ•è4(€€€€€€€€€€€¥˜…Í¡}É•Í•ÉÙ•è4(€€€€€€€€€€€€€€€Ñ½Ñ…±}½ÍÐ€ôÍÕ´ 4(€€€€€€€€€€€€€€€€€€€€¡ÅÕ…¹Ñ¥Ñä€¨ÁÉ¥”™½È|°ÅÕ…¹Ñ¥Ñä°ÁÉ¥”¥¸Ù…±¥‘…Ñ•¤°4(€€€€€€€€€€€€€€€€€€€•¥µ…° ˆÀˆ¤°4(€€€€€€€€€€€€€€€€¤4(€€€€€€€€€€€€€€€¥˜Ñ½Ñ…±}½ÍÐ€ø¥¹Ñ•¹Ð¹ÅÑä€¨¥¹Ñ•¹Ð¹±¥µ¥Ñ}ÁÉ¥”è4(€€€€€€€€€€€€€€€€€€€É…¥Í”á•ÕÑ¥½¹	±½­• 4(€€€€€€€€€€€€€€€€€€€€€€€€‰Á…Á•È‰ÕäÉ••¥ÁÑÌ•á••½Ý¸É•Í•ÉÙ…Ñ¥½¸ìÉ•½¹¥±¥…Ñ¥½¸É•ÅÕ¥É•ˆ4(€€€€€€€€€€€€€€€€€€€€¤4(€€€€€€€€€€€•±¥˜¥¹Ñ•¹Ð¹Í¥‘”¥ÌM¥‘”¹M10è4(€€€€€€€€€€€€€€€½Ý¹•‘}ÅÑä€ô¹•áÐ 4(€€€€€€€€€€€€€€€€€€€€¡Á½Í¥Ñ¥½¸¹ÅÑä™½ÈÁ½Í¥Ñ¥½¸¥¸Í•±˜¹±•‘•È¹Á½Í¥Ñ¥½¹Ì ¤4(€€€€€€€€€€€€€€€€€€€€¥˜Á½Í¥Ñ¥½¸¹Íåµ‰½°€ôô¥¹Ñ•¹Ð¹Íåµ‰½°¹ÕÁÁ•È ¤¤°4(€€€€€€€€€€€€€€€€€€€•¥µ…° ˆÀˆ¤°4(€€€€€€€€€€€€€€€€¤4(€€€€€€€€€€€€€€€¥˜Ñ½Ñ…°€ø½Ý¹•‘}ÅÑäè4(€€€€€€€€€€€€€€€€€€€É…¥Í”á•ÕÑ¥½¹	±½­• 4(€€€€€€€€€€€€€€€€€€€€€€€€‰Á…Á•ÈÍ•±°É••¥ÁÑÌ•á••½Ý¹•ÅÕ…¹Ñ¥ÑäìÉ•½¹¥±¥…Ñ¥½¸É•ÅÕ¥É•ˆ4(€€€€€€€€€€€€€€€€€€€€¤4(€€€€€€€É•½É¹‰É½­•É}½É‘•É}¥õ‰É½­•É}½É‘•É}¥ìÍ•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹AQ±½¹Ñ•áÐ¹¹½Ü±‰É½­•É}½É‘•É}¥õ‰É½­•É}½É‘•É}¥¤4(€€€€€€€™½È™¥±±}¥±ÅÕ…¹Ñ¥Ñä±ÁÉ¥”¥¸Ù…±¥‘…Ñ•è4(€€€€€€€€€€€É•½É¹™¥±±}¥‘Ì¹…ÁÁ•¹¡™¥±±}¥¤ìÉ•½É¹™¥±±•‘}ÅÑä¬õÅÕ…¹Ñ¥ÑäìÍ•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹%11¥˜É•½É¹™¥±±•‘}ÅÑäôõ¥¹Ñ•¹Ð¹ÅÑä•±Í”=É‘•ÉMÑ…Ñ”¹AIQ%0±½¹Ñ•áÐ¹¹½Ü±™¥±±}¥õ™¥±±}¥±ÅÕ…¹Ñ¥ÑäõÅÕ…¹Ñ¥Ñä±ÁÉ¥”õÁÉ¥”±‰É½­•É}½É‘•É}¥õ‰É½­•É}½É‘•É}¥¤4(€€€€€€€€€€€¥˜±•‘•É}­¹½Ý¸è4(€€€€€€€€€€€€€€€Í•±˜¹±•‘•È¹É•½É‘}™¥±° 4(€€€€€€€€€€€€€€€€€€€™¥±±}¥õ™¥±±}¥°¥¹Ñ•¹Ñ}¥õ¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥°4(€€€€€€€€€€€€€€€€€€€É•Í•ÉÙ…Ñ¥½¹}¥ô¡¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥¥˜…Í¡}É•Í•ÉÙ••±Í”9½¹”¤°4(€€€€€€€€€€€€€€€€€€€Íåµ‰½°õ¥¹Ñ•¹Ð¹Íåµ‰½°°Í¥‘”õ¥¹Ñ•¹Ð¹Í¥‘”¹Ù…±Õ”°4(€€€€€€€€€€€€€€€€€€€ÅÕ…¹Ñ¥ÑäõÅÕ…¹Ñ¥Ñä°ÁÉ¥”õÁÉ¥”°…Ðõ½¹Ñ•áÐ¹¹½Ü°4(€€€€€€€€€€€€€€€€¤4(€€€€€€€¥˜…Í¡}É•Í•ÉÙ•…¹É•½É¹ÍÑ…Ñ”¥Ì=É‘•ÉMÑ…Ñ”¹%11è4(€€€€€€€€€€€€ŒÕ±°•á•ÕÑ¥½¸µ…ä½ÍÐ±•ÍÌÑ¡…¸Ñ¡”±¥µ¥ÐµÁÉ¥”É•Í•ÉÙ…Ñ¥½¸¸4(€€€€€€€€€€€€ŒI•ÑÕÉ¸½¹±äÕ¹ÕÍ•…Í ™É½´Ñ¡¥Ì½É‘•È°¹½Ð™É½´½Ñ¡•È¥¹Ñ•¹ÑÌ¸4(€€€€€€€€€€€Í•±˜¹±•‘•È¹É•±•…Í”¡¥¹Ñ•¹Ð¹¥¹Ñ•¹Ñ}¥°½¹Ñ•áÐ¹¹½Ü¤4(€€€€€€€É•ÑÕÉ¸É•½É4(€€€‘•˜…¹•°¡Í•±˜°¥¹Ñ•¹Ñ}¥èÍÑÈ°…Ðè‘…Ñ•Ñ¥µ”¤€´ø=É‘•ÉI•½Éè4(€€€€€€€É•½ÉõÍ•±˜¹É•½É‘Ì¹•Ð¡¥¹Ñ•¹Ñ}¥¤4(€€€€€€€¥˜É•½É¥Ì9½¹”½ÈÉ•½É¹‰É½­•É}½É‘•É}¥¥Ì9½¹”½ÈÉ•½É¹ÍÑ…Ñ”¹½Ð¥¸í=É‘•ÉMÑ…Ñ”¹AQ±=É‘•ÉMÑ…Ñ”¹AIQ%1ôèÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰½É‘•È…¹¹½Ð‰”…¹•±±•ˆ¤4(€€€€€€€Í•±˜¹}µÕÑ…Ñ¥½¹}…Ñ”¡É•½É¹¥¹Ñ•¹Ð°I¥Í­½¹Ñ•áÐ¡…Ð°…Ð°É•½É¹¥¹Ñ•¹Ð¹…±±½Ý•‘}Í•ÍÍ¥½¸¤¤ìÍ•±˜¹}…ÁÁ•¹ ‰91}IEUMQˆ±É•½É±…Ð±‰É½­•É}½É‘•É}¥õÉ•½É¹‰É½­•É}½É‘•É}¥¤ìÍ•±˜¹…‘…ÁÑ•È¹…¹•°¡É•½É¹‰É½­•É}½É‘•É}¥¤ìÍ•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹911±…Ð±‰É½­•É}½É‘•É}¥õÉ•½É¹‰É½­•É}½É‘•É}¥¤4(€€€€€€€¥˜Í•±˜¹±•‘•È¹‰…±…¹” ¤¹ÍÑ…ÑÕÌ€ôô€‰-9=]8ˆ…¹É•½É¹¥¹Ñ•¹Ð¹Í¥‘”¥ÌM¥‘”¹	Udè4(€€€€€€€€€€€Í•±˜¹±•‘•È¹É•±•…Í”¡¥¹Ñ•¹Ñ}¥°…Ð¤4(€€€€€€€É•ÑÕÉ¸É•½É4(€€€‘•˜É•Á±…”¡Í•±˜°¥¹Ñ•¹Ñ}¥èÍÑÈ°É•Á±…•µ•¹Ðè=É‘•É%¹Ñ•¹Ð°½¹Ñ•áÐèI¥Í­½¹Ñ•áÐ¤€´ø=É‘•ÉI•½Éè4(€€€€€€€É•½ÉõÍ•±˜¹É•½É‘Ì¹•Ð¡¥¹Ñ•¹Ñ}¥¤4(€€€€€€€¥˜É•½É¥Ì9½¹”½ÈÉ•½É¹‰É½­•É}½É‘•É}¥¥Ì9½¹”½ÈÉ•½É¹ÍÑ…Ñ”¹½Ð¥¸í=É‘•ÉMÑ…Ñ”¹AQ±=É‘•ÉMÑ…Ñ”¹AIQ%1ôèÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰½É‘•È…¹¹½Ð‰”É•Á±…•ˆ¤4(€€€€€€€¥˜É•Á±…•µ•¹Ð¹¥¹Ñ•¹Ñ}¥¥¸Í•±˜¹É•½É‘Ì½ÈÍ•±˜¹É•½¹¥±¥…Ñ¥½¸¥Ì9½¹”èÉ…¥Í”á•ÕÑ¥½¹	±½­• ‰É•Á±…•µ•¹Ð¥¹Ñ•¹Ñ}¥…±É•…‘ä•á¥ÍÑÌ½ÈÉ•½¹¥±¥…Ñ¥½¸¥Ìµ¥ÍÍ¥¹œˆ¤4(€€€€€€€¥˜Í•±˜¹±•‘•È¹‰…±…¹” ¤¹ÍÑ…ÑÕÌ€ôô€‰-9=]8ˆè4(€€€€€€€€€€€€Œ=É¥¥¹…°…¹¹•ÜÉ•Í•ÉÙ…Ñ¥½¹Ì…¹¹½Ð‰”…Ñ½µ¥…±±äÉ•…ÍÍ¥¹•4(€€€€€€€€€€€€Œ…É½ÍÌ…¸•áÑ•É¹…°‰É½­•ÈÉ•Á±…”…±±‰…¬¸U¹Ñ¥°¥¹‘•Á•¹‘•¹Ð4(€€€€€€€€€€€€ŒÉ••¥ÁÑÌ½É•½¹¥±¥…Ñ¥½¸•á¥ÍÐ°™…¥°‰•™½É”…¹ä…‘…ÁÑ•ÈµÕÑ…Ñ¥½¸¸4(€€€€€€€€€€€É…¥Í”á•ÕÑ¥½¹	±½­• ‰±•‘•Èµ‰…­•É•Á±…”É•ÅÕ¥É•ÌÉ••¥ÁÐÉ•½¹¥±¥…Ñ¥½¸ˆ¤4(€€€€€€€Í•±˜¹}µÕÑ…Ñ¥½¹}…Ñ”¡É•Á±…•µ•¹Ð±½¹Ñ•áÐ¤ìÍ•±˜¹ÍÑ½É”¹Í…Ù•}¥¹Ñ•¹Ð¡É•Á±…•µ•¹Ð¤ìÍ•±˜¹}…ÁÁ•¹ ‰IA1}IEUMQˆ±É•½É±½¹Ñ•áÐ¹¹½Ü±É•Á±…•‘}‰äõÉ•Á±…•µ•¹Ð¹¥¹Ñ•¹Ñ}¥¤ì¹•Ý}‰É½­•É}½É‘•É}¥õÍ•±˜¹…‘…ÁÑ•È¹É•Á±…”¡É•½É¹‰É½­•É}½É‘•É}¥±É•Á±…•µ•¹Ð¤ìÍ•±˜¹}ÑÉ…¹Í¥Ñ¥½¸¡É•½É±=É‘•ÉMÑ…Ñ”¹MUAIM±½¹Ñ•áÐ¹¹½Ü±É•Á±…•‘}‰äõÉ•Á±…•µ•¹Ð¹¥¹Ñ•¹Ñ}¥¤4(€€€€€€€¹•Ý}É•½Éõ=É‘•ÉI•½É¡É•Á±…•µ•¹Ð±=É‘•ÉMÑ…Ñ”¹AQ±¹•Ý}‰É½­•É}½É‘•É}¥¤ìÍ•±˜¹É•½É‘ÍmÉ•Á±…•µ•¹Ð¹¥¹Ñ•¹Ñ}¥‘tõ¹•Ý}É•½ÉìÍ•±˜¹}…ÁÁ•¹ ‰AQˆ±¹•Ý}É•½É±½¹Ñ•áÐ¹¹½Ü±}ÍÑ…Ñ”õ=É‘•ÉMÑ…Ñ”¹AQ±‰É½­•É}½É‘•É}¥õ¹•Ý}‰É½­•É}½É‘•É}¥±É•Á±…•Ìõ¥¹Ñ•¹Ñ}¥¤4(€€€€€€€É•ÑÕÉ¸¹•Ý}É•½É4(
+- timestamp/currentness and closed-bar status;
+- bounded latency samples with source-to-worker and worker-to-cache separated;
+- disconnect, stale, duplicate, out-of-order, and recovery evidence;
+- no order mutation and no admission promotion.
+
+Exit evidence:
+
+- TickFlow WebSocket continuity/recovery accepted for the intended A-share scope;
+- OpenD capability/permission matrix accepted for the intended US scope;
+- no unsupported â€œreal-timeâ€ claim from cached or simulated data.
+
+### Stage 2 â€” Shadow lifecycle
+
+Required:
+
+- Trade Plan V0.2 precomputed before trigger;
+- fast trigger updates only price, volume, stop distance, position and freshness;
+- explicit WAIT / NO_TRADE / ENTRY_BLOCKED reasons;
+- position-management projection for 1R/2R, invalidation, timeout, disconnect and multi-timeframe conflict;
+- notification delivery remains advisory and separately evidenced.
+
+Exit evidence:
+
+- repeated historical/replay scenarios produce stable decisions;
+- all non-trades have a reason;
+- no order adapter call occurs.
+
+### Stage 3 â€” External Paper account
+
+Required:
+
+- user-authorized simulator account and exact account identity;
+- read-only discovery/reconciliation first;
+- order placement remains explicitly disabled until account, buying power, positions, open orders and fills are fresh;
+- idempotency, restart, cancel/replace, partial fill and ambiguous submission tests;
+- independent kill switch and rollback procedure.
+
+Exit evidence:
+
+- controlled test order only after a separate approval;
+- broker acknowledgement and fill evidence are matched to local intent;
+- read-only fill evidence includes filled quantity and average price, and is
+  cross-checked against the same-session position quantity delta and account
+  cash movement **with independently evidenced total fees/taxes in the cash
+  currency**: BUY outflow must equal notional + fees; SELL inflow must equal
+  notional - fees. Missing fee evidence, out-of-scope FX/conversion,
+  unrelated deposits/withdrawals, and unexplained cash deltas remain
+  `BLOCKED` (not tolerated or inferred);
+- missing or unsupported fill queries, including moomoo SIM
+  `deal_list_query=-1`, remain `BLOCKED` regardless of a plausible
+  order-history/position/cash correlation. That correlation is research
+  evidence and must not impersonate broker-native execution receipts;
+- any pre-existing non-zero position remains a manual-review condition even
+  when the quantity/price/cash cross-check is internally consistent;
+- no live account or live endpoint is reachable from the Paper path.
+
+### Stage 4 â€” Automation consideration
+
+Not enabled by this matrix. Requires a separate safety review covering:
+
+- live-trade isolation;
+- credential and endpoint isolation;
+- maximum loss and exposure limits;
+- human emergency stop;
+- soak test and incident recovery;
+- independent sign-off.
+
+## Non-negotiable gates
+
+```text
+PAPER_AUTO_READY=NO
+RADAR_ADMISSION=BLOCKED
+SOURCE_ARBITER_ADMISSION=BLOCKED
+LIVE_TRADE=NO
+```
+
+A passing offline simulation is evidence that the local Paper path works. It is not evidence of cloud data reliability, external simulator access, phone delivery, or live-trading readiness.
+
+## Current 2026-10-12 status: Paper is not yet an autonomous cloud simulator
+
+The AWS read-only [SIM Account Discovery #38201521471](https://github.com/kaku3030/stock-razor/actions/runs/38201521471)
+was completed at 03:53 UTC. Its **sanitized** workflow evidence is
+`opend_reachable=true`, `query_status=PASS`,
+`simulated_us_account_count=1` and `balance_readback`,
+`positions_readback`, `orders_readback`,
+`history_readback=PASS`. Previously held SIM positions remain
+`position_review=REQUIRED`; no current order review is required.
+`account_evidence=OBSERVED_NOT_VERIFIED`,
+`sim_native_fills=UNSUPPORTED_BY_OPEND`,
+`paper_preflight=BLOCKED`, `paper_auto_ready=false`.
+Source workflow revision is not an attested OpenD deployment revision.
+
+This is *real non-mutating cloud OpenD/SIM API access*, **not** a placed
+SIM order, automatic strategy fill, proof that the account equals the
+local simulator account, or evidence of an approved cloud Paper runtime.
+Futu's current `deal_list_query` and `history_deal_list_query`
+do not support `TrdEnv.SIMULATE`:
+[official docs](https://openapi.futunn.com/futu-api-doc/en/trade/get-order-fill-list.html).
+No fake broker receipt should be manufactured by trusting an ACK or a
+simulator fill fixture.
+
+Offline Paper restart evidence improved independently via
+[PR #627](https://github.com/kaku3030/stock-razor/pull/627):
+eight restarts using the same durable execution journal and Shadow
+store, followed by a ninth recovery, rejected duplicate intents,
+verified unique monotonically restored simulated broker order IDs and
+no duplicate adapter placements. Exact-head
+[CI #38236252954](https://github.com/kaku3030/stock-razor/actions/runs/38236252954)
+and [Radar #38236253028](https://github.com/kaku3030/stock-razor/actions/runs/38236253028)
+PASS. That is **offline P4 partial evidence**; external SIM orders,
+cloud soak, market source qualification and phone alert delivery are
+still not proven. No Paper or live order is permitted by this note.
+
+**Promotion disposition**:
+`OFFLINE_PAPER=IMPLEMENTED` Â· `AWS_SIM_READBACK=PASS` Â·
+`EXISTING_POSITION_BASELINE=REVIEW_REQUIRED` Â·
+`SIM_FILL_RECEIPT=UNSUPPORTED_UNRESOLVED` Â·
+`PAPER_AUTO_READY=NO` Â· `RADAR_ADMISSION=BLOCKED` Â· `LIVE_TRADE=NO`.
