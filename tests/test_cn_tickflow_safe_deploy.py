@@ -9,7 +9,7 @@ VERIFY = (ROOT / "ops/aws/verify_cn_tickflow_research.sh").read_text(encoding="u
 
 def test_workflow_is_explicit_and_dry_run_by_default():
     assert "target_instance_id:" in WORKFLOW
-    assert "options: [dry-run, deploy]" in WORKFLOW
+    assert "options: [dry-run, deploy, diagnose]" in WORKFLOW
     assert "default: dry-run" in WORKFLOW
     assert "DEPLOY_CN_TICKFLOW_WORKER" in WORKFLOW
     assert "github.actor == github.repository_owner" in WORKFLOW
