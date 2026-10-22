@@ -74,7 +74,7 @@ def test_historical_vendor_float_gap_with_off_tick_open_is_rejected():
 
 class Client:
     class Klines:
-        def get(self,symbol,*,period,count,adjust,as_dataframe):
+        def get(self,symbol,*,period,count,adjust,as_dataframe,start_time=None,end_time=None):
             rows=series(period)
             if symbol=="159611.SZ" and period=="15m":
                 rows["high"][0]=1.599995
