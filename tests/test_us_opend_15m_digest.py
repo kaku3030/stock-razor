@@ -27,7 +27,7 @@ def sample():
         "latest_source_timestamp_utc": stamp,
         "symbols": {
             "US.QQQ": {"feed": "opend", "provider": "futu",
-                       "timeframes": {"15m": [bar], "1h": [bar]}}
+                       "timeframes": {"1m": [bar], "5m": [bar], "15m": [bar], "1h": [bar]}}
         },
     }
     # A qualified digest requires all watched symbols to have safe 15m and 1h frames.
@@ -43,6 +43,8 @@ def sample():
             "symbols": [
                 {"symbol": "US.QQQ", "status": "RESEARCH_STATE",
                  "technical_state": {
+                     "alignment": "aligned_bearish",
+                     "watch_conditions": ["观察支撑 95 是否保持"],
                      "technical": {
                          "daily": {"trend": "bearish", "quality": {
                              "as_of": (NOW - timedelta(days=1)).isoformat()}},
@@ -61,6 +63,9 @@ def test_fresh_all_periods_are_only_research():
     assert report["schema"] == "stock_razor_us_opend_15m_digest_v1"
     assert report["status"] == "RESEARCH_ONLY"
     assert report["can_confirm_signal"] is False
+    assert report["monitor_status"] == "ACTIVE"
+    assert report["can_confirm_research_alignment"] is True
+    assert report["symbol_monitor"]["US.QQQ"]["research_confirmation"] == "CONFIRMED_MTF_RESEARCH"
     assert report["radar_admission"] == "BLOCKED"
     assert report["live_trade"] is False
     assert "QQQ D1:bearish 1H:bearish 15m:neutral" in report["message"]
@@ -110,3 +115,22 @@ def test_non_opend_symbol_never_gets_fallback():
     market["symbols"]["US.QQQ"]["provider"] = "yahoo"
     report = reporter.render(hb, market, radar, NOW)
     assert "QQQ OpenD缺失" in report["message"]
+
+def test_forming_intraday_bars_remain_watchable_but_not_confirmed():
+    hb, market, radar = sample()
+    market["symbols"]["US.QQQ"]["timeframes"]["15m"][0]["is_closed"] = False
+    report = reporter.render(hb, market, radar, NOW)
+    assert report["symbol_monitor"]["US.QQQ"]["watch_status"] == "ACTIVE"
+    assert report["symbol_monitor"]["US.QQQ"]["1m_state"] == "WATCH"
+    assert report["symbol_monitor"]["US.QQQ"]["research_confirmation"] == "PROVISIONAL_OR_WAITING"
+    assert report["can_confirm_signal"] is False
+
+
+def test_stale_1m_blocks_live_watch_without_erasing_other_symbols():
+    hb, market, radar = sample()
+    old = (NOW - timedelta(minutes=8)).isoformat()
+    market["symbols"]["US.QQQ"]["timeframes"]["1m"][0]["bar_end_utc"] = old
+    report = reporter.render(hb, market, radar, NOW)
+    assert report["symbol_monitor"]["US.QQQ"]["watch_status"] == "BLOCKED"
+    assert report["symbol_monitor"]["US.AMD"]["watch_status"] == "ACTIVE"
+    assert report["can_confirm_signal"] is False
