@@ -28,6 +28,7 @@ def search(query):
     ("60m ROW_COUNT_BELOW_MIN S1_60M_NORMALIZE", "CN-001"),
     ("518880.SH 用了腾讯数据 tencent fallback", "CN-002"),
     ("klines.get intraday endpoint 分钟线错用接口", "CN-003"),
+    ("TickFlow historical warmup rows below minimum current session only", "CN-009"),
     ("CI绿灯但不能使用，业务验收没过", "ENG-001"),
     ("部署SHA不一致, worker sha mismatch", "ENG-002"),
     ("相同SHA又失败，重复试探 没新变化", "ENG-003"),

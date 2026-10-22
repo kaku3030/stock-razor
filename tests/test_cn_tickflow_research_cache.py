@@ -46,8 +46,10 @@ class FakeKlines:
         self.intraday_calls=[]
         self.batch_calls=[]
         self.intraday_batch_calls=[]
-    def get(self,symbol,*,period,count,as_dataframe,adjust):
+        self.window_calls=[]
+    def get(self,symbol,*,period,count,as_dataframe,adjust,start_time=None,end_time=None):
         self.calls.append((symbol,period,count,as_dataframe,adjust))
+        self.window_calls.append((symbol,period,start_time,end_time))
         df = frame(period)
         return {key: df[key].tolist() for key in
                 ("timestamp","open","high","low","close","volume","amount")}
@@ -63,6 +65,7 @@ class FakeKlines:
         return {symbol: self.get(
             symbol, period=kwargs["period"], count=kwargs["count"],
             as_dataframe=kwargs["as_dataframe"], adjust=kwargs.get("adjust", "none"),
+            start_time=kwargs.get("start_time"),end_time=kwargs.get("end_time"),
         ) for symbol in symbols}
 
     def intraday_batch(self, symbols, **kwargs):
@@ -72,9 +75,125 @@ class FakeKlines:
             as_dataframe=kwargs["as_dataframe"], adjust="none",
         ) for symbol in symbols}
 
+    def intraday(self,symbol,*,period,count,as_dataframe):
+        self.intraday_calls.append((symbol,period,count,as_dataframe))
+        return self.get(symbol,period=period,count=count,
+                        as_dataframe=as_dataframe,adjust="none")
+
 class FakeClient:
     def __init__(self):
         self.klines=FakeKlines()
+
+def _compact_multi_day(period, days, *, close=1.6):
+    rows=[]
+    clocks=("00:00",) if period=="1d" else TIMES[period]
+    for day in days:
+        for clock in clocks:
+            stamp=datetime.fromisoformat(f"{day}T{clock}").replace(tzinfo=SH)
+            rows.append({
+                "timestamp":int(stamp.timestamp()*1000),"open":1.5,
+                "high":1.7,"low":1.3,"close":close,"volume":1000,
+                "amount":close*1000,
+            })
+    return {key:[row[key] for row in rows]
+            for key in ("timestamp","open","high","low","close","volume","amount")}
+
+
+def test_historical_warmup_uses_explicit_windows_and_intraday_overrides():
+    from datetime import date, timedelta as dt_timedelta
+    from data_provider.cn_tickflow_research_cache import _HISTORY_WARMUP_ROWS
+
+    now=datetime(2026,10,13,7,5,tzinfo=timezone.utc)  # 15:05 Shanghai
+    days=("2026-10-05","2026-10-06","2026-10-07",
+          "2026-10-08","2026-10-09","2026-10-13")
+    daily_days=[]
+    cursor=date(2026,10,12)
+    while len(daily_days)<60:
+        if cursor.weekday()<5:
+            daily_days.append(cursor.isoformat())
+        cursor-=dt_timedelta(days=1)
+    daily_days.reverse()
+
+    class HistoryKlines(FakeKlines):
+        def batch(self,symbols,**kwargs):
+            self.batch_calls.append((list(symbols),kwargs))
+            period=kwargs["period"]
+            if period in ("15m","60m"):
+                return {symbol:_compact_multi_day(period,days)
+                        for symbol in symbols}
+            if period=="1d":
+                return {symbol:_compact_multi_day("1d",daily_days)
+                        for symbol in symbols}
+            return super().batch(symbols,**kwargs)
+
+        def intraday_batch(self,symbols,**kwargs):
+            self.intraday_batch_calls.append((list(symbols),kwargs))
+            period=kwargs["period"]
+            if period in ("15m","60m"):
+                return {symbol:_compact_multi_day(
+                    period,("2026-10-13",),close=1.65)
+                    for symbol in symbols}
+            return super().intraday_batch(symbols,**kwargs)
+
+    fake=FakeClient()
+    fake.klines=HistoryKlines()
+    snap=build_observation(
+        fake,now_utc=now,repo_sha="a"*40,sequence=1,
+        symbols=("159611.SZ",),include_supplemental=True,use_batch=True,
+    )
+    assert len(fake.klines.batch_calls)==3
+    historical={kwargs["period"]:kwargs
+                for _,kwargs in fake.klines.batch_calls}
+    end_ms=int(now.timestamp()*1000)
+    assert set(historical)=={"15m","60m","1d"}
+    for period,kwargs in historical.items():
+        assert kwargs["end_time"]==end_ms
+        days_back=14 if period in ("15m","60m") else 120
+        assert kwargs["start_time"]==end_ms-days_back*24*60*60*1000
+        assert kwargs["count"]==_HISTORY_WARMUP_ROWS[period]
+    symbol=snap["symbols"]["159611.SZ"]
+    for period in ("15m","60m","1d"):
+        coverage=symbol[period]["history_coverage"]
+        assert coverage=={
+            "required_rows":_HISTORY_WARMUP_ROWS[period],
+            "observed_rows":_HISTORY_WARMUP_ROWS[period],"status":"PASS",
+        }
+    assert len(symbol["15m"]["rows"])==96
+    assert len(symbol["60m"]["rows"])==24
+    assert len(symbol["1d"]["rows"])==60
+    assert symbol["15m"]["rows"][-1]["close"]==1.65
+    assert symbol["60m"]["rows"][-1]["close"]==1.65
+    assert snap["radar_admission"]=="BLOCKED"
+    assert snap["live_trade"] is False
+
+
+def test_short_historical_response_is_explicitly_marked_below_warmup_minimum():
+    now=datetime(2026,10,13,7,5,tzinfo=timezone.utc)
+    class ShortHistory(FakeKlines):
+        def batch(self,symbols,**kwargs):
+            self.batch_calls.append((list(symbols),kwargs))
+            return {symbol:frame(kwargs["period"],"2026-10-12").to_dict(orient="list")
+                    for symbol in symbols}
+        def intraday_batch(self,symbols,**kwargs):
+            self.intraday_batch_calls.append((list(symbols),kwargs))
+            return {symbol:frame(kwargs["period"],"2026-10-12").to_dict(orient="list")
+                    for symbol in symbols}
+    fake=FakeClient(); fake.klines=ShortHistory()
+    snap=build_observation(
+        fake,now_utc=now,repo_sha="b"*40,sequence=1,
+        symbols=("159611.SZ",),use_batch=True,
+    )
+    coverage=snap["symbols"]["159611.SZ"]["15m"]["history_coverage"]
+    assert coverage["status"]=="ROW_COUNT_BELOW_MIN"
+    assert coverage["required_rows"]==96
+    assert coverage["observed_rows"]==16
+    result=read_cn_tickflow_research_data(
+        "159611.SZ","15m",path="unused",now_utc=now,
+        research_mode="historical_only",observation=snap,
+    )
+    assert result["history_coverage"]==coverage
+    assert result["radar_admission"]=="BLOCKED"
+
 
 def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(tmp_path):
     fake=FakeClient()
@@ -84,8 +203,8 @@ def test_tickflow_source_worker_builds_bounded_bars_without_unqualified_claims(t
     assert snap["radar_admission"]=="BLOCKED"
     assert snap["canonical_write_authorized"] is False
     assert snap["live_trade"] is False
-    assert len(fake.klines.calls)==8
-    assert [x[2] for x in fake.klines.calls]==[96,24]*4
+    assert len(fake.klines.calls)==16
+    assert [x[2] for x in fake.klines.calls]==[96,96,24,24]*4
     assert all(x[3] is False and x[4]=="none" for x in fake.klines.calls)
     assert "SECRET_SHOULD_NOT_LEAK" not in json.dumps(snap)
     for sym in ("159611.SZ","159209.SZ","512730.SH","159363.SZ"):
@@ -117,7 +236,7 @@ def test_batch_missing_symbols_fall_back_only_for_missing_entries():
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
     calls=[call for call in fake.klines.calls if call[1]=="1m"]
-    assert len(calls)==4
+    assert len(calls)==5
     assert fake.klines.intraday_calls==[("159363.SZ","1m",240,False)]
     assert len(snap["symbols"]["159363.SZ"]["1m"]["rows"])==4
     assert all(row["bar_finality"]=="NOT_VERIFIED"
@@ -154,7 +273,7 @@ def test_batch_missing_symbol_fallback_failure_fails_closed():
     with pytest.raises(RuntimeError) as caught:
         build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                           include_supplemental=True,use_batch=True)
-    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_SYMBOL_FALLBACK"
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_1M_INTRADAY_FALLBACK"
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_FALLBACK_FAILED"
 
 
@@ -176,7 +295,7 @@ def test_batch_missing_symbols_across_periods_use_bounded_fallback_budget():
     )
     snap=build_observation(fake,now_utc=NOW,repo_sha="a"*40,sequence=3,
                            include_supplemental=True,use_batch=True)
-    assert len(fake.klines.calls) == 21
+    assert len(fake.klines.calls) == 35
     assert len(fake.klines.intraday_calls) == 4
     assert all(
         period in observed
@@ -292,7 +411,8 @@ def test_unapproved_a_share_scan_or_duplicate_cannot_bypass_billing_whitelist():
 def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings(tmp_path):
     symbol = "100000.SZ"
     class SparseKlines(FakeKlines):
-        def get(self, requested, *, period, count, as_dataframe, adjust):
+        def get(self, requested, *, period, count, as_dataframe, adjust,
+                start_time=None,end_time=None):
             result = super().get(
                 requested, period=period, count=count,
                 as_dataframe=as_dataframe, adjust=adjust,
@@ -335,7 +455,8 @@ def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings(tmp_path):
 def test_sparse_fixed_core_symbol_still_fails_closed():
     symbol = "159611.SZ"
     class SparseCoreKlines(FakeKlines):
-        def get(self, requested, *, period, count, as_dataframe, adjust):
+        def get(self, requested, *, period, count, as_dataframe, adjust,
+                start_time=None,end_time=None):
             result = super().get(
                 requested, period=period, count=count,
                 as_dataframe=as_dataframe, adjust=adjust,
@@ -362,7 +483,7 @@ def test_scan_capacity_accepts_twenty_explicit_symbols_and_reader_sees_all(tmp_p
         symbols=symbols, allow_scan_symbols=True,
     )
     assert tuple(snapshot["symbols"]) == symbols
-    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 2
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 4
     path = tmp_path / "twenty.json"
     atomic_publish(str(path), snapshot)
     result = read_cn_tickflow_research_data(
@@ -379,7 +500,7 @@ def test_scan_capacity_keeps_short_periods_qc_only_for_core_symbols(tmp_path):
         fake, now_utc=NOW, repo_sha="a" * 40, sequence=1,
         symbols=symbols, include_supplemental=True, allow_scan_symbols=True,
     )
-    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 3
+    assert len(fake.klines.calls) == TEST_SCAN_SYMBOLS * 5
     assert all(set(snapshot["symbols"][symbol]) ==
                {"1m", "5m", "15m", "60m", "1d"} for symbol in symbols)
     assert all(snapshot["symbols"][symbol][period]["status"] ==
@@ -402,7 +523,7 @@ def test_full_capacity_uses_one_batch_request_per_period():
         symbols=symbols, include_supplemental=True,
         allow_scan_symbols=True, use_batch=True,
     )
-    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.batch_calls) == 3
     assert len(fake.klines.intraday_batch_calls) == 2
     assert len(snapshot["symbols"]) == TEST_SCAN_SYMBOLS
 
@@ -415,7 +536,7 @@ def test_two_hundred_symbol_batch_capacity_covers_all_five_periods():
         symbols=symbols, include_supplemental=True,
         allow_scan_symbols=True, use_batch=True,
     )
-    assert len(fake.klines.batch_calls) == 1
+    assert len(fake.klines.batch_calls) == 3
     assert len(fake.klines.intraday_batch_calls) == 2
     assert len(snapshot["symbols"]) == TEST_MAX_SYMBOLS
 
@@ -468,6 +589,9 @@ def test_sdk_compact_missing_optional_amount_is_null_not_invented():
             df=frame(kwargs["period"])
             return {key:df[key].tolist() for key in
                     ("timestamp","open","high","low","close","volume")}
+        def intraday(self,symbol,*,period,count,as_dataframe):
+            return self.get(symbol,period=period,count=count,
+                            as_dataframe=as_dataframe,adjust="none")
     class Client:
         klines=MissingAmountKlines()
     snap=build_observation(Client(),now_utc=now,repo_sha="a"*40,sequence=1)
@@ -546,7 +670,8 @@ def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
     """Post-close progress reads keep due-grid visibility without finality."""
     current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
     class CurrentDayKlines:
-        def get(self,symbol,*,period,count,as_dataframe,adjust):
+        def get(self,symbol,*,period,count,as_dataframe,adjust,
+                start_time=None,end_time=None):
             df=frame(period,"2026-10-14")
             if period=="15m":
                 df["high"]=1.5999999999999994
@@ -554,6 +679,12 @@ def test_postclose_session_progress_accepts_bounded_vendor_float_rows(tmp_path):
                     ("timestamp","open","high","low","close","volume","amount")}
     class CurrentDayClient:
         klines=CurrentDayKlines()
+        def __init__(self):
+            self.klines.intraday=lambda symbol, **kwargs: self.klines.get(
+                symbol, **kwargs, adjust="none")
+        def __init__(self):
+            self.klines.intraday=lambda symbol, **kwargs: self.klines.get(
+                symbol, **kwargs, adjust="none")
     snap=build_observation(CurrentDayClient(),now_utc=current,
             repo_sha="d"*40,sequence=5)
     cache=tmp_path/"cache.json"
@@ -591,12 +722,19 @@ def test_offsession_cache_refresh_interval_is_explicit_historical_only(tmp_path)
 def test_postclose_session_progress_uses_bounded_research_age(tmp_path):
     current=datetime(2026,10,14,7,5,tzinfo=timezone.utc)  # Shanghai 15:05
     class CurrentDayKlines:
-        def get(self,symbol,*,period,count,as_dataframe,adjust):
+        def get(self,symbol,*,period,count,as_dataframe,adjust,
+                start_time=None,end_time=None):
             df=frame(period,"2026-10-14")
             return {key:df[key].tolist() for key in
                     ("timestamp","open","high","low","close","volume","amount")}
     class CurrentDayClient:
         klines=CurrentDayKlines()
+        def __init__(self):
+            self.klines.intraday=lambda symbol, **kwargs: self.klines.get(
+                symbol, **kwargs, adjust="none")
+        def __init__(self):
+            self.klines.intraday=lambda symbol, **kwargs: self.klines.get(
+                symbol, **kwargs, adjust="none")
     snap=build_observation(CurrentDayClient(),now_utc=current,
             repo_sha="a"*40,sequence=2)
     p=tmp_path/"obs.json"
@@ -744,7 +882,8 @@ def test_post_close_tiny_vendor_float_gap_keeps_native_bar_for_historical_resear
     assert not quarantined
 
     class Klines:
-        def get(self,symbol,*,period,count,as_dataframe,adjust):
+        def get(self,symbol,*,period,count,as_dataframe,adjust,
+                start_time=None,end_time=None):
             if period=="15m":
                 return raw
             p=frame(period,"2026-10-14")
@@ -830,7 +969,8 @@ def test_tiny_vendor_intraday_precision_exception_never_grants_trade_or_finality
                and row["is_partial_bar"] is True for row in rows)
 
     class Klines:
-        def get(self,symbol,*,period,count,as_dataframe,adjust):
+        def get(self,symbol,*,period,count,as_dataframe,adjust,
+                start_time=None,end_time=None):
             if symbol=="159611.SZ" and period=="15m":
                 return raw
             df=frame(period,"2026-10-14")
@@ -895,6 +1035,9 @@ def test_session_progress_rejects_middle_due_gap_even_when_last_bar_present(tmp_
         {**template, "label": "2026-10-15 09:45"},
         {**template, "label": "2026-10-15 10:15"},
     ])
+    coverage = snap["symbols"]["159611.SZ"]["15m"]["history_coverage"]
+    coverage["observed_rows"] = len(today_rows)
+    coverage["status"] = "ROW_COUNT_BELOW_MIN"
     cache = tmp_path / "gap.json"
     atomic_publish(str(cache), snap)
     blocked = read_cn_tickflow_research_data(
@@ -916,6 +1059,8 @@ def test_session_progress_rejects_middle_due_gap_even_when_last_bar_present(tmp_
         "DUE_LABEL_PRESENT_WITH_GAPS_HISTORICAL_ONLY"
     )
     today_rows.insert(-1, {**template, "label": "2026-10-15 10:00"})
+    coverage["observed_rows"] = len(today_rows)
+    coverage["status"] = "ROW_COUNT_BELOW_MIN"
     atomic_publish(str(cache), snap)
     complete = read_cn_tickflow_research_data(
         "159611.SZ", "15m", 1, path=str(cache), now_utc=now,
@@ -993,7 +1138,7 @@ def test_batch_failure_has_bounded_stage_and_reason_before_symbol_normalization(
     with pytest.raises(ValueError) as caught:
         build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
                           include_supplemental=True, use_batch=True)
-    assert getattr(caught.value, "_tickflow_stage", None) == "BATCH_1M_FETCH"
+    assert getattr(caught.value, "_tickflow_stage", None) == "BATCH_1M_INTRADAY_FETCH"
     assert _normalize_rejection_reason(caught.value) == "BATCH_SHAPE_INVALID"
 
 
@@ -1012,7 +1157,7 @@ def test_batch_missing_symbol_count_over_fallback_cap_fails_closed():
         build_observation(fake, now_utc=NOW, repo_sha="a"*40, sequence=1,
                           symbols=symbols,allow_scan_symbols=True,
                           include_supplemental=True,use_batch=True)
-    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_15M_FETCH"
+    assert getattr(caught.value,"_tickflow_stage",None)=="BATCH_15M_INTRADAY_FETCH"
     assert _normalize_rejection_reason(caught.value)=="BATCH_SYMBOL_MISSING"
 
 

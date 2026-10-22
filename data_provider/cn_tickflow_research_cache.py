@@ -42,11 +42,13 @@ _LABEL_END = {
     "1d": frozenset(("00:00",)),
 }
 _SYMBOL_RE = re.compile(r"^(?:[0-9]{6})\.(?:SH|SZ)$")
-_ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}
-# Recover at most four omitted entries per period and twenty per full scan.
+_ALLOWED_PERIODS = {"1m":240,"5m":144,"15m":96,"60m":24,"1d":60}
+_HISTORY_LOOKBACK_DAYS = {"15m":14,"60m":14,"1d":120}
+_HISTORY_WARMUP_ROWS = {"15m":96,"60m":24,"1d":60}
+# Recover at most four omitted entries for each bounded provider route.
 _MAX_BATCH_FALLBACKS_PER_PERIOD = 4
 _MAX_BATCH_FALLBACKS_PER_OBSERVATION = (
-    _MAX_BATCH_FALLBACKS_PER_PERIOD * len(_ALLOWED_PERIODS)
+    _MAX_BATCH_FALLBACKS_PER_PERIOD * 7  # 3 historical + 4 current-session periods
 )
 _SOURCE = "TICKFLOW_PREMIUM"
 
@@ -69,71 +71,100 @@ def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
 
 
 class _BatchKlinesFacade:
-    """Materialize bounded provider batches for each timeframe's symbol subset."""
+    """Fetch historical warmup and current-session bars through distinct routes."""
 
     def __init__(self, client: Any, period_symbols: dict[str, tuple[str, ...]],
-                 periods: dict[str, int], batch_size: int) -> None:
+                 periods: dict[str, int], batch_size: int,
+                 now_utc: datetime) -> None:
         self._frames: dict[tuple[str, str], Any] = {}
+        self._intraday_frames: dict[tuple[str, str], Any] = {}
         self._fallback_count = 0
-        for period, period_symbol_list in period_symbols.items():
+        end_ms = int(now_utc.timestamp() * 1000)
+
+        def fetch_route(period: str, symbols: tuple[str, ...], *, intraday: bool):
             count = periods[period]
             try:
-                method = (client.klines.batch if period == "1d"
-                          else client.klines.intraday_batch)
+                method = (client.klines.intraday_batch if intraday
+                          else client.klines.batch)
                 kwargs = {
                     "period": period, "count": count, "as_dataframe": False,
                     "show_progress": False, "max_workers": 5,
                     "batch_size": batch_size,
                 }
-                if period == "1d":
-                    kwargs["adjust"] = "none"
-                result = method(list(period_symbol_list), **kwargs)
+                if not intraday:
+                    lookback_days = _HISTORY_LOOKBACK_DAYS[period]
+                    kwargs.update({
+                        "start_time": end_ms - lookback_days * 24 * 60 * 60 * 1000,
+                        "end_time": end_ms,
+                    })
+                    if period == "1d":
+                        kwargs["adjust"] = "none"
+                result = method(list(symbols), **kwargs)
                 if not isinstance(result, dict):
                     raise ValueError("batch SDK shape invalid")
-                missing = tuple(symbol for symbol in period_symbol_list if symbol not in result)
+                missing = tuple(symbol for symbol in symbols if symbol not in result)
                 if (len(missing) > _MAX_BATCH_FALLBACKS_PER_PERIOD
                         or self._fallback_count + len(missing)
                         > _MAX_BATCH_FALLBACKS_PER_OBSERVATION):
                     raise ValueError("batch SDK symbol missing")
-                # Count attempted calls, including a later provider failure.
                 self._fallback_count += len(missing)
-                for symbol in period_symbol_list:
-                    if symbol in result:
-                        frame = result[symbol]
-                    else:
-                        # Recover only a small number of omitted batch entries.
-                        # Larger gaps fail closed to cap provider calls and cost.
-                        try:
-                            if period == "1d":
-                                frame = client.klines.get(
-                                    symbol, period=period, count=count,
-                                    as_dataframe=False, adjust="none",
-                                )
-                            else:
-                                frame = client.klines.intraday(
-                                    symbol, period=period, count=count,
-                                    as_dataframe=False,
-                                )
-                        except Exception:
-                            failure = _BatchSymbolFallbackError(
-                                "batch symbol fallback failed"
+                frames = dict(result)
+                for symbol in missing:
+                    try:
+                        if intraday:
+                            frame = client.klines.intraday(
+                                symbol, period=period, count=count,
+                                as_dataframe=False,
                             )
-                            failure._tickflow_stage = (
-                                f"BATCH_{period.upper()}_SYMBOL_FALLBACK"
-                            )
-                            raise failure from None
-                    self._frames[(symbol, period)] = frame
+                        else:
+                            fallback_kwargs = {
+                                "period": period, "count": count,
+                                "start_time": kwargs["start_time"],
+                                "end_time": kwargs["end_time"],
+                                "adjust": "none", "as_dataframe": False,
+                            }
+                            frame = client.klines.get(symbol, **fallback_kwargs)
+                    except Exception:
+                        failure = _BatchSymbolFallbackError(
+                            "batch symbol fallback failed"
+                        )
+                        failure._tickflow_stage = (
+                            f"BATCH_{period.upper()}_"
+                            f"{'INTRADAY' if intraday else 'HISTORY'}_FALLBACK"
+                        )
+                        raise failure from None
+                    frames[symbol] = frame
+                return frames
             except Exception as exc:
-                # Batch errors occur before the per-symbol normalization loop.
-                # Preserve a finite local stage without exposing provider text.
                 if not isinstance(exc, _BatchSymbolFallbackError):
-                    exc._tickflow_stage = f"BATCH_{period.upper()}_FETCH"
+                    exc._tickflow_stage = (
+                        f"BATCH_{period.upper()}_"
+                        f"{'INTRADAY' if intraday else 'HISTORY'}_FETCH"
+                    )
                 raise
+
+        for period, period_symbol_list in period_symbols.items():
+            if period in _HISTORY_LOOKBACK_DAYS:
+                historical = fetch_route(period, period_symbol_list, intraday=False)
+                for symbol, frame in historical.items():
+                    self._frames[(symbol, period)] = frame
+                if period in ("15m", "60m"):
+                    current = fetch_route(period, period_symbol_list, intraday=True)
+                    for symbol, frame in current.items():
+                        self._intraday_frames[(symbol, period)] = frame
+            else:
+                # 1m/5m supplemental rows remain current-session diagnostics.
+                current = fetch_route(period, period_symbol_list, intraday=True)
+                for symbol, frame in current.items():
+                    self._frames[(symbol, period)] = frame
 
     def get(self, symbol: str, *, period: str, count: int,
             adjust: str, as_dataframe: bool) -> Any:
         del count, adjust, as_dataframe
         return self._frames[(symbol, period)]
+
+    def get_intraday(self, symbol: str, *, period: str) -> Any:
+        return self._intraday_frames[(symbol, period)]
 
 def _timestamp(value: object) -> datetime:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
@@ -443,6 +474,35 @@ def _expected_closed_grid_label(now_utc: datetime, timeframe: str) -> datetime |
     return max(candidates) if candidates else None
 
 
+def _raw_frame_row_count(frame: Any) -> int:
+    if isinstance(frame, dict) and isinstance(frame.get("timestamp"), (list, tuple)):
+        return len(frame["timestamp"])
+    if hasattr(frame, "__len__"):
+        return len(frame)
+    return 0
+
+
+def _tail_frame(frame: Any, limit: int) -> Any:
+    """Bound raw provider rows before normalization without changing values."""
+    if isinstance(frame, dict):
+        columns={key:value for key,value in frame.items()
+                 if isinstance(value,(list,tuple))}
+        sizes={len(value) for value in columns.values()}
+        if len(sizes)==1 and sizes and next(iter(sizes))>limit:
+            return {key:(list(value)[-limit:] if key in columns else value)
+                    for key,value in frame.items()}
+    elif hasattr(frame,"tail"):
+        return frame.tail(limit)
+    return frame
+
+
+def _merge_bar_windows(history: list[dict], current: list[dict], limit: int) -> list[dict]:
+    """Prefer today's intraday copy for an overlapping historical label."""
+    by_label = {row["label"]: row for row in history}
+    by_label.update({row["label"]: row for row in current})
+    return [by_label[label] for label in sorted(by_label)][-limit:]
+
+
 def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence: int,
                       symbols: tuple[str,...]=SYMBOLS,
                       include_supplemental: bool=False,
@@ -492,6 +552,7 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
         client = type("_BatchClient", (), {
             "klines": _BatchKlinesFacade(
                 client, period_symbols, periods, batch_size=batch_size,
+                now_utc=now_utc,
             ),
         })()
     for index,symbol in enumerate(symbols):
@@ -500,35 +561,74 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
             if symbol not in period_symbols.get(interval, ()):
                 frames[interval]={"status":"QC_ONLY_NOT_COLLECTED","rows":[]}
                 continue
-            # SDK's isolated Premium Kline contract was separately verified on AWS.
+            # Historical warmup and current-session progress are separate
+            # provider routes. Never substitute today's intraday endpoint for
+            # multi-session history.
+            historical_period = interval in _HISTORY_LOOKBACK_DAYS
             stage=f"S{index}_{interval.upper()}_FETCH"
             try:
-                frame=client.klines.get(symbol, period=interval,count=n,
-                                        adjust="none",as_dataframe=False)
+                if use_batch:
+                    frame=client.klines.get(
+                        symbol, period=interval,count=n,
+                        adjust="none",as_dataframe=False,
+                    )
+                    intraday_frame=(
+                        client.klines.get_intraday(symbol,period=interval)
+                        if interval in ("15m","60m") else None
+                    )
+                elif interval in _HISTORY_LOOKBACK_DAYS:
+                    end_ms=int(now_utc.timestamp()*1000)
+                    start_ms=end_ms-_HISTORY_LOOKBACK_DAYS[interval]*24*60*60*1000
+                    frame=client.klines.get(
+                        symbol,period=interval,count=n,start_time=start_ms,
+                        end_time=end_ms,adjust="none",as_dataframe=False,
+                    )
+                    intraday_method=getattr(client.klines,"intraday",None)
+                    intraday_frame=(
+                        intraday_method(
+                            symbol,period=interval,count=n,as_dataframe=False,
+                        ) if interval in ("15m","60m") and callable(intraday_method)
+                        else None
+                    )
+                else:
+                    frame=client.klines.intraday(
+                        symbol,period=interval,count=n,as_dataframe=False,
+                    )
+                    intraday_frame=None
             except Exception as exc:
                 exc._tickflow_stage=stage
                 raise
             stage=f"S{index}_{interval.upper()}_NORMALIZE"
             try:
-                if isinstance(frame,dict):
-                    columns={key:value for key,value in frame.items()
-                             if isinstance(value,(list,tuple))}
-                    sizes={len(value) for value in columns.values()}
-                    if len(sizes)==1 and sizes and next(iter(sizes))>n:
-                        frame={key:(list(value)[-n:] if key in columns else value)
-                               for key,value in frame.items()}
-                elif hasattr(frame,"tail"):
-                    frame=frame.tail(n)
+                frame=_tail_frame(frame,n)
                 reasons={}
                 evidence={}
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
                                     quarantine_counts=reasons,
                                     quarantine_evidence=evidence)
-                # Some SDK responses may contain more rows than the requested
-                # count. Keep the bounded, newest window requested by the
-                # caller so one oversized response cannot invalidate the
-                # complete bounded snapshot at publish time.
-                bars=bars[-n:]
+                historical_quarantined=max(
+                    0,_raw_frame_row_count(frame)-len(bars)
+                )
+                current_reasons={}
+                current_evidence={}
+                if intraday_frame is not None:
+                    intraday_frame=_tail_frame(intraday_frame,n)
+                    current_bars=normalize_bars(
+                        intraday_frame,interval,now_utc=now_utc,
+                        quarantine_counts=current_reasons,
+                        quarantine_evidence=current_evidence,
+                    )
+                    current_quarantined=max(
+                        0,_raw_frame_row_count(intraday_frame)-len(current_bars)
+                    )
+                else:
+                    current_bars=[]
+                    current_quarantined=0
+                bars=_merge_bar_windows(bars,current_bars,n)
+                for key,value in current_reasons.items():
+                    reasons[key]=reasons.get(key,0)+value
+                for key,value in current_evidence.items():
+                    evidence[key]=evidence.get(key,0)+value
             except Exception as exc:
                 # A bounded expanded scan may include newly listed or
                 # illiquid symbols with fewer than four historical rows.
@@ -545,19 +645,27 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                     continue
                 exc._tickflow_stage=stage
                 raise
-            frames[interval]={"rows":bars,
+            frame_metadata={
+                 "rows":bars,
                  "quarantine_reason_counts":reasons,
                  "quarantine_ohlc_gap_evidence":evidence,
                  "quarantined_unverified_rows_count":(
-                     len(frame["timestamp"])-len(bars)
-                     if isinstance(frame,dict) and isinstance(frame.get("timestamp"),list)
-                     else 0
+                     historical_quarantined+current_quarantined
                  ),
                  "timestamp_semantic":("DATE_LABEL_UNPROVEN_CLOSE" if interval=="1d"
                     else "BAR_END_GRID_MATCH_HISTORICAL_ONLY"),
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",
                  "volume_units":"NOT_VERIFIED",
                  "adjustment":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED"}
+            if historical_period:
+                required_rows=_HISTORY_WARMUP_ROWS[interval]
+                frame_metadata["history_coverage"]={
+                    "required_rows":required_rows,
+                    "observed_rows":len(bars),
+                    "status":"PASS" if len(bars)>=required_rows
+                             else "ROW_COUNT_BELOW_MIN",
+                }
+            frames[interval]=frame_metadata
         output[symbol]=frames
     return {
         "schema":SCHEMA, "repo_sha":repo_sha, "provider":_SOURCE,
@@ -719,6 +827,24 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             return {**base,"status":"NO_DATA",
                     "cache_rejection_reason":"QC_PERIOD_NOT_COLLECTED"}
         rows=raw["rows"]
+        history_coverage={"status":"NOT_REQUIRED"}
+        if timeframe in _HISTORY_WARMUP_ROWS:
+            coverage=raw.get("history_coverage")
+            if coverage is None:
+                history_coverage={"status":"NOT_RECORDED"}
+            elif (not isinstance(coverage,dict)
+                  or set(coverage)!={"required_rows","observed_rows","status"}
+                  or type(coverage.get("required_rows")) is not int
+                  or type(coverage.get("observed_rows")) is not int
+                  or coverage.get("required_rows")!=_HISTORY_WARMUP_ROWS[timeframe]
+                  or coverage.get("observed_rows")!=len(rows)
+                  or coverage.get("status") not in ("PASS","ROW_COUNT_BELOW_MIN")
+                  or coverage.get("status")!=(
+                      "PASS" if len(rows)>=_HISTORY_WARMUP_ROWS[timeframe]
+                      else "ROW_COUNT_BELOW_MIN")):
+                raise ValueError
+            else:
+                history_coverage=coverage
         reject_reason="BAR_COUNT_INVALID"
         if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
@@ -859,6 +985,7 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
             "currentness":"UNPROVEN","session_currentness":"NOT_VERIFIED",
             "websocket_evidence":websocket_evidence,
+            "history_coverage":history_coverage,
         }
     return {
         **base,"ok":True,"status":"PASS_RESEARCH_ONLY","repo_sha":sha,
@@ -876,5 +1003,6 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
         "timestamp_semantic":"BAR_END_GRID_MATCH_HISTORICAL_ONLY",
         "volume_units":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED",
         "websocket_evidence":websocket_evidence,
+        "history_coverage":history_coverage,
     }
 

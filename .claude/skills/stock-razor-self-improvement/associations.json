@@ -334,6 +334,21 @@
         "CN-003",
         "ENG-001"
       ]
+    },
+    {
+      "id": "CN-009",
+      "phrases": [
+        "TickFlow 历史预热只有当日数据",
+        "15m 只有16根 60m只有4根",
+        "历史窗口未传 start_time end_time",
+        "intraday warmup current session only",
+        "historical warmup rows below minimum",
+        "klines.batch explicit history window"
+      ],
+      "related": [
+        "CN-001",
+        "CN-003"
+      ]
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-22T02:35:56.633Z",
+  "last_reconciled_utc": "2026-10-22T13:53:04Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -315,6 +315,21 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/985",
       "regression_evidence": "tests/test_tickflow_realtime_extra_aws.py",
       "mandatory_action": "If the owner-authorized quote-only AWS probe is run, verify the sanitized receipt lists exactly 159611.SZ and 159209.SZ; report provider response, timestamp and latency separately. Keep currentness, volume/amount units, bar finality, cross-source parity, Radar admission and trading gates independently blocked until verified.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-009",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "HISTORICAL_WARMUP_ROWS_BELOW_MIN",
+        "INTRADAY_ROUTE_CURRENT_SESSION_ONLY"
+      ],
+      "status": "OPEN",
+      "diagnosis": "The isolated research collector routed 15m/60m warmup requests through TickFlow's intraday endpoint, which returns current-session bars only. Historical klines.get/batch support explicit start_time/end_time; the collector must fetch historical warmup separately and retain intraday only for current-session updates.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/991",
+      "regression_evidence": "tests/test_cn_tickflow_supplemental_timeframes.py",
+      "mandatory_action": "Use bounded explicit history windows through TickFlow klines.get/batch for 15m, 60m and D1; merge with current-session intraday bars by label; enforce 96/24/60 warmup rows and fail closed with ROW_COUNT_BELOW_MIN. Keep source, timestamp semantics, currentness, finality and all Radar/trading gates independently unqualified until exact deployed SHA and cloud readback are verified.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]

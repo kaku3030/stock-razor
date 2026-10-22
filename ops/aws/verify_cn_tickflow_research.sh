@@ -26,6 +26,23 @@ assert payload.get("source_arbiter_admission") == "BLOCKED"
 assert payload.get("radar_admission") == "BLOCKED"
 assert payload.get("live_trade") is False
 assert payload.get("canonical_write_authorized") is False
+expected_symbols={"159611.SZ","159209.SZ","512730.SH","159363.SZ"}
+symbols=payload.get("symbols")
+assert isinstance(symbols,dict) and set(symbols)==expected_symbols
+for symbol,frames in symbols.items():
+    for period,required in (("15m",96),("60m",24),("1d",60)):
+        frame=frames.get(period)
+        rows=frame.get("rows") if isinstance(frame,dict) else None
+        coverage=frame.get("history_coverage") if isinstance(frame,dict) else None
+        assert isinstance(rows,list) and len(rows)>=required
+        assert coverage=={
+            "required_rows":required,"observed_rows":len(rows),"status":"PASS"
+        }
+print("CN_TICKFLOW_HISTORY_WARMUP=PASS")
+print("CN_TICKFLOW_SYMBOL_COUNT=" + str(len(symbols)))
+print("CN_TICKFLOW_15M_ROWS_MIN=96")
+print("CN_TICKFLOW_60M_ROWS_MIN=24")
+print("CN_TICKFLOW_D1_ROWS_MIN=60")
 print("CN_TICKFLOW_WORKER_REPO_SHA=" + payload["repo_sha"])
 print("CN_TICKFLOW_SOURCE_REPO_SHA=" + payload["repo_sha"])
 print("CN_TICKFLOW_PROVIDER=TICKFLOW_PREMIUM")
