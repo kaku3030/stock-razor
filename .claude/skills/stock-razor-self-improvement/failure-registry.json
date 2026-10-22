@@ -294,11 +294,11 @@
         "AWS_CLI_ARCHIVE",
         "VERIFY_AWS_CLI_ARCHIVE"
       ],
-      "status": "OPEN",
-      "diagnosis": "The clean-retry fix (#968) exposed the underlying failure on exact main run #61: AWS CLI v2 ZIP extraction still returned ENOSPC in the probe's /tmp staging directory before any TickFlow provider call. Repeated extraction retries cannot fix a volume-capacity limit.",
-      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39711930367",
-      "regression_evidence": "tests/test_tickflow_live_one_quote_scope.py",
-      "mandatory_action": "Use the isolated pinned boto3/botocore environment for the existing read-only STS and Secrets Manager bootstrap calls; do not download or unpack AWS CLI v2. Re-run only the authorized single quote batch on the exact main SHA; keep K-lines, depth, WebSocket, Radar admission and trading gates separate.",
+      "status": "MITIGATED",
+      "diagnosis": "The clean-retry fix (#968) exposed the underlying failure on exact main run #61: AWS CLI v2 ZIP extraction still returned ENOSPC in the probe's /tmp staging directory before any TickFlow provider call. Repeated extraction retries cannot fix a volume-capacity limit. Exact main run #39715081279 at SHA e491727 confirmed pinned SDK import and one realtime_quote operation completed; sanitized output intentionally omitted quote values. No K-lines, depth, WebSocket, retries, Radar admission or trades were used.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39715081279",
+      "regression_evidence": "tests/test_tickflow_premium_credential_ingress.py::test_premium_bootstrap_uses_pinned_aws_sdk_without_exposing_command_output; exact-main probe run 39715081279",
+      "mandatory_action": "Keep the pinned boto3/botocore bootstrap and do not restore AWS CLI archive extraction. If the same bootstrap path fails on a new SHA, investigate the new signature first. This mitigation proves only a single realtime quote operation; quote values, currentness, K-lines, bar finality and all Radar/trading gates remain independently unverified/blocked.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
