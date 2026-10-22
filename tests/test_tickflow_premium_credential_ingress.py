@@ -57,40 +57,19 @@ def test_premium_failure_diagnostics_keep_cleanup_and_stage_reporting_combined()
     assert "response_code=UNKNOWN" in PREMIUM_WORKFLOW
 
 
-def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
-    assert 'command -v aws 2>/dev/null || true' in PREMIUM_BOOTSTRAP
-    assert 'for candidate in "$root/bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws' in PREMIUM_BOOTSTRAP
-    assert 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE' in PREMIUM_BOOTSTRAP
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_BOOTSTRAP
-    assert 'secret_json="$("$aws_cli" secretsmanager get-secret-value' in PREMIUM_BOOTSTRAP
-    assert '2>&1 || true' in PREMIUM_BOOTSTRAP
+def test_premium_bootstrap_uses_pinned_aws_sdk_without_exposing_command_output():
+    assert 'boto3.__version__ == "1.43.114"' in PREMIUM_BOOTSTRAP
+    assert 'botocore.__version__ == "1.43.114"' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_AWS_SDK=AVAILABLE' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_PREMIUM_AWS_SDK=UNAVAILABLE' in PREMIUM_BOOTSTRAP
+    assert 'VERIFY_AWS_SDK' in PREMIUM_BOOTSTRAP
+    assert 'get_secret_value(SecretId=secret_id)' in PREMIUM_BOOTSTRAP
+    assert 'get-secret-value' not in PREMIUM_BOOTSTRAP
+    assert 'awscli.amazonaws.com' not in PREMIUM_BOOTSTRAP
+    assert '2>"$stage/secret-read-error"' in PREMIUM_BOOTSTRAP
     assert 'StandardOutputContent' not in PREMIUM_BOOTSTRAP
     assert 'StandardErrorContent' not in PREMIUM_BOOTSTRAP
-    assert 'aws_version_raw=' in PREMIUM_BOOTSTRAP
-    assert '|| true)' in PREMIUM_BOOTSTRAP
-    assert 'TICKFLOW_PREMIUM_AWS_CLI=(AVAILABLE|UNAVAILABLE|INVALID)' in PREMIUM_WORKFLOW
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_PATH=' in PREMIUM_WORKFLOW
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=' in PREMIUM_WORKFLOW
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=(x86_64|aarch64|UNSUPPORTED)' in PREMIUM_WORKFLOW
-    assert 'https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip' in PREMIUM_BOOTSTRAP
-    assert '--retry 2 --retry-delay 1' in PREMIUM_BOOTSTRAP
-    assert '--retry-connrefused --retry-all-errors --max-time 60' in PREMIUM_BOOTSTRAP
-    assert 'archive.testzip()' in PREMIUM_BOOTSTRAP
-    assert 'archive_ready=false' in PREMIUM_BOOTSTRAP
-    assert 'ARCHIVE_ERROR|DOWNLOAD_FAILED' in PREMIUM_WORKFLOW
-    assert 'INVALID_ZIP' in PREMIUM_BOOTSTRAP
-    assert 'CRC_FAILURE' in PREMIUM_BOOTSTRAP
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=(PASS|CRC_FAILURE|INVALID_ZIP|' in PREMIUM_WORKFLOW
-    assert 'INSTALL_AWS_CLI' in PREMIUM_BOOTSTRAP
-    assert '"$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
-    assert 'chmod 0755 "$stage/awscli-installer/aws/install"' in PREMIUM_BOOTSTRAP
-    assert '-i "$stage/aws-cli" -b "$stage/bin"' in PREMIUM_BOOTSTRAP
-    assert '"$stage/aws-cli/v2/current/bin/aws"' in PREMIUM_BOOTSTRAP
-    assert 'find "$stage/aws-cli" -type f -name aws -perm -u+x' in PREMIUM_BOOTSTRAP
-    assert '"$stage/awscli-installer/aws/dist/aws"' in PREMIUM_BOOTSTRAP
-    assert 'uname -m 2>/dev/null || true' in PREMIUM_BOOTSTRAP
-    assert 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=' in PREMIUM_BOOTSTRAP
-
+    assert 'TICKFLOW_PREMIUM_AWS_SDK=(AVAILABLE|UNAVAILABLE)' in PREMIUM_WORKFLOW
 
 def test_ingress_requires_exact_opt_in():
     assert premium_ingress_enabled("true") is True
@@ -113,11 +92,12 @@ def test_secret_document_has_only_api_key_and_never_serializes_payload():
         validate_secret_document({"api_key": "secret-value", "extra": "x"})
 
 def test_premium_secret_error_diagnostics_are_bounded_and_allowlisted():
-    assert '2>"$stage/secret-read-error"' in PREMIUM_BOOTSTRAP
-    assert 'secret_error_class=UNKNOWN' in PREMIUM_BOOTSTRAP
-    assert 'secret_error_class=ACCESS_DENIED' in PREMIUM_BOOTSTRAP
-    assert 'secret_error_class=RESOURCE_NOT_FOUND' in PREMIUM_BOOTSTRAP
-    assert 'secret_error_class=DECRYPTION_FAILURE' in PREMIUM_BOOTSTRAP
+    assert 'TICKFLOW_SECRET_ERROR_CLASS=" + _error_class(exc)' in PREMIUM_BOOTSTRAP
+    assert '"AccessDenied": "ACCESS_DENIED"' in PREMIUM_BOOTSTRAP
+    assert '"ResourceNotFoundException": "RESOURCE_NOT_FOUND"' in PREMIUM_BOOTSTRAP
+    assert '"DecryptionFailure": "DECRYPTION_FAILURE"' in PREMIUM_BOOTSTRAP
+    assert '"EndpointConnectionError", "ConnectTimeoutError"' in PREMIUM_BOOTSTRAP
+    assert 'secret_error_class="$(sed -nE' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=%s' in PREMIUM_BOOTSTRAP
     assert "exit 254" in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=(ACCESS_DENIED|RESOURCE_NOT_FOUND|' in PREMIUM_WORKFLOW
