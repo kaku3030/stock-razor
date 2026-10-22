@@ -310,11 +310,11 @@
         "159209.SZ",
         "518880.SH"
       ],
-      "status": "OPEN",
-      "diagnosis": "The bounded AWS Premium quote probe on main SHA 5334ffc hard-coded 159611.SZ and 518880.SH instead of the requested qualification pair 159611.SZ and 159209.SZ. The scope mismatch was identified before any provider request, so no request was made for the wrong target.",
-      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/5334ffc62bda495b817bff9468c7b9c30f617c5d/ops/aws/run_tickflow_premium_probe.sh",
+      "status": "MITIGATED",
+      "diagnosis": "The main-branch Premium probe now explicitly requests 159611.SZ and 159209.SZ, and the sanitizer preserves both targets in its receipt. PR #985 passed exact-head backend CI (run 39765338157) and Research Radar Tests (run 39765338170), then merged as 622fd230a7b08dc596a7752c559bc3610dc05248. No AWS provider request was made; actual quote values, receipt delivery, source currentness, and all admission gates remain unverified.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/985",
       "regression_evidence": "tests/test_tickflow_realtime_extra_aws.py",
-      "mandatory_action": "Keep the Premium probe restricted to the exact requested pair, validate the script arguments offline, and run it only after the exact-source main workflow accepts that pair; preserve all data, Radar, and trading gates.",
+      "mandatory_action": "If the owner-authorized quote-only AWS probe is run, verify the sanitized receipt lists exactly 159611.SZ and 159209.SZ; report provider response, timestamp and latency separately. Keep currentness, volume/amount units, bar finality, cross-source parity, Radar admission and trading gates independently blocked until verified.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
