@@ -282,7 +282,8 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if len(sizes) != 1:
             raise ValueError("compact SDK column lengths differ")
         count = sizes.pop()
-        if count < 4:
+        minimum_rows = 1 if timeframe == "60m" else 4
+        if count < minimum_rows:
             raise ValueError("insufficient history")
         if count > _ALLOWED_PERIODS[timeframe]:
             raise ValueError("history exceeds configured bound")
@@ -295,7 +296,8 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         raise ValueError("unexpected SDK data type")
     if not isinstance(records, list):
         raise ValueError("unexpected SDK data type")
-    if len(records) < 4:
+    minimum_rows = 1 if timeframe == "60m" else 4
+    if len(records) < minimum_rows:
         raise ValueError("insufficient history")
     if len(records) > _ALLOWED_PERIODS[timeframe]:
         raise ValueError("history exceeds configured bound")
@@ -416,7 +418,8 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             "bar_finality": "NOT_VERIFIED",
             "ohlc_validation":ohlc_validation,
         })
-    if len(bars)<4:
+    minimum_bars = 1 if timeframe == "60m" else 4
+    if len(bars)<minimum_bars:
         raise ValueError("no sufficient historical closed-time candidates")
     return bars
 
@@ -720,7 +723,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                     "cache_rejection_reason":"QC_PERIOD_NOT_COLLECTED"}
         rows=raw["rows"]
         reject_reason="BAR_COUNT_INVALID"
-        if not isinstance(rows,list) or not 4<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
+        minimum_rows = 1 if timeframe == "60m" and research_mode == "session_progress" else 4
+        if not isinstance(rows,list) or not minimum_rows<=len(rows)<=_ALLOWED_PERIODS[timeframe]:
             raise ValueError
         reject_reason="FRAME_METADATA_INVALID"
         if raw.get("closure")!="NOT_VERIFIED" or raw.get("currentness")!="UNPROVEN":
