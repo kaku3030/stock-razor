@@ -345,7 +345,7 @@ class PaperRuntimeOrchestrator:
         """Release the runtime's local SQLite resources after a scenario ends."""
         with self._lock:
             self._engine.store.close()
-            self._shadow.close()
+            self._shadow._close()
 
     def project_lifecycle(
         self,

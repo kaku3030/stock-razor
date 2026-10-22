@@ -188,7 +188,7 @@ class ShadowExecutionCapability:
         self._risk_guard = risk_guard
         self._store = store or ExecutionStore()
 
-    def close(self) -> None:
+    def _close(self) -> None:
         self._store.close()
 
     def _existing(self, decision_id: str) -> ShadowDecision | None:
