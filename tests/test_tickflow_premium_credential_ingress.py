@@ -76,6 +76,8 @@ def test_premium_bootstrap_resolves_aws_cli_without_exposing_command_output():
     assert '--retry 2 --retry-delay 1' in PREMIUM_BOOTSTRAP
     assert '--retry-connrefused --retry-all-errors --max-time 60' in PREMIUM_BOOTSTRAP
     assert 'archive.testzip()' in PREMIUM_BOOTSTRAP
+    assert 'archive_ready=false' in PREMIUM_BOOTSTRAP
+    assert 'ARCHIVE_ERROR|DOWNLOAD_FAILED' in PREMIUM_WORKFLOW
     assert 'INVALID_ZIP' in PREMIUM_BOOTSTRAP
     assert 'CRC_FAILURE' in PREMIUM_BOOTSTRAP
     assert 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=(PASS|CRC_FAILURE|INVALID_ZIP|' in PREMIUM_WORKFLOW
