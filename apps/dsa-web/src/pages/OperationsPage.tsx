@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, BellRing, RefreshCw, ShieldCheck } from 'lucide-react';
-import { operationsApi, type OperationsStatus } from '../api/operations';
+import { operationsApi, type OperationsStatus, type PaperOperatorControls } from '../api/operations';
 import { ApiErrorAlert, AppPage, Card, Loading, PageHeader } from '../components/common';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 
@@ -30,11 +30,36 @@ const routeLabel = (route: string): string => ({
   system_error: '系统错误',
 }[route] ?? route);
 
+const paperActionLabel = (action: string): string => ({
+  inspect_operator_controls: '查看模拟盘权限',
+  run_offline_simulation: '运行离线模拟',
+  discover_external_paper_account: '读取模拟账户',
+  submit_external_paper_order: '提交模拟订单',
+  cancel_or_replace_external_paper_order: '撤销或替换模拟订单',
+  send_phone_alert: '发送手机通知',
+}[action] ?? action);
+
+const paperReasonLabel = (reason: string): string => ({
+  READ_ONLY_NO_SIDE_EFFECTS: '只读查看，无副作用',
+  LIBRARY_ONLY_EXPLICIT_INPUT_NO_HTTP_TRIGGER: '仅支持显式输入的离线流程，网页不触发运行',
+  CLOUD_ACCOUNT_IDENTITY_NOT_VERIFIED: '云端模拟账户身份尚未验证',
+  NO_AUTHORIZED_OPERATOR_OR_VERIFIED_ACCOUNT: '操作身份或模拟账户尚未验证',
+  NO_VERIFIED_PHONE_RECEIPT_OR_SEND_APPROVAL: '尚无手机送达回执',
+}[reason] ?? reason);
+
+const paperStatusLabel = (status: string): string => ({
+  READY_EXPLICIT_OFFLINE_RUN_EXTERNAL_BROKER_NOT_CONNECTED: '离线可运行 / 未连券商',
+  READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT: '只读契约 / 云账户未验证',
+}[status] ?? status);
+
 const OperationsPage: React.FC = () => {
   const [status, setStatus] = useState<OperationsStatus | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [paperControls, setPaperControls] = useState<PaperOperatorControls | null>(null);
+  const [paperControlsError, setPaperControlsError] = useState<string | null>(null);
+  const [paperControlsLoading, setPaperControlsLoading] = useState(false);
 
   const loadStatus = useCallback(async () => {
     setRefreshing(true);
@@ -49,12 +74,28 @@ const OperationsPage: React.FC = () => {
     }
   }, []);
 
+  const loadPaperControls = useCallback(async () => {
+    setPaperControlsLoading(true);
+    try {
+      setPaperControls(await operationsApi.getPaperControls());
+      setPaperControlsError(null);
+    } catch (err) {
+      setPaperControlsError(getParsedApiError(err).message);
+    } finally {
+      setPaperControlsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     document.title = '运行控制台 - Stock Razor';
     void loadStatus();
-    const timer = window.setInterval(() => void loadStatus(), 30_000);
+    void loadPaperControls();
+    const timer = window.setInterval(() => {
+      void loadStatus();
+      void loadPaperControls();
+    }, 30_000);
     return () => window.clearInterval(timer);
-  }, [loadStatus]);
+  }, [loadStatus, loadPaperControls]);
 
   if (error) return <AppPage><ApiErrorAlert error={error} /></AppPage>;
   if (!status) return <AppPage><Loading /></AppPage>;
@@ -72,8 +113,8 @@ const OperationsPage: React.FC = () => {
             <button
               type="button"
               className="btn-secondary inline-flex items-center gap-2"
-              onClick={() => void loadStatus()}
-              disabled={refreshing}
+              onClick={() => { void loadStatus(); void loadPaperControls(); }}
+              disabled={refreshing || paperControlsLoading}
             >
               <RefreshCw className={refreshing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden="true" />
               刷新状态
@@ -118,17 +159,47 @@ const OperationsPage: React.FC = () => {
           <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
           <Gate label="Paper Auto" value={status.paper_auto_ready ? 'READY' : 'BLOCKED'} safe={status.paper_auto_ready} />
           <Gate label="Paper 引擎" value={status.paper_engine_status} safe={status.paper_engine_status === 'IMPLEMENTED_OFFLINE_ONLY'} />
-          <Gate label="离线模拟盘" value={status.offline_simulation_status} safe={status.offline_simulation_status.startsWith('READY_')} />
+          <Gate label="离线模拟盘" value={paperStatusLabel(status.offline_simulation_status)} safe={status.offline_simulation_status.startsWith('READY_')} />
           <Gate label="Web 自动执行入口" value={status.paper_runtime_api_status} />
           <Gate label="异常执行复核投影" value={status.execution_recovery_projection_status} />
           <Gate label="Paper Store 配置" value={status.paper_runtime_store_config_status} />
           <Gate label="Trade Plan" value={status.trade_plan_status} />
           <Gate label="Position Management" value={status.position_management_status} />
           <Gate label="Trade Lifecycle" value={status.trade_lifecycle_status} />
+          <Gate label="外部模拟盘契约" value={paperStatusLabel(status.external_simulator_contract_status)} />
+          <Gate label="模拟账户证据" value={status.simulated_account_evidence} />
           <Gate label="Live Trade" value={status.live_trade ? 'ON' : 'NO'} />
           <p className="pt-3 text-xs text-secondary-text">自动执行仍需独立重启、重连与对账验收。</p>
         </Card>
       </div>
+      <Card className="mt-4" title="Paper 操作权限" subtitle="READ ONLY / NO BROKER IO">
+        {paperControlsError && <p className="mb-3 text-sm text-warning">权限状态读取失败：{paperControlsError}</p>}
+        {!paperControls && !paperControlsError && <p className="text-sm text-secondary-text">正在读取只读权限状态…</p>}
+        {paperControls && (
+          <>
+            <div className="grid gap-2 text-sm sm:grid-cols-3">
+              <Gate label="界面权限" value={paperControls.read_only ? '只读' : '未知'} safe={paperControls.read_only} />
+              <Gate label="HTTP 修改" value={paperControls.mutation_allowed ? '开放' : '关闭'} safe={!paperControls.mutation_allowed} />
+              <Gate label="券商 IO" value={paperControls.broker_io_allowed ? '开放' : '关闭'} safe={!paperControls.broker_io_allowed} />
+              <Gate label="行情 Provider IO" value={paperControls.provider_io_allowed ? '开放' : '关闭'} safe={!paperControls.provider_io_allowed} />
+              <Gate label="外部账户证据" value={paperControls.external_paper_account_evidence} />
+              <Gate label="手机送达回执" value={paperControls.phone_notification_receipt} />
+            </div>
+            <ul className="mt-4 divide-y divide-border/60">
+              {paperControls.actions.map((action) => (
+                <li key={action.action} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <span className="text-sm">{paperActionLabel(action.action)}</span>
+                  <span className="text-xs text-secondary-text">{paperReasonLabel(action.reason)}</span>
+                  <span className={action.available ? 'rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success' : 'rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning'}>
+                    {action.available ? '可查看' : '未开放'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-warning">权限接口固定为只读：不连接券商、不读取行情、不提交或撤改单。</p>
+          </>
+        )}
+      </Card>
       <Card className="mt-4" title="待验收事项" subtitle="ACCEPTANCE QUEUE">
         <ul className="space-y-2 text-sm text-secondary-text">
           {status.pending_acceptance.map((item) => <li key={item}>• {item}</li>)}

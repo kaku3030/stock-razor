@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 运行控制台展示模拟盘只读权限、账户证据及受限操作原因，不触发券商或行情请求。
 - [修复] Radar 研究计算与源闭合/实时证明分开报告；源证明未齐时事件仍阻断且零写入，重复轮询保留事件门禁与隔离原因。
 
 - [修复] US Radar 隔离已知单标的成交额质量异常，保留正常闭合间隔与隔离诊断，并支持固定现有 LiveFeed SHA 的独立 worker 部署。

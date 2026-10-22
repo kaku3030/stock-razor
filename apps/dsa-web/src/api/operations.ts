@@ -14,6 +14,8 @@ export type OperationsStatus = {
   trade_plan_status: string;
   position_management_status: string;
   trade_lifecycle_status: string;
+  external_simulator_contract_status: string;
+  simulated_account_evidence: string;
   notification_channels_configured: string[];
   notification_routes: Record<string, string[]>;
   notification_delivery_evidence: string;
@@ -21,9 +23,24 @@ export type OperationsStatus = {
   pending_acceptance: string[];
 };
 
+export type PaperOperatorControls = {
+  schema_version: string;
+  read_only: boolean;
+  mutation_allowed: boolean;
+  broker_io_allowed: boolean;
+  provider_io_allowed: boolean;
+  external_paper_account_evidence: string;
+  phone_notification_receipt: string;
+  actions: Array<{ action: string; available: boolean; reason: string }>;
+};
+
 export const operationsApi = {
   async getStatus(): Promise<OperationsStatus> {
     const response = await apiClient.get<OperationsStatus>('/v1/operations/status');
+    return response.data;
+  },
+  async getPaperControls(): Promise<PaperOperatorControls> {
+    const response = await apiClient.get<PaperOperatorControls>('/v1/operations/paper-controls');
     return response.data;
   },
 };
