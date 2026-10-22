@@ -9,3 +9,7 @@ websockets==15.0.1
 # TickFlow imports ZoneInfo("Asia/Shanghai"); clean Windows Python venvs
 # need a timezone database even though pip check may report dependencies healthy.
 tzdata==2026.3; platform_system == "Windows"
+
+# AWS SDK for the two read-only bootstrap calls; avoids unpacking the large AWS CLI v2 archive.
+boto3==1.43.114
+botocore==1.43.114

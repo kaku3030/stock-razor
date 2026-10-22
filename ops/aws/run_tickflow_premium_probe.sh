@@ -106,140 +106,93 @@ fi
 # The key is returned only into this process environment; never echo it, pass
 # it as an argument, write it to disk, or include it in a report.
 probe_stage=READ_SECRET
-aws_cli="$(command -v aws 2>/dev/null || true)"
-if [[ -z "$aws_cli" ]]; then
-  for candidate in "$root/bin/aws" /usr/local/bin/aws /usr/bin/aws /snap/bin/aws /usr/local/aws-cli/v2/current/bin/aws /opt/aws-cli/v2/current/bin/aws; do
-    if [[ -x "$candidate" ]]; then
-      aws_cli="$candidate"
-      break
-    fi
-  done
-fi
-if [[ -z "$aws_cli" ]]; then
-  probe_stage=INSTALL_AWS_CLI
-  aws_arch="$(uname -m 2>/dev/null || true)"
-  case "$aws_arch" in
-    x86_64|amd64) aws_package_arch=x86_64 ;;
-    aarch64|arm64) aws_package_arch=aarch64 ;;
-    *) printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=UNSUPPORTED\n'; exit 126 ;;
-  esac
-  printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=%s\n' "$aws_package_arch"
-  probe_stage=DOWNLOAD_AWS_CLI
-  mkdir -p "$stage/aws-cli" "$stage/bin"
-  probe_stage=DOWNLOAD_AWS_CLI
-  archive_ready=false
-  archive_status=DOWNLOAD_FAILED
-  for attempt in 1 2 3; do
-    rm -f "$stage/awscliv2.zip"
-    # A failed extraction may leave hundreds of megabytes behind. Start each
-    # retry from an empty destination so partial files cannot exhaust /tmp or
-    # contaminate a later extraction.
-    rm -rf "$stage/awscli-installer"
-    mkdir -p "$stage/awscli-installer"
-    archive_status=DOWNLOAD_FAILED
-    if curl --fail --silent --show-error --retry 2 --retry-delay 1 \
-      --retry-connrefused --retry-all-errors --max-time 60 \
-      "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
-      -o "$stage/awscliv2.zip" 2>/dev/null; then
-      probe_stage=VERIFY_AWS_CLI_ARCHIVE
-      archive_status="$(python3 - "$stage/awscliv2.zip" "$stage/awscli-installer" <<'PY'
-import errno
-import sys
-import zipfile
+cat > "$stage/aws_secrets_manager_get.py" <<'PY'
+#!/usr/bin/env python3
+"""Read one existing Secrets Manager value without exposing provider credentials."""
 
-try:
-    with zipfile.ZipFile(sys.argv[1]) as archive:
-        corrupt_member = archive.testzip()
-        if corrupt_member is not None:
-            print("CRC_FAILURE")
-        else:
-            archive.extractall(sys.argv[2])
-            print("PASS")
-except zipfile.BadZipFile:
-    print("INVALID_ZIP")
-except OSError as exc:
-    if exc.errno == errno.ENOSPC:
-        print("NO_SPACE")
-    elif exc.errno == errno.EIO:
-        print("IO_ERROR")
-    elif exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
-        print("PERMISSION_ERROR")
-    else:
-        print("OS_ERROR")
-except Exception:
-    print("ARCHIVE_ERROR")
+from __future__ import annotations
+
+import sys
+
+
+def _error_class(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    error = response.get("Error", {}) if isinstance(response, dict) else {}
+    code = error.get("Code") if isinstance(error, dict) else None
+    mapping = {
+        "AccessDenied": "ACCESS_DENIED",
+        "AccessDeniedException": "ACCESS_DENIED",
+        "ResourceNotFoundException": "RESOURCE_NOT_FOUND",
+        "DecryptionFailure": "DECRYPTION_FAILURE",
+        "InvalidRequestException": "INVALID_REQUEST",
+        "InvalidParameterException": "INVALID_PARAMETER",
+        "InvalidClientTokenId": "INVALID_CLIENT_TOKEN",
+        "UnrecognizedClientException": "INVALID_CLIENT_TOKEN",
+        "ExpiredToken": "EXPIRED_TOKEN",
+        "ExpiredTokenException": "EXPIRED_TOKEN",
+        "ThrottlingException": "THROTTLED",
+        "TooManyRequestsException": "THROTTLED",
+    }
+    if code in mapping:
+        return mapping[code]
+    if type(exc).__name__ in {
+        "EndpointConnectionError", "ConnectTimeoutError",
+        "ReadTimeoutError", "SSLError",
+    }:
+        return "ENDPOINT_UNREACHABLE"
+    if type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError"}:
+        return "CREDENTIALS_MISSING"
+    if isinstance(exc, ValueError):
+        return "SECRET_FORMAT_INVALID"
+    return "UNKNOWN"
+
+
+def main(secret_id: str, *, client_factory=None, stdout=None, stderr=None) -> int:
+    stdout = stdout or sys.stdout
+    stderr = stderr or sys.stderr
+    try:
+        if client_factory is None:
+            import boto3
+            client_factory = boto3.client
+        response = client_factory(
+            "secretsmanager", region_name="ap-northeast-1"
+        ).get_secret_value(SecretId=secret_id)
+        secret = response.get("SecretString") if isinstance(response, dict) else None
+        if not isinstance(secret, str) or not secret.strip():
+            raise ValueError("secret string unavailable")
+    except Exception as exc:
+        print("TICKFLOW_SECRET_ERROR_CLASS=" + _error_class(exc), file=stderr)
+        return 1
+    print(secret, end="", file=stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("TICKFLOW_SECRET_ERROR_CLASS=INVALID_ARGUMENT", file=sys.stderr)
+        raise SystemExit(2)
+    raise SystemExit(main(sys.argv[1]))
 PY
-)"
-      if [[ "$archive_status" == PASS ]]; then
-        archive_ready=true
-        break
-      fi
-    fi
-  done
-  if [[ "$archive_ready" != true ]]; then
-    printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=%s\n' "${archive_status:-DOWNLOAD_FAILED}"
-    exit 1
-  fi
-  chmod 0755 "$stage/awscli-installer/aws/install"
-  find "$stage/awscli-installer" -type f -name aws -exec chmod u+x {} + 2>/dev/null || true
-  probe_stage=RUN_AWS_CLI_INSTALLER
-  "$stage/awscli-installer/aws/install" \
-    -i "$stage/aws-cli" -b "$stage/bin" >/dev/null 2>&1
-  probe_stage=VERIFY_AWS_CLI_INSTALL
-  aws_cli="$stage/aws-cli/v2/current/bin/aws"
-  [[ -x "$aws_cli" ]] || aws_cli="$stage/bin/aws"
-  if [[ ! -x "$aws_cli" ]]; then
-    aws_cli="$(find "$stage/aws-cli" -type f -name aws -perm -u+x -print -quit 2>/dev/null || true)"
-  fi
-  [[ -x "$aws_cli" ]] || aws_cli="$stage/awscli-installer/aws/dist/aws"
+
+probe_stage=VERIFY_AWS_SDK
+if ! "$venv/bin/python" -c 'import boto3, botocore; assert boto3.__version__ == "1.43.114"; assert botocore.__version__ == "1.43.114"' >/dev/null 2>&1; then
+  printf 'TICKFLOW_PREMIUM_AWS_SDK=UNAVAILABLE\n'
+  exit 1
 fi
-if [[ ! -x "$aws_cli" ]]; then
-  printf 'TICKFLOW_PREMIUM_AWS_CLI=UNAVAILABLE\n'
-  exit 127
-fi
-aws_version_raw="$("$aws_cli" --version 2>&1 || true)"
-aws_version="$(printf '%s\n' "$aws_version_raw" | sed -n 's/^aws-cli\/\([^ ]*\).*/\1/p')"
-unset aws_version_raw
-if [[ -z "$aws_version" ]]; then
-  printf 'TICKFLOW_PREMIUM_AWS_CLI=INVALID\n'
-  exit 127
-fi
-printf 'TICKFLOW_PREMIUM_AWS_CLI=AVAILABLE\n'
-printf 'TICKFLOW_PREMIUM_AWS_CLI_PATH=%s\n' "$aws_cli"
-printf 'TICKFLOW_PREMIUM_AWS_CLI_VERSION=%s\n' "$aws_version"
-caller_arn="$("$aws_cli" sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
+printf 'TICKFLOW_PREMIUM_AWS_SDK=AVAILABLE\n'
+caller_arn="$("$venv/bin/python" -c 'import boto3; print(boto3.client("sts", region_name="ap-northeast-1").get_caller_identity()["Arn"])' 2>/dev/null || true)"
 if [ -n "$caller_arn" ]; then
   printf 'TICKFLOW_PREMIUM_CALLER_ARN=%s\n' "$caller_arn"
 else
   printf 'TICKFLOW_PREMIUM_CALLER_ARN=UNKNOWN\n'
 fi
 probe_stage=READ_SECRET
-# Capture only the CLI error stream to a private temporary file; it is never
-# emitted into Actions logs, and the EXIT trap deletes it on every path.
-if secret_json="$("$aws_cli" secretsmanager get-secret-value --region ap-northeast-1 --secret-id "$secret_arn" --query SecretString --output text 2>"$stage/secret-read-error")"; then
+if secret_json="$("$venv/bin/python" "$stage/aws_secrets_manager_get.py" "$secret_arn" 2>"$stage/secret-read-error")"; then
   :
 else
-  secret_error_class=UNKNOWN
-  if grep -Eq 'An error occurred \((AccessDeniedException|AccessDenied)\)' "$stage/secret-read-error"; then
-    secret_error_class=ACCESS_DENIED
-  elif grep -Eq 'An error occurred \(ResourceNotFoundException\)' "$stage/secret-read-error"; then
-    secret_error_class=RESOURCE_NOT_FOUND
-  elif grep -Eq 'An error occurred \(DecryptionFailure\)' "$stage/secret-read-error"; then
-    secret_error_class=DECRYPTION_FAILURE
-  elif grep -Eq 'An error occurred \(InvalidRequestException\)' "$stage/secret-read-error"; then
-    secret_error_class=INVALID_REQUEST
-  elif grep -Eq 'An error occurred \(InvalidParameterException\)' "$stage/secret-read-error"; then
-    secret_error_class=INVALID_PARAMETER
-  elif grep -Eq 'An error occurred \((InvalidClientTokenId|UnrecognizedClientException)\)' "$stage/secret-read-error"; then
-    secret_error_class=INVALID_CLIENT_TOKEN
-  elif grep -Eq 'An error occurred \(ExpiredToken(Exception)?\)' "$stage/secret-read-error"; then
-    secret_error_class=EXPIRED_TOKEN
-  elif grep -Eq 'An error occurred \((ThrottlingException|TooManyRequestsException)\)' "$stage/secret-read-error"; then
-    secret_error_class=THROTTLED
-  elif grep -Eiq 'Could not connect to the endpoint URL|Connect timeout|Read timeout|SSL validation failed' "$stage/secret-read-error"; then
-    secret_error_class=ENDPOINT_UNREACHABLE
-  elif grep -Eiq 'Unable to locate credentials|Partial credentials found' "$stage/secret-read-error"; then
-    secret_error_class=CREDENTIALS_MISSING
+  secret_error_class="$(sed -nE 's/^TICKFLOW_SECRET_ERROR_CLASS=(ACCESS_DENIED|RESOURCE_NOT_FOUND|DECRYPTION_FAILURE|INVALID_REQUEST|INVALID_PARAMETER|INVALID_CLIENT_TOKEN|EXPIRED_TOKEN|THROTTLED|ENDPOINT_UNREACHABLE|CREDENTIALS_MISSING|SECRET_FORMAT_INVALID|INVALID_ARGUMENT|UNKNOWN)$/\1/p' "$stage/secret-read-error" | tail -n 1)"
+  if [[ -z "$secret_error_class" ]]; then
+    secret_error_class=UNKNOWN
   fi
   printf 'TICKFLOW_PREMIUM_SECRET_ERROR_CLASS=%s\n' "$secret_error_class"
   exit 254

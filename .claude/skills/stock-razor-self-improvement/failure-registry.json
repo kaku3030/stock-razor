@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-21T15:58:11Z",
+  "last_reconciled_utc": "2026-10-22T02:35:56.633Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -283,6 +283,22 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/963",
       "regression_evidence": "tests/test_stockdata_hub_historical_adapter.py",
       "mandatory_action": "Keep explicit intraday lookbacks bounded and bypass the range-unaware cache. Before claiming 2016 coverage, verify observed earliest/latest timestamps and source identity for 000001 at both 15m and 60m; keep provider finality and all Radar/trading gates independent.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-007",
+      "owner": "TickFlow",
+      "severity": "P1",
+      "signature_tokens": [
+        "NO_SPACE",
+        "AWS_CLI_ARCHIVE",
+        "VERIFY_AWS_CLI_ARCHIVE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "The clean-retry fix (#968) exposed the underlying failure on exact main run #61: AWS CLI v2 ZIP extraction still returned ENOSPC in the probe's /tmp staging directory before any TickFlow provider call. Repeated extraction retries cannot fix a volume-capacity limit.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39711930367",
+      "regression_evidence": "tests/test_tickflow_live_one_quote_scope.py",
+      "mandatory_action": "Use the isolated pinned boto3/botocore environment for the existing read-only STS and Secrets Manager bootstrap calls; do not download or unpack AWS CLI v2. Re-run only the authorized single quote batch on the exact main SHA; keep K-lines, depth, WebSocket, Radar admission and trading gates separate.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
