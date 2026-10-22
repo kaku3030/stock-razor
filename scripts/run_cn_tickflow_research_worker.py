@@ -50,12 +50,14 @@ _NORMALIZE_REJECTION_REASON = {
 def _normalize_rejection_reason(error: Exception) -> str:
     stage=getattr(error, "_tickflow_stage", "")
     if stage in {
-            f"BATCH_{period}_SYMBOL_FALLBACK"
-            for period in ("1M", "5M", "15M", "60M", "1D")}:
+            f"BATCH_{period}_{route}_FALLBACK"
+            for period in ("1M", "5M", "15M", "60M", "1D")
+            for route in ("SYMBOL", "HISTORY", "INTRADAY")}:
         return "BATCH_SYMBOL_FALLBACK_FAILED"
     if type(error) is ValueError and stage in {
-            f"BATCH_{period}_FETCH"
-            for period in ("1M", "5M", "15M", "60M", "1D")}:
+            f"BATCH_{period}_{route}_FETCH"
+            for period in ("1M", "5M", "15M", "60M", "1D")
+            for route in ("FETCH", "HISTORY", "INTRADAY")}:
         return {
             "batch SDK shape invalid": "BATCH_SHAPE_INVALID",
             "batch SDK symbol missing": "BATCH_SYMBOL_MISSING",
@@ -171,91 +173,4 @@ def main() -> int:
     if _websocket_enabled():
         try:
             with open(os.devnull, "w", encoding="utf-8") as null:
-                with redirect_stdout(null), redirect_stderr(null):
-                    # The official observer remains capped at five symbols;
-                    # REST/Kline capacity is independent from this protocol
-                    # evidence leg.
-                    ws_observer = attach_tickflow_stream(client, scan_symbols[:5])
-        except Exception as exc:
-            # REST research remains independent; the optional WS leg is an
-            # explicit blocked observation rather than a silent live claim.
-            print("TICKFLOW_RESEARCH_WS=BLOCKED:" + type(exc).__name__, flush=True)
-    sequence=0
-    network_failures=0
-    try:
-        while running:
-            sequence+=1
-            now=datetime.now(timezone.utc)
-            failed=False
-            failure=None
-            try:
-                with open(os.devnull,"w",encoding="utf-8") as null:
-                    with redirect_stdout(null), redirect_stderr(null):
-                        snapshot=build_observation(client,now_utc=now,repo_sha=sha,
-                              sequence=sequence,symbols=scan_symbols,
-                              include_supplemental=True,allow_scan_symbols=True,
-                              use_batch=True)
-                if ws_observer is not None:
-                    try:
-                        snapshot["websocket_evidence"] = ws_observer.summary(observed_at_utc=now)
-                    except Exception as exc:
-                        exc._tickflow_stage="S4_WS_SUMMARY"
-                        raise
-                try:
-                    atomic_publish(status_path,snapshot)
-                except Exception as exc:
-                    exc._tickflow_stage="S4_CACHE_PUBLISH"
-                    raise
-                print("TICKFLOW_RESEARCH_POLL=RESEARCH_ONLY_PASS",flush=True)
-            except Exception as exc:
-                failed=True
-                failure=exc
-                # Invalid/late feed must replace an older apparently fresh file.
-                atomic_publish(status_path,{
-                    "schema":"stock_razor_cn_tickflow_research_observation_v0_1",
-                    "provider":"TICKFLOW_PREMIUM","repo_sha":sha,
-                    "observed_at_utc":datetime.now(timezone.utc).isoformat(),
-                    "sequence":sequence,"status":"BLOCKED",
-                    "failure_class":type(exc).__name__,
-                    "failure_reason":_normalize_rejection_reason(exc),
-                    "failure_ohlc_float_gap_bucket":_ohlc_float_gap_bucket(exc),
-                    "failure_stage":(
-                        getattr(exc,"_tickflow_stage","UNKNOWN")
-                        if getattr(exc,"_tickflow_stage","UNKNOWN") in {
-                            "S4_WS_SUMMARY", "S4_CACHE_PUBLISH",
-                            *[f"BATCH_{period}_FETCH"
-                              for period in ("1M", "5M", "15M", "60M", "1D")],
-                            *[f"S{i}_{period}_{action}"
-                              for i in range(len(scan_symbols))
-                              for period in ("1M","5M","15M","60M","1D")
-                              for action in ("FETCH","NORMALIZE")],
-                        } else "UNKNOWN"
-                    ),
-                    "symbols":{},"research_only":True,
-                    "provider_first_target":True,
-                    "source_arbiter_admission":"BLOCKED",
-                    "radar_admission":"BLOCKED","live_trade":False,
-                    "can_confirm_signal":False,"canonical_write_authorized":False,
-                })
-                print("TICKFLOW_RESEARCH_POLL=BLOCKED:"+type(exc).__name__,flush=True)
-            network_failures = network_failures + 1 if failed else 0
-            pause=(_network_retry_interval(datetime.now(timezone.utc), failure, network_failures)
-                   if failed else _interval(datetime.now(timezone.utc)))
-            # Interruptible shutdown, no runaway provider retry loop.
-            for _ in range(pause):
-                if not running: break
-                time.sleep(1)
-    finally:
-        try:
-            with open(os.devnull,"w",encoding="utf-8") as null:
-                with redirect_stdout(null),redirect_stderr(null):
-                    if ws_observer is not None:
-                        client.stream.close()
-                    client.close()
-        except Exception:
-            pass
-    return 0
-
-if __name__=="__main__":
-    raise SystemExit(main())
-
+                with redirect_stdout(nul

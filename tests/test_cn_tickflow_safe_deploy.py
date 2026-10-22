@@ -59,3 +59,10 @@ def test_verifier_binds_worker_source_and_provider_and_keeps_gates_closed():
     assert 'payload.get("radar_admission") == "BLOCKED"' in VERIFY
     assert 'payload.get("live_trade") is False' in VERIFY
     assert 'CN_TICKFLOW_PROVIDER_QUALIFICATION=NOT_VERIFIED' in VERIFY
+
+
+def test_verifier_requires_multiday_warmup_for_the_four_research_etfs():
+    assert 'expected_symbols={"159611.SZ","159209.SZ","512730.SH","159363.SZ"}' in VERIFY
+    assert '("15m",96),("60m",24),("1d",60)' in VERIFY
+    assert '"CN_TICKFLOW_HISTORY_WARMUP=PASS"' in VERIFY
+    assert '"ROW_COUNT_BELOW_MIN"' not in VERIFY  # short data cannot be accepted

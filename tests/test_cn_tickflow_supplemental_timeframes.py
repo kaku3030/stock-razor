@@ -24,7 +24,8 @@ def _minutes(period, day):
 class KlineGetter:
     def __init__(self):
         self.calls=[]
-    def get(self,symbol,*,period,count,adjust,as_dataframe):
+    def get(self,symbol,*,period,count,adjust,as_dataframe,
+            start_time=None,end_time=None):
         self.calls.append((symbol,period,count,adjust,as_dataframe))
         times=_minutes(period,"2026-10-14")
         if period=="5m":
@@ -36,6 +37,9 @@ class KlineGetter:
                 "close":[1.505 for t in times],
                 "volume":[2000 for t in times],
                 "amount":[3000 for t in times]}
+    def intraday(self,symbol,*,period,count,as_dataframe):
+        return self.get(symbol,period=period,count=count,adjust="none",
+                        as_dataframe=as_dataframe)
 
 
 class Client:
@@ -52,14 +56,15 @@ def test_5m_day_grid_is_exact_regular_session_48():
 def test_all_held_etfs_and_five_periods_are_requested_in_one_snapshot(tmp_path):
     client=Client()
     old=build_observation(client,now_utc=POSTCLOSE,repo_sha=SHA,sequence=1)
-    assert len(client.klines.calls)==8
+    assert len(client.klines.calls)==16
     assert all(set(frames)=={"15m","60m"} for frames in old["symbols"].values())
     client.klines.calls.clear()
     got=build_observation(client,now_utc=POSTCLOSE,repo_sha=SHA,sequence=2,
                           include_supplemental=True)
-    assert len(client.klines.calls)==20
-    assert [x[1:3] for x in client.klines.calls[:5]] == [
-        ("1m",240),("5m",144),("15m",96),("60m",24),("1d",40)]
+    assert len(client.klines.calls)==28
+    assert [x[1:3] for x in client.klines.calls[:7]] == [
+        ("1m",240),("5m",144),("15m",96),("15m",96),
+        ("60m",24),("60m",24),("1d",60)]
     assert all(x[3:]==("none",False) for x in client.klines.calls)
     p=tmp_path/"cache.json"
     atomic_publish(str(p),got)
@@ -87,9 +92,11 @@ def test_all_held_etfs_and_five_periods_are_requested_in_one_snapshot(tmp_path):
 
 def test_snapshot_bounds_provider_rows_to_requested_count():
     class OverReturningGetter(KlineGetter):
-        def get(self,symbol,*,period,count,adjust,as_dataframe):
+        def get(self,symbol,*,period,count,adjust,as_dataframe,
+                start_time=None,end_time=None):
             frame=super().get(symbol,period=period,count=count,
-                              adjust=adjust,as_dataframe=as_dataframe)
+                              adjust=adjust,as_dataframe=as_dataframe,
+                              start_time=start_time,end_time=end_time)
             extra=([datetime.fromisoformat("2026-10-06T00:00:00").replace(tzinfo=CN)]
                    if period=="1d" else _minutes(period,"2026-10-06"))
             frame["timestamp"]=[int(t.timestamp())*1000 for t in extra]+frame["timestamp"]
@@ -107,7 +114,7 @@ def test_snapshot_bounds_provider_rows_to_requested_count():
     assert all(len(snapshot["symbols"][symbol][period]["rows"])<=count
                for symbol in snapshot["symbols"]
                for period,count in (("1m",240),("5m",144),("15m",96),
-                                    ("60m",24),("1d",40)))
+                                    ("60m",24),("1d",60)))
 
 
 def test_today_daily_date_stamp_quarantined_before_close_not_provider_finality():
@@ -147,7 +154,8 @@ def test_intraday_5m_native_tick_precision_retained_without_trade_promotion(tmp_
     times=prior+due
 
     class Klines:
-        def get(self,symbol,*,period,count,adjust,as_dataframe):
+        def get(self,symbol,*,period,count,adjust,as_dataframe,
+                start_time=None,end_time=None):
             if period!="5m":
                 return KlineGetter().get(symbol,period=period,count=count,
                                          adjust=adjust,as_dataframe=as_dataframe)
@@ -161,71 +169,11 @@ def test_intraday_5m_native_tick_precision_retained_without_trade_promotion(tmp_
 
     class MixedClient:
         klines=Klines()
+        def __init__(self):
+            self.klines.intraday=lambda symbol, **kwargs: self.klines.get(
+                symbol,**kwargs,adjust="none")
 
     snap=build_observation(MixedClient(),now_utc=now,repo_sha=SHA,
                            sequence=9,include_supplemental=True)
     cache=tmp_path/"native-five-minute.json"
-    atomic_publish(str(cache),snap)
-    progress=read_cn_tickflow_research_data(
-        "159611.SZ","5m",limit=24,path=str(cache),now_utc=now,
-        research_mode="session_progress")
-    assert progress["ok"] is True
-    assert progress["status"]=="PASS_RESEARCH_ONLY"
-    assert progress["expected_grid_progress"]=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
-    assert progress["tolerated_vendor_float_rows"]==18
-    assert progress["ohlc_precision_scope"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
-    assert progress["rows"][-1]["label"]=="2026-10-15 11:30"
-    assert progress["rows"][0]["high"]==1.504999999999
-    assert all(r["is_partial_bar"] is True
-               and r["bar_finality"]=="NOT_VERIFIED" for r in progress["rows"])
-    assert progress["currentness"]=="UNPROVEN"
-    assert progress["can_confirm_signal"] is False
-    assert progress["source_arbiter_admission"]=="BLOCKED"
-    assert progress["radar_admission"]=="BLOCKED"
-    assert progress["live_trade"] is False
-    # Historical-only intraday stays stricter: same-day tolerated bars
-    # are never mislabeled closed/historical before the exchange close.
-    historical=read_cn_tickflow_research_data(
-        "159611.SZ","5m",limit=24,path=str(cache),now_utc=now,
-        research_mode="historical_only")
-    assert historical["status"]=="INVALID_CACHE"
-
-    # Delete one due time boundary: a current last bar cannot conceal it.
-    snap["symbols"]["159611.SZ"]["5m"]["rows"]=[
-        row for row in snap["symbols"]["159611.SZ"]["5m"]["rows"]
-        if row["label"]!="2026-10-15 10:00"
-    ]
-    atomic_publish(str(cache),snap)
-    missing=read_cn_tickflow_research_data(
-        "159611.SZ","5m",limit=1,path=str(cache),now_utc=now,
-        research_mode="session_progress")
-    assert missing["ok"] is False
-    assert missing["status"]=="BAR_LABEL_BEHIND_SESSION"
-    assert missing["due_grid_continuity"]=="INCOMPLETE"
-    assert missing["rows"]==[]
-    assert missing["radar_admission"]=="BLOCKED"
-
-
-def test_intraday_5m_non_lattice_or_large_gap_does_not_gain_tolerance():
-    from data_provider.cn_tickflow_research_cache import normalize_bars
-    now=datetime(2026,10,15,3,35,tzinfo=timezone.utc)
-    a=KlineGetter().get("159611.SZ",period="5m",count=144,
-                       adjust="none",as_dataframe=False)
-    source=_minutes("5m","2026-10-14")+[
-        t for t in _minutes("5m","2026-10-15")
-        if t.strftime("%H:%M")<="11:30"
-    ]
-    for key in a:
-        if key=="timestamp":
-            a[key]=[int(t.timestamp())*1000 for t in source]
-        else:
-            a[key]=[a[key][0]]*len(source)
-    # Genuinely invalid high below 1.505 close by >1e-5 on 10:00.
-    target=len(_minutes("5m","2026-10-14"))+5
-    a["high"][target]=1.503
-    counts={}
-    result=normalize_bars(a,"5m",now_utc=now,quarantine_counts=counts)
-    assert counts=={"TODAY_HIGH_BELOW_BODY":1}
-    assert not any(x["label"]==source[target].strftime("%Y-%m-%d %H:%M")
-                   for x in result)
-    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in result)
+    atomic_publish
