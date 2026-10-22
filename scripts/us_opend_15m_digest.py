@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A bounded read-only OpenD cloud cache + Radar D1/1H/15m digest, never a trade signal."""
+"""Read-only OpenD live watch with separate provisional and closed-bar research confirmation."""
 from __future__ import annotations
 from datetime import datetime, timezone
 import json
@@ -58,6 +58,32 @@ def validbar(series, now, max_age):
     return (quality, f"{stamp:%m-%d %H:%M}Z close={values[3]:.2f}")
 
 
+def valid_watch_bar(series, now, max_age):
+    """Qualify a current forming bar for observation without treating it as closed."""
+    if not isinstance(series, list) or not series or not isinstance(series[-1], dict):
+        return ("BLOCKED", "missing")
+    bar = series[-1]
+    stamp = utc(bar.get("bar_end_utc"))
+    if stamp is None:
+        return ("BLOCKED", "bad_stamp")
+    age = (now - stamp).total_seconds()
+    values = [bar.get(field) for field in ("open", "high", "low", "close", "volume")]
+    finite = all(type(v) in (int, float) and math.isfinite(v) for v in values)
+    if (not finite or values[2] > values[3] or values[3] > values[1]
+            or values[0] < values[2] or values[0] > values[1] or values[4] < 0
+            or age < -120 or age > max_age or bar.get("feed") != "opend"
+            or bar.get("provider") != "futu"):
+        return ("BLOCKED", "bad_or_stale")
+    flags = {str(x).upper() for x in bar.get("quality_flags", [])}
+    if flags & {"STALE", "INVALID_OHLCV", "OUT_OF_ORDER", "MISSING_BAR"}:
+        return ("BLOCKED", "quality_flags")
+    if not bar.get("is_closed") or not bar.get("is_complete"):
+        return ("PROVISIONAL", f"{stamp:%H:%M:%S}Z forming close={values[3]:.2f}")
+    if flags:
+        return ("DEGRADED", f"{stamp:%H:%M:%S}Z close={values[3]:.2f}")
+    return ("WATCH", f"{stamp:%H:%M:%S}Z close={values[3]:.2f}")
+
+
 def render(health, market, radar, now):
     now = now.astimezone(timezone.utc)
     sha = market.get("repo_sha")
@@ -72,10 +98,11 @@ def render(health, market, radar, now):
                     and market.get("live_trade") is False and radar.get("live_trade") is False)
     stamp = utc(market.get("latest_source_timestamp_utc"))
     age = int((now - stamp).total_seconds()) if stamp else None
+    source_fresh = age is not None and -60 <= age <= 1200
     gates = {
         "SOURCE_LINEAGE": valid_source,
         "SEQUENCE": evaluation.get("source_sequence") == market.get("sequence"),
-        "FRESHNESS": age is not None and -60 <= age <= 1200,
+        "FRESHNESS": source_fresh,
         "FINALITY": market.get("bar_closure") == health.get("bar_closure") == "PROVEN",
         "RADAR_POLL": radar.get("poll_status") == "PASS" and radar.get("radar_analysis_performed") is True,
     }
@@ -85,29 +112,35 @@ def render(health, market, radar, now):
             states[value["symbol"]] = value.get("technical_state") or {}
     rows = market.get("symbols")
     rows = rows if isinstance(rows, dict) else {}
-    # A healthy global heartbeat cannot qualify an absent, provisional or degraded symbol.
     all_symbol_bars_healthy = True
+    symbol_monitor = {}
     lines = [
-        f"📡 STOCK RAZOR OpenD 云端15分钟研究快报 {now:%m-%d %H:%M} UTC",
-        "行情资格：" + ("RESEARCH_ONLY" if all(gates.values()) else "BLOCKED") + "｜确认交易信号：无",
-        f"实际K线源时间：{stamp.isoformat() if stamp else 'UNKNOWN'}｜延迟：{age if age is not None else 'UNKNOWN'}s",
-        "D1趋势 / 1H趋势 / 15m趋势（仅研究，不构成下单信号）"
+        f"📡 STOCK RAZOR OpenD 实时盯盘 {now:%m-%d %H:%M} UTC",
+        "数据完整性：" + ("PASS" if all(gates.values()) else "BLOCKED") +
+        "｜盘中观察与收盘确认分开｜交易信号/下单：关闭",
+        f"源数据时间：{stamp.isoformat() if stamp else 'UNKNOWN'}｜延迟：{age if age is not None else 'UNKNOWN'}s",
+        "D1 / 1H / 15m 多周期研究状态；1m / 5m 盘中观察（未闭合只作候选）",
     ]
     for symbol in SYMBOLS:
         item = rows.get(symbol) or {}
         if not isinstance(item, dict) or item.get("feed") != "opend" or item.get("provider") != "futu":
             all_symbol_bars_healthy = False
-            lines.append(symbol[3:] + " OpenD缺失")
+            symbol_monitor[symbol] = {
+                "watch_status": "BLOCKED", "candidate": "UNKNOWN",
+                "research_confirmation": "PENDING_DATA", "reason": "OPEND_SYMBOL_MISSING",
+            }
+            lines.append(symbol[3:] + " OpenD缺失｜观察/确认均阻断")
             continue
         frames = item.get("timeframes") or {}
-        q15, detail = validbar(frames.get("15m"), now, 1200)
-        q1h, _ = validbar(frames.get("1h"), now, 5400)
+        q1m, detail1m = valid_watch_bar(frames.get("1m"), now, 120)
+        q5m, detail5m = valid_watch_bar(frames.get("5m"), now, 420)
+        q15, detail15 = validbar(frames.get("15m"), now, 1200)
+        q1h, detail1h = validbar(frames.get("1h"), now, 5400)
         if q15 != "RESEARCH" or q1h != "RESEARCH":
             all_symbol_bars_healthy = False
-        technical = (states.get(symbol) or {}).get("technical") or {}
+        technical_state = states.get(symbol) or {}
+        technical = technical_state.get("technical") or {}
         d1 = technical.get("daily") or {}
-        # D1 quality.as_of is often an NYSE session DATE without a timezone.
-        # Treat the calendar date only as historical research context, never finality proof.
         day_text = (d1.get("quality") or {}).get("as_of")
         day = None
         if isinstance(day_text, str):
@@ -118,18 +151,73 @@ def render(health, market, radar, now):
         d1trend = d1.get("trend", "UNKNOWN") if day and 0 <= (now.date()-day).days <= 5 else "UNKNOWN"
         htrend = (technical.get("hourly") or {}).get("trend", "UNKNOWN") if q1h == "RESEARCH" else "UNKNOWN"
         mtrend = (technical.get("intraday") or {}).get("trend", "UNKNOWN") if q15 == "RESEARCH" else "UNKNOWN"
-        lines.append(f"{symbol[3:]} D1:{d1trend} 1H:{htrend} 15m:{mtrend} | {detail} ({q15})")
+        alignment = str(technical_state.get("alignment", "unknown")).lower()
+        watch_ok = (valid_source and source_fresh and q1m in {"WATCH", "PROVISIONAL", "DEGRADED"}
+                    and q5m in {"WATCH", "PROVISIONAL", "DEGRADED"})
+        candidate = {
+            "aligned_bullish": "BULLISH_WATCH",
+            "aligned_bearish": "BEARISH_WATCH",
+            "aligned_neutral": "NEUTRAL_WATCH",
+        }.get(alignment, "NO_QUALIFIED_SETUP")
+        research_confirmed = (
+            watch_ok and gates["SEQUENCE"] and gates["RADAR_POLL"] and gates["FINALITY"]
+            and q15 == "RESEARCH" and q1h == "RESEARCH"
+            and d1trend != "UNKNOWN" and alignment in {
+                "aligned_bullish", "aligned_bearish", "aligned_neutral"
+            }
+        )
+        confirmation = "CONFIRMED_MTF_RESEARCH" if research_confirmed else "PROVISIONAL_OR_WAITING"
+        conditions = technical_state.get("watch_conditions")
+        conditions = [str(value)[:140] for value in conditions[:3]] if isinstance(conditions, list) else []
+        symbol_monitor[symbol] = {
+            "watch_status": "ACTIVE" if watch_ok else "BLOCKED",
+            "1m_state": q1m, "5m_state": q5m,
+            "candidate": candidate if watch_ok else "UNKNOWN",
+            "research_confirmation": confirmation,
+            "alignment": alignment,
+            "watch_conditions": conditions,
+            "confirmation_requires_closed_bars": True,
+        }
+        if not watch_ok:
+            all_symbol_bars_healthy = False
+        lines.append(
+            f"{symbol[3:]} D1:{d1trend} 1H:{htrend} 15m:{mtrend}"
+            f"｜1m:{q1m} 5m:{q5m}｜观察:{candidate if watch_ok else 'BLOCKED'}"
+            f"｜多周期:{confirmation}"
+        )
+        if conditions:
+            lines.append("  条件：" + "；".join(conditions))
+        if q15 != "RESEARCH" or q1h != "RESEARCH":
+            lines.append(f"  等待闭合/质量复核：15m={q15}({detail15}) 1h={q1h}({detail1h})")
     gates["SYMBOL_BAR_QUALITY"] = all_symbol_bars_healthy
-    lines[1] = "行情资格：" + ("RESEARCH_ONLY" if all(gates.values()) else "BLOCKED") + "｜确认交易信号：无"
     if not all(gates.values()):
-        lines.append("阻断：" + ",".join(name for name, passed in gates.items() if not passed))
-    lines.append("OpenD缓存只读；交易/自动下单关闭；D1如缺失则UNKNOWN。")
+        lines.append("完整确认阻断：" + ",".join(name for name, passed in gates.items() if not passed))
+    lines.append(
+        "盘中形成K线用于候选观察；闭合后才复核多周期研究状态。"
+        "这不是入场/出场指令；RADAR_ADMISSION=BLOCKED；LIVE_TRADE=NO。"
+    )
     message = "\n".join(lines)
     if len(message) > 1900:
         message = message[:1870] + "\n[RESEARCH REPORT TRUNCATED]"
-    return {"schema": SCHEMA, "status": "RESEARCH_ONLY" if all(gates.values()) else "BLOCKED",
-            "message": message, "research_only": True, "can_confirm_signal": False,
-            "radar_admission": "BLOCKED", "live_trade": False}
+    active_count = sum(value["watch_status"] == "ACTIVE" for value in symbol_monitor.values())
+    confirmed_count = sum(
+        value["research_confirmation"] == "CONFIRMED_MTF_RESEARCH"
+        for value in symbol_monitor.values()
+    )
+    return {
+        "schema": SCHEMA,
+        "status": "RESEARCH_ONLY" if all(gates.values()) else "BLOCKED",
+        "monitor_status": "ACTIVE" if active_count else "BLOCKED",
+        "active_watch_count": active_count,
+        "research_alignment_confirmation_count": confirmed_count,
+        "symbol_monitor": symbol_monitor,
+        "message": message,
+        "research_only": True,
+        "can_confirm_research_alignment": bool(confirmed_count),
+        "can_confirm_signal": False,
+        "radar_admission": "BLOCKED",
+        "live_trade": False,
+    }
 
 
 if __name__ == "__main__":
