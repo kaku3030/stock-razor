@@ -27,6 +27,8 @@ def classify(stdout: str, stderr: str) -> str:
     for label, markers in rules:
         if any(marker in text for marker in markers):
             return label
+    if re.search(r"^CN_TICKFLOW_INSTALL_FAILED_STAGE=[A-Z_]{1,40}$", stdout + "\n" + stderr, re.MULTILINE):
+        return "INSTALLER_STAGE_FAILURE"
     if "cn_tickflow_rollback=attempted" in text:
         return "INSTALLER_UNKNOWN_STAGE"
     return "NONE" if not text.strip() else "UNKNOWN"
