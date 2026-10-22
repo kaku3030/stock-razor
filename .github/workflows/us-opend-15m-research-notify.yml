@@ -1,8 +1,8 @@
-name: US OpenD 15m Cloud Research Digest to Discord
+name: US OpenD Live Watch and Research Digest to Discord
 on:
   schedule:
     # UTC covers both US EDT/EST; XNYS calendar gates actual market minutes.
-    - cron: '*/15 13-21 * * 1-5'
+    - cron: '*/5 13-21 * * 1-5'
   workflow_dispatch:
     inputs:
       dry_run:
