@@ -67,9 +67,11 @@ jobs:
           }
           test -s ops/aws/install_cn_radar_worker.sh
           test -s ops/aws/verify_cn_radar_worker.sh
+          test -s ops/aws/deploy_cn_radar_remote.sh
           echo "sha=$revision" >> "$GITHUB_OUTPUT"
-          echo "install_sha=$(sha256sum ops/aws/install_cn_radar_worker.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "verify_sha=$(sha256sum ops/aws/verify_cn_radar_worker.sh | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "deploy_sha=$(sha256sum ops/aws/deploy_cn_radar_remote.sh | head -c 64)" >> "$GITHUB_OUTPUT"
+          echo "install_sha=$(sha256sum ops/aws/install_cn_radar_worker.sh | head -c 64)" >> "$GITHUB_OUTPUT"
+          echo "verify_sha=$(sha256sum ops/aws/verify_cn_radar_worker.sh | head -c 64)" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -95,6 +97,7 @@ jobs:
           REPO_REF: ${{ steps.source.outputs.sha }}
           INSTALL_SHA: ${{ steps.source.outputs.install_sha }}
           VERIFY_SHA: ${{ steps.source.outputs.verify_sha }}
+          DEPLOY_SHA: ${{ steps.source.outputs.deploy_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -102,6 +105,7 @@ jobs:
           [[ "$REPO_REF" =~ ^[a-f0-9]{40}$ ]]
           [[ "$INSTALL_SHA" =~ ^[a-f0-9]{64}$ ]]
           [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$DEPLOY_SHA" =~ ^[a-f0-9]{64}$ ]]
           current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$current_main" == "$REPO_REF" ]] || { echo 'CN_RADAR_PRE_SSM_MAIN_MOVED_ABORT' >&2; exit 2; }
           # Read-only SSM execution probe: distinguish RunShellScript health from the deployment payload.
@@ -131,55 +135,22 @@ jobs:
           # BOTH verify before any systemd restart occurs.
           read -r -d '' remote <<REMOTE || true
           set -eu
-          stage_code=REMOTE_INIT
-          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "CN_RADAR_STAGE=%s\\nCN_RADAR_REMOTE_EXIT_CODE=%s\\n" "\$stage_code" "\$rc" >&2; fi; if [ -n "\${stage:-}" ]; then rm -rf "\$stage"; fi' EXIT
-          printf 'CN_RADAR_STAGE=REMOTE_STARTED\\n' >&2
           umask 077
-          stage_code=TEMP_DIR
-          if ! stage=\$(mktemp -d); then
-            echo 'CN_RADAR_STAGE=TEMP_DIR' >&2
-            exit 1
+          stage_code=REMOTE_INIT
+          if ! stage=\$(mktemp -d); then echo 'CN_RADAR_STAGE=TEMP_DIR' >&2; exit 1; fi
+          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "CN_RADAR_STAGE=%s\\nCN_RADAR_REMOTE_EXIT_CODE=%s\\n" "\$stage_code" "\$rc" >&2; fi; if [ -n "\$stage" ]; then rm -rf "\$stage"; fi' EXIT
+          stage_code=DEPLOY_HELPER_DOWNLOAD
+          if ! curl -fsSL --proto '=https' --tlsv1.2 'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/deploy_cn_radar_remote.sh' -o "\$stage/deploy.sh"; then
+            echo 'CN_RADAR_STAGE=DEPLOY_HELPER_DOWNLOAD' >&2; exit 1
           fi
-          stage_code=INSTALL_DOWNLOAD
-          if ! curl -fsSL --proto '=https' --tlsv1.2 \
-            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
-            echo 'CN_RADAR_STAGE=INSTALL_DOWNLOAD' >&2; exit 1
+          stage_code=DEPLOY_HELPER_HASH
+          if ! printf '%s  %s\n' '$DEPLOY_SHA' "\$stage/deploy.sh" | sha256sum -c - >/dev/null; then
+            echo 'CN_RADAR_STAGE=DEPLOY_HELPER_HASH' >&2; exit 1
           fi
-          stage_code=INSTALL_HASH
-          if ! printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null; then
-            echo 'CN_RADAR_STAGE=INSTALL_HASH' >&2; exit 1
-          fi
-          stage_code=VERIFY_DOWNLOAD
-          if ! curl -fsSL --proto '=https' --tlsv1.2 \
-            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"; then
-            echo 'CN_RADAR_STAGE=VERIFY_DOWNLOAD' >&2; exit 1
-          fi
-          stage_code=VERIFY_HASH
-          if ! printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null; then
-            echo 'CN_RADAR_STAGE=VERIFY_HASH' >&2; exit 1
-          fi
-          stage_code=INSTALL
-          if ! SOURCE_PROVIDER='$SOURCE_PROVIDER' REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
-            echo 'CN_RADAR_INSTALL=FAILED' >&2
-            exit 1
-          fi
-          # Runtime SHA, research-only flags and service sandbox are verified privately.
-          stage_code=ACCEPTANCE
-          if ! bash "\$stage/verify.sh" '$REPO_REF' '$SOURCE_PROVIDER' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
-            echo 'CN_RADAR_ACCEPTANCE=FAILED' >&2
-            exit 1
-          fi
-          stage_code=VERIFY_OUTPUT
-          if ! grep -Fx enabled "\$stage/verify.log" >/dev/null ||
-             ! grep -Fx active "\$stage/verify.log" >/dev/null ||
-             ! grep -Fx CN_RADAR_WORKER_VERIFY=PASS "\$stage/verify.log" >/dev/null ||
-             ! grep -Fx RADAR_ADMISSION=BLOCKED "\$stage/verify.log" >/dev/null ||
-             ! grep -Fx LIVE_TRADE=NO "\$stage/verify.log" >/dev/null; then
-            echo 'CN_RADAR_STAGE=VERIFY_OUTPUT' >&2; exit 1
-          fi
-          printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS\nRADAR_ADMISSION=BLOCKED\nLIVE_TRADE=NO\n'
+          stage_code=DEPLOY_HELPER_RUN
+          SOURCE_PROVIDER='$SOURCE_PROVIDER' REPO_REF='$REPO_REF' INSTALL_SHA='$INSTALL_SHA' VERIFY_SHA='$VERIFY_SHA' bash "\$stage/deploy.sh"
           REMOTE
-          test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
+          test "$(printf '%s' "$remote" | wc -c)" -le 4096 || {
             echo 'CN_RADAR_DEPLOY_SSM_PAYLOAD_TOO_LARGE' >&2
             exit 2
           }
