@@ -188,7 +188,7 @@ jobs:
             sleep 5
           done
           if [[ "$status" != Success ]]; then
-            # SSM output can lag the terminal status briefly. Retry bounded reads
+            # SSM output can lag terminal status briefly. Retry bounded reads
             # from both streams; print only fixed allowlisted markers.
             stderr=""
             stdout=""
@@ -224,43 +224,11 @@ jobs:
             elif grep -Fxq 'CN_RADAR_ACCEPTANCE=FAILED' <<< "$evidence"; then
               failure_class=ACCEPTANCE
             fi
-            printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\nCN_RADAR_SSM_STATUS=%s\nCN_RADAR_SSM_RESPONSE_CODE=%s\nCN_RADAR_FAILURE_CLASS=%s\n' \
+            printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\\nCN_RADAR_SSM_STATUS=%s\\nCN_RADAR_SSM_RESPONSE_CODE=%s\\nCN_RADAR_FAILURE_CLASS=%s\\n' \\
               "$status" "$response_code" "$failure_class" >&2
             exit 1
           fi
-          out="$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$TARGET_INSTANCE_ID" \
-            --query 'StandardOutputContent' --output text)"
-          grep -Fx CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS <<< "$out" >/dev/null
-          grep -Fx RADAR_ADMISSION=BLOCKED <<< "$out" >/dev/null
-          grep -Fx LIVE_TRADE=NO <<< "$out" >/dev/null
-          echo 'CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS'
-          echo 'RADAR_ADMISSION=BLOCKED'
-          echo 'LIVE_TRADE=NO'
-\n'"${stdout}"
-            response_code="$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$TARGET_INSTANCE_ID" \
-              --query ResponseCode --output text 2>/dev/null || true)"
-            [[ "$response_code" =~ ^-?[0-9]+$ ]] || response_code=UNKNOWN
-            failure_class=REMOTE_COMMAND
-            for candidate in REMOTE_STARTED REMOTE_INIT TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH INSTALL ACCEPTANCE VERIFY_OUTPUT; do
-              if grep -Fxq "CN_RADAR_STAGE=$candidate" <<< "$evidence"; then
-                failure_class="$candidate"
-                break
-              fi
-            done
-            if grep -Fxq 'CN_RADAR_INSTALL=FAILED' <<< "$evidence"; then
-              failure_class=INSTALL
-            elif grep -Fxq 'CN_RADAR_ACCEPTANCE=FAILED' <<< "$evidence"; then
-              failure_class=ACCEPTANCE
-            fi
-            printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\nCN_RADAR_SSM_STATUS=%s\nCN_RADAR_SSM_RESPONSE_CODE=%s\nCN_RADAR_FAILURE_CLASS=%s\n' \
-              "$status" "$response_code" "$failure_class" >&2
-            exit 1
-          fi
-          out="$(aws ssm get-command-invocation \
+                    out="$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$TARGET_INSTANCE_ID" \
             --query 'StandardOutputContent' --output text)"
