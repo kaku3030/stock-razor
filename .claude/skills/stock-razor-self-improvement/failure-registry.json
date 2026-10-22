@@ -328,7 +328,7 @@
       "status": "OPEN",
       "diagnosis": "The isolated research collector routed 15m/60m warmup requests through TickFlow's intraday endpoint, which returns current-session bars only. Historical klines.get/batch support explicit start_time/end_time; the collector must fetch historical warmup separately and retain intraday only for current-session updates.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/991",
-      "regression_evidence": "tests/test_cn_tickflow_research_cache.py; tests/test_cn_tickflow_supplemental_timeframes.py; cloud deployment/readback NOT_VERIFIED",
+      "regression_evidence": "tests/test_cn_tickflow_supplemental_timeframes.py",
       "mandatory_action": "Use bounded explicit history windows through TickFlow klines.get/batch for 15m, 60m and D1; merge with current-session intraday bars by label; enforce 96/24/60 warmup rows and fail closed with ROW_COUNT_BELOW_MIN. Keep source, timestamp semantics, currentness, finality and all Radar/trading gates independently unqualified until exact deployed SHA and cloud readback are verified.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
