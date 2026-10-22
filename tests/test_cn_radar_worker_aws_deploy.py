@@ -142,3 +142,9 @@ def test_cn_radar_ssm_probe_failure_reports_only_allowlisted_metadata():
     assert "CN_RADAR_SSM_PREFLIGHT_STDERR_CHARS=%s" in WORKFLOW
     assert "probe_stderr" in WORKFLOW
     assert "StatusDetails" in WORKFLOW
+
+def test_cn_radar_instance_check_reports_bounded_agent_metadata():
+    assert "CN_RADAR_SSM_AGENT_VERSION=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_AGENT_LATEST=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_LAST_PING=%s" in WORKFLOW
+    assert "InstanceInformationList[0].[PingStatus,AgentVersion,IsLatestVersion,LastPingDateTime]" in WORKFLOW
