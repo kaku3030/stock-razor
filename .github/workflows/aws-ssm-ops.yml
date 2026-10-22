@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Read-only operation to run through SSM
+        description: Allowlisted diagnostics and one explicit SSM agent update
         required: true
         type: choice
         options:
           - health_check
+          - update_ssm_agent
           - mcp_status
           - futures_status
           - us_livefeed_status
@@ -55,7 +56,7 @@ env:
   TARGET_INSTANCE_ID: i-01738342af3efac72
 
 jobs:
-  read-only-ssm:
+  ssm-ops:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -126,6 +127,9 @@ jobs:
           case "$REQUESTED_ACTION" in
             health_check)
               printf '%s\n' '["whoami","hostname","date -u"]' > commands.json
+              ;;
+            update_ssm_agent)
+              printf '%s\n' '[]' > commands.json
               ;;
             mcp_status)
               printf '%s\n' '["ss -ltnp | grep -E '\''(:(11111|22222))\\b'\'' || true","systemctl is-active stock-razor-mcp.service 2>/dev/null || true"]' > commands.json
@@ -2692,14 +2696,24 @@ jobs:
         shell: bash
         env:
           COMMANDS: ${{ steps.command-set.outputs.commands }}
+          REQUESTED_ACTION: ${{ inputs.action }}
         run: |
           set -euo pipefail
-          command_id="$(aws ssm send-command \
-            --document-name AWS-RunShellScript \
-            --instance-ids "$TARGET_INSTANCE_ID" \
-            --parameters "{\"commands\":$COMMANDS}" \
-            --query 'Command.CommandId' \
-            --output text)"
+          if [ "$REQUESTED_ACTION" = update_ssm_agent ]; then
+            command_id="$(aws ssm send-command \
+              --document-name AWS-UpdateSSMAgent \
+              --instance-ids "$TARGET_INSTANCE_ID" \
+              --timeout-seconds 600 \
+              --query 'Command.CommandId' \
+              --output text)"
+          else
+            command_id="$(aws ssm send-command \
+              --document-name AWS-RunShellScript \
+              --instance-ids "$TARGET_INSTANCE_ID" \
+              --parameters "{\"commands\":$COMMANDS}" \
+              --query 'Command.CommandId' \
+              --output text)"
+          fi
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
           echo "SSM command submitted to $TARGET_INSTANCE_ID"
 
@@ -2713,6 +2727,8 @@ jobs:
           wait_attempts=30
           if [ "$REQUESTED_ACTION" = "secure_mcp_remote_e2e" ]; then
             wait_attempts=180
+          elif [ "$REQUESTED_ACTION" = "update_ssm_agent" ]; then
+            wait_attempts=90
           fi
           for attempt in $(seq 1 "$wait_attempts"); do
             status="$(aws ssm get-command-invocation \
@@ -2722,6 +2738,20 @@ jobs:
               --output text)"
             case "$status" in
               Success)
+                if [ "$REQUESTED_ACTION" = "update_ssm_agent" ]; then
+                  response_code="$(aws ssm get-command-invocation \
+                    --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" \
+                    --query ResponseCode --output text)"
+                  [[ "$response_code" =~ ^[0-9]+$ ]]
+                  info="$(aws ssm describe-instance-information \
+                    --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" \
+                    --query 'InstanceInformationList[0].[AgentVersion,IsLatestVersion]' --output text)"
+                  read -r agent_version agent_latest <<< "$info"
+                  [[ "$agent_version" =~ ^[0-9]+([.][0-9]+){2,3}$ ]] || agent_version=UNKNOWN
+                  [[ "$agent_latest" == True || "$agent_latest" == False ]] || agent_latest=UNKNOWN
+                  printf 'SSM_AGENT_UPDATE_STATUS=SUCCESS\\nSSM_AGENT_UPDATE_RESPONSE_CODE=%s\\nSSM_AGENT_VERSION=%s\\nSSM_AGENT_IS_LATEST=%s\\n' "$response_code" "$agent_version" "$agent_latest"
+                  exit 0
+                fi
                 # Read private stdout only into a pipe; the fixed projector
                 # emits statuses, timestamps and bar-shape summaries only.
                 aws ssm get-command-invocation \
@@ -2732,6 +2762,13 @@ jobs:
                 exit 0
                 ;;
               Failed|Cancelled|TimedOut|Cancelling)
+                if [ "$REQUESTED_ACTION" = "update_ssm_agent" ]; then
+                  aws ssm get-command-invocation \
+                    --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" \
+                    --query '{Status:Status,StatusDetails:StatusDetails,ResponseCode:ResponseCode}' \
+                    --output json
+                  exit 1
+                fi
                 aws ssm get-command-invocation \
                   --command-id "$COMMAND_ID" \
                   --instance-id "$TARGET_INSTANCE_ID" \
