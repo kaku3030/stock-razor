@@ -102,8 +102,9 @@ PY
 )"
 fi
 failure_stage="PIP_INSTALL"
+# The requirements file owns the boto3/botocore version pair; do not override it here.
 "$ROOT/venv/bin/pip" install --no-input --disable-pip-version-check --quiet \
-  -r "$ROOT/repo/ops/requirements/tickflow-isolated-v0.1.txt" 'boto3==1.40.65' >/dev/null 2>&1
+  -r "$ROOT/repo/ops/requirements/tickflow-isolated-v0.1.txt" >/dev/null 2>&1
 failure_stage="IMPORT_ASSERTIONS"
 PYTHONPATH="$ROOT/repo" "$ROOT/venv/bin/python" - <<'PY' >/dev/null
 from data_provider.cn_tickflow_research_cache import DEFAULT_PATH,SCHEMA,normalize_bars
@@ -113,7 +114,7 @@ assert SCHEMA=="stock_razor_cn_tickflow_research_observation_v0_1"
 assert callable(normalize_bars) and callable(_interval)
 import importlib.metadata as m
 assert m.version("tickflow")=="0.1.25"
-assert m.version("boto3")=="1.40.65"
+assert m.version("boto3")=="1.43.114"
 PY
 failure_stage="WRITE_SYSTEMD_UNIT"
 cat >"/etc/systemd/system/$SERVICE" <<EOF
