@@ -109,7 +109,7 @@ jobs:
           read -r -d '' remote <<REMOTE || true
           set -eu
           stage_code=REMOTE_INIT
-          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "CN_RADAR_STAGE=%s\\nCN_RADAR_REMOTE_EXIT_CODE=%s\\n" "\$stage_code" "\$rc" >&2; fi' EXIT
+          trap 'rc=\$?; if [ "\$rc" -ne 0 ]; then printf "CN_RADAR_STAGE=%s\\nCN_RADAR_REMOTE_EXIT_CODE=%s\\n" "\$stage_code" "\$rc" >&2; fi; if [ -n "\${stage:-}" ]; then rm -rf "\$stage"; fi' EXIT
           printf 'CN_RADAR_STAGE=REMOTE_STARTED\\n' >&2
           umask 077
           stage_code=TEMP_DIR
@@ -117,7 +117,6 @@ jobs:
             echo 'CN_RADAR_STAGE=TEMP_DIR' >&2
             exit 1
           fi
-          trap 'rm -rf "\$stage"' EXIT
           stage_code=INSTALL_DOWNLOAD
           if ! curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
