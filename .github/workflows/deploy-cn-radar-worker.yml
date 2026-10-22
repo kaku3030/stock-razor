@@ -104,6 +104,23 @@ jobs:
           [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
           current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$current_main" == "$REPO_REF" ]] || { echo 'CN_RADAR_PRE_SSM_MAIN_MOVED_ABORT' >&2; exit 2; }
+          # Read-only SSM execution probe: distinguish RunShellScript health from the deployment payload.
+          probe_command="printf '%s\n' CN_RADAR_SSM_PROBE=PASS"
+          probe_params="$(jq -cn --arg c "$probe_command" '{commands:[$c]}')"
+          probe_id="$(aws ssm send-command --document-name AWS-RunShellScript --instance-ids "$TARGET_INSTANCE_ID" --parameters "$probe_params" --timeout-seconds 30 --query 'Command.CommandId' --output text)"
+          [[ "$probe_id" =~ ^[a-f0-9-]{36}$ ]]
+          probe_status=UNKNOWN
+          for _ in $(seq 1 12); do
+            probe_status="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$probe_status" in Success|Failed|Cancelled|Cancelling|TimedOut) break ;; esac
+            sleep 2
+          done
+          probe_out="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
+          if [[ "$probe_status" != Success ]] || ! grep -Fxq CN_RADAR_SSM_PROBE=PASS <<< "$probe_out"; then
+            printf 'CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED\nCN_RADAR_SSM_PREFLIGHT_STATUS=%s\n' "$probe_status" >&2
+            exit 1
+          fi
+          echo 'CN_RADAR_SSM_PREFLIGHT=PASS'
           # The two immutable commit-path downloads and their hashes must
           # BOTH verify before any systemd restart occurs.
           read -r -d '' remote <<REMOTE || true
