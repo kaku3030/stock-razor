@@ -79,6 +79,9 @@ def test_aws_premium_probe_targets_the_requested_two_etfs():
     scope=script[start:end]
     assert "--symbols 159611.SZ 159209.SZ" in scope
     assert "518880.SH" not in scope
+    # The sanitized receipt must preserve exactly the requested pair so the
+    # cloud evidence can prove which two quote targets were actually tested.
+    assert 'if symbol in ("159611.SZ","159209.SZ"):' in script
 
 
 def test_ws_import_guard_does_not_block_explicit_no_ws_premium_rest(monkeypatch):

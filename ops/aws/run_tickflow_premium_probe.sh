@@ -310,7 +310,7 @@ for raw in d["operations"]:
     ):
         item["data_scope"]="CURRENT_DAY_INTRADAY"
     symbol=raw.get("symbol")
-    if symbol in ("159611.SZ","518880.SH"):
+    if symbol in ("159611.SZ","159209.SZ"):
         item["symbol"]=symbol
     for field in ("elapsed_ms","row_count"):
         value=raw.get(field)
