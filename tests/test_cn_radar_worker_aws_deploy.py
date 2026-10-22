@@ -114,4 +114,4 @@ def test_cn_radar_failure_readback_retries_both_bounded_ssm_streams():
     assert "StandardOutputContent" in WORKFLOW
     assert "for _ in $(seq 1 5)" in WORKFLOW
     assert "sleep 2" in WORKFLOW
-    assert 'evidence="${stderr}"' in WORKFLOW
+    assert 'evidence="${stderr} ${stdout}"' in WORKFLOW
