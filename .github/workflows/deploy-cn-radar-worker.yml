@@ -122,6 +122,7 @@ jobs:
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
             echo 'CN_RADAR_STAGE=INSTALL_DOWNLOAD' >&2; exit 1
           fi
+          stage_code=INSTALL_HASH
           if ! printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null; then
             echo 'CN_RADAR_STAGE=INSTALL_HASH' >&2; exit 1
           fi
@@ -129,6 +130,7 @@ jobs:
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"; then
             echo 'CN_RADAR_STAGE=VERIFY_DOWNLOAD' >&2; exit 1
           fi
+          stage_code=VERIFY_HASH
           if ! printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null; then
             echo 'CN_RADAR_STAGE=VERIFY_HASH' >&2; exit 1
           fi
