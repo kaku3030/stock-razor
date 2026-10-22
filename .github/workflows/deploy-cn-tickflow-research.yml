@@ -15,7 +15,7 @@ on:
       mode:
         description: "Preflight only by default; deploy requires explicit confirmation"
         type: choice
-        options: [dry-run, deploy]
+        options: [dry-run, deploy, diagnose]
         default: dry-run
         required: true
       confirm_deploy:
@@ -27,6 +27,10 @@ on:
         type: boolean
         default: false
         required: true
+      diagnostic_command_id:
+        description: "Existing SSM command ID for a sanitized read-only invocation diagnosis"
+        type: string
+        required: false
 
 permissions:
   id-token: write
@@ -48,6 +52,7 @@ jobs:
       CONFIRM_DEPLOY: ${{ inputs.confirm_deploy }}
       APPROVE_PAID_TICKFLOW: ${{ inputs.approve_paid_tickflow_ingestion }}
       TICKFLOW_RESEARCH_SYMBOLS: ${{ inputs.research_symbols }}
+      DIAGNOSTIC_COMMAND_ID: ${{ inputs.diagnostic_command_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,10 +65,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/main && "$GITHUB_ACTOR" == "$GITHUB_REPOSITORY_OWNER" ]] || { echo 'CN_TICKFLOW_DEPLOY_UNAUTHORIZED_REF_OR_ACTOR' >&2; exit 2; }
-          [[ "$DEPLOY_MODE" == dry-run || "$DEPLOY_MODE" == deploy ]] || { echo 'CN_TICKFLOW_DEPLOY_INVALID_MODE' >&2; exit 2; }
+          [[ "$DEPLOY_MODE" == dry-run || "$DEPLOY_MODE" == deploy || "$DEPLOY_MODE" == diagnose ]] || { echo 'CN_TICKFLOW_DEPLOY_INVALID_MODE' >&2; exit 2; }
           [[ "$TARGET_INSTANCE_ID" =~ ^i-[0-9a-f]{8,}$ ]] || { echo 'CN_TICKFLOW_DEPLOY_INVALID_INSTANCE_ID' >&2; exit 2; }
           if [[ "$DEPLOY_MODE" == deploy && "$CONFIRM_DEPLOY" != DEPLOY_CN_TICKFLOW_WORKER ]]; then echo 'CN_TICKFLOW_DEPLOY_CONFIRMATION_REQUIRED' >&2; exit 2; fi
           if [[ "$DEPLOY_MODE" == deploy && "$APPROVE_PAID_TICKFLOW" != true ]]; then echo 'CN_TICKFLOW_PAID_INGESTION_OPT_IN_REQUIRED' >&2; exit 2; fi
+          if [[ "$DEPLOY_MODE" == diagnose && ! "$DIAGNOSTIC_COMMAND_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then echo 'CN_TICKFLOW_DIAGNOSTIC_COMMAND_ID_INVALID' >&2; exit 2; fi
           checkout_sha="$(git rev-parse HEAD)"
           [[ "$checkout_sha" == "$GITHUB_SHA" ]] || { echo 'CN_TICKFLOW_DEPLOY_CHECKOUT_SHA_MISMATCH' >&2; exit 2; }
           main_sha="$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" || { echo 'CN_TICKFLOW_DEPLOY_MAIN_LOOKUP_BLOCKED' >&2; exit 2; }
@@ -180,6 +186,15 @@ jobs:
           echo 'CN_TICKFLOW_CANONICAL_WRITE=NO'
           echo 'RADAR_ADMISSION=BLOCKED'
           echo 'LIVE_TRADE=NO'
+      - name: Read existing SSM invocation (sanitized, read-only)
+        if: env.DEPLOY_MODE == 'diagnose'
+        env:
+          COMMAND_ID: ${{ env.DIAGNOSTIC_COMMAND_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inv="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --output json)"
+          python scripts/sanitize_cn_tickflow_deploy_invocation.py <<< "$inv"
       - name: Controlled worker update with rollback trap
         if: env.DEPLOY_MODE == 'deploy'
         id: deploy
@@ -204,7 +219,7 @@ jobs:
           set -euo pipefail
           for _ in $(seq 1 120); do status="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"; case "$status" in Success|Failed|Cancelled|TimedOut) break;; esac; sleep 5; done
           inv="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$TARGET_INSTANCE_ID" --output json)"
-          jq '{Status,ResponseCode}' <<< "$inv"
+          python scripts/sanitize_cn_tickflow_deploy_invocation.py <<< "$inv"
           test "$status" = Success
           out="$(jq -r '.StandardOutputContent // ""' <<< "$inv")"
           grep -Fxq "CN_TICKFLOW_RESEARCH_SERVICE_DEPLOY=PASS" <<< "$out"

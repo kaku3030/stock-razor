@@ -19,6 +19,7 @@ fi
 previous_sha="$(git -C "$ROOT/repo" rev-parse HEAD 2>/dev/null || true)"
 previous_active="false"
 if systemctl is-active --quiet "$SERVICE"; then previous_active="true"; fi
+failure_stage="INITIALIZE"
 
 if [[ "$DEPLOY_DRY_RUN" == "true" ]]; then
   [[ "$ALLOW_SERVICE_MUTATION" != "true" ]]
@@ -58,16 +59,22 @@ rollback() {
     if [[ "$previous_active" == "true" ]]; then
       systemctl restart "$SERVICE" >/dev/null 2>&1 || true
     fi
+    echo "CN_TICKFLOW_INSTALL_FAILED_STAGE=$failure_stage" >&2
     echo "CN_TICKFLOW_ROLLBACK=ATTEMPTED" >&2
   fi
   return "$rc"
 }
 trap rollback ERR
+failure_stage="GIT_FETCH"
 git -C "$ROOT/repo" fetch --depth=1 origin "$REPO_REF" >/dev/null 2>&1
+failure_stage="GIT_CHECKOUT"
 git -C "$ROOT/repo" checkout --detach "$REPO_REF" >/dev/null 2>&1
+failure_stage="CHECKOUT_SHA_ASSERT"
 [[ "$(git -C "$ROOT/repo" rev-parse HEAD)" == "$REPO_REF" ]]
+failure_stage="CREATE_VENV"
 if [[ ! -x "$ROOT/venv/bin/python" ]]; then python3 -m venv "$ROOT/venv"; fi
 if [[ "$TICKFLOW_RESEARCH_SYMBOLS" == AUTO_200 ]]; then
+  failure_stage="RESOLVE_SYMBOLS"
   TICKFLOW_RESEARCH_SYMBOLS="$(PYTHONPATH="$ROOT/repo" "$ROOT/venv/bin/python" - "$ROOT/repo/apps/dsa-web/public/stocks.index.json" <<'PY'
 import json
 import re
@@ -94,8 +101,10 @@ print(",".join(symbols))
 PY
 )"
 fi
+failure_stage="PIP_INSTALL"
 "$ROOT/venv/bin/pip" install --no-input --disable-pip-version-check --quiet \
   -r "$ROOT/repo/ops/requirements/tickflow-isolated-v0.1.txt" 'boto3==1.40.65' >/dev/null 2>&1
+failure_stage="IMPORT_ASSERTIONS"
 PYTHONPATH="$ROOT/repo" "$ROOT/venv/bin/python" - <<'PY' >/dev/null
 from data_provider.cn_tickflow_research_cache import DEFAULT_PATH,SCHEMA,normalize_bars
 from scripts.run_cn_tickflow_research_worker import _interval
@@ -106,6 +115,7 @@ import importlib.metadata as m
 assert m.version("tickflow")=="0.1.25"
 assert m.version("boto3")=="1.40.65"
 PY
+failure_stage="WRITE_SYSTEMD_UNIT"
 cat >"/etc/systemd/system/$SERVICE" <<EOF
 [Unit]
 Description=STOCK RAZOR CN TickFlow Premium isolated research-only minute cache
@@ -139,10 +149,15 @@ LimitNOFILE=256
 [Install]
 WantedBy=multi-user.target
 EOF
+failure_stage="SYSTEMD_DAEMON_RELOAD"
 systemctl daemon-reload
+failure_stage="SYSTEMD_ENABLE"
 systemctl enable "$SERVICE" >/dev/null
+failure_stage="SYSTEMD_RESTART"
 systemctl restart "$SERVICE"
+failure_stage="SYSTEMD_ACTIVE_CHECK"
 systemctl is-active "$SERVICE"
+failure_stage="COMPLETED"
 echo "CN_TICKFLOW_RESEARCH_SERVICE_DEPLOY=PASS"
 echo "CN_TICKFLOW_PREVIOUS_REPO_SHA=${previous_sha:-UNKNOWN}"
 echo "CN_TICKFLOW_TARGET_REPO_SHA=$REPO_REF"
