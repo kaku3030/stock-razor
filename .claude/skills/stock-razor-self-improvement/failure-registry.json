@@ -297,7 +297,7 @@
       "status": "MITIGATED",
       "diagnosis": "The clean-retry fix (#968) exposed the underlying failure on exact main run #61: AWS CLI v2 ZIP extraction still returned ENOSPC in the probe's /tmp staging directory before any TickFlow provider call. Repeated extraction retries cannot fix a volume-capacity limit. Exact main run #39715081279 at SHA e491727 confirmed pinned SDK import and one realtime_quote operation completed; sanitized output intentionally omitted quote values. No K-lines, depth, WebSocket, retries, Radar admission or trades were used.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39715081279",
-      "regression_evidence": "tests/test_tickflow_premium_credential_ingress.py::test_premium_bootstrap_uses_pinned_aws_sdk_without_exposing_command_output; exact-main probe run 39715081279",
+      "regression_evidence": "tests/test_tickflow_premium_credential_ingress.py",
       "mandatory_action": "Keep the pinned boto3/botocore bootstrap and do not restore AWS CLI archive extraction. If the same bootstrap path fails on a new SHA, investigate the new signature first. This mitigation proves only a single realtime quote operation; quote values, currentness, K-lines, bar finality and all Radar/trading gates remain independently unverified/blocked.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
