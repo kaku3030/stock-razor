@@ -25,6 +25,9 @@ def test_workflow_checks_pre_and_post_identity_without_raw_ssm_logs():
     assert "CN_TICKFLOW_WORKER_REPO_SHA=$GITHUB_SHA" in WORKFLOW
     assert "CN_TICKFLOW_SOURCE_REPO_SHA=$GITHUB_SHA" in WORKFLOW
     assert "CN_TICKFLOW_PROVIDER=TICKFLOW_PREMIUM" in WORKFLOW
+    assert "sanitize_cn_tickflow_deploy_invocation.py" in WORKFLOW
+    assert "diagnostic_command_id:" in WORKFLOW
+    assert "Read existing SSM invocation (sanitized, read-only)" in WORKFLOW
     assert "jq '{Status,ResponseCode}'" in WORKFLOW
     assert "sha256sum -c - >/dev/null" in WORKFLOW
     assert "MCP_DEPLOY" not in WORKFLOW
@@ -49,6 +52,9 @@ def test_installer_is_fail_closed_and_has_rollback():
     assert '[[ "$ALLOW_SERVICE_MUTATION" == "true" ]]' in INSTALL
     assert 'trap rollback ERR' in INSTALL
     assert 'CN_TICKFLOW_ROLLBACK=ATTEMPTED' in INSTALL
+    assert 'CN_TICKFLOW_INSTALL_FAILED_STAGE=$failure_stage' in INSTALL
+    for stage in ("GIT_FETCH", "PIP_INSTALL", "IMPORT_ASSERTIONS", "SYSTEMD_RESTART"):
+        assert f'failure_stage="{stage}"' in INSTALL
     assert 'CN_TICKFLOW_SERVICE_MUTATION=APPLIED' in INSTALL
 
 
