@@ -304,6 +304,21 @@
         "CN-001",
         "ENG-001"
       ]
+    },
+    {
+      "id": "CN-007",
+      "phrases": [
+        "TickFlow AWS CLI archive NO_SPACE",
+        "TickFlow bootstrap ENOSPC",
+        "AWS CLI v2 extraction ran out of space",
+        "AWS CLI 解压磁盘空间不足",
+        "TickFlow /tmp NO_SPACE"
+      ],
+      "related": [
+        "CN-002",
+        "CN-003",
+        "ENG-003"
+      ]
     }
   ]
 }

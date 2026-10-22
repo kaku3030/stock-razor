@@ -111,55 +111,67 @@ def test_aws_workflow_default_one_quote_requires_separate_explicit_full_probe():
 
 
 
-def test_tickflow_aws_cli_archive_retry_cleans_partial_extract_and_classifies_io(tmp_path):
-    import re
-    import subprocess
-    import sys
-    import zipfile
 
+def test_tickflow_aws_bootstrap_uses_pinned_sdk_and_no_large_cli_archive():
     bootstrap = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    requirements = Path("ops/requirements/tickflow-isolated-v0.1.txt").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/probe-tickflow-aws-premium.yml").read_text(encoding="utf-8")
 
-    retry_start = bootstrap.index("  for attempt in 1 2 3; do")
-    retry_end = bootstrap.index("\n  done", retry_start)
-    retry = bootstrap[retry_start:retry_end]
-    cleanup = 'rm -rf "$stage/awscli-installer"'
-    validator = "python3 - \"$stage/awscliv2.zip\" \"$stage/awscli-installer\" <<'PY'"
-    assert cleanup in retry
-    assert retry.index(cleanup) < retry.index(validator)
-    assert 'archive_status=DOWNLOAD_FAILED' in retry
-    assert "except OSError as exc:" in retry
-    assert "errno.ENOSPC" in retry and 'print("NO_SPACE")' in retry
-    assert "errno.EIO" in retry and 'print("IO_ERROR")' in retry
-    assert "TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=(PASS|CRC_FAILURE|INVALID_ZIP|NO_SPACE|IO_ERROR|PERMISSION_ERROR|OS_ERROR|EXTRACTION_IO_ERROR|ARCHIVE_ERROR|DOWNLOAD_FAILED)" in workflow
+    assert "boto3==1.43.114" in requirements
+    assert "botocore==1.43.114" in requirements
+    assert "VERIFY_AWS_SDK" in bootstrap
+    assert "aws_secrets_manager_get.py" in bootstrap
+    assert "awscliv2.zip" not in bootstrap
+    assert "awscli-installer" not in bootstrap
+    assert "AWS_SDK=(AVAILABLE|UNAVAILABLE)" in workflow
+    assert "TICKFLOW_PREMIUM_PROBE_ENABLED" in bootstrap
 
-    code_start = retry.index("<<'PY'\n") + len("<<'PY'\n")
-    code_end = retry.index("\nPY\n)", code_start)
-    validator_source = retry[code_start:code_end]
 
-    def run_validator(archive_path, destination):
-        return subprocess.run(
-            [sys.executable, "-c", validator_source, str(archive_path), str(destination)],
-            capture_output=True, text=True, timeout=5, check=False,
-        )
+def test_embedded_secretsmanager_helper_emits_only_secret_or_safe_error():
+    import io
 
-    good_archive = tmp_path / "good.zip"
-    with zipfile.ZipFile(good_archive, "w") as archive:
-        archive.writestr("aws/install", "#!/bin/sh\n")
-    good_dest = tmp_path / "good-dest"
-    good_result = run_validator(good_archive, good_dest)
-    assert good_result.returncode == 0
-    assert good_result.stdout.strip() == "PASS"
-    assert (good_dest / "aws/install").is_file()
+    bootstrap = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    marker = 'cat > "$stage/aws_secrets_manager_get.py" <<\'PY\'\n'
+    start = bootstrap.index(marker) + len(marker)
+    end = bootstrap.index("\nPY\n", start)
+    source = bootstrap[start:end]
+    namespace = {"__name__": "tickflow_secret_helper_test"}
+    exec(compile(source, "aws_secrets_manager_get.py", "exec"), namespace)
 
-    invalid_archive = tmp_path / "invalid.zip"
-    invalid_archive.write_bytes(b"not-a-zip")
-    invalid_result = run_validator(invalid_archive, tmp_path / "invalid-dest")
-    assert invalid_result.stdout.strip() == "INVALID_ZIP"
+    class SecretClient:
+        def get_secret_value(self, *, SecretId):
+            assert SecretId == "stock-razor/tickflow/premium-api-key"
+            return {"SecretString": '{"api_key":"test-secret"}'}
 
-    blocked_dest = tmp_path / "not-a-directory"
-    blocked_dest.write_text("x", encoding="utf-8")
-    io_result = run_validator(good_archive, blocked_dest)
-    assert io_result.stdout.strip() == "OS_ERROR"
-    assert str(blocked_dest) not in io_result.stdout
-    assert re.fullmatch(r"(PASS|INVALID_ZIP|OS_ERROR)", io_result.stdout.strip())
+    output = io.StringIO()
+    errors = io.StringIO()
+    rc = namespace["main"](
+        "stock-razor/tickflow/premium-api-key",
+        client_factory=lambda service, **kwargs: SecretClient(),
+        stdout=output, stderr=errors,
+    )
+    assert rc == 0
+    assert output.getvalue() == '{"api_key":"test-secret"}'
+    assert errors.getvalue() == ""
+
+    class PrivateFailure(Exception):
+        response = {"Error": {"Code": "AccessDeniedException"}}
+
+        def __str__(self):
+            return "PRIVATE_RAW_ERROR_TEXT"
+
+    class DeniedClient:
+        def get_secret_value(self, *, SecretId):
+            raise PrivateFailure()
+
+    output = io.StringIO()
+    errors = io.StringIO()
+    rc = namespace["main"](
+        "stock-razor/tickflow/premium-api-key",
+        client_factory=lambda service, **kwargs: DeniedClient(),
+        stdout=output, stderr=errors,
+    )
+    assert rc == 1
+    assert output.getvalue() == ""
+    assert errors.getvalue().strip() == "TICKFLOW_SECRET_ERROR_CLASS=ACCESS_DENIED"
+    assert "PRIVATE_RAW_ERROR_TEXT" not in errors.getvalue()
