@@ -126,11 +126,45 @@ if [[ -z "$aws_cli" ]]; then
   printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCH=%s\n' "$aws_package_arch"
   probe_stage=DOWNLOAD_AWS_CLI
   mkdir -p "$stage/aws-cli" "$stage/bin"
-  curl --fail --silent --show-error --max-time 60 \
-    "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
-    -o "$stage/awscliv2.zip" 2>/dev/null
-  probe_stage=EXTRACT_AWS_CLI
-  python3 -m zipfile -e "$stage/awscliv2.zip" "$stage/awscli-installer" >/dev/null 2>&1
+  probe_stage=DOWNLOAD_AWS_CLI
+  archive_ready=false
+  for attempt in 1 2 3; do
+    rm -f "$stage/awscliv2.zip"
+    if curl --fail --silent --show-error --retry 2 --retry-delay 1 \
+      --retry-connrefused --retry-all-errors --max-time 60 \
+      "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
+      -o "$stage/awscliv2.zip" 2>/dev/null; then
+      probe_stage=VERIFY_AWS_CLI_ARCHIVE
+      archive_status="$(python3 - "$stage/awscliv2.zip" "$stage/awscli-installer" <<'PY'
+import sys
+import zipfile
+
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        corrupt_member = archive.testzip()
+        if corrupt_member is not None:
+            print("CRC_FAILURE")
+        else:
+            archive.extractall(sys.argv[2])
+            print("PASS")
+except zipfile.BadZipFile:
+    print("INVALID_ZIP")
+except OSError:
+    print("EXTRACTION_IO_ERROR")
+except Exception:
+    print("ARCHIVE_ERROR")
+PY
+)"
+      if [[ "$archive_status" == PASS ]]; then
+        archive_ready=true
+        break
+      fi
+    fi
+  done
+  if [[ "$archive_ready" != true ]]; then
+    printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=%s\\n' "${archive_status:-DOWNLOAD_FAILED}"
+    exit 1
+  fi
   chmod 0755 "$stage/awscli-installer/aws/install"
   find "$stage/awscli-installer" -type f -name aws -exec chmod u+x {} + 2>/dev/null || true
   probe_stage=RUN_AWS_CLI_INSTALLER
