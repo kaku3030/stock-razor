@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-21T15:40:00Z",
+  "last_reconciled_utc": "2026-10-21T15:58:11Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -268,6 +268,21 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/964",
       "regression_evidence": "tests/test_stock_radar_v2_canonical_bar_events.py",
       "mandatory_action": "Skip known unhealthy snapshots, isolate flagged closed bars without masking structural errors, retain quarantine diagnostics, allow healthy NO_NEW_CLOSED_BAR polls; verify exact deployed worker/source SHA and cloud readback before marking resolved. Keep event/source admission blocked for UNPROVEN/UNKNOWN source proof while allowing fresh schema-valid provisional research; preserve event gate status on unchanged polls.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-006",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "INTRADAY_RANGE_CLIPPED",
+        "LOOKBACK_365"
+      ],
+      "status": "OPEN",
+      "diagnosis": "The CN historical adapter clipped explicit 15m/1H date ranges to a 365-day provider lookback, and stockdata-hub's symbol+period cache does not distinguish date ranges. Regression tests on main 339e419 reproduced both periods requesting only 365 days for a 2016-to-2026 query. The adapter fix now passes the bounded full range and bypasses the cache for explicit starts; actual EastMoney history back to 2016 remains NOT_VERIFIED because the read-only provider probe was disconnected before returning data.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/963",
+      "regression_evidence": "tests/test_stockdata_hub_historical_adapter.py",
+      "mandatory_action": "Keep explicit intraday lookbacks bounded and bypass the range-unaware cache. Before claiming 2016 coverage, verify observed earliest/latest timestamps and source identity for 000001 at both 15m and 60m; keep provider finality and all Radar/trading gates independent.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
