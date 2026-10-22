@@ -98,11 +98,8 @@ def test_both_download_hashes_verify_before_install_and_logs_stay_private(tmp_pa
     remote = Path("ops/aws/deploy_cn_radar_remote.sh").read_text(encoding="utf-8")
     marker = tmp_path / "installed"
     result = run(remote, {"PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
-                      "REPO_REF": SHA, "INSTALL_SHA": hashes["install"],
-                      "VERIFY_SHA": hashes["verify"],
-                      "INSTALL_SOURCE": str(install_path), "VERIFY_SOURCE": str(verify_path),
-                      "INSTALL_MARKER": str(marker)})
-    result = run(remote, {"PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+                          "SOURCE_PROVIDER": "tickflow", "REPO_REF": SHA,
+                          "INSTALL_SHA": hashes["install"], "VERIFY_SHA": hashes["verify"],
                           "INSTALL_SOURCE": str(install_path), "VERIFY_SOURCE": str(verify_path),
                           "INSTALL_MARKER": str(marker)})
     assert (result.returncode == 0) is (tamper is None)
