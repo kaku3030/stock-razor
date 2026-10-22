@@ -78,3 +78,15 @@ def test_cn_radar_worker_does_not_clamp_future_source_to_fake_zero_latency():
     assert "source_delta_ms >= 0" in INSTALL
     assert "data_to_radar_latency_ms = round(source_delta_ms, 3)" in INSTALL
     assert "source_age_seconds = (" in INSTALL
+
+
+def test_cn_radar_workflow_reports_only_whitelisted_ssm_failure_evidence():
+    assert "StandardErrorContent" in WORKFLOW
+    assert "ResponseCode" in WORKFLOW
+    assert "CN_RADAR_SSM_STATUS=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_RESPONSE_CODE=%s" in WORKFLOW
+    assert "CN_RADAR_FAILURE_CLASS=%s" in WORKFLOW
+    assert "failure_class=INSTALL" in WORKFLOW
+    assert "failure_class=ACCEPTANCE" in WORKFLOW
+    assert "echo \"$stderr\"" not in WORKFLOW
+    assert "StandardOutputContent or StandardErrorContent" not in WORKFLOW
