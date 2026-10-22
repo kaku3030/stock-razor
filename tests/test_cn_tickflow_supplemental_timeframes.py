@@ -176,4 +176,67 @@ def test_intraday_5m_native_tick_precision_retained_without_trade_promotion(tmp_
     snap=build_observation(MixedClient(),now_utc=now,repo_sha=SHA,
                            sequence=9,include_supplemental=True)
     cache=tmp_path/"native-five-minute.json"
-    atomic_publish
+    atomic_publish(str(cache),snap)
+    progress=read_cn_tickflow_research_data(
+        "159611.SZ","5m",limit=24,path=str(cache),now_utc=now,
+        research_mode="session_progress")
+    assert progress["ok"] is True
+    assert progress["status"]=="PASS_RESEARCH_ONLY"
+    assert progress["expected_grid_progress"]=="DUE_LABEL_PRESENT_NOT_FINALITY_PROOF"
+    assert progress["tolerated_vendor_float_rows"]==18
+    assert progress["ohlc_precision_scope"]=="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+    assert progress["rows"][-1]["label"]=="2026-10-15 11:30"
+    assert progress["rows"][0]["high"]==1.504999999999
+    assert all(r["is_partial_bar"] is True
+               and r["bar_finality"]=="NOT_VERIFIED" for r in progress["rows"])
+    assert progress["currentness"]=="UNPROVEN"
+    assert progress["can_confirm_signal"] is False
+    assert progress["source_arbiter_admission"]=="BLOCKED"
+    assert progress["radar_admission"]=="BLOCKED"
+    assert progress["live_trade"] is False
+    # Historical-only intraday stays stricter: same-day tolerated bars
+    # are never mislabeled closed/historical before the exchange close.
+    historical=read_cn_tickflow_research_data(
+        "159611.SZ","5m",limit=24,path=str(cache),now_utc=now,
+        research_mode="historical_only")
+    assert historical["status"]=="INVALID_CACHE"
+
+    # Delete one due time boundary: a current last bar cannot conceal it.
+    snap["symbols"]["159611.SZ"]["5m"]["rows"]=[
+        row for row in snap["symbols"]["159611.SZ"]["5m"]["rows"]
+        if row["label"]!="2026-10-15 10:00"
+    ]
+    atomic_publish(str(cache),snap)
+    missing=read_cn_tickflow_research_data(
+        "159611.SZ","5m",limit=1,path=str(cache),now_utc=now,
+        research_mode="session_progress")
+    assert missing["ok"] is False
+    assert missing["status"]=="BAR_LABEL_BEHIND_SESSION"
+    assert missing["due_grid_continuity"]=="INCOMPLETE"
+    assert missing["rows"]==[]
+    assert missing["radar_admission"]=="BLOCKED"
+
+
+def test_intraday_5m_non_lattice_or_large_gap_does_not_gain_tolerance():
+    from data_provider.cn_tickflow_research_cache import normalize_bars
+    now=datetime(2026,10,15,3,35,tzinfo=timezone.utc)
+    a=KlineGetter().get("159611.SZ",period="5m",count=144,
+                       adjust="none",as_dataframe=False)
+    source=_minutes("5m","2026-10-14")+[
+        t for t in _minutes("5m","2026-10-15")
+        if t.strftime("%H:%M")<="11:30"
+    ]
+    for key in a:
+        if key=="timestamp":
+            a[key]=[int(t.timestamp())*1000 for t in source]
+        else:
+            a[key]=[a[key][0]]*len(source)
+    # Genuinely invalid high below 1.505 close by >1e-5 on 10:00.
+    target=len(_minutes("5m","2026-10-14"))+5
+    a["high"][target]=1.503
+    counts={}
+    result=normalize_bars(a,"5m",now_utc=now,quarantine_counts=counts)
+    assert counts=={"TODAY_HIGH_BELOW_BODY":1}
+    assert not any(x["label"]==source[target].strftime("%Y-%m-%d %H:%M")
+                   for x in result)
+    assert all(x["bar_finality"]=="NOT_VERIFIED" for x in result)
