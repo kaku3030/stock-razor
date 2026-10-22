@@ -341,6 +341,12 @@ class PaperRuntimeOrchestrator:
             self._state = PaperRuntimeState.STOPPED
             return self.snapshot()
 
+    def close(self) -> None:
+        """Release the runtime's local SQLite resources after a scenario ends."""
+        with self._lock:
+            self._engine.store.close()
+            self._shadow._close()
+
     def project_lifecycle(
         self,
         plan: TradePlan,

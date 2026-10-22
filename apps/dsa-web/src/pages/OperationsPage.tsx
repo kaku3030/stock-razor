@@ -4,6 +4,7 @@ import { Activity, BellRing, RefreshCw, ShieldCheck } from 'lucide-react';
 import { operationsApi, type OperationsStatus, type PaperOperatorControls } from '../api/operations';
 import { ApiErrorAlert, AppPage, Card, Loading, PageHeader } from '../components/common';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
+import OfflineSimulationCard from '../components/OfflineSimulationCard';
 
 const Gate: React.FC<{ label: string; value: string; safe?: boolean }> = ({ label, value, safe = false }) => (
   <div className="flex items-center justify-between gap-4 border-b border-border/60 py-3 last:border-b-0">
@@ -41,7 +42,7 @@ const paperActionLabel = (action: string): string => ({
 
 const paperReasonLabel = (reason: string): string => ({
   READ_ONLY_NO_SIDE_EFFECTS: '只读查看，无副作用',
-  LIBRARY_ONLY_EXPLICIT_INPUT_NO_HTTP_TRIGGER: '仅支持显式输入的离线流程，网页不触发运行',
+  LOCAL_SYNTHETIC_SCENARIO_ONLY_NO_EXTERNAL_IO: '仅运行独立的手动场景演练，不触发外部 IO',
   CLOUD_ACCOUNT_IDENTITY_NOT_VERIFIED: '云端模拟账户身份尚未验证',
   NO_AUTHORIZED_OPERATOR_OR_VERIFIED_ACCOUNT: '操作身份或模拟账户尚未验证',
   NO_VERIFIED_PHONE_RECEIPT_OR_SEND_APPROVAL: '尚无手机送达回执',
@@ -123,7 +124,7 @@ const OperationsPage: React.FC = () => {
         )}
       />
       <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
-        本页面只读。LIVE_TRADE 永远显示为关闭，不能从 WebUI 解锁真实交易。
+        外部账户、行情与自动执行控制保持只读；仅提供下方独立的本地离线场景演练。LIVE_TRADE 保持关闭。
       </div>
       <div className="mt-5 grid gap-4 md:grid-cols-3">
         <Card title="数据门禁" subtitle="ADMISSION">
@@ -191,7 +192,7 @@ const OperationsPage: React.FC = () => {
                   <span className="text-sm">{paperActionLabel(action.action)}</span>
                   <span className="text-xs text-secondary-text">{paperReasonLabel(action.reason)}</span>
                   <span className={action.available ? 'rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success' : 'rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning'}>
-                    {action.available ? '可查看' : '未开放'}
+                    {action.available ? (action.action === 'run_offline_simulation' ? '可运行' : '可查看') : '未开放'}
                   </span>
                 </li>
               ))}
@@ -200,6 +201,7 @@ const OperationsPage: React.FC = () => {
           </>
         )}
       </Card>
+      <OfflineSimulationCard />
       <Card className="mt-4" title="待验收事项" subtitle="ACCEPTANCE QUEUE">
         <ul className="space-y-2 text-sm text-secondary-text">
           {status.pending_acceptance.map((item) => <li key={item}>• {item}</li>)}

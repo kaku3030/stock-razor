@@ -29,6 +29,7 @@ from api.v1.endpoints import (
     usage,
     research_validation,
     operations,
+    offline_simulation,
 )
 
 # 创建 v1 版本主路由。
@@ -127,6 +128,11 @@ router.include_router(
 
 router.include_router(
     operations.router,
+    prefix="/operations",
+    tags=["Operations"],
+)
+router.include_router(
+    offline_simulation.router,
     prefix="/operations",
     tags=["Operations"],
 )

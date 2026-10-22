@@ -94,7 +94,7 @@ def operations_status() -> OperationsStatusResponse:
         paper_auto_ready=False,
         paper_engine_status="IMPLEMENTED_OFFLINE_ONLY",
         offline_simulation_status="READY_EXPLICIT_OFFLINE_RUN_EXTERNAL_BROKER_NOT_CONNECTED",
-        paper_runtime_api_status="NOT_EXPOSED",
+        paper_runtime_api_status="MANUAL_SYNTHETIC_SCENARIO_ONLY",
         execution_recovery_projection_status="IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING",
         paper_runtime_store_config_status=_paper_runtime_store_config_status(),
         trade_plan_status="IMPLEMENTED_READ_ONLY_V0_2",
@@ -133,7 +133,8 @@ def paper_operator_controls() -> PaperOperatorControlsResponse:
             ),
             PaperOperatorAction(
                 action="run_offline_simulation",
-                reason="LIBRARY_ONLY_EXPLICIT_INPUT_NO_HTTP_TRIGGER",
+                available=True,
+                reason="LOCAL_SYNTHETIC_SCENARIO_ONLY_NO_EXTERNAL_IO",
             ),
             PaperOperatorAction(
                 action="discover_external_paper_account",

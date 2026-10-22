@@ -23,7 +23,7 @@ def test_operations_status_is_fail_closed(monkeypatch):
     assert response.live_trade is False
     assert response.paper_auto_ready is False
     assert response.paper_engine_status == "IMPLEMENTED_OFFLINE_ONLY"
-    assert response.paper_runtime_api_status == "NOT_EXPOSED"
+    assert response.paper_runtime_api_status == "MANUAL_SYNTHETIC_SCENARIO_ONLY"
     assert response.execution_recovery_projection_status == "IMPLEMENTED_READ_ONLY_RUNTIME_WIRING_PENDING"
     assert response.paper_runtime_store_config_status == "NOT_CONFIGURED_OR_INVALID"
     assert response.external_simulator_contract_status == "READY_READ_ONLY_UNVERIFIED_CLOUD_ACCOUNT"
@@ -109,10 +109,12 @@ def test_paper_controls_exposes_read_only_capabilities_only(monkeypatch):
     assert response.phone_notification_receipt == "NOT_VERIFIED"
     actions = {action.action: action for action in response.actions}
     assert actions["inspect_operator_controls"].available is True
+    assert actions["run_offline_simulation"].available is True
+    assert actions["run_offline_simulation"].reason == "LOCAL_SYNTHETIC_SCENARIO_ONLY_NO_EXTERNAL_IO"
     assert all(
         not action.available
         for action in response.actions
-        if action.action != "inspect_operator_controls"
+        if action.action not in {"inspect_operator_controls", "run_offline_simulation"}
     )
     # No POST/PATCH/DELETE on this router: even a permissive environment
     # cannot convert the operator disclosure interface into a trading API.
@@ -149,7 +151,7 @@ def test_operations_status_never_promotes_unverified_external_paper_from_env(mon
     assert status.radar_admission == "BLOCKED"
     assert status.source_arbiter_admission == "BLOCKED"
     assert status.paper_auto_ready is False
-    assert status.paper_runtime_api_status == "NOT_EXPOSED"
+    assert status.paper_runtime_api_status == "MANUAL_SYNTHETIC_SCENARIO_ONLY"
     assert status.simulated_account_evidence == "NOT_VERIFIED"
     assert status.live_trade is False
     assert controls.read_only is True
