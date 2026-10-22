@@ -97,3 +97,10 @@ def test_cn_radar_remote_command_reports_only_fixed_preflight_stages():
         assert f"CN_RADAR_STAGE={stage}" in WORKFLOW
     assert "for candidate in INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT" in WORKFLOW
     assert "printf '%s\\n' \"$stderr\"" not in WORKFLOW
+
+
+def test_cn_radar_remote_setup_failure_has_fixed_stage_code():
+    assert "stage_code=REMOTE_SETUP" in WORKFLOW
+    assert "stage_code=TEMP_DIR" in WORKFLOW
+    assert "CN_RADAR_STAGE=$stage_code" in WORKFLOW
+    assert "REMOTE_SETUP TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW

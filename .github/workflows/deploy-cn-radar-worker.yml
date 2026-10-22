@@ -108,7 +108,10 @@ jobs:
           # BOTH verify before any systemd restart occurs.
           read -r -d '' remote <<REMOTE || true
           set -eu
+          stage_code=REMOTE_SETUP
+          trap 'rc=$?; echo "CN_RADAR_STAGE=$stage_code" >&2; exit "$rc"' ERR
           umask 077
+          stage_code=TEMP_DIR
           stage=\$(mktemp -d)
           trap 'rm -rf "\$stage"' EXIT
           if ! curl -fsSL --proto '=https' --tlsv1.2 \
@@ -186,7 +189,7 @@ jobs:
               --query ResponseCode --output text 2>/dev/null || true)"
             [[ "$response_code" =~ ^-?[0-9]+$ ]] || response_code=UNKNOWN
             failure_class=REMOTE_COMMAND
-            for candidate in INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
+            for candidate in REMOTE_SETUP TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
               if grep -Fxq "CN_RADAR_STAGE=$candidate" <<< "$stderr"; then
                 failure_class="$candidate"
                 break
