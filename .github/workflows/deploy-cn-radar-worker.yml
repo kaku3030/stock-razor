@@ -219,6 +219,19 @@ jobs:
                 break
               fi
             done
+            if [[ "$failure_class" == REMOTE_COMMAND ]]; then
+              if [[ -z "$stderr" && -z "$stdout" ]]; then
+                failure_class=REMOTE_NO_OUTPUT
+              elif grep -Eiq "syntax error|unexpected EOF" <<< "$evidence"; then
+                failure_class=REMOTE_SYNTAX
+              elif grep -Eiq "command not found|not found|No such file" <<< "$evidence"; then
+                failure_class=REMOTE_MISSING_COMMAND
+              elif grep -Eiq "Permission denied" <<< "$evidence"; then
+                failure_class=REMOTE_PERMISSION
+              else
+                failure_class=REMOTE_UNCLASSIFIED_OUTPUT
+              fi
+            fi
             if grep -Fxq 'CN_RADAR_INSTALL=FAILED' <<< "$evidence"; then
               failure_class=INSTALL
             elif grep -Fxq 'CN_RADAR_ACCEPTANCE=FAILED' <<< "$evidence"; then
@@ -226,6 +239,7 @@ jobs:
             fi
             printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\nCN_RADAR_SSM_STATUS=%s\nCN_RADAR_SSM_RESPONSE_CODE=%s\nCN_RADAR_FAILURE_CLASS=%s\n' \
               "$status" "$response_code" "$failure_class" >&2
+            printf 'CN_RADAR_SSM_STDOUT_CHARS=%s\nCN_RADAR_SSM_STDERR_CHARS=%s\n' "${#stdout}" "${#stderr}" >&2
             exit 1
           fi
           out="$(aws ssm get-command-invocation \
