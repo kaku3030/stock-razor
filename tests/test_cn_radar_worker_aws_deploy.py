@@ -115,3 +115,11 @@ def test_cn_radar_failure_readback_retries_both_bounded_ssm_streams():
     assert "for _ in $(seq 1 5)" in WORKFLOW
     assert "sleep 2" in WORKFLOW
     assert 'evidence="${stderr} ${stdout}"' in WORKFLOW
+
+
+def test_cn_radar_failure_classes_are_fixed_and_report_only_lengths():
+    for category in ("REMOTE_NO_OUTPUT", "REMOTE_SYNTAX", "REMOTE_MISSING_COMMAND", "REMOTE_PERMISSION", "REMOTE_UNCLASSIFIED_OUTPUT"):
+        assert category in WORKFLOW
+    assert "CN_RADAR_SSM_STDOUT_CHARS=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_STDERR_CHARS=%s" in WORKFLOW
+    assert '<<< "$evidence"' in WORKFLOW
