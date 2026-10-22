@@ -131,3 +131,12 @@ def test_cn_radar_ssm_preflight_is_fixed_and_precedes_deployment_payload():
     assert "CN_RADAR_SSM_PROBE=PASS" in WORKFLOW
     assert WORKFLOW.index("CN_RADAR_SSM_PREFLIGHT=PASS") < WORKFLOW.index("The two immutable commit-path downloads")
     assert "CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED" in WORKFLOW
+
+
+def test_cn_radar_ssm_probe_failure_reports_only_allowlisted_metadata():
+    assert "CN_RADAR_SSM_PREFLIGHT_DETAILS=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_PREFLIGHT_RESPONSE_CODE=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_PREFLIGHT_STDOUT_CHARS=%s" in WORKFLOW
+    assert "CN_RADAR_SSM_PREFLIGHT_STDERR_CHARS=%s" in WORKFLOW
+    assert "probe_stderr" in WORKFLOW
+    assert "StatusDetails" in WORKFLOW

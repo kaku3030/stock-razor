@@ -117,8 +117,14 @@ jobs:
           done
           probe_out="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardOutputContent --output text 2>/dev/null || true)"
           if [[ "$probe_status" != Success ]] || ! grep -Fxq CN_RADAR_SSM_PROBE=PASS <<< "$probe_out"; then
-            printf 'CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED\nCN_RADAR_SSM_PREFLIGHT_STATUS=%s\n' "$probe_status" >&2
-            exit 1
+            probe_response_code="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query ResponseCode --output text 2>/dev/null || true)"
+            [[ "$probe_response_code" =~ ^-?[0-9]+$ ]] || probe_response_code=UNKNOWN
+            probe_status_details="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query StatusDetails --output text 2>/dev/null || true)"
+            case "$probe_status_details" in Failed|DeliveryTimedOut|ExecutionTimedOut|Undeliverable|Terminated|Cancelled|AccessDenied|InvalidPlatform|Success) ;; *) probe_status_details=UNKNOWN ;; esac
+            probe_stderr="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardErrorContent --output text 2>/dev/null || true)"
+            [[ "$probe_stderr" == None ]] && probe_stderr=""
+            printf 'CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED\nCN_RADAR_SSM_PREFLIGHT_STATUS=%s\nCN_RADAR_SSM_PREFLIGHT_DETAILS=%s\nCN_RADAR_SSM_PREFLIGHT_RESPONSE_CODE=%s\nCN_RADAR_SSM_PREFLIGHT_STDOUT_CHARS=%s\nCN_RADAR_SSM_PREFLIGHT_STDERR_CHARS=%s\n' \
+              "$probe_status" "$probe_status_details" "$probe_response_code" "${#probe_out}" "${#probe_stderr}" >&2            exit 1
           fi
           echo 'CN_RADAR_SSM_PREFLIGHT=PASS'
           # The two immutable commit-path downloads and their hashes must
