@@ -108,3 +108,58 @@ def test_aws_workflow_default_one_quote_requires_separate_explicit_full_probe():
     assert "source_arbiter_admission" in script
     assert "radar_admission" in script
     assert "live_trade" in script
+
+
+
+def test_tickflow_aws_cli_archive_retry_cleans_partial_extract_and_classifies_io(tmp_path):
+    import re
+    import subprocess
+    import sys
+    import zipfile
+
+    bootstrap = Path("ops/aws/run_tickflow_premium_probe.sh").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/probe-tickflow-aws-premium.yml").read_text(encoding="utf-8")
+
+    retry_start = bootstrap.index("  for attempt in 1 2 3; do")
+    retry_end = bootstrap.index("\n  done", retry_start)
+    retry = bootstrap[retry_start:retry_end]
+    cleanup = 'rm -rf "$stage/awscli-installer"'
+    validator = "python3 - \"$stage/awscliv2.zip\" \"$stage/awscli-installer\" <<'PY'"
+    assert cleanup in retry
+    assert retry.index(cleanup) < retry.index(validator)
+    assert 'archive_status=DOWNLOAD_FAILED' in retry
+    assert "except OSError as exc:" in retry
+    assert "errno.ENOSPC" in retry and 'print("NO_SPACE")' in retry
+    assert "errno.EIO" in retry and 'print("IO_ERROR")' in retry
+    assert "TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=(PASS|CRC_FAILURE|INVALID_ZIP|NO_SPACE|IO_ERROR|PERMISSION_ERROR|OS_ERROR|EXTRACTION_IO_ERROR|ARCHIVE_ERROR|DOWNLOAD_FAILED)" in workflow
+
+    code_start = retry.index("<<'PY'\n") + len("<<'PY'\n")
+    code_end = retry.index("\nPY\n)", code_start)
+    validator_source = retry[code_start:code_end]
+
+    def run_validator(archive_path, destination):
+        return subprocess.run(
+            [sys.executable, "-c", validator_source, str(archive_path), str(destination)],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+
+    good_archive = tmp_path / "good.zip"
+    with zipfile.ZipFile(good_archive, "w") as archive:
+        archive.writestr("aws/install", "#!/bin/sh\n")
+    good_dest = tmp_path / "good-dest"
+    good_result = run_validator(good_archive, good_dest)
+    assert good_result.returncode == 0
+    assert good_result.stdout.strip() == "PASS"
+    assert (good_dest / "aws/install").is_file()
+
+    invalid_archive = tmp_path / "invalid.zip"
+    invalid_archive.write_bytes(b"not-a-zip")
+    invalid_result = run_validator(invalid_archive, tmp_path / "invalid-dest")
+    assert invalid_result.stdout.strip() == "INVALID_ZIP"
+
+    blocked_dest = tmp_path / "not-a-directory"
+    blocked_dest.write_text("x", encoding="utf-8")
+    io_result = run_validator(good_archive, blocked_dest)
+    assert io_result.stdout.strip() == "OS_ERROR"
+    assert str(blocked_dest) not in io_result.stdout
+    assert re.fullmatch(r"(PASS|INVALID_ZIP|OS_ERROR)", io_result.stdout.strip())
