@@ -162,7 +162,7 @@ PY
     fi
   done
   if [[ "$archive_ready" != true ]]; then
-    printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=%s\\n' "${archive_status:-DOWNLOAD_FAILED}"
+    printf 'TICKFLOW_PREMIUM_AWS_CLI_ARCHIVE=%s\n' "${archive_status:-DOWNLOAD_FAILED}"
     exit 1
   fi
   chmod 0755 "$stage/awscli-installer/aws/install"
