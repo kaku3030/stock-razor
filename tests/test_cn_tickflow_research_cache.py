@@ -1032,8 +1032,8 @@ def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings_batch(tmp_path
     valid = "100001.SZ"
 
     class SparseBatchKlines(FakeKlines):
-        def batch(self, symbols, **kwargs):
-            result = super().batch(symbols, **kwargs)
+        def intraday_batch(self, symbols, **kwargs):
+            result = super().intraday_batch(symbols, **kwargs)
             if kwargs["period"] == "15m":
                 frame = result[sparse]
                 result[sparse] = {
