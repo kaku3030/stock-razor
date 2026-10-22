@@ -56,7 +56,7 @@ def test_missing_websockets_blocks_official_sdk_before_client_creation(monkeypat
         m.setitem(sys.modules,"tickflow",synthetic)
         m.setattr(builtins,"__import__",import_without_websocket)
         result=probe.build_probe(
-            mode="premium",symbols=("159611.SZ","518880.SH"),
+            mode="premium",symbols=("159611.SZ","159209.SZ"),
             ws_seconds=10,credential_present=True,
             sdk_version="0.1.25",
         )
@@ -70,6 +70,15 @@ def test_missing_websockets_blocks_official_sdk_before_client_creation(monkeypat
     assert result["radar_admission"]=="BLOCKED"
     assert result["canonical_write"] is False
     assert result["live_trade"] is False
+
+
+def test_aws_premium_probe_targets_the_requested_two_etfs():
+    script=BOOTSTRAP.read_text(encoding="utf-8")
+    start=script.index("probe_args=(")
+    end=script.index('if [[ "$quote_only" == true ]]',start)
+    scope=script[start:end]
+    assert "--symbols 159611.SZ 159209.SZ" in scope
+    assert "518880.SH" not in scope
 
 
 def test_ws_import_guard_does_not_block_explicit_no_ws_premium_rest(monkeypatch):
