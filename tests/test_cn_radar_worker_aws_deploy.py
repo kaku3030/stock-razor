@@ -107,3 +107,11 @@ def test_cn_radar_remote_temp_directory_failure_has_fixed_stage_code():
     assert "stage_code=REMOTE_INIT" in WORKFLOW
     assert "TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW
     assert "stage_code=REMOTE_SETUP" not in WORKFLOW
+
+
+def test_cn_radar_failure_readback_retries_both_bounded_ssm_streams():
+    assert "StandardErrorContent" in WORKFLOW
+    assert "StandardOutputContent" in WORKFLOW
+    assert "for _ in $(seq 1 5)" in WORKFLOW
+    assert "sleep 2" in WORKFLOW
+    assert 'evidence="${stderr}"' in WORKFLOW
