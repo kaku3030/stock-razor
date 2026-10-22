@@ -123,6 +123,8 @@ class ExecutionStore:
     @property
     def durable(self) -> bool:
         return self.path != ":memory:"
+    def close(self) -> None:
+        self.connection.close()
     def save_intent(self, intent: OrderIntent) -> None:
         payload = {"intent_id": intent.intent_id, "symbol": intent.symbol, "side": intent.side.value, "order_type": intent.order_type.value, "qty": str(intent.qty), "limit_price": str(intent.limit_price) if intent.limit_price is not None else None, "stop_price": str(intent.stop_price) if intent.stop_price is not None else None, "max_slippage": str(intent.max_slippage) if intent.max_slippage is not None else None, "invalidation": str(intent.invalidation) if intent.invalidation is not None else None, "risk_budget_r": str(intent.risk_budget_r) if intent.risk_budget_r is not None else None, "valid_until": intent.valid_until.isoformat() if intent.valid_until is not None else None, "strategy_id": intent.strategy_id, "evidence_snapshot_id": intent.evidence_snapshot_id, "account_target": intent.account_target, "broker_target": intent.broker_target, "allowed_session": intent.allowed_session}
         with self.connection: self.connection.execute("INSERT OR IGNORE INTO intents(intent_id,payload) VALUES(?,?)", (intent.intent_id, json.dumps(payload, sort_keys=True)))

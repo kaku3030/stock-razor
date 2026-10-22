@@ -34,6 +34,34 @@ export type PaperOperatorControls = {
   actions: Array<{ action: string; available: boolean; reason: string }>;
 };
 
+export type OfflineSimulationRequest = {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: string;
+  limit_price: string;
+  max_slippage?: string;
+  simulate_fill?: boolean;
+};
+
+export type OfflineSimulationResponse = {
+  scenario_id: string;
+  environment: 'LOCAL_OFFLINE_SIMULATION';
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: string;
+  limit_price: string;
+  currency: 'USD' | 'CNY';
+  runtime_state: string;
+  order_state: string;
+  filled_quantity: string;
+  external_fill_confirmation: false;
+  fill_source: 'LOCAL_SCENARIO_FIXTURE' | 'NONE';
+  broker_io: false;
+  provider_io: false;
+  live_trade: false;
+  note: string;
+};
+
 export const operationsApi = {
   async getStatus(): Promise<OperationsStatus> {
     const response = await apiClient.get<OperationsStatus>('/v1/operations/status');
@@ -41,6 +69,13 @@ export const operationsApi = {
   },
   async getPaperControls(): Promise<PaperOperatorControls> {
     const response = await apiClient.get<PaperOperatorControls>('/v1/operations/paper-controls');
+    return response.data;
+  },
+  async runOfflineSimulation(params: OfflineSimulationRequest): Promise<OfflineSimulationResponse> {
+    const response = await apiClient.post<OfflineSimulationResponse>(
+      '/v1/operations/offline-simulation',
+      params,
+    );
     return response.data;
   },
 };

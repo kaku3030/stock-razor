@@ -69,12 +69,15 @@ def run_offline_paper_simulation(
     )
     # Offline simulation capital is explicit and scenario-derived; it is not
     # a claim about any real or remote Paper account.
-    runtime.initialize_offline_balance(spec.qty * spec.limit_price, context.now)
-    runtime.start()
-    result = runtime.process(evidence, spec, context)
-    return OfflinePaperSimulationReport(
-        runtime=runtime.snapshot(),
-        result=result,
-        execution_store_path=str(config.execution_path),
-        shadow_store_path=str(config.shadow_path),
-    )
+    try:
+        runtime.initialize_offline_balance(spec.qty * spec.limit_price, context.now)
+        runtime.start()
+        result = runtime.process(evidence, spec, context)
+        return OfflinePaperSimulationReport(
+            runtime=runtime.snapshot(),
+            result=result,
+            execution_store_path=str(config.execution_path),
+            shadow_store_path=str(config.shadow_path),
+        )
+    finally:
+        runtime.close()
