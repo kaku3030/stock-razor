@@ -128,14 +128,22 @@ if [[ -z "$aws_cli" ]]; then
   mkdir -p "$stage/aws-cli" "$stage/bin"
   probe_stage=DOWNLOAD_AWS_CLI
   archive_ready=false
+  archive_status=DOWNLOAD_FAILED
   for attempt in 1 2 3; do
     rm -f "$stage/awscliv2.zip"
+    # A failed extraction may leave hundreds of megabytes behind. Start each
+    # retry from an empty destination so partial files cannot exhaust /tmp or
+    # contaminate a later extraction.
+    rm -rf "$stage/awscli-installer"
+    mkdir -p "$stage/awscli-installer"
+    archive_status=DOWNLOAD_FAILED
     if curl --fail --silent --show-error --retry 2 --retry-delay 1 \
       --retry-connrefused --retry-all-errors --max-time 60 \
       "https://awscli.amazonaws.com/awscli-exe-linux-${aws_package_arch}.zip" \
       -o "$stage/awscliv2.zip" 2>/dev/null; then
       probe_stage=VERIFY_AWS_CLI_ARCHIVE
       archive_status="$(python3 - "$stage/awscliv2.zip" "$stage/awscli-installer" <<'PY'
+import errno
 import sys
 import zipfile
 
@@ -149,8 +157,15 @@ try:
             print("PASS")
 except zipfile.BadZipFile:
     print("INVALID_ZIP")
-except OSError:
-    print("EXTRACTION_IO_ERROR")
+except OSError as exc:
+    if exc.errno == errno.ENOSPC:
+        print("NO_SPACE")
+    elif exc.errno == errno.EIO:
+        print("IO_ERROR")
+    elif exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+        print("PERMISSION_ERROR")
+    else:
+        print("OS_ERROR")
 except Exception:
     print("ARCHIVE_ERROR")
 PY
