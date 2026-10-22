@@ -88,7 +88,17 @@ jobs:
             --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" \
             --query 'InstanceInformationList[0].[PingStatus,AgentVersion,IsLatestVersion,LastPingDateTime]' \
             --output text)"
-          IFS=
+          read -r ping agent_version is_latest last_ping <<< "$info"
+          [[ "$ping" == Online ]]
+          [[ "$agent_version" =~ ^[0-9.]+$ ]] || agent_version=UNKNOWN
+          [[ "$is_latest" == True || "$is_latest" == False ]] || is_latest=UNKNOWN
+          [[ "$last_ping" =~ ^[0-9T:.+Z-]+$ ]] || last_ping=UNKNOWN
+          printf 'CN_RADAR_SSM_INSTANCE_PING=%s\n' "$ping"
+          printf 'CN_RADAR_SSM_AGENT_VERSION=%s\n' "$agent_version"
+          printf 'CN_RADAR_SSM_AGENT_LATEST=%s\n' "$is_latest"
+          printf 'CN_RADAR_SSM_LAST_PING=%s\n' "$last_ping"
+
+      - name: Deploy SHA-pinned verified files with sanitized SSM results
         id: deploy
         shell: bash
         env:
