@@ -56,7 +56,7 @@ env:
   TARGET_INSTANCE_ID: i-01738342af3efac72
 
 jobs:
-  ssm-ops:
+  read-only-ssm:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
