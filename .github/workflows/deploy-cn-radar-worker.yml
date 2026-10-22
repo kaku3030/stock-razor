@@ -224,11 +224,11 @@ jobs:
             elif grep -Fxq 'CN_RADAR_ACCEPTANCE=FAILED' <<< "$evidence"; then
               failure_class=ACCEPTANCE
             fi
-            printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\\nCN_RADAR_SSM_STATUS=%s\\nCN_RADAR_SSM_RESPONSE_CODE=%s\\nCN_RADAR_FAILURE_CLASS=%s\\n' \\
+            printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=NOT_VERIFIED\nCN_RADAR_SSM_STATUS=%s\nCN_RADAR_SSM_RESPONSE_CODE=%s\nCN_RADAR_FAILURE_CLASS=%s\n' \
               "$status" "$response_code" "$failure_class" >&2
             exit 1
           fi
-                    out="$(aws ssm get-command-invocation \
+          out="$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$TARGET_INSTANCE_ID" \
             --query 'StandardOutputContent' --output text)"
