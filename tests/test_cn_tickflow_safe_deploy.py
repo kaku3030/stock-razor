@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github/workflows/deploy-cn-tickflow-research.yml").read_text(encoding="utf-8")
 INSTALL = (ROOT / "ops/aws/install_cn_tickflow_research.sh").read_text(encoding="utf-8")
 VERIFY = (ROOT / "ops/aws/verify_cn_tickflow_research.sh").read_text(encoding="utf-8")
+REQUIREMENTS = (ROOT / "ops/requirements/tickflow-isolated-v0.1.txt").read_text(encoding="utf-8")
 
 
 def test_workflow_is_explicit_and_dry_run_by_default():
@@ -72,3 +73,10 @@ def test_verifier_requires_multiday_warmup_for_the_four_research_etfs():
     assert '("15m",96),("60m",24),("1d",60)' in VERIFY
     assert '"CN_TICKFLOW_HISTORY_WARMUP=PASS"' in VERIFY
     assert '"ROW_COUNT_BELOW_MIN"' not in VERIFY  # short data cannot be accepted
+
+
+def test_installer_uses_the_locked_boto3_version_without_cli_override():
+    assert "boto3==1.43.114" in REQUIREMENTS
+    assert "botocore==1.43.114" in REQUIREMENTS
+    assert "'boto3==" not in INSTALL
+    assert 'm.version("boto3")=="1.43.114"' in INSTALL
