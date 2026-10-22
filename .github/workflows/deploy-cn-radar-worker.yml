@@ -111,12 +111,20 @@ jobs:
           umask 077
           stage=\$(mktemp -d)
           trap 'rm -rf "\$stage"' EXIT
-          curl -fsSL --proto '=https' --tlsv1.2 \
-            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"
-          printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null
-          curl -fsSL --proto '=https' --tlsv1.2 \
-            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"
-          printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null
+          if ! curl -fsSL --proto '=https' --tlsv1.2 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
+            echo 'CN_RADAR_STAGE=INSTALL_DOWNLOAD' >&2; exit 1
+          fi
+          if ! printf '%s  %s\n' '$INSTALL_SHA' "\$stage/install.sh" | sha256sum -c - >/dev/null; then
+            echo 'CN_RADAR_STAGE=INSTALL_HASH' >&2; exit 1
+          fi
+          if ! curl -fsSL --proto '=https' --tlsv1.2 \
+            'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_cn_radar_worker.sh' -o "\$stage/verify.sh"; then
+            echo 'CN_RADAR_STAGE=VERIFY_DOWNLOAD' >&2; exit 1
+          fi
+          if ! printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null; then
+            echo 'CN_RADAR_STAGE=VERIFY_HASH' >&2; exit 1
+          fi
           if ! SOURCE_PROVIDER='$SOURCE_PROVIDER' REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
             echo 'CN_RADAR_INSTALL=FAILED' >&2
             exit 1
@@ -126,11 +134,13 @@ jobs:
             echo 'CN_RADAR_ACCEPTANCE=FAILED' >&2
             exit 1
           fi
-          grep -Fx enabled "\$stage/verify.log" >/dev/null
-          grep -Fx active "\$stage/verify.log" >/dev/null
-          grep -Fx CN_RADAR_WORKER_VERIFY=PASS "\$stage/verify.log" >/dev/null
-          grep -Fx RADAR_ADMISSION=BLOCKED "\$stage/verify.log" >/dev/null
-          grep -Fx LIVE_TRADE=NO "\$stage/verify.log" >/dev/null
+          if ! grep -Fx enabled "\$stage/verify.log" >/dev/null ||
+             ! grep -Fx active "\$stage/verify.log" >/dev/null ||
+             ! grep -Fx CN_RADAR_WORKER_VERIFY=PASS "\$stage/verify.log" >/dev/null ||
+             ! grep -Fx RADAR_ADMISSION=BLOCKED "\$stage/verify.log" >/dev/null ||
+             ! grep -Fx LIVE_TRADE=NO "\$stage/verify.log" >/dev/null; then
+            echo 'CN_RADAR_STAGE=VERIFY_OUTPUT' >&2; exit 1
+          fi
           printf 'CN_RADAR_WORKER_AWS_DEPLOYMENT=PASS\nRADAR_ADMISSION=BLOCKED\nLIVE_TRADE=NO\n'
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
@@ -176,6 +186,12 @@ jobs:
               --query ResponseCode --output text 2>/dev/null || true)"
             [[ "$response_code" =~ ^-?[0-9]+$ ]] || response_code=UNKNOWN
             failure_class=REMOTE_COMMAND
+            for candidate in INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
+              if grep -Fxq "CN_RADAR_STAGE=$candidate" <<< "$stderr"; then
+                failure_class="$candidate"
+                break
+              fi
+            done
             if grep -Fxq 'CN_RADAR_INSTALL=FAILED' <<< "$stderr"; then
               failure_class=INSTALL
             elif grep -Fxq 'CN_RADAR_ACCEPTANCE=FAILED' <<< "$stderr"; then
