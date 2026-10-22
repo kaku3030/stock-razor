@@ -15,6 +15,14 @@
 | Notifications | CONFIGURED/UNVERIFIED | Configuration is not phone-receipt evidence |
 | Live trading | BLOCKED | `LIVE_TRADE=NO` |
 
+The Operations page reads `GET /v1/operations/paper-controls` and
+shows the Paper UI's read-only/mutation, broker-I/O, provider-I/O,
+external-account-evidence and phone-receipt states. It also lists available
+and blocked operator actions with their reasons. This is status display only:
+it does not initiate offline runs, discover broker accounts, submit/cancel
+orders, or send notifications. A control-read failure is shown separately and
+does not suppress the main operations status.
+
 ## A-share cloud read-only observation (2026-10-11 audit)
 
 An actual AWS-backed read-only MCP query for ETF `159363` returned
