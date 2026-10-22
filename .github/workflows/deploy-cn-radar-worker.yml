@@ -109,7 +109,10 @@ jobs:
           read -r -d '' remote <<REMOTE || true
           set -eu
           umask 077
-          stage=\$(mktemp -d)
+          if ! stage=\$(mktemp -d); then
+            echo 'CN_RADAR_STAGE=TEMP_DIR' >&2
+            exit 1
+          fi
           trap 'rm -rf "\$stage"' EXIT
           if ! curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/install_cn_radar_worker.sh' -o "\$stage/install.sh"; then
@@ -186,7 +189,7 @@ jobs:
               --query ResponseCode --output text 2>/dev/null || true)"
             [[ "$response_code" =~ ^-?[0-9]+$ ]] || response_code=UNKNOWN
             failure_class=REMOTE_COMMAND
-            for candidate in INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
+            for candidate in TEMP_DIR INSTALL_DOWNLOAD INSTALL_HASH VERIFY_DOWNLOAD VERIFY_HASH VERIFY_OUTPUT; do
               if grep -Fxq "CN_RADAR_STAGE=$candidate" <<< "$stderr"; then
                 failure_class="$candidate"
                 break
