@@ -20,6 +20,8 @@ def sample():
         "quality_flags": [], "is_closed": True, "is_complete": True
     }
     hb = {"repo_sha": SHA, "runtime_instance_id": "livefeed", "bar_closure": "PROVEN"}
+    # Keep each timeframe independent so a test mutation to one bar cannot leak into another.
+    import copy
     market = {
         "repo_sha": SHA, "runtime_instance_id": "livefeed",
         "radar_admission": "BLOCKED", "live_trade": False,
@@ -27,11 +29,13 @@ def sample():
         "latest_source_timestamp_utc": stamp,
         "symbols": {
             "US.QQQ": {"feed": "opend", "provider": "futu",
-                       "timeframes": {"1m": [bar], "5m": [bar], "15m": [bar], "1h": [bar]}}
+                       "timeframes": {
+                           "1m": [copy.deepcopy(bar)], "5m": [copy.deepcopy(bar)],
+                           "15m": [copy.deepcopy(bar)], "1h": [copy.deepcopy(bar)],
+                       }}
         },
     }
     # A qualified digest requires all watched symbols to have safe 15m and 1h frames.
-    import copy
     for name in reporter.SYMBOLS:
         market["symbols"][name] = copy.deepcopy(market["symbols"]["US.QQQ"])
     radar = {
