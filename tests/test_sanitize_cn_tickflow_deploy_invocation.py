@@ -26,7 +26,7 @@ def test_projects_installer_stage_without_raw_remote_text():
     }
     result = project(raw)
     assert "CN_TICKFLOW_INSTALL_FAILED_STAGE=PIP_INSTALL" in result
-    assert "CN_TICKFLOW_FAILURE_CLASS=INSTALLER_UNKNOWN_STAGE" in result
+    assert "CN_TICKFLOW_FAILURE_CLASS=INSTALLER_STAGE_FAILURE" in result
     assert not any("private details" in line for line in result)
 
 
