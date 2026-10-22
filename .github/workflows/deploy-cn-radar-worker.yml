@@ -128,7 +128,8 @@ jobs:
             probe_stderr="$(aws ssm get-command-invocation --command-id "$probe_id" --instance-id "$TARGET_INSTANCE_ID" --query StandardErrorContent --output text 2>/dev/null || true)"
             [[ "$probe_stderr" == None ]] && probe_stderr=""
             printf 'CN_RADAR_SSM_PREFLIGHT=NOT_VERIFIED\nCN_RADAR_SSM_PREFLIGHT_STATUS=%s\nCN_RADAR_SSM_PREFLIGHT_DETAILS=%s\nCN_RADAR_SSM_PREFLIGHT_RESPONSE_CODE=%s\nCN_RADAR_SSM_PREFLIGHT_STDOUT_CHARS=%s\nCN_RADAR_SSM_PREFLIGHT_STDERR_CHARS=%s\n' \
-              "$probe_status" "$probe_status_details" "$probe_response_code" "${#probe_out}" "${#probe_stderr}" >&2\n            exit 1
+              "$probe_status" "$probe_status_details" "$probe_response_code" "${#probe_out}" "${#probe_stderr}" >&2
+            exit 1
           fi
           echo 'CN_RADAR_SSM_PREFLIGHT=PASS'
           # The two immutable commit-path downloads and their hashes must
