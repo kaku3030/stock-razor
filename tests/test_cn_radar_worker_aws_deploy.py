@@ -99,8 +99,8 @@ def test_cn_radar_remote_command_reports_only_fixed_preflight_stages():
     assert "printf '%s\\n' \"$stderr\"" not in WORKFLOW
 
 
-def test_cn_radar_remote_setup_failure_has_fixed_stage_code():
-    assert "stage_code=REMOTE_SETUP" in WORKFLOW
-    assert "stage_code=TEMP_DIR" in WORKFLOW
-    assert "CN_RADAR_STAGE=$stage_code" in WORKFLOW
-    assert "REMOTE_SETUP TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW
+def test_cn_radar_remote_temp_directory_failure_has_fixed_stage_code():
+    assert r"if ! stage=\$(mktemp -d); then" in WORKFLOW
+    assert "CN_RADAR_STAGE=TEMP_DIR" in WORKFLOW
+    assert "TEMP_DIR INSTALL_DOWNLOAD" in WORKFLOW
+    assert "stage_code=REMOTE_SETUP" not in WORKFLOW
