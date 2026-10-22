@@ -82,6 +82,12 @@ def test_embedded_aws_script_uses_original_fixed_stream_baseline():
         encoding="utf-8"
     )
     assert "protected=tuple(streams)" in script
-    assert script.count("ft.OpenQuoteContext(") == 1
+    # One context is the runtime adapter; the second is an isolated, read-only
+    # quota preflight before systemd can restart the service.
+    assert script.count("ft.OpenQuoteContext(") == 2
+    assert "AB_BLEND_OPEND_QUOTA_PREFLIGHT" in script
+    assert script.index("PY_AB_BLEND_QUOTA_PREFLIGHT") < script.index(
+        "systemctl daemon-reload"
+    )
     assert script.count("bridge.start(streams)") == 1
     assert "ctx.unsubscribe(" not in script

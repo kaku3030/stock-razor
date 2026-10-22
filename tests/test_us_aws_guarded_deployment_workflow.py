@@ -49,7 +49,7 @@ def test_provider_files_sha256_verified_before_any_restart():
     assert source.count("sha256sum -c - >/dev/null") == 2
     assert source.count("raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/") == 2
     assert source.index('printf \'%s  %s\\n\' \'$VERIFY_SHA\'') < source.index(
-        "REPO_REF='$REPO_REF' bash"
+        "REPO_REF='$REPO_REF' STOCK_RAZOR_AB_BLEND_SUBSCRIBE='$AB_BLEND_SUBSCRIBE' bash"
     )
     assert "systemctl restart" not in source
     assert "aws ssm send-command" in source
@@ -92,7 +92,7 @@ def test_only_explicit_approval_can_schedule_service_restart():
     source = _source()
     assert "if: ${{ github.ref == 'refs/heads/main'" in source
     assert "approve_restart == true" in source
-    assert "REPO_REF='$REPO_REF' bash" in source
+    assert "REPO_REF='$REPO_REF' STOCK_RAZOR_AB_BLEND_SUBSCRIBE='$AB_BLEND_SUBSCRIBE' bash" in source
     assert "install.err" in source
     assert "verify.err" in source
     assert "US_LIVEFEED_ACCEPTANCE=FAILED" in source

@@ -11,6 +11,11 @@ on:
         description: "Full 40-character GitHub main SHA to deploy (must match this workflow run)"
         required: true
         type: string
+      subscribe_ab_blend:
+        description: "Add QQQ, SCHD, KMLM, GLD, DBMF and BTAL to the read-only OpenD feed (requires fresh quota proof)"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   id-token: write
@@ -89,11 +94,13 @@ jobs:
           REPO_REF: ${{ steps.source.outputs.sha }}
           INSTALL_SHA: ${{ steps.source.outputs.install_sha }}
           VERIFY_SHA: ${{ steps.source.outputs.verify_sha }}
+          AB_BLEND_SUBSCRIBE: ${{ inputs.subscribe_ab_blend && '1' || '0' }}
         run: |
           set -euo pipefail
           [[ "$REPO_REF" =~ ^[a-f0-9]{40}$ ]]
           [[ "$INSTALL_SHA" =~ ^[a-f0-9]{64}$ ]]
           [[ "$VERIFY_SHA" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$AB_BLEND_SUBSCRIBE" =~ ^[01]$ ]]
           # The two immutable commit-path downloads and their hashes must
           # BOTH verify before any systemd restart occurs.
           read -r -d '' remote <<REMOTE || true
@@ -107,14 +114,14 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 \
             'https://raw.githubusercontent.com/kaku3030/stock-razor/$REPO_REF/ops/aws/verify_us_opend_livefeed.sh' -o "\$stage/verify.sh"
           printf '%s  %s\n' '$VERIFY_SHA' "\$stage/verify.sh" | sha256sum -c - >/dev/null
-          if ! REPO_REF='$REPO_REF' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
+          if ! REPO_REF='$REPO_REF' STOCK_RAZOR_AB_BLEND_SUBSCRIBE='$AB_BLEND_SUBSCRIBE' bash "\$stage/install.sh" > "\$stage/install.log" 2> "\$stage/install.err"; then
             echo 'US_LIVEFEED_INSTALL=FAILED' >&2
             exit 1
           fi
           # verify.sh performs deep runtime, repo SHA, 3-session warm-start,
           # daily, snapshot and BLOCKED/NO safety checks. Its raw heartbeat
           # and internal errors stay private on the fixed EC2 instance.
-          if ! bash "\$stage/verify.sh" '$REPO_REF' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
+          if ! bash "\$stage/verify.sh" '$REPO_REF' '$AB_BLEND_SUBSCRIBE' > "\$stage/verify.log" 2> "\$stage/verify.err"; then
             echo 'US_LIVEFEED_ACCEPTANCE=FAILED' >&2
             exit 1
           fi
@@ -122,8 +129,15 @@ jobs:
           grep -Fx active "\$stage/verify.log" >/dev/null
           grep -Fx CANONICAL_SNAPSHOT_EXPORT=PASS "\$stage/verify.log" >/dev/null
           grep -Fx OPEND_CANDIDATE_PREVIEW=READONLY_PASS "\$stage/verify.log" >/dev/null
+          if [[ '$AB_BLEND_SUBSCRIBE' == '1' ]]; then
+            grep -Fx AB_BLEND_OPEND_QUOTA_PREFLIGHT=PASS "\$stage/install.log" >/dev/null
+            grep -Fx AB_BLEND_OPEND_SUBSCRIPTIONS=PASS "\$stage/verify.log" >/dev/null
+          fi
           grep -Fx CANONICAL_SNAPSHOT_PATH=/run/stock-razor-us-livefeed/canonical-market-snapshot.json "\$stage/verify.log" >/dev/null
           printf 'US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS\nCANONICAL_SNAPSHOT_EXPORT=PASS\nOPEND_CANDIDATE_PREVIEW=READONLY_PASS\nRADAR_ADMISSION=BLOCKED\nLIVE_TRADE=NO\n'
+          if [[ '$AB_BLEND_SUBSCRIBE' == '1' ]]; then
+            printf 'AB_BLEND_OPEND_SUBSCRIPTIONS=PASS\\nAB_BLEND_OPEND_QUOTA_PREFLIGHT=PASS\\n'
+          fi
           REMOTE
           test "$(printf '%s' "$remote" | wc -c)" -le 16000 || {
             echo 'US_LIVEFEED_DEPLOY_SSM_PAYLOAD_TOO_LARGE' >&2
@@ -143,6 +157,7 @@ jobs:
         shell: bash
         env:
           COMMAND_ID: ${{ steps.deploy.outputs.command_id }}
+          AB_BLEND_SUBSCRIBE: ${{ inputs.subscribe_ab_blend && '1' || '0' }}
         run: |
           set -euo pipefail
           status=UNKNOWN
@@ -168,10 +183,15 @@ jobs:
           grep -Fx US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS <<< "$out" >/dev/null
           grep -Fx CANONICAL_SNAPSHOT_EXPORT=PASS <<< "$out" >/dev/null
           grep -Fx OPEND_CANDIDATE_PREVIEW=READONLY_PASS <<< "$out" >/dev/null
+          if [[ "$AB_BLEND_SUBSCRIBE" == "1" ]]; then
+            grep -Fx AB_BLEND_OPEND_SUBSCRIPTIONS=PASS <<< "$out" >/dev/null
+            grep -Fx AB_BLEND_OPEND_QUOTA_PREFLIGHT=PASS <<< "$out" >/dev/null
+          fi
           grep -Fx RADAR_ADMISSION=BLOCKED <<< "$out" >/dev/null
           grep -Fx LIVE_TRADE=NO <<< "$out" >/dev/null
           echo 'US_OPEND_LIVEFEED_AWS_DEPLOYMENT=PASS'
           echo 'CANONICAL_SNAPSHOT_EXPORT=PASS'
           echo 'OPEND_CANDIDATE_PREVIEW=READONLY_PASS'
+          if [[ "$AB_BLEND_SUBSCRIBE" == "1" ]]; then echo 'AB_BLEND_OPEND_SUBSCRIPTIONS=PASS'; fi
           echo 'RADAR_ADMISSION=BLOCKED'
           echo 'LIVE_TRADE=NO'
