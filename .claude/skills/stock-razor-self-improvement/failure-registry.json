@@ -331,6 +331,20 @@
       "regression_evidence": "tests/test_cn_tickflow_supplemental_timeframes.py",
       "mandatory_action": "Use bounded explicit history windows through TickFlow klines.get/batch for 15m, 60m and D1; merge with current-session intraday bars by label; enforce 96/24/60 warmup rows and fail closed with ROW_COUNT_BELOW_MIN. Keep source, timestamp semantics, currentness, finality and all Radar/trading gates independently unqualified until exact deployed SHA and cloud readback are verified.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-010",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "AUDIT_FRAME_COUNT_CONTRACT_DRIFT"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "The AWS private-frame progress auditor capped D1 at 40 rows while the cache writer requires 60, so valid D1 history became UNKNOWN diagnostics. It also labeled 145-240 one-minute rows as 97_TO_144. Exact-base offline regression reproduced three failures; the focused 27-test suite passes with aligned D1 cap and an accurate 145_TO_240 enum. This is diagnostic mitigation only; exact-head CI and post-merge cloud audit remain separate.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39878177935",
+      "regression_evidence": "tests/test_cn_tickflow_audit_frame_contract.py",
+      "mandatory_action": "Keep private-frame maximums aligned with the real cache writer and update the workflow enum allowlist together. Verify each period at its writer limit and one row above; reject oversize frames and export no prices or timestamps. Do not interpret off-session sequence stability or repaired diagnostics as currentness, finality or Radar/trading admission.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

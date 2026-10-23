@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 对齐 TickFlow AWS 只读审计的 D1 60 根上限，准确区分 145–240 根 1m 数据；补充边界回归，不改变行情或交易准入。
+
 - [改进] TickFlow research cache now merges bounded historical bars with same-session intraday bars and reports 15m/60m/D1 warmup coverage; Radar and trading admission remain blocked.
 
 - [改进] 运行控制台展示模拟盘只读权限、账户证据及受限操作原因，不触发券商或行情请求。

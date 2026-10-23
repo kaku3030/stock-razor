@@ -75,7 +75,7 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         return base
     rows=frame.get("rows")
     quarantined=frame.get("quarantined_unverified_rows_count")
-    row_cap={"1m":240,"5m":144,"15m":96,"60m":24,"1d":40}[timeframe]
+    row_cap={"1m":240,"5m":144,"15m":96,"60m":24,"1d":60}[timeframe]
     if (not isinstance(rows,list) or not 4<=len(rows)<=row_cap
             or type(quarantined) is not int or not 0<=quarantined<=row_cap):
         return base
@@ -83,7 +83,8 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
         return "ZERO" if n==0 else "ONE" if n==1 else "TWO_TO_FOUR" if n<=4 else "FIVE_PLUS"
     out={**base,"quarantined_rows_bucket":bucket(quarantined),
          "retained_bar_count_bucket":("FOUR_TO_24" if len(rows)<=24
-                                      else "25_TO_96" if len(rows)<=96 else "97_TO_144")}
+                                      else "25_TO_96" if len(rows)<=96 else
+                                      "97_TO_144" if len(rows)<=144 else "145_TO_240")}
     reasons=frame.get("quarantine_reason_counts")
     allowed_reason=frozenset((
         "TODAY_LABEL_OFF_GRID","TODAY_FUTURE_LABEL",

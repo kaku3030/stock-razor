@@ -223,7 +223,7 @@ jobs:
                               "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY",
                               "ONE_DUE_LABEL_MISSING","MULTIPLE_DUE_LABELS_MISSING")
           allowed_bucket=("UNKNOWN","ZERO","ONE","TWO_TO_FOUR","FIVE_PLUS")
-          allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144")
+          allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144","145_TO_240")
           parity_status=("NOT_VERIFIED","INVALID_REFERENCE",
                          "STALE_REFERENCE","INVALID_TICKFLOW_ROWS",
                          "UNQUALIFIED_REFERENCE_GRID","NO_OVERLAP",
