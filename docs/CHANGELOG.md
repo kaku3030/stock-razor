@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] Strategy Lab 增加 S3 D1/4H/1H 离线机械规则与统一风险重放、显式时段切分及输入预检；缺失原15m基线、原行情或独立样本外时不宣称五组回测完成或策略晋级。
+
 - [修复] OpenD 心跳、快照与D1历史使用独立临时文件原子发布；缺失或损坏源保留 SOURCE_UNAVAILABLE 与未知来源安全状态，避免误报安全契约违规。补充并发、权限、写盘失败及真实 worker→reader 回归；云端部署和三交易日验收仍未完成。
 
 - [改进] TickFlow 成交额/成交量假设诊断固定为 Decimal V1 公式和原始量单位包络，只导出20帧计数，避免临时算法口径冲突；单位、VWAP与交易资格仍未验证。
