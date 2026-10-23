@@ -1,0 +1,123 @@
+name: Engineering Autonomy Aider Localhost Isolation (no provider)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/engineering-autonomy-aider-localhost-isolation.yml'
+      - 'scripts/engineering_autonomy/Dockerfile.aider-loopback'
+      - 'scripts/engineering_autonomy/aider_isolation_docker_smoke.py'
+      - 'scripts/engineering_autonomy/aider_two_server_proxy_smoke.py'
+      - 'scripts/engineering_autonomy/aider_segmented_network_smoke.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autonomy-aider-loopback-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  offline-aider:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Build Aider fixture image without provider secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            -f scripts/engineering_autonomy/Dockerfile.aider-loopback \
+            -t stock-razor-aider-localhost-test:one-shot \
+            scripts/engineering_autonomy
+      - name: Run real Aider with mock API in isolated no-network container
+        shell: bash
+        env:
+          STOCK_RAZOR_NETWORK_NONE: verified-by-runner
+        run: |
+          set -euo pipefail
+          # Image build may use package indexes. Actual Aider model calls may NOT
+          # leave this container: Docker --network none disables external egress.
+          # Do not pass any host secrets, GH/AWS tokens, or provider keys.
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --memory 1536m \
+            --cpus 1 \
+            --tmpfs /tmp:rw,nosuid,size=160m \
+            --env STOCK_RAZOR_NETWORK_NONE=verified-by-runner \
+            stock-razor-aider-localhost-test:one-shot
+      - name: Test Aider through two-server fake gateway with injected max_tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Aider --> policy gateway --> independent fake provider, all in ONE
+          # loopback-only container. No real model credentials or network egress.
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --memory 1536m \
+            --cpus 1 \
+            --tmpfs /tmp:rw,nosuid,size=160m \
+            --env STOCK_RAZOR_NETWORK_NONE=verified-by-runner \
+            --entrypoint python \
+            stock-razor-aider-localhost-test:one-shot \
+            /opt/aider_two_server_proxy_smoke.py
+      - name: Verify network-separated Aider to gateway to fake provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="stock-razor-aider-localhost-test:one-shot"
+          for mode in success http503 stress; do
+            AGENT_NET="sr-agent-$GITHUB_RUN_ID-$mode"
+            PROVIDER_NET="sr-provider-$GITHUB_RUN_ID-$mode"
+            PROVIDER="sr-fake-$GITHUB_RUN_ID-$mode"
+            GATEWAY="sr-gate-$GITHUB_RUN_ID-$mode"
+            cleanup() {
+              docker rm -f "$GATEWAY" "$PROVIDER" >/dev/null 2>&1 || true
+              docker network rm "$AGENT_NET" "$PROVIDER_NET" >/dev/null 2>&1 || true
+            }
+            trap cleanup EXIT
+            # Docker bridge --internal supplies no external Internet route.
+            docker network create --internal "$AGENT_NET" >/dev/null
+            docker network create --internal "$PROVIDER_NET" >/dev/null
+            PROVIDER_MODE="$mode"
+            if [ "$mode" = stress ]; then PROVIDER_MODE=success; fi
+            docker run --detach --name "$PROVIDER" \
+              --network "$PROVIDER_NET" --network-alias fake-provider \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 96 --memory 768m --tmpfs /tmp:rw,nosuid,size=50m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py provider --mode "$PROVIDER_MODE" >/dev/null
+            docker run --detach --name "$GATEWAY" \
+              --network "$AGENT_NET" --network-alias fake-gateway \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 96 --memory 768m --tmpfs /tmp:rw,nosuid,size=50m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py gateway >/dev/null
+            # Only gateway can see both isolated networks.
+            docker network connect "$PROVIDER_NET" "$GATEWAY"
+            PROVIDER_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROVIDER")"
+            echo "SEGMENTED_TEST_START=$mode"
+            docker run --rm \
+              --network "$AGENT_NET" \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --pids-limit 128 --memory 1536m --cpus 1 \
+              --tmpfs /tmp:rw,nosuid,size=160m \
+              --entrypoint python "$IMAGE" \
+              /opt/aider_segmented_network_smoke.py client \
+              --mode "$mode" --provider-ip "$PROVIDER_IP"
+            cleanup
+            trap - EXIT
+          done

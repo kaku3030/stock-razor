@@ -1,0 +1,17 @@
+# Test-only image: all dependency downloads happen at BUILD time.
+# The actual Aider execution uses docker run --network none.
+FROM python:3.12-slim
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN python -m pip install --no-cache-dir aider-chat==0.86.2
+
+COPY aider_isolation_docker_smoke.py /opt/aider_isolation_docker_smoke.py
+COPY aider_two_server_proxy_smoke.py /opt/aider_two_server_proxy_smoke.py
+COPY aider_segmented_network_smoke.py /opt/aider_segmented_network_smoke.py
+
+USER 65534:65534
+WORKDIR /tmp
+ENTRYPOINT ["python", "/opt/aider_isolation_docker_smoke.py"]
