@@ -20,7 +20,7 @@ The 24 hourly rows are not enough for a 60-hour moving average or a 100-bar hour
 The support replies dated 2026-10-08, 2026-10-13 and 2026-10-20 say:
 
 - Expert covers the listed A-share minute intervals and read-only research use from AWS Tokyo is permitted.
-- Request rate and WebSocket subscription totals are account-level. The reply gives no numeric rate ceiling. A monthly subscription is not the same statement as a documented unlimited request rate.
+- The user's monthly Expert plan is understood to include unlimited requests. Support also says request rate and WebSocket subscription totals are account-level, but supplied no numeric technical throttling ceiling. Treat plan billing/entitlement separately from service rate limiting; back off on 429.
 - Intraday K-line labels are BAR_END. Daily bars use 00:00 date labels.
 - There is no `is_final` or `closed` field. Once the next K-line forms, the prior bar can be treated as operationally closed; this does not establish immutable exchange finality.
 - A 13:01 lunch-period prefilled bar may have unchanged OHLC and zero volume. The vendor says the same timestamp behavior applies to `klines.get` and `klines.intraday`.
