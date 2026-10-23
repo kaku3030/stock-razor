@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] TickFlow 隔离研究增加私有不可覆盖盘后基线和中国时间20点后修订对照、只读证据摘要及 Windows 显式单次采集/离线双端比较；迟到基线与缺失证据保留阻断，全部交易门禁不变。
+
 - [修复] TickFlow 日线历史截止前一上海日期以保留60根历史；新增独立五周期盘中进度读回，Radar 显式区分当日增量与历史研究且保持交易门禁关闭。
 
 - [修复] TickFlow 当日零至三根增量与历史预热分开校验，避免上午小时线不足四根阻断整批；缺失分析时独立保留受限 worker 心跳诊断。

@@ -136,6 +136,8 @@ Environment=STOCK_RAZOR_CN_TICKFLOW_STATUS_PATH=/run/stock-razor-cn-tickflow/lat
 Environment=TICKFLOW_RESEARCH_SYMBOLS=$TICKFLOW_RESEARCH_SYMBOLS
 RuntimeDirectory=stock-razor-cn-tickflow
 RuntimeDirectoryMode=0700
+StateDirectory=stock-razor-cn-tickflow
+StateDirectoryMode=0700
 ExecStart=$ROOT/venv/bin/python -m scripts.run_cn_tickflow_research_worker
 Restart=on-failure
 RestartSec=180
@@ -143,7 +145,7 @@ NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/run/stock-razor-cn-tickflow
+ReadWritePaths=/run/stock-razor-cn-tickflow /var/lib/stock-razor-cn-tickflow
 MemoryMax=500M
 LimitNOFILE=256
 

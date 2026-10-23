@@ -1,0 +1,77 @@
+# TickFlow private research evidence
+
+The existing isolated collector reuses each successful five-period cache observation
+without additional provider calls. On weekdays its first validated observation at
+or after15:02 Shanghai and before20:00 creates `baseline.json`; its first validated
+observation at/after20:00 creates `after20.json`. Both reside under the existing
+systemd private state directory `/var/lib/stock-razor-cn-tickflow/evidence/YYYY-MM-DD/`.
+Files are0600, directories0700, atomic create-only, never overwritten. Each file is
+bounded to2MB and the store to64MB; quota exhaustion blocks new evidence without
+removing old evidence or stopping the market cache. No automatic pruning.
+
+Each manifest contains four ETFs ×1m/5m/15m/60m/1d, labels, per-field hashes,
+source code SHA, observation time, process-local sequence and declared endpoint.
+It stores no raw prices. Intraday due grids must be complete and D1 must contain
+60 prior dates. Hashes detect file/field differences; they do not authenticate a
+physical endpoint. Process-local sequence may reset after restart; revision
+comparison requires advancing observation time at the same code revision/day.
+
+Read the already connected `get_cn_market_data(symbol="TICKFLOW:EVIDENCE")` for a
+bounded status and comparison counts only. No SDK request, hashes or raw values
+are exported. The normal tool schema and other sentinel routes remain unchanged.
+Evidence I/O/validation errors are explicit and never become data admission.
+
+`BASELINE_RECORDED_AWAITING_AFTER20` is pending, not a completed correction audit.
+`baseline_timing=LATE_BASELINE_LIMITED` means baseline after15:15: earlier revisions
+cannot be reconstructed. `POSTCLOSE_COMPARISON_RECORDED` must be read together with
+its comparison status; `REVISION_OBSERVED` reports differences and
+`NO_REVISION_OBSERVED_NOT_FINAL` only reports no difference between two samples.
+`BASELINE_MISSING` and `POSTCLOSE_COMPARISON_BLOCKED` are not passing results.
+An after20 sample follows vendor guidance; it is not a guaranteed final seal.
+Deploying after20 cannot create that day's missing closing baseline.
+
+## Windows capture and offline comparison
+
+Default execution does not read credentials, instantiate the SDK or make requests:
+
+```powershell
+python -m scripts.capture_tickflow_endpoint_evidence
+```
+
+Once the Windows device is online, use an isolated clean checkout of the exact
+protected-main revision, existing Windows credential storage and tickflow0.1.25.
+The following explicit action performs one bounded existing four-ETF five-period
+SDK observation, with no retries, subscription or order calls. Choose a new private
+output filename each time; existing files cannot be overwritten. Execute-mode output marks SDK activity explicitly and leaves provider request
+count unknown; `provider_requests=0` on stored manifests/comparison refers only
+to the offline evidence operation. Capture sequence
+is a local counter, not a provider sequence. `--expected-sha` is mandatory in execute
+mode and must match the checkout's full40-character SHA.
+
+```powershell
+python -m scripts.capture_tickflow_endpoint_evidence --execute --expected-sha FULL_SHA --sequence 1 --output C:\PRIVATE_DIRECTORY\windows-first.json
+```
+
+Compare independently obtained private manifests offline (no SDK/credential access):
+
+```powershell
+python -m scripts.capture_tickflow_endpoint_evidence --compare C:\PRIVATE_DIRECTORY\aws-first.json C:\PRIVATE_DIRECTORY\windows-first.json --dual-endpoint
+```
+
+Dual comparison requires declared distinct AWS/Windows endpoints, identical day
+and code SHA, capture clocks within30seconds, no future capture and validated full
+due grids. Keep both original files private and independently verify where each
+was captured; copying or relabeling one file is not proof of dual provenance. The
+collector's stored closing baseline is not a current paired capture hours later.
+Fresh AWS capture/secure private retrieval remains an operator prerequisite for
+actual paired acceptance; the public MCP intentionally does not export manifests.
+
+Return codes:0 for a valid observation/comparison (including observed differences),
+2 for invalid/blocked input or existing capture output. Always inspect status and
+counts, not only the exit code. For same-endpoint revision comparisons omit
+`--dual-endpoint`. No numerical tolerance is applied to hash differences.
+
+All outputs remain research-only, `provenance_verified=false`, finality NOT_VERIFIED,
+source/Radar BLOCKED, paper_auto_ready=false and live_trade=false. Matching evidence
+alone does not qualify strict OHLC, indicator history, replay, strategy or trading.
+This operational document has no paired English/Chinese document to synchronize.

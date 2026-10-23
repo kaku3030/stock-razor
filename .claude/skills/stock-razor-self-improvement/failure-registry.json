@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-23T05:01:27Z",
+  "last_reconciled_utc": "2026-10-23T10:48:08Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -415,6 +415,20 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39911919852",
       "regression_evidence": "tests/test_tickflow_explicit_minute_vendor_research.py",
       "mandatory_action": "Only the isolated1m session research builder opts into vendor_precision_research; publish precision_policy and require it in session-progress reader. Preserve original values, exact1e-5 bound, ETF lattice,90s,all numeric and due-grid checks. Legacy/default normalization and strict Windows status remain distinct. Do not report strict/live acceptance; independently verify20frame readback after exact protected-head deployment.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-016",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "POSTCLOSE_BASELINE_NOT_PERSISTED"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "The isolated collector atomically overwrites its latest snapshot and has no persistent closing/correction pair. A previous chat read is not available in a later runtime, so late corrections cannot be independently compared with the original closing observation. New private immutable field-hash checkpoints preserve evidence without extra provider requests; deployment and actual after20 observation remain separate. A late first deployment cannot reconstruct the missing closing baseline.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/6d5960a72bf18d715580f11876bf72a7c5b4cddb/scripts/run_cn_tickflow_research_worker.py",
+      "regression_evidence": "tests/test_tickflow_evidence_checkpoints.py",
+      "mandatory_action": "Persist one postclose baseline and one after20 Shanghai checkpoint under bounded private state. Revalidate all20 due grids and hash original OHLCVA values. Compare immutable files without claiming authenticated provenance or finality; expose late baseline and missing/invalid evidence explicitly. Windows/AWS pairing requires actual independent SDK captures within30s at the same code SHA. No source, Radar, paper or live admission.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
