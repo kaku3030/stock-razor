@@ -349,6 +349,19 @@
         "CN-001",
         "CN-003"
       ]
+    },
+    {
+      "id": "CN-010",
+      "phrases": [
+        "TickFlow D1 60根审计UNKNOWN",
+        "日线审计上限仍为40根",
+        "audit frame count contract drift",
+        "240 one minute rows bucket 97_TO_144"
+      ],
+      "related": [
+        "CN-009",
+        "ENG-001"
+      ]
     }
   ]
 }
