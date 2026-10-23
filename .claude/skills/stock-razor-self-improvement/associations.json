@@ -376,6 +376,20 @@
         "CN-009",
         "ENG-004"
       ]
+    },
+    {
+      "id": "CN-012",
+      "phrases": [
+        "D1_FORMING_ROW_CONSUMES_HISTORY_SLOT",
+        "TickFlow D1 59 required 60",
+        "盘中日线请求60剔除当天后只剩59根",
+        "TICKFLOW FULL historical vendor float session progress mismatch"
+      ],
+      "related": [
+        "CN-009",
+        "CN-011",
+        "CN-010"
+      ]
     }
   ]
 }

@@ -70,6 +70,16 @@ def resolve_scan_symbols(value: str | None = None) -> tuple[str, ...]:
     return symbols
 
 
+def _history_end_ms(period: str, now_utc: datetime) -> int:
+    # Date-stamped D1 must not consume a requested history slot with today's
+    # forming candle. Keep sixty prior dates even during the live session.
+    end = now_utc
+    if period == "1d":
+        end = now_utc.astimezone(CN).replace(hour=0, minute=0, second=0,
+                                           microsecond=0) - timedelta(milliseconds=1)
+    return int(end.timestamp() * 1000)
+
+
 class _BatchKlinesFacade:
     """Fetch historical warmup and current-session bars through distinct routes."""
 
@@ -79,8 +89,6 @@ class _BatchKlinesFacade:
         self._frames: dict[tuple[str, str], Any] = {}
         self._intraday_frames: dict[tuple[str, str], Any] = {}
         self._fallback_count = 0
-        end_ms = int(now_utc.timestamp() * 1000)
-
         def fetch_route(period: str, symbols: tuple[str, ...], *, intraday: bool):
             count = periods[period]
             try:
@@ -92,6 +100,7 @@ class _BatchKlinesFacade:
                     "batch_size": batch_size,
                 }
                 if not intraday:
+                    end_ms = _history_end_ms(period, now_utc)
                     lookback_days = _HISTORY_LOOKBACK_DAYS[period]
                     kwargs.update({
                         "start_time": end_ms - lookback_days * 24 * 60 * 60 * 1000,
@@ -585,7 +594,7 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                         if interval in ("15m","60m") else None
                     )
                 elif interval in _HISTORY_LOOKBACK_DAYS:
-                    end_ms=int(now_utc.timestamp()*1000)
+                    end_ms=_history_end_ms(interval, now_utc)
                     start_ms=end_ms-_HISTORY_LOOKBACK_DAYS[interval]*24*60*60*1000
                     frame=client.klines.get(
                         symbol,period=interval,count=n,start_time=start_ms,

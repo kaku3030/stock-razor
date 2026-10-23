@@ -20,15 +20,17 @@ NOW = datetime(2026, 10, 18, 8, 0, tzinfo=timezone.utc)
 
 def observation(now=NOW):
     frames = {}
-    for period, clocks in (("15m", ("09:45", "10:00", "10:15", "10:30")),
+    for period, clocks in (("15m", ("09:45", "10:00", "10:15", "10:30",
+                           "10:45", "11:00", "11:15", "11:30", "13:15",
+                           "13:30", "13:45", "14:00", "14:15", "14:30", "14:45", "15:00")),
                            ("60m", ("10:30", "11:30", "14:00", "15:00")),
                            ("1d", ("00:00",))):
         stamps = [datetime.fromisoformat(str(day.date()) + "T" + clock).replace(
             tzinfo=ZoneInfo("Asia/Shanghai"))
             for day in pd.bdate_range(end="2026-10-16", periods=24 if period != "1d" else 40)
             for clock in clocks]
-        if period == "60m":
-            stamps = stamps[-24:]
+        if period in ("15m", "60m"):
+            stamps = stamps[-(96 if period == "15m" else 24):]
         rows = [dict(timestamp=int(stamp.timestamp()) * 1000, open=1.5,
                      high=1.7, low=1.3, close=1.6, volume=1000, amount=1600)
                 for stamp in stamps]
@@ -196,3 +198,33 @@ def test_actual_installed_worker_loop(tmp_path, monkeypatch, capsys, second):
     else:
         assert payload["poll_status"] == "BLOCKED"
         assert payload["evaluation"] is None
+
+
+
+def test_today_vendor_float_reaches_only_session_progress_research():
+    from data_provider.cn_tickflow_research_cache import _LABEL_END
+    now=datetime(2026,10,16,4,0,tzinfo=timezone.utc)  # Shanghai lunch
+    source=observation(now)
+    for frames in source["symbols"].values():
+        for period in ("15m","60m"):
+            prior=[r for r in frames[period]["rows"] if not r["label"].startswith("2026-10-16")]
+            today=[dict(label="2026-10-16 "+clock,open=1.5,high=1.7,
+                        low=1.3,close=1.6,volume=1000,amount=1600,
+                        amount_availability="PRESENT_UNVERIFIED",is_partial_bar=True,
+                        bar_finality="NOT_VERIFIED",ohlc_validation="STRICT")
+                   for clock in sorted(_LABEL_END[period]) if clock<="11:30"]
+            if period=="15m":
+                today[0]["high"]=1.599999999999
+                today[0]["ohlc_validation"]="VENDOR_FLOAT_TOLERANCE_RESEARCH_ONLY"
+            frames[period]["rows"]=(prior+today)[-(96 if period=="15m" else 24):]
+    result=evaluate_tickflow_observation_payload(source,now_utc=now)
+    assert result["status"] == "PASS"
+    assert result["intraday_currentness_proven"] is False
+    assert result["can_confirm_signal"] is False
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    assert all(item["signal_permission"]=="record_only" for item in result["symbols"].values())
+    # A missing due boundary still fails; no retry in historical mode hides it.
+    source["symbols"][SYMBOLS[0]]["15m"]["rows"]=[r for r in source["symbols"][SYMBOLS[0]]["15m"]["rows"] if r["label"]!="2026-10-16 10:00"]
+    with pytest.raises(ValueError):
+        evaluate_tickflow_observation_payload(source,now_utc=now)

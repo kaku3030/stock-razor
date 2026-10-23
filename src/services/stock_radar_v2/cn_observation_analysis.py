@@ -174,6 +174,7 @@ def _frame(item: Mapping[str, object], timeframe: str) -> tuple[pd.DataFrame, di
         "fallback_reason": frame.get("fallback_reason"),
         "timestamp_semantic": frame.get("timestamp_semantic"),
         "currentness": frame.get("currentness"),
+        "cache_research_mode": frame.get("cache_research_mode"),
         "row_count": len(records),
         "latest_label": rows[-1].get("label"),
         "volume_unit": rows[-1].get("volume_unit"),

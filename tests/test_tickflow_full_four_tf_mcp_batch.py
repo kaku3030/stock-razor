@@ -14,8 +14,8 @@ def make_dispatch(*, stale=None, misalign=None):
     calls=[]
     def tickflow(symbol,*,timeframe,limit,research_mode):
         calls.append((symbol,timeframe,limit,research_mode))
-        status="STALE" if (symbol,timeframe)==stale else "PASS_HISTORICAL_ONLY"
-        return {"ok":status=="PASS_HISTORICAL_ONLY","status":status,
+        status="STALE" if (symbol,timeframe)==stale else ("PASS_RESEARCH_ONLY" if research_mode=="session_progress" else "PASS_HISTORICAL_ONLY")
+        return {"ok":status in ("PASS_HISTORICAL_ONLY", "PASS_RESEARCH_ONLY"),"status":status,
             "provider":"TICKFLOW_PREMIUM","repo_sha":"f"*40,
             "sequence":7+int((symbol,timeframe)==misalign),
             "research_only":True,"radar_admission":"BLOCKED",
@@ -73,3 +73,29 @@ def test_normal_cn_data_route_unmodified_and_no_extra_research_calls():
     h,calls=make_dispatch()
     assert h("159611.SZ",timeframe="15m",limit=30)=={"provider":"TENCENT"}
     assert calls==[("legacy","159611.SZ","15m",30)]
+
+
+
+def test_session_batch_uses_progress_intraday_and_historical_daily_without_admission():
+    handler,calls=make_dispatch()
+    result=handler("TICKFLOW:SESSION",limit=1)
+    assert result["ok"] is True
+    assert result["status"] == "PASS_SESSION_PROGRESS_ONLY"
+    assert result["frame_count"] == 20
+    assert all(mode == ("historical_only" if period == "1d" else "session_progress")
+               for _,period,_,mode in calls)
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["bar_finality"] == "NOT_VERIFIED"
+    assert result["currentness"] == "UNPROVEN"
+    assert result["provider_requests"] == 0
+    assert result["live_trade"] is False
+
+
+def test_session_batch_gap_or_revision_mismatch_remains_blocked():
+    for params,expected in (({"stale":("159209.SZ","5m")},"PARTIAL_OR_STALE"),
+                            ({"misalign":("159209.SZ","1d")},"INVALID_SOURCE_ALIGNMENT")):
+        handler,_=make_dispatch(**params)
+        result=handler("TICKFLOW:SESSION",limit=1)
+        assert result["status"] == expected
+        assert result["ok"] is False
+        assert "symbols" not in result
