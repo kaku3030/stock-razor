@@ -12,6 +12,7 @@ from data_provider.futures_runtime_health import read_futures_runtime_health
 from data_provider.tickflow_cloud_probe_reader import read_tickflow_probe_health
 from data_provider.cn_tickflow_research_cache import read_cn_tickflow_research_data
 from data_provider.market_source_status import read_market_source_status
+from data_provider.us_daily_research_reader import read_us_completed_daily_research
 from data_provider.us_canonical_runtime_reader import (
     read_us_livefeed_health,
     read_us_market_bars,
@@ -351,7 +352,9 @@ def get_market_bars(
     timeframe: str = "15m",
     limit: int = 100,
 ) -> dict:
-    """Return bounded canonical US bars from the cloud-local snapshot."""
+    """Return canonical intraday bars or guarded prior-session OpenD D1 research."""
+    if timeframe == "1d":
+        return read_us_completed_daily_research(symbol, limit=limit)
     return read_us_market_bars(symbol, timeframe=timeframe, limit=limit)
 
 
