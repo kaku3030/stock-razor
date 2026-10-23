@@ -265,6 +265,9 @@ def get_cn_market_data(
     The exact opt-in prefix preserves the old ChatGPT MCP tool schema.
     Other symbols retain the existing Eastmoney/Tencent observation path.
     """
+    if symbol == "TICKFLOW:PAIR":
+        from data_provider.tickflow_evidence_checkpoints import read_pairing_summary
+        return read_pairing_summary()
     if symbol == "TICKFLOW:EVIDENCE":
         return _read_tickflow_evidence()
     if symbol == "TICKFLOW:FAST":

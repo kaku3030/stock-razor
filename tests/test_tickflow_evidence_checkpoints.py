@@ -163,3 +163,81 @@ def test_capture_default_is_offline_and_comparison_requires_valid_private_files(
     monkeypatch.setattr(sys,"argv",["capture","--compare",str(tmp_path/"missing"),str(tmp_path/"missing2")])
     assert capture.main()==2
     assert json.loads(capsys.readouterr().out)["status"]=="EVIDENCE_INVALID"
+
+
+def test_compact_pair_matches_native_values_without_private_file_transfer(tmp_path):
+    first = evidence.manifest_from_observation(snapshot(),endpoint="AWS",now_utc=NOW)
+    second = evidence.manifest_from_observation(snapshot(),endpoint="WINDOWS",now_utc=NOW)
+    a,b = evidence.pairing_summary(first),evidence.pairing_summary(second)
+    assert len(json.dumps(a))<8000 and len(a["frames"])==20
+    result=evidence.compare_pairing_summaries(a,b,now_utc=NOW)
+    assert result["status"]=="PAIR_VALUES_MATCH_RESEARCH_ONLY"
+    assert result["provenance_verified"] is False and result["radar_admission"]=="BLOCKED"
+    changed=snapshot()
+    changed["symbols"]["159209.SZ"]["5m"]["rows"][-1]["volume"]+=1
+    b=evidence.pairing_summary(evidence.manifest_from_observation(changed,endpoint="WINDOWS",now_utc=NOW))
+    result=evidence.compare_pairing_summaries(a,b,now_utc=NOW)
+    assert result["status"]=="PAIR_DIFFERENCE_OBSERVED" and result["different_frames"]==1
+    path=tmp_path/"cache.json"
+    path.write_text(json.dumps(snapshot()))
+    read=evidence.read_pairing_summary(path=path,now_utc=NOW)
+    assert read["pairing_summary"]==a and read["provider_requests"]==0
+    assert "2026-10-23 15:00" not in json.dumps(read) and "1.7" not in json.dumps(read)
+
+
+@pytest.mark.parametrize("change",["same_endpoint","code_revision","late_pair","stale_pair","future_pair","missing_frame","wrong_count","unsafe"])
+def test_compact_pair_rejects_alignment_shape_or_safety_errors(change):
+    from copy import deepcopy
+    a=evidence.pairing_summary(evidence.manifest_from_observation(snapshot(),endpoint="AWS",now_utc=NOW))
+    b=deepcopy(a);b["endpoint"]="WINDOWS"
+    if change=="same_endpoint": b["endpoint"]="AWS"
+    elif change=="code_revision": b["source_sha"]="b"*40
+    elif change=="late_pair": b["observed_at_utc"]=(NOW+timedelta(seconds=31)).isoformat()
+    elif change=="future_pair": a["observed_at_utc"]=b["observed_at_utc"]=(NOW+timedelta(seconds=6)).isoformat()
+    elif change=="stale_pair": a["observed_at_utc"]=b["observed_at_utc"]=(NOW-timedelta(seconds=331)).isoformat()
+    elif change=="missing_frame": b["frames"].pop("159209.SZ:1m")
+    elif change=="wrong_count": b["frames"]["159209.SZ:1m"]["rows"]=239
+    elif change=="unsafe": b["paper_auto_ready"]=True
+    assert evidence.compare_pairing_summaries(a,b,now_utc=NOW)["status"]=="EVIDENCE_INVALID"
+
+
+def test_compact_cache_missing_stale_or_missing_due_rows_stays_blocked(tmp_path):
+    path=tmp_path/"cache.json"
+    assert evidence.read_pairing_summary(path=path,now_utc=NOW)["status"]=="PAIR_CACHE_IO_BLOCKED"
+    path.write_text(json.dumps(snapshot()))
+    assert evidence.read_pairing_summary(path=path,now_utc=NOW+timedelta(seconds=331))["status"]=="PAIR_CACHE_VALIDATION_BLOCKED"
+    data=snapshot();data["symbols"]["159209.SZ"]["1m"]["rows"].pop(0)
+    path.write_text(json.dumps(data))
+    assert evidence.read_pairing_summary(path=path,now_utc=NOW)["status"]=="PAIR_CACHE_VALIDATION_BLOCKED"
+
+
+def test_offline_summary_preserves_original_capture_revision_and_does_no_sdk(monkeypatch,capsys,tmp_path):
+    import sys
+    from scripts import capture_tickflow_endpoint_evidence as capture
+    doc=evidence.manifest_from_observation(snapshot(),endpoint="WINDOWS",now_utc=NOW)
+    path=tmp_path/"windows.json";evidence.write_immutable(path,doc)
+    monkeypatch.setattr(sys,"argv",["capture","--summarize-manifest",str(path)])
+    assert capture.main()==0
+    result=json.loads(capsys.readouterr().out)
+    assert result["provider_requests"]==0
+    assert result["pairing_summary"]["source_sha"]=="a"*40
+    assert result["pairing_summary"]["endpoint"]=="WINDOWS"
+
+
+def test_pair_sentinel_uses_atomic_validated_cache_without_fallback(tmp_path,monkeypatch):
+    import ast
+    from pathlib import Path
+    path=tmp_path/"cache.json";path.write_text(json.dumps(snapshot()))
+    original=evidence.read_pairing_summary
+    monkeypatch.setattr(evidence,"read_pairing_summary",lambda:original(path=path,now_utc=NOW))
+    tree=ast.parse(Path("realtime_monitor/readonly_mcp_server.py").read_text())
+    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=="get_cn_market_data")
+    node.decorator_list=[]
+    ns={}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),"<mcp>","exec"),ns)
+    result=ns["get_cn_market_data"]("TICKFLOW:PAIR")
+    assert result["status"]=="POSTCLOSE_PAIR_CAPTURE_RESEARCH_ONLY"
+    assert len(result["pairing_summary"]["frames"])==20
+    assert result["provider_requests"]==0
+    path.unlink()
+    assert ns["get_cn_market_data"]("TICKFLOW:PAIR")["status"]=="PAIR_CACHE_IO_BLOCKED"

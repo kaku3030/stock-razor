@@ -75,3 +75,39 @@ All outputs remain research-only, `provenance_verified=false`, finality NOT_VERI
 source/Radar BLOCKED, paper_auto_ready=false and live_trade=false. Matching evidence
 alone does not qualify strict OHLC, indicator history, replay, strategy or trading.
 This operational document has no paired English/Chinese document to synchronize.
+
+## Compact postclose pairing without moving private manifests
+
+`get_cn_market_data(symbol="TICKFLOW:PAIR")` reads one existing AWS cache observation,
+revalidates all20frames and returns `pairing_summary`:20 fingerprints and row counts,
+source SHA, capture clock and declared endpoint. No labels, prices, field hashes,
+provider request or evidence-file write. The source must be at most330seconds old
+and after15:02 Shanghai on a weekday; this is intentionally postclose-only.
+
+Windows capture may add `--summary` to print the same compact receipt while keeping
+its full manifest private. A manifest captured by an earlier protected revision
+can be summarized offline with the newer helper:
+
+```powershell
+python -m scripts.capture_tickflow_endpoint_evidence --summarize-manifest C:\PRIVATE_DIRECTORY\windows-first.json
+```
+
+The source SHA stays that of the original SDK capture, not the postprocessing
+helper. Keep the SDK checkout at the actual AWS collector revision for a pairing;
+use a separate current-main checkout for offline summarization when necessary.
+Never relabel or rewrite a manifest to hide a revision mismatch. Execute-mode
+capture on the newer helper also rejects a dirty checkout before SDK activity.
+
+A caller can compare two `pairing_summary` objects with
+`compare_pairing_summaries(aws_receipt, windows_receipt)`. For private summary JSON
+files, use `--compare FIRST SECOND --compare-summaries`. This mode performs no SDK
+activity. Both captures must have the same day/source SHA, distinct endpoints,
+clock skew at most30seconds, age at most330seconds and no future clock beyond5s.
+The result reports only the number of different frames. A matching hash receipt
+is observational research evidence; independent actual endpoint calls remain
+necessary to verify physical capture. It does not establish provider finality.
+
+MCP/helper-only changes do not justify restarting the collector during an ongoing
+baseline/after20 pair: retain the existing collector SHA so both immutable samples
+can be compared. A different source SHA yields explicit EVIDENCE_INVALID rather
+than silently accepting mixed revisions or overwriting the baseline.
