@@ -48,3 +48,42 @@ def test_above_writer_bound_is_still_unknown(period):
 def test_public_workflow_accepts_the_full_minute_count_bucket():
     workflow = Path(__file__).resolve().parents[1] / ".github/workflows/audit-cn-tickflow-live-research.yml"
     assert '"145_TO_240"' in workflow.read_text(encoding="utf-8")
+
+
+def minute_frame(clocks):
+    return {
+        "rows": [{"label": "2026-10-23 " + clock,
+                  "amount_availability": "SDK_OMITTED"} for clock in clocks],
+        "quarantined_unverified_rows_count": 0,
+        "quarantine_reason_counts": {},
+    }
+
+
+def test_recent_legal_minute_inside_grace_does_not_invalidate_due_grid():
+    # 09:34 is received legally; only through 09:33 is due at 09:34:45.
+    result = summarize_private_frame_progress(
+        minute_frame(["09:31", "09:32", "09:33", "09:34"]),
+        timeframe="1m", now_utc=datetime(2026, 10, 23, 1, 34, 45, tzinfo=timezone.utc),
+    )
+    assert result["due_grid_continuity"] == "ALL_DUE_LABELS_PRESENT_RESEARCH_ONLY"
+
+
+def test_recent_minute_does_not_conceal_an_earlier_due_gap():
+    result = summarize_private_frame_progress(
+        minute_frame(["09:31", "09:33", "09:34", "09:35"]),
+        timeframe="1m", now_utc=datetime(2026, 10, 23, 1, 35, 45, tzinfo=timezone.utc),
+    )
+    assert result["due_grid_continuity"] == "ONE_DUE_LABEL_MISSING"
+
+
+@pytest.mark.parametrize("clocks", [
+    ["09:31", "09:32", "09:33", "09:35"],  # future
+    ["09:31", "09:32", "09:34", "09:34"],  # duplicate inside grace
+    ["09:30", "09:32", "09:33", "09:34"],  # off grid
+])
+def test_grace_audit_keeps_future_duplicate_and_off_grid_invalid(clocks):
+    result = summarize_private_frame_progress(
+        minute_frame(clocks), timeframe="1m",
+        now_utc=datetime(2026, 10, 23, 1, 34, 45, tzinfo=timezone.utc),
+    )
+    assert result["due_grid_continuity"] == "INVALID_TODAY_LABEL_GRID"

@@ -374,6 +374,20 @@
       "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
       "mandatory_action": "End D1 history before the current Shanghai date; preserve request limits. Use explicit session-progress intraday plus historical D1 for the five-period session reader. Radar must retain all row/continuity checks and record_only/currentness/finality restrictions. Verify exact-head CI, deployment and current-session source/consumer readback independently.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-013",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "AUDIT_GRACE_ROW_INVALID_GRID"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Read-only audit treats every received current-day label newer than the 90-second due cutoff as invalid, even when it is a legal nonfuture session-grid label. Audit 39904715272 reported INVALID_TODAY_LABEL_GRID while the strict 159363 1m reader passed. Two deterministic regressions reproduce false-invalid and hidden missing-due classification on f4d6373.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39904715272",
+      "regression_evidence": "tests/test_cn_tickflow_audit_frame_contract.py",
+      "mandatory_action": "Separate legal received labels from due labels in sanitized audit diagnostics. Preserve future/off-grid/duplicate rejection and all missing-due checks. Do not change OHLC eligibility, source finality, currentness or admission; independently verify the merged audit runtime.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }
