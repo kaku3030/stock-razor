@@ -35,6 +35,28 @@ FRESH indicates only an observed recent worker heartbeat; analysis remains
 INVALID, and source currentness, bar closure and all trading gates are independent.
 Raw exception messages and provider payloads are not exposed.
 
+## D1 cutoff and explicit session reader
+
+A follow-up read after the collector update found 59 D1 rows: the requested
+60 included today's 00:00 date-stamped forming candle, which normalization
+correctly quarantined. D1 historical requests now end one millisecond before
+today's Shanghai midnight, leaving all 60 requested slots for prior dates.
+No request count or raw reader limit is increased; no missing bar is fabricated.
+
+Use `get_cn_market_data(symbol="TICKFLOW:SESSION", limit=1)` for one aligned
+four-symbol × five-period session-progress read. Intraday frames use the existing
+strict due-grid reader; D1 remains historical-only. The existing `TICKFLOW:FULL`
+route retains its historical-only contract, including rejection of same-day
+vendor-float rows before the post-close window. Do not use FULL's rejection as
+proof of a provider outage when the required mode is session progress.
+
+The Radar bridge explicitly uses session progress when the source contains
+today's intraday rows; otherwise it reports bounded historical research.
+A missing due boundary is still blocked, with no historical retry masking it.
+Both modes keep currentness UNPROVEN, all candles partial, immutable finality
+NOT_VERIFIED and signal permission record_only. `PASS_SESSION_PROGRESS_ONLY`
+is cache/grid research evidence, never a confirmed trading signal.
+
 ## What the provider has confirmed in writing
 
 The support replies dated 2026-10-08, 2026-10-13 and 2026-10-20 say:

@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] TickFlow 日线历史截止前一上海日期以保留60根历史；新增独立五周期盘中进度读回，Radar 显式区分当日增量与历史研究且保持交易门禁关闭。
+
 - [修复] TickFlow 当日零至三根增量与历史预热分开校验，避免上午小时线不足四根阻断整批；缺失分析时独立保留受限 worker 心跳诊断。
 
 - [修复] 对齐 TickFlow AWS 只读审计的 D1 60 根上限，准确区分 145–240 根 1m 数据；补充边界回归，不改变行情或交易准入。

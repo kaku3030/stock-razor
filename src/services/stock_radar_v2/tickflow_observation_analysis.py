@@ -29,12 +29,19 @@ def evaluate_tickflow_observation_payload(source: dict, *, now_utc: datetime) ->
     if type(source.get("sequence")) is not int or source["sequence"] < 1:
         raise ValueError("TICKFLOW_SEQUENCE_INVALID")
     symbols = {}
+    session_date = now_utc.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
     for symbol in SYMBOLS:
         frames = {}
         for period in ("1d", "60m", "15m"):
+            raw_rows = source.get("symbols", {}).get(symbol, {}).get(period, {}).get("rows", [])
+            has_today = period != "1d" and any(
+                isinstance(row, dict) and isinstance(row.get("label"), str)
+                and row["label"].startswith(session_date + " ") for row in raw_rows
+            )
+            mode = "session_progress" if has_today else "historical_only"
             frame = read_cn_tickflow_research_data(
                 symbol, period, 240, now_utc=now_utc,
-                research_mode="historical_only", observation=source,
+                research_mode=mode, observation=source,
             )
             if frame.get("ok") is not True:
                 raise ValueError("TICKFLOW_FRAME_NOT_VALIDATED")
@@ -42,7 +49,8 @@ def evaluate_tickflow_observation_payload(source: dict, *, now_utc: datetime) ->
                 "status": "PASS", "provider_used": "TICKFLOW_PREMIUM",
                 "provider_lineage": "tickflow", "source_symbol": symbol,
                 "timestamp_semantic": ("DAILY_DATE" if period == "1d"
-                                       else "BAR_END_GRID_MATCH_HISTORICAL_ONLY"),
+                                       else "BAR_END_GRID_MATCH_RESEARCH_ONLY"),
+                "cache_research_mode": mode,
                 "currentness": "UNPROVEN",
                 "rows": [{**row, "volume_raw": row["volume"],
                           "volume_unit": "NOT_VERIFIED"} for row in frame["rows"]],

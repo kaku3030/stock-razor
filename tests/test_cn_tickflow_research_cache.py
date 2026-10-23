@@ -147,9 +147,11 @@ def test_historical_warmup_uses_explicit_windows_and_intraday_overrides():
     end_ms=int(now.timestamp()*1000)
     assert set(historical)=={"15m","60m","1d"}
     for period,kwargs in historical.items():
-        assert kwargs["end_time"]==end_ms
+        period_end = (int(datetime(2026,10,13,tzinfo=SH).timestamp()*1000)-1
+                      if period=="1d" else end_ms)
+        assert kwargs["end_time"]==period_end
         days_back=14 if period in ("15m","60m") else 120
-        assert kwargs["start_time"]==end_ms-days_back*24*60*60*1000
+        assert kwargs["start_time"]==period_end-days_back*24*60*60*1000
         assert kwargs["count"]==_HISTORY_WARMUP_ROWS[period]
     symbol=snap["symbols"]["159611.SZ"]
     for period in ("15m","60m","1d"):
@@ -1294,3 +1296,26 @@ def test_sparse_increment_keeps_row_validation_and_quarantine(case):
     else:
         with pytest.raises(ValueError):
             normalize_bars(raw, "60m", now_utc=now, session_increment=True)
+
+
+@pytest.mark.parametrize("use_batch", [False, True])
+def test_daily_window_ends_before_today_and_preserves_sixty_closed_dates(use_batch):
+    now = datetime(2026, 10, 23, 3, 32, tzinfo=timezone.utc)
+    cutoff = int(datetime(2026, 10, 23, tzinfo=SH).timestamp() * 1000) - 1
+    class DailyKlines(FakeKlines):
+        def get(self, symbol, *, period, count, as_dataframe, adjust,
+                start_time=None, end_time=None):
+            if period != "1d":
+                return super().get(symbol, period=period, count=count,
+                    as_dataframe=as_dataframe, adjust=adjust,
+                    start_time=start_time, end_time=end_time)
+            assert end_time == cutoff
+            days = pd.bdate_range(end="2026-10-22", periods=60).strftime("%Y-%m-%d")
+            return _compact_multi_day("1d", days)
+    fake=FakeClient(); fake.klines=DailyKlines()
+    result=build_observation(fake, now_utc=now, repo_sha="a"*40,
+        sequence=1, symbols=("159611.SZ",), include_supplemental=True, use_batch=use_batch)
+    daily=result["symbols"]["159611.SZ"]["1d"]
+    assert len(daily["rows"]) == 60
+    assert daily["rows"][-1]["label"] == "2026-10-22 00:00"
+    assert daily["history_coverage"]["status"] == "PASS"

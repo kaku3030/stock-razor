@@ -99,7 +99,8 @@ def get_cn_quick_scan(symbols: list[str] | None = None) -> dict:
     return read_cn_quick_scan(symbols)
 
 
-def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
+def _read_tickflow_historical_batch(limit: int, *, full: bool=False,
+                                    session_progress: bool=False) -> dict:
     """One remote MCP round trip for four held-ETF research histories; no provider IO.
 
     Five or twenty independent cache reads must share a source SHA and sequence.
@@ -113,9 +114,10 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
         "radar_admission": "BLOCKED", "can_confirm_signal": False,
         "live_trade": False, "provider_requests": 0,
         "canonical_write_authorized": False,
-        "research_mode": "historical_only",
+        "research_mode": ("session_progress_intraday_historical_daily"
+                          if session_progress else "historical_only"),
     }
-    if type(full) is not bool:
+    if type(full) is not bool or type(session_progress) is not bool:
         return base
     periods=(("1m","5m","15m","60m","1d") if full else ("15m","60m"))
     if type(limit) is not int or not 1 <= limit <= (240 if full else 24):
@@ -126,14 +128,18 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
     for symbol in ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ"):
         frames = {}
         for period in periods:
+            mode = ("session_progress" if session_progress and period != "1d"
+                    else "historical_only")
+            expected_status = ("PASS_RESEARCH_ONLY" if mode == "session_progress"
+                               else "PASS_HISTORICAL_ONLY")
             result = read_cn_tickflow_research_data(
                 symbol, timeframe=period, limit=limit,
-                research_mode="historical_only",
+                research_mode=mode,
             )
             states[f"{symbol}:{period}"] = result.get("status", "INVALID_CACHE")
             if not (
                 result.get("ok") is True
-                and result.get("status") == "PASS_HISTORICAL_ONLY"
+                and result.get("status") == expected_status
                 and result.get("research_only") is True
                 and result.get("radar_admission") == "BLOCKED"
                 and result.get("source_arbiter_admission") == "BLOCKED"
@@ -162,7 +168,9 @@ def _read_tickflow_historical_batch(limit: int, *, full: bool=False) -> dict:
                 "frame_status": states}
     sha, sequence = next(iter(source_versions))
     return {
-        **base, "ok": True, "status": "PASS_HISTORICAL_ONLY",
+        **base, "ok": True,
+        "status": ("PASS_SESSION_PROGRESS_ONLY" if session_progress
+                   else "PASS_HISTORICAL_ONLY"),
         "repo_sha": sha, "sequence": sequence,
         "symbols": raw, "frame_status": states,
         "frame_count": 4*len(periods),
@@ -251,6 +259,8 @@ def get_cn_market_data(
         return _read_tickflow_historical_batch(limit)
     if symbol == "TICKFLOW:FULL":
         return _read_tickflow_historical_batch(limit, full=True)
+    if symbol == "TICKFLOW:SESSION":
+        return _read_tickflow_historical_batch(limit, full=True, session_progress=True)
     # Opt in to due-grid progress, not exchange finality or source admission.
     # Keep historical-only and normal Eastmoney/Tencent routes unchanged.
     if isinstance(symbol, str) and symbol.startswith("TICKFLOW:PROGRESS:"):

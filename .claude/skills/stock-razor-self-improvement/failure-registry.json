@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-23T04:46:03Z",
+  "last_reconciled_utc": "2026-10-23T05:01:27Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -359,6 +359,20 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39901934538",
       "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
       "mandatory_action": "Validate sparse current-session increments separately and merge into strictly validated history; preserve all row checks, quarantine, depth and admission restrictions. Verify exact deployed collector/Radar/MCP SHA and in-session readback independently. Missing evaluation must expose bounded independent worker heartbeat, never source/data PASS.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-012",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "D1_FORMING_ROW_CONSUMES_HISTORY_SLOT"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "After collector 152881d5 deployment, direct TickFlow D1 read returned 59 rows with required_rows60 because the count60 window included today and normalization quarantined the forming daily date. Intraday historical-only reads also correctly reject same-day vendor-float rows; callers need an explicit session-progress contract rather than mislabeling those rows historical.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39903119719",
+      "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
+      "mandatory_action": "End D1 history before the current Shanghai date; preserve request limits. Use explicit session-progress intraday plus historical D1 for the five-period session reader. Radar must retain all row/continuity checks and record_only/currentness/finality restrictions. Verify exact-head CI, deployment and current-session source/consumer readback independently.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
