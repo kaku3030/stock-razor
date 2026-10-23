@@ -54,6 +54,17 @@ def benchmark(bars, initial, cost_bps):
     return metrics(trades, curve, initial), curve
 
 
+def select_window(schedule, start, end):
+    if start.tzinfo is None or end.tzinfo is None or start >= end:
+        raise ValueError("WINDOW_REQUIRES_AWARE_ORDERED_TIMESTAMPS")
+    overlap = schedule[(schedule.open_at < end) & (schedule.close_at > start)]
+    if overlap.empty:
+        raise ValueError("EMPTY_WINDOW")
+    if ((overlap.open_at < start) | (overlap.close_at > end)).any():
+        raise ValueError("PARTIAL_SESSION_WINDOW_REJECTED")
+    return overlap.reset_index(drop=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -105,11 +116,7 @@ def main():
         if not re.fullmatch(r"[A-Za-z0-9_-]+", window["name"]):
             raise ValueError("INVALID_WINDOW_NAME")
         start, end = pd.Timestamp(window["start"]), pd.Timestamp(window["end"])
-        if start.tzinfo is None or end.tzinfo is None or start >= end:
-            raise ValueError("WINDOW_REQUIRES_AWARE_ORDERED_TIMESTAMPS")
-        ss = schedule[(schedule.open_at >= start) & (schedule.close_at <= end)].reset_index(drop=True)
-        if ss.empty or start > ss.open_at.iloc[0] or end < ss.close_at.iloc[-1]:
-            raise ValueError("EMPTY_OR_INCOMPLETE_WINDOW")
+        ss = select_window(schedule, start, end)
         if int(schedule.close_at.searchsorted(ss.open_at.iloc[0])) < 200:
             raise ValueError("COMMON_200_SESSION_WARMUP_REQUIRED_BEFORE_TEST_WINDOW")
         qb = qqq[(qqq.end>ss.open_at.iloc[0]) & (qqq.end<=ss.close_at.iloc[-1])].reset_index(drop=True)
@@ -123,9 +130,11 @@ def main():
                 t.to_csv(args.output/f"{name}_trades.csv", index=False)
                 e.to_csv(args.output/f"{name}_events.csv", index=False)
                 c.to_csv(args.output/f"{name}_equity.csv", index=False)
-                results.append(dict(window=window["name"], arm=arm, cost_bps=cost, **metrics(t,c)))
+                results.append(dict(window=window["name"], actual_start=ss.open_at.iloc[0].isoformat(),
+                                    actual_end=ss.close_at.iloc[-1].isoformat(), arm=arm, cost_bps=cost, **metrics(t,c)))
             qm,qc = benchmark(qb, 100000., cost)
-            results.append(dict(window=window["name"], arm="QQQ_BH", cost_bps=cost, **qm))
+            results.append(dict(window=window["name"], actual_start=ss.open_at.iloc[0].isoformat(),
+                                actual_end=ss.close_at.iloc[-1].isoformat(), arm="QQQ_BH", cost_bps=cost, **qm))
             qc.to_csv(args.output/f"{window['name']}_QQQ_BH_{int(cost)}bps_equity.csv", index=False)
     pd.DataFrame(results).to_csv(args.output/"metrics.csv", index=False)
     receipt.update(status="PARTIAL_MATRIX_REPLAYED_RESEARCH_ONLY", reason="A_AND_UNTOUCHED_OOS_MISSING")

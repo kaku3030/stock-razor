@@ -242,6 +242,9 @@ def test_qqq_benchmark_charges_both_sides():
     spec.loader.exec_module(runner)
     m, _ = runner.benchmark(candles(session()), 100000., 10.)
     assert m["total_return"] == pytest.approx(.999/1.001-1)
+    with pytest.raises(ValueError, match="PARTIAL_SESSION"):
+        runner.select_window(session(), pd.Timestamp("2024-03-08 10:00-05:00"),
+                              pd.Timestamp("2024-03-08 16:00-05:00"))
 
 
 def synthetic_history(model="pullback"):
