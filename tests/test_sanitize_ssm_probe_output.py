@@ -139,3 +139,58 @@ def test_ssm_failed_branch_preserves_nonzero_ci_and_filters_private_stdout() -> 
     assert "--failed-status" in failed
     assert "exit 1" in failed
     assert "StandardErrorContent" not in failed
+
+ 
+def test_opend_subscription_audit_projects_only_bounded_tracked_evidence() -> None:
+    raw = json.dumps({
+        "probe": "us_opend_subscription_audit_v0_1",
+        "query_status": "PASS",
+        "opend_reachable": True,
+        "quota_verified": True,
+        "subscription_capacity": {"remain": 17, "total_used": 3, "private": 991},
+        "subscribed_tracked": ["US.AMD", "US.QQQ"],
+        "unsubscribed_tracked": ["US.NVDA"],
+        "subscription_types": {
+            "K_1M": {"tracked_count": 1, "tracked_codes": ["US.AMD"],
+                    "private": "provider text"},
+            "PRIVATE_TYPE": {"tracked_count": 1, "tracked_codes": ["US.NVDA"]},
+        },
+        "provider_payload": "private-account-secret",
+        "live_trade": False,
+    })
+    output = "\\n".join(project(raw, "us_opend_subscription_audit"))
+    assert '"quota_verified":true' in output
+    assert '"subscription_capacity":{"remain":17,"total_used":3}' in output
+    assert '"subscribed_tracked":["US.AMD","US.QQQ"]' in output
+    assert '"unsubscribed_tracked":["US.NVDA"]' in output
+    assert '"K_1M":{"tracked_codes":["US.AMD"],"tracked_count":1}' in output
+    for secret in ("private-account-secret", "PRIVATE_TYPE", "991", "provider text"):
+        assert secret not in output
+
+
+def test_opend_subscription_details_are_not_projected_for_other_actions() -> None:
+    raw = json.dumps({
+        "probe": "us_opend_subscription_audit_v0_1",
+        "subscribed_tracked": ["US.AMD"],
+        "subscription_capacity": {"remain": 17, "total_used": 3},
+    })
+    output = "\\n".join(project(raw, "us_livefeed_status"))
+    assert "subscribed_tracked" not in output
+    assert "subscription_capacity" not in output
+
+
+def test_opend_subscription_projection_rejects_unbounded_or_inconsistent_fields() -> None:
+    raw = json.dumps({
+        "probe": "us_opend_subscription_audit_v0_1",
+        "subscription_capacity": {"remain": -1, "total_used": 3},
+        "subscribed_tracked": ["US.AMD", "US.PRIVATE"],
+        "unsubscribed_tracked": ["US.NVDA"],
+        "subscription_types": {
+            "K_1M": {"tracked_count": 2, "tracked_codes": ["US.AMD"]},
+        },
+    })
+    output = "\\n".join(project(raw, "us_opend_subscription_audit"))
+    assert "subscription_capacity" not in output
+    assert '"subscribed_tracked"' not in output
+    assert "subscription_types" in output
+    assert "unsubscribed_tracked" in output

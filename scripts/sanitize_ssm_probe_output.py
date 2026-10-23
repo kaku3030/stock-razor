@@ -33,7 +33,7 @@ SAFE_LINE_KEYS = {
 }
 
 
-def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
+def _safe_json(value: Mapping[str, object], action: str | None = None) -> dict[str, object]:
     result = {}
     for key in SAFE_KEYS:
         if key not in value:
@@ -41,6 +41,44 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
         item = value[key]
         if isinstance(item, (str, int, float, bool)) and _safe_scalar(key, item) is not None:
             result[key] = item
+    if action == "us_opend_subscription_audit":
+        tracked = {"US.AMD", "US.NVDA", "US.TSLA", "US.AAPL", "US.QQQ",
+                   "US.CIEN", "US.AAOI", "US.LITE", "US.GLDM"}
+        kinds = {"QUOTE", "ORDER_BOOK", "TICKER", "K_1M", "K_5M",
+                 "K_15M", "K_30M", "K_60M", "K_DAY", "RT_DATA"}
+        if type(value.get("quota_verified")) is bool:
+            result["quota_verified"] = value["quota_verified"]
+        for key in ("subscribed_tracked", "unsubscribed_tracked"):
+            raw_codes = value.get(key)
+            if isinstance(raw_codes, list) and len(raw_codes) <= len(tracked):
+                codes = sorted(set(code for code in raw_codes
+                                   if type(code) is str and code in tracked))
+                if len(codes) == len(raw_codes):
+                    result[key] = codes
+        raw_capacity = value.get("subscription_capacity")
+        if isinstance(raw_capacity, Mapping):
+            capacity = {}
+            for key in ("total_used", "remain", "total", "used", "max", "limit"):
+                number = raw_capacity.get(key)
+                if type(number) is int and 0 <= number <= 1_000_000:
+                    capacity[key] = number
+            if {"remain", "total_used"} <= capacity.keys():
+                result["subscription_capacity"] = capacity
+        raw_types = value.get("subscription_types")
+        if isinstance(raw_types, Mapping) and len(raw_types) <= len(kinds):
+            safe_types = {}
+            for kind, detail in raw_types.items():
+                if kind not in kinds or not isinstance(detail, Mapping):
+                    continue
+                raw_codes = detail.get("tracked_codes")
+                count = detail.get("tracked_count")
+                if (isinstance(raw_codes, list) and len(raw_codes) <= len(tracked)
+                        and type(count) is int and 0 <= count <= len(tracked)):
+                    codes = sorted(set(code for code in raw_codes
+                                       if type(code) is str and code in tracked))
+                    if len(codes) == len(raw_codes) == count:
+                        safe_types[kind] = {"tracked_count": count, "tracked_codes": codes}
+            result["subscription_types"] = safe_types
     symbols = value.get("symbols")
     if isinstance(symbols, Mapping) and len(symbols) <= 500:
         result["symbol_count"] = len(symbols)
@@ -72,7 +110,7 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
 def _safe_scalar(key: str, value: object) -> object | None:
     """Allow only bounded typed evidence, never arbitrary remote text."""
     if type(value) is bool:
-        return value if key in ("paper_auto_ready", "live_trade", "trade_execution", "opend_reachable", "checkout_dirty") else None
+        return value if key in ("paper_auto_ready", "live_trade", "trade_execution", "opend_reachable", "checkout_dirty", "quota_verified") else None
     if type(value) is int:
         return value if key == "sequence" and 0 <= value <= 1_000_000 else None
     if not isinstance(value, str):
@@ -90,7 +128,7 @@ def _safe_scalar(key: str, value: object) -> object | None:
     return value if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", value) else None
 
 
-def project(raw: str) -> list[str]:
+def project(raw: str, action: str | None = None) -> list[str]:
     lines: list[str] = []
     for line in raw.splitlines():
         stripped = line.strip()
@@ -100,7 +138,7 @@ def project(raw: str) -> list[str]:
             except (TypeError, ValueError, RecursionError):
                 continue
             if isinstance(value, dict):
-                safe = _safe_json(value)
+                safe = _safe_json(value, action)
                 if safe:
                     lines.append("SANITIZED_PROBE=" + json.dumps(safe, sort_keys=True, separators=(",", ":")))
             continue
@@ -117,7 +155,7 @@ def main() -> int:
     parser.add_argument("--action", required=True)
     parser.add_argument("--failed-status", action="store_true")
     args = parser.parse_args()
-    result = project(sys.stdin.read())
+    result = project(sys.stdin.read(), args.action)
     if result:
         print("SANITIZED_EVIDENCE=FAILED_COMMAND_ENUMS_ONLY" if args.failed_status
               else "SANITIZED_EVIDENCE=AVAILABLE_NOT_QUALIFIED")
