@@ -174,6 +174,9 @@ def on_event_accepted(event):
 bridge=LiveFeedRuntimeBridge(controller,adapter,on_event_accepted=on_event_accepted)
 streams=[SemanticStreamKey("futu","us",c,"K_1M","1m") for c in CODES]
 bridge.start(streams)
+# Read back the same OpenD connection after startup. This is diagnostic only:
+# it never mutates subscriptions and cannot qualify realtime delivery.
+subscription_readback=adapter.inspect_current_connection_subscriptions(tuple(streams))
 # Candidate changes are OBSERVED ONLY. Never add a provider call here.
 preview_csv=os.environ.get("STOCK_RAZOR_OPEND_PREVIEW_CANDIDATES")
 if preview_csv is None:
@@ -801,6 +804,7 @@ try:
           "ab_blend_enabled":AB_BLEND_ENABLED,
           "provider_subscription_ack":("PASS" if (adapter.diagnostics().get("last_subscribe_result") or {}).get("ret")==ft.RET_OK else "BLOCKED"),
           "dynamic_subscription_preview":candidate_preview,
+          "subscription_readback":subscription_readback,
           "controller_lifecycle":snap.controller.lifecycle_state.value,
           "controller_failure_class":snap.controller.failure_class.value,
           "controller_findings_tail":list(snap.controller.findings[-20:]),
