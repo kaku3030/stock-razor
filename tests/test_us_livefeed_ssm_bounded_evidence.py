@@ -1,4 +1,5 @@
 """Contract tests for a single bounded, research-only US LiveFeed SSM stdout record."""
+import base64
 from contextlib import redirect_stdout
 from io import StringIO
 import json
@@ -22,7 +23,9 @@ def probe_source() -> str:
     assert "source_tf,display_tf" in action
     return textwrap.dedent(
         action.split("          python3 - <<'PY'\n", 1)[1].split("\n          PY\n", 1)[0]
-    )
+    ).replace("__RUNTIME_DIAGNOSTICS_BASE64__", base64.b64encode(
+        (ROOT / "scripts/us_livefeed_runtime_diagnostics.py").read_bytes()
+    ).decode())
 
 
 def execute(tmp_path: Path, *, has_snapshot: bool = True, instruments: int = 1) -> dict:
@@ -61,6 +64,7 @@ def execute(tmp_path: Path, *, has_snapshot: bool = True, instruments: int = 1) 
         "pathlib.Path('/run/stock-razor-us-livefeed/canonical-market-snapshot.json')",
         f"pathlib.Path({str(snapshot_path)!r})",
     ).replace("active=is_active()", "active=True")
+    code = code.replace("runtime_namespace['collect_runtime_diagnostics']()", "{}")
     capture = StringIO()
     with redirect_stdout(capture):
         exec(compile(code, "<bounded-ssm-us-livefeed>", "exec"), {})
@@ -108,3 +112,20 @@ def test_cloud_workflow_still_requires_main_readonly_without_broker_mutation():
     assert "configure-aws-credentials@v4" in text
     assert "SANITIZED_EVIDENCE" not in probe_source()
     assert "systemctl restart" not in text.split("            us_livefeed_status)\n", 1)[1].split("            futures_opend_env_probe)\n", 1)[0]
+
+
+def test_exact_runner_helper_is_embedded_within_ssm_command_limit():
+    code = probe_source()
+    # Include the actual shell wrapper, not just the pre-substitution source.
+    assert len(("set -eu\npython3 - <<'PY'\n" + code + "\nPY\n").encode()) <= 16000
+    namespace = {}
+    source = (ROOT / "scripts/us_livefeed_runtime_diagnostics.py").read_bytes()
+    exec(compile(source, "<runtime-diagnostics-transport>", "exec"), namespace)
+    assert callable(namespace["collect_runtime_diagnostics"])
+    assert "runtime_namespace['collect_runtime_diagnostics']()" in code
+    text = WORKFLOW.read_text()
+    action = text.split("            us_livefeed_status)\n", 1)[1].split(
+        "            futures_opend_env_probe)\n", 1
+    )[0]
+    assert 'base64 -w0 scripts/us_livefeed_runtime_diagnostics.py' in action
+    assert ' -le 16000' in action

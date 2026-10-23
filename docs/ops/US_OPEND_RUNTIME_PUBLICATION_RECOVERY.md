@@ -71,11 +71,38 @@ evidence, without restarting or deleting anything:
 5. Verify provider permissions, fresh callbacks and bar timestamps separately
    from process/port health. Keep unknown closure and stale data blocked.
 
-The current Work environment has no AWS execution credential/tool or workflow
-dispatch API; the existing Windows remote device was offline. Therefore host
-state, current LiveFeed SHA and production recovery are **NOT_VERIFIED**.
+The initial direct tools had no AWS execution credential or workflow dispatch
+API, and the existing Windows remote device was offline. The permitted browser
+fallback subsequently reached the existing signed-in GitHub workflow UI and
+restored read-only SSM diagnostics. No IAM change or new credential was needed.
+
+[SSM status run 39978609341](https://github.com/kaku3030/stock-razor/actions/runs/39978609341)
+returned `BLOCKED / RUNTIME_OR_CACHE_NOT_PROVEN`. The independent existing
+[cloud runtime audit 39978736070](https://github.com/kaku3030/stock-razor/actions/runs/39978736070)
+confirmed `unit_active=true` and `HEARTBEAT_UNAVAILABLE` for LiveFeed. The legacy
+US Radar worker remained active with a blocked evaluation; the audit does not
+start or authorize that worker. MCP source was still `eebb8ec4`, independently
+of the newly merged application revision. The exact current LiveFeed process
+SHA and the cause of missing publication remain **NOT_VERIFIED**.
 No restart, deployment, automatic recovery schedule or new paid resource was
-created. Existing restart window protection remains in force.
+created by these diagnostics. Existing restart window protection remains in force.
+
+## Bounded host diagnostics
+
+The existing `us_livefeed_status` action now ships its exact checked-out stdlib
+diagnostic helper through the existing SSM payload. `runtime_diagnostics` exposes
+only allowlisted systemd states, last exit/restart counts, process elapsed time,
+installed source hashes, the three fixed files' type/mode, and bounded journal
+exception-family counts. A regular file type is not a readability or valid-JSON
+claim. Journal counts are sample observations, not proof of a root cause.
+
+Both the producer and public-output projector enforce the same strict field and
+type allowlist. Raw journal text, command arguments, environment, arbitrary paths
+and private identifiers never enter public output. Each subprocess is byte and
+deadline bounded; an EOF-producing child that stays alive is killed. This is a
+read-only diagnostic, with no OpenD provider request, restart, recovery or gate
+change. The existing protected-main postmerge workflow dispatches one observation;
+its actual output must be checked separately from CI.
 
 ## Completion and rollback
 
