@@ -7,6 +7,7 @@ from math import isfinite
 from datetime import datetime, timezone
 import json
 import os
+import re
 from threading import RLock
 from time import perf_counter
 from typing import Iterable
@@ -89,6 +90,28 @@ def _aware(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _worker_heartbeat(payload: dict, now: datetime, max_age_seconds: int) -> dict:
+    """Independent, bounded worker liveness; never source/data qualification."""
+    emitted = _aware(payload.get("emitted_at_utc"))
+    sequence = payload.get("sequence")
+    sequence = sequence if type(sequence) is int and 0 < sequence < 2**63 else None
+    sha = payload.get("worker_repo_sha")
+    sha = sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+    age = (now.astimezone(timezone.utc) - emitted).total_seconds() if emitted else None
+    status = "INVALID"
+    if age is not None and age >= -5 and sequence is not None and sha is not None:
+        status = "FRESH" if age <= max_age_seconds else "STALE"
+    poll = payload.get("poll_status")
+    return {
+        "status": status,
+        "age_seconds": age,
+        "emitted_at_utc": emitted.isoformat() if emitted else None,
+        "worker_repo_sha": sha,
+        "sequence": sequence,
+        "poll_status": poll if poll in ("PASS", "UNCHANGED", "BLOCKED") else "UNKNOWN",
+    }
+
+
 def _symbol(value: object) -> str | None:
     raw = str(value or "").strip().upper()
     for suffix in (".SH", ".SZ", ".BJ"):
@@ -162,11 +185,16 @@ def read_cn_radar_analysis(
             _fail("INVALID", error="SAFETY_CONTRACT_VIOLATION"),
         )
 
+    now = now_utc or datetime.now(timezone.utc)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now_utc must be timezone-aware")
+
     evaluation = payload.get("evaluation")
     if not isinstance(evaluation, dict):
         return _finish(
             started_at,
-            _fail("INVALID", error="MISSING_EVALUATION"),
+            _fail("INVALID", error="MISSING_EVALUATION",
+                  worker_heartbeat=_worker_heartbeat(payload, now, max_age_seconds)),
         )
     evaluation_timestamp_semantics_proven = evaluation.get(
         "intraday_timestamp_semantics_proven"
@@ -188,9 +216,6 @@ def read_cn_radar_analysis(
             _fail("INVALID", error="EVALUATION_SAFETY_CONTRACT_VIOLATION"),
         )
 
-    now = now_utc or datetime.now(timezone.utc)
-    if now.tzinfo is None or now.utcoffset() is None:
-        raise ValueError("now_utc must be timezone-aware")
     emitted = _aware(payload.get("emitted_at_utc"))
     if emitted is None:
         return _finish(

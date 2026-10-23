@@ -15,6 +15,26 @@ The live cloud readback at 2026-10-23 09:55 JST reports:
 
 The 24 hourly rows are not enough for a 60-hour moving average or a 100-bar hourly profile. Do not present current technical output as a warmed-up strategy evaluation.
 
+## Morning regression found on 2026-10-23
+
+Read-only AWS audit [39901934538](https://github.com/kaku3030/stock-razor/actions/runs/39901934538)
+found `S0_60M_NORMALIZE / ROW_COUNT_BELOW_MIN`, with the private cache BLOCKED
+and the Radar consumer returning `MISSING_EVALUATION`. The earlier pre-open
+historical PASS above does not establish current-session availability.
+
+Historical warmup and the current-session increment have different row-count
+contracts: keep the historical four-row validation floor, but allow an empty
+or one-to-three-row intraday increment before all four hourly bars have formed.
+Validate every returned row and quarantine future/forming labels before merging
+by label; never manufacture missing bars or promote finality/currentness.
+The same distinction applies to short 1m/5m diagnostic increments near open.
+
+When evaluation is absent, the reader exposes a separate `worker_heartbeat`
+with FRESH/STALE/INVALID, worker SHA, sequence, emission time and poll status.
+FRESH indicates only an observed recent worker heartbeat; analysis remains
+INVALID, and source currentness, bar closure and all trading gates are independent.
+Raw exception messages and provider payloads are not exposed.
+
 ## What the provider has confirmed in writing
 
 The support replies dated 2026-10-08, 2026-10-13 and 2026-10-20 say:

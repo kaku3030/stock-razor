@@ -1177,8 +1177,8 @@ def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings_batch(tmp_path
     valid = "100001.SZ"
 
     class SparseBatchKlines(FakeKlines):
-        def intraday_batch(self, symbols, **kwargs):
-            result = super().intraday_batch(symbols, **kwargs)
+        def batch(self, symbols, **kwargs):
+            result = super().batch(symbols, **kwargs)
             if kwargs["period"] == "15m":
                 frame = result[sparse]
                 result[sparse] = {
@@ -1220,3 +1220,77 @@ def test_sparse_expanded_scan_symbol_isolated_from_valid_siblings_batch(tmp_path
     assert missing["radar_admission"] == sibling["radar_admission"] == "BLOCKED"
     assert missing["live_trade"] is sibling["live_trade"] is False
 
+
+
+@pytest.mark.parametrize("use_batch", [False, True])
+@pytest.mark.parametrize("hour,minute,elapsed", [(9, 32, 0), (10, 31, 1), (11, 32, 2), (14, 1, 3)])
+def test_sparse_current_hourly_increment_merges_into_strict_history(use_batch, hour, minute, elapsed):
+    # Actual AWS S0_60M_NORMALIZE failure: historical warmup has 24 bars,
+    # but the separate intraday endpoint has fewer than four all morning.
+    now = datetime(2026, 10, 23, hour, minute, tzinfo=SH).astimezone(timezone.utc)
+    days = ("2026-10-15", "2026-10-16", "2026-10-19",
+            "2026-10-20", "2026-10-21", "2026-10-22")
+
+    class SessionKlines(FakeKlines):
+        def get(self, symbol, *, period, count, as_dataframe, adjust,
+                start_time=None, end_time=None):
+            return _compact_multi_day(period, days)
+
+        def intraday(self, symbol, *, period, count, as_dataframe):
+            raw = _compact_multi_day(period, ("2026-10-23",), close=1.65)
+            keep = [i for i, stamp in enumerate(raw["timestamp"])
+                    if stamp <= int(now.timestamp() * 1000)]
+            return {key: [values[i] for i in keep] for key, values in raw.items()}
+
+        def intraday_batch(self, symbols, **kwargs):
+            return {symbol: self.intraday(symbol, period=kwargs["period"],
+                        count=kwargs["count"], as_dataframe=False)
+                    for symbol in symbols}
+
+    fake = FakeClient()
+    fake.klines = SessionKlines()
+    snapshot = build_observation(fake, now_utc=now, repo_sha="a" * 40,
+        sequence=1, symbols=("159611.SZ",), use_batch=use_batch)
+    hourly = snapshot["symbols"]["159611.SZ"]["60m"]
+    assert len(hourly["rows"]) == 24
+    today = [row for row in hourly["rows"] if row["label"].startswith("2026-10-23")]
+    assert len(today) == elapsed
+    assert all(row["close"] == 1.65 for row in today)
+    assert all(row["is_partial_bar"] is True and row["bar_finality"] == "NOT_VERIFIED"
+               for row in hourly["rows"])
+    assert hourly["currentness"] == "UNPROVEN"
+    assert snapshot["radar_admission"] == "BLOCKED"
+    assert snapshot["live_trade"] is False
+
+
+def test_sparse_history_still_rejected_without_session_increment_mode():
+    raw = _compact_multi_day("60m", ("2026-10-22",))
+    raw = {key: values[:2] for key, values in raw.items()}
+    with pytest.raises(ValueError, match="insufficient history"):
+        normalize_bars(raw, "60m", now_utc=datetime(2026, 10, 23, 4, tzinfo=timezone.utc))
+
+
+@pytest.mark.parametrize("case", ["columns", "duplicate", "historical_invalid", "future_only"])
+def test_sparse_increment_keeps_row_validation_and_quarantine(case):
+    now = datetime(2026, 10, 23, 4, tzinfo=timezone.utc)
+    raw = _compact_multi_day("60m", ("2026-10-23",))
+    raw = {key: values[:2] for key, values in raw.items()}
+    if case == "columns":
+        raw["close"].pop()
+    elif case == "duplicate":
+        raw["timestamp"][1] = raw["timestamp"][0]
+    elif case == "historical_invalid":
+        raw = _compact_multi_day("60m", ("2026-10-22",))
+        raw = {key: values[:2] for key, values in raw.items()}
+        raw["high"][0] = 1.0
+    else:
+        raw = _compact_multi_day("60m", ("2026-10-23",))
+        raw = {key: values[-2:] for key, values in raw.items()}
+    if case == "future_only":
+        reasons = {}
+        assert normalize_bars(raw, "60m", now_utc=now, session_increment=True,
+                              quarantine_counts=reasons) == []
+        assert reasons == {"TODAY_FUTURE_LABEL": 2}
+    else:
+        with pytest.raises(ValueError):
+            normalize_bars(raw, "60m", now_utc=now, session_increment=True)

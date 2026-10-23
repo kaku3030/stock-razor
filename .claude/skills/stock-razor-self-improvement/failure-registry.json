@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-22T13:53:04Z",
+  "last_reconciled_utc": "2026-10-23T04:46:03Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -344,6 +344,21 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39878177935",
       "regression_evidence": "tests/test_cn_tickflow_audit_frame_contract.py",
       "mandatory_action": "Keep private-frame maximums aligned with the real cache writer and update the workflow enum allowlist together. Verify each period at its writer limit and one row above; reject oversize frames and export no prices or timestamps. Do not interpret off-session sequence stability or repaired diagnostics as currentness, finality or Radar/trading admission.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-011",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "S0_60M_NORMALIZE",
+        "ROW_COUNT_BELOW_MIN"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "AWS audit 39901934538 confirms the collector rejects the separate current-session hourly increment under the historical four-row minimum. A normal morning has zero, one or two elapsed hourly bars, so valid multi-session warmup is discarded and Radar publishes no evaluation. Deterministic batch and single-route morning regressions fail on the base revision; missing-evaluation reader also suppresses independent heartbeat evidence.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39901934538",
+      "regression_evidence": "tests/test_cn_tickflow_research_cache.py",
+      "mandatory_action": "Validate sparse current-session increments separately and merge into strictly validated history; preserve all row checks, quarantine, depth and admission restrictions. Verify exact deployed collector/Radar/MCP SHA and in-session readback independently. Missing evaluation must expose bounded independent worker heartbeat, never source/data PASS.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
