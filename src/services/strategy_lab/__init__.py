@@ -179,6 +179,19 @@ from .validation_gate import (
     soft_validation_from_parameter_stability,
 )
 from .validation_models import GateResult, ValidationDecision, ValidationReport
+from .strong_pullback_v01 import (
+    BacktestReport,
+    Bar,
+    InstrumentKind,
+    Pattern,
+    Provenance,
+    Qualification,
+    Signal,
+    Trade,
+    detect_signals,
+    qualify_data,
+    run_backtest,
+)
 from .walk_forward import (
     FixedParameterEvidence,
     FoldDataEvidence,
@@ -361,6 +374,17 @@ __all__ = [
     "UnresolvedFinding",
     "ValidationDecision",
     "ValidationReport",
+    "BacktestReport",
+    "Bar",
+    "InstrumentKind",
+    "Pattern",
+    "Provenance",
+    "Qualification",
+    "Signal",
+    "Trade",
+    "detect_signals",
+    "qualify_data",
+    "run_backtest",
     "WalkForwardFinding",
     "WalkForwardFindingCode",
     "WalkForwardFold",
