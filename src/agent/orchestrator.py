@@ -68,6 +68,7 @@ from src.agent.stream_events import stream_event
 from src.agent.tools.registry import ToolRegistry
 from src.config import AGENT_MAX_STEPS_DEFAULT, get_config
 from src.report_language import normalize_report_language
+from src.services.stock_radar_v2.observation_assembly import assemble_shadow_observation
 
 if TYPE_CHECKING:
     from src.agent.executor import AgentResult
@@ -122,6 +123,7 @@ class AgentOrchestrator:
         mode: str = "standard",
         skill_manager=None,
         config=None,
+        observation_writer=None,
     ):
         self.tool_registry = tool_registry
         self.llm_adapter = llm_adapter
@@ -132,6 +134,7 @@ class AgentOrchestrator:
         self.mode = normalized_mode if normalized_mode in VALID_MODES else "standard"
         self.skill_manager = skill_manager
         self.config = config
+        self.observation_writer = observation_writer
         self.strategy_engine = StrategyEngine()
 
     def _get_timeout_seconds(self) -> int:
@@ -734,6 +737,9 @@ class AgentOrchestrator:
 
         dashboard, content = self._resolve_final_output(ctx, parse_dashboard=parse_dashboard)
 
+        if parse_dashboard and dashboard is not None:
+            self._capture_shadow_observation(ctx, dashboard)
+
         model_str = ", ".join(dict.fromkeys(m for m in models_used if m))
         provider = stats.models_used[0] if stats.models_used else ""
 
@@ -764,6 +770,31 @@ class AgentOrchestrator:
             stats=stats,
             runtime_facts=build_agent_runtime_facts(ctx),
         )
+
+    def _capture_shadow_observation(self, ctx: AgentContext, dashboard: Dict[str, Any]) -> None:
+        """Capture only an already-frozen dashboard when a writer is injected."""
+        writer = self.observation_writer or ctx.meta.get("observation_capture_writer")
+        if writer is None:
+            return
+        run_id = str(ctx.meta.get("run_id") or "").strip()
+        if not run_id:
+            raise ValueError("Shadow Observation capture requires explicit run_id")
+        try:
+            observation = assemble_shadow_observation(
+                run_id=run_id,
+                instrument=ctx.stock_code,
+                dashboard=dashboard,
+                evidence_ids=tuple(ctx.meta.get("observation_evidence_ids", ())),
+                strategy_gate_results=ctx.meta.get("observation_strategy_gate_results"),
+                timestamps=ctx.meta.get("observation_timestamps"),
+                writer=writer,
+            )
+            ctx.meta["shadow_observation_id"] = observation.observation_id
+        except ValueError:
+            raise
+        except Exception as exc:
+            ctx.meta["shadow_observation_capture_error"] = f"{type(exc).__name__}: {exc}"
+            logger.exception("[Orchestrator] Shadow Observation capture failed")
 
     # -----------------------------------------------------------------
     # Agent chain construction
@@ -1156,6 +1187,12 @@ class AgentOrchestrator:
                 requested_skills = context.get("strategies", [])
             ctx.meta["skills_requested"] = requested_skills or []
             ctx.meta["strategies_requested"] = requested_skills or []
+            if context.get("run_id") or context.get("query_id"):
+                ctx.meta["run_id"] = context.get("run_id") or context.get("query_id")
+            if context.get("observation_capture_writer") is not None:
+                ctx.meta["observation_capture_writer"] = context["observation_capture_writer"]
+            if context.get("observation_timestamps") is not None:
+                ctx.meta["observation_timestamps"] = dict(context["observation_timestamps"])
             ctx.meta["report_language"] = normalize_report_language(context.get("report_language", "zh"))
             if context.get("market_phase_context"):
                 ctx.meta["market_phase_context"] = context["market_phase_context"]
