@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "expand-autonomy-tests",
+      "kind": "test-only",
+      "enabled": true,
+      "paths": ["tests/test_engineering_autonomy.py"]
+    }
+  ]
+}

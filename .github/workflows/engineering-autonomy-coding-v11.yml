@@ -1,0 +1,192 @@
+name: Engineering Autonomy V1.1 Coding Pilot
+
+on:
+  schedule:
+    - cron: '27,57 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: engineering-autonomy-coding-v11
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    if: >-
+      github.repository == 'kaku3030/stock-razor' &&
+      github.ref == 'refs/heads/main' &&
+      vars.ENGINEERING_AUTONOMY_CODING_ENABLED == 'true'
+    outputs:
+      run: ${{ steps.choose.outputs.run }}
+      task: ${{ steps.choose.outputs.task }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate reviewed task and deduplicate against historical PRs
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TASK=$(python -m engineering_autonomy.coding_v11 select-task)
+          if [ "$TASK" = NONE ]; then
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(gh pr list --state all --head "autonomy-coding/$TASK" --json number --jq 'length')
+          if [ "$COUNT" -ne 0 ]; then
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "task=$TASK" >> "$GITHUB_OUTPUT"
+          echo 'run=true' >> "$GITHUB_OUTPUT"
+
+  agent:
+    needs: preflight
+    if: needs.preflight.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Require separate model API credential
+        env:
+          MODEL_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          test -n "$MODEL_KEY" || {
+            echo 'BLOCKED: OPENAI_API_KEY not configured' >&2
+            exit 1
+          }
+      - name: Execute fixed test-only recipe with Codex
+        uses: openai/codex-action@a8d8be6ee028bea4525bc722d16f36687b408c81
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: engineering_autonomy/prompts/expand-autonomy-tests.md
+          permission-profile: ':workspace'
+          safety-strategy: drop-sudo
+          allow-bots: 'true'
+      # Model output is untrusted. No GitHub write credentials in this job.
+      - name: Export untrusted test-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary --no-ext-diff HEAD -- tests/test_engineering_autonomy.py > "$RUNNER_TEMP/autonomy-candidate.patch"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-test-patch
+          path: ${{ runner.temp }}/autonomy-candidate.patch
+          if-no-files-found: error
+          retention-days: 3
+
+  verify:
+    needs: [preflight, agent]
+    if: needs.agent.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autonomy-test-patch
+          path: ${{ runner.temp }}/autonomy-patch
+      - name: Validate model changes on secret-free fresh runner
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH="$RUNNER_TEMP/autonomy-patch/autonomy-candidate.patch"
+          test -f "$PATCH"
+          if [ ! -s "$PATCH" ]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git apply --check --index "$PATCH"
+          git apply --index "$PATCH"
+          python -m engineering_autonomy.coding_v11 check-staged --patch "$PATCH"
+          python -m pip install --disable-pip-version-check pytest==8.4.2
+          python -m pytest -q tests/test_engineering_autonomy.py
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: [preflight, verify]
+    if: needs.verify.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autonomy-test-patch
+          path: ${{ runner.temp }}/autonomy-patch
+      - name: Open draft PR with separately scoped GitHub App token
+        env:
+          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
+          TASK: ${{ needs.preflight.outputs.task }}
+          BASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN" || {
+            echo 'BLOCKED: ENGINEERING_AUTONOMY_APP_TOKEN not configured' >&2
+            exit 1
+          }
+          test "$TASK" = 'expand-autonomy-tests'
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE_SHA" || {
+            echo 'BLOCKED: main changed while task was executing' >&2
+            exit 1
+          }
+          BRANCH="autonomy-coding/$TASK"
+          COUNT=$(gh pr list --state all --head "$BRANCH" --json number --jq 'length')
+          test "$COUNT" = 0 || {
+            echo 'BLOCKED: task already has a PR' >&2
+            exit 1
+          }
+          git switch -c "$BRANCH"
+          PATCH="$RUNNER_TEMP/autonomy-patch/autonomy-candidate.patch"
+          git apply --check --index "$PATCH"
+          git apply --index "$PATCH"
+          python -m engineering_autonomy.coding_v11 check-staged --patch "$PATCH"
+          git diff --cached --check
+          git config user.name 'stock-razor-engineering-autonomy'
+          git config user.email '322462903+kaku3030@users.noreply.github.com'
+          git commit -m "test: autonomous bounded V1 regression coverage"
+          gh auth setup-git
+          git push --set-upstream origin "$BRANCH"
+          gh pr create --draft --base main --head "$BRANCH" \
+            --title "test: Engineering Autonomy V1.1 bounded coding pilot" \
+            --body "Model-authored test-only change. Independent clean-runner validation passed. Draft only; human review and exact-head PR CI required. No production changes or auto-merge."
