@@ -1,30 +1,36 @@
 name: Engineering Autonomy V1
 
 on:
-  schedule:
-    - cron: '17,47 * * * *'
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'I authorize one bounded audit-record PR (never a schedule or auto-merge)'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: engineering-autonomy-v1
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
   actions: read
 
 jobs:
   bounded-run:
     name: bounded-run
     runs-on: ubuntu-latest
-    if: vars.ENGINEERING_AUTONOMY_ENABLED == 'true'
+    timeout-minutes: 10
+    if: github.ref == 'refs/heads/main' && inputs.confirm == true && vars.ENGINEERING_AUTONOMY_ENABLED == 'true'
     steps:
       - name: Checkout exact main
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -33,15 +39,6 @@ jobs:
 
       - name: Validate task allowlist
         run: python scripts/engineering_autonomy.py validate-manifest
-
-      - name: Require App token configuration
-        env:
-          AUTONOMY_APP_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
-        run: |
-          test -n "$AUTONOMY_APP_TOKEN" || {
-            echo 'BLOCKED: ENGINEERING_AUTONOMY_APP_TOKEN is not configured.' >&2
-            exit 1
-          }
 
       - name: Create isolated run branch
         env:
@@ -53,34 +50,55 @@ jobs:
             --run-id "$RUN_ID" \
             --base-sha "$BASE_SHA"
 
-      - name: Commit sanitized record
+      - name: Commit only this run's sanitized audit record
         env:
           RUN_ID: ${{ github.run_id }}
+        shell: bash
         run: |
+          set -euo pipefail
+          RECORD="docs/engineering-autonomy/runs/${RUN_ID}.json"
+          # A single new run JSON must be the entire worktree delta.
+          # Reject any extra tracked/untracked files, rather than staging a directory.
+          test "$(git status --porcelain=v1 --untracked-files=all)" = "?? ${RECORD}" || {
+            echo 'BLOCKED: unexpected audit worktree modifications' >&2
+            exit 1
+          }
           git config user.name 'stock-razor-engineering-autonomy'
           git config user.email '322462903+kaku3030@users.noreply.github.com'
-          git add docs/engineering-autonomy/runs
+          git add -- "${RECORD}"
+          test "$(git diff --cached --name-only)" = "${RECORD}" || {
+            echo 'BLOCKED: unexpected staged audit paths' >&2
+            exit 1
+          }
           git diff --cached --check
           git commit -m "chore: record engineering autonomy run ${RUN_ID}"
 
       - name: Push and open PR with App token
+        id: publish
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.ENGINEERING_AUTONOMY_APP_ID }}
+          private-key: ${{ secrets.ENGINEERING_AUTONOMY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: stock-razor
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Publish exactly one PR with the short-lived App token
         env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
+          GH_TOKEN: ${{ steps.publish.outputs.token }}
           RUN_ID: ${{ github.run_id }}
         run: |
+          set -euo pipefail
           gh auth setup-git
+          test -n "$GH_TOKEN" || { echo 'BLOCKED: App installation token not configured.' >&2; exit 1; }
+          test "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "autonomy/run-${RUN_ID}" --state all --json number --jq 'length')" -eq 0 || {
+            echo 'BLOCKED: a PR already exists for this run branch.' >&2
+            exit 1
+          }
           git push --set-upstream origin "autonomy/run-${RUN_ID}"
           gh pr create \
             --base main \
             --head "autonomy/run-${RUN_ID}" \
             --title "chore: record engineering autonomy run ${RUN_ID}" \
-            --body "Automated bounded audit-only run. Required checks and exact-head rules remain authoritative."
-
-      - name: Enable guarded auto-merge
-        env:
-          GH_TOKEN: ${{ secrets.ENGINEERING_AUTONOMY_APP_TOKEN }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          PR_NUMBER=$(gh pr list --head "autonomy/run-${RUN_ID}" --json number --jq '.[0].number')
-          test -n "$PR_NUMBER"
-          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
+            --body "AUTO_TASK_ID=autonomy-audit-record-${RUN_ID} — Automated bounded audit-only run. Human review and required checks are mandatory; no auto-merge, deployment, Radar, Paper or trading changes."
