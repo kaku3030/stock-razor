@@ -242,6 +242,18 @@ def _read_tickflow_fast_snapshot() -> dict:
     }
 
 
+def _read_tickflow_evidence() -> dict:
+    from data_provider.tickflow_evidence_checkpoints import checkpoint_status, SAFE
+    from data_provider.cn_tickflow_research_cache import CN
+    from datetime import datetime
+    try:
+        return checkpoint_status(day=datetime.now(CN).date().isoformat())
+    except OSError:
+        return {**SAFE,"status":"EVIDENCE_IO_BLOCKED"}
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return {**SAFE,"status":"EVIDENCE_VALIDATION_BLOCKED"}
+
+
 @mcp.tool()
 def get_cn_market_data(
     symbol: str,
@@ -253,6 +265,8 @@ def get_cn_market_data(
     The exact opt-in prefix preserves the old ChatGPT MCP tool schema.
     Other symbols retain the existing Eastmoney/Tencent observation path.
     """
+    if symbol == "TICKFLOW:EVIDENCE":
+        return _read_tickflow_evidence()
     if symbol == "TICKFLOW:FAST":
         return _read_tickflow_fast_snapshot()
     if symbol == "TICKFLOW:BATCH":

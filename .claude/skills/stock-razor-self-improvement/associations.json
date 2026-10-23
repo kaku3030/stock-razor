@@ -430,6 +430,21 @@
         "CN-014",
         "CN-012"
       ]
+    },
+    {
+      "id": "CN-016",
+      "phrases": [
+        "盘后修订证据丢失",
+        "postclose baseline not persisted",
+        "缓存覆盖收盘基线",
+        "Windows AWS 双端一致性",
+        "修订前后没有留存"
+      ],
+      "related": [
+        "CN-015",
+        "ENG-001",
+        "ENG-002"
+      ]
     }
   ]
 }

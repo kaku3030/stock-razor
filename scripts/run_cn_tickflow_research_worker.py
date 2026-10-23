@@ -13,9 +13,23 @@ from data_provider.cn_tickflow_research_cache import (
     SYMBOLS, DEFAULT_PATH, atomic_publish, build_observation, resolve_scan_symbols,
 )
 from data_provider.tickflow_ws_research_observer import attach_tickflow_stream
+from data_provider.tickflow_evidence_checkpoints import record_postclose_checkpoint, SAFE as EVIDENCE_SAFE
 
 SECRET_NAME="stock-razor/tickflow/premium-api-key"
 running=True
+
+
+def _postclose_evidence(snapshot, now):
+    # Evidence failure is independently visible; never discard valid research
+    # prices or promote any gate because a private checkpoint could not save.
+    try:
+        return record_postclose_checkpoint(snapshot, now_utc=now)
+    except OSError:
+        return {**EVIDENCE_SAFE, "status":"EVIDENCE_IO_BLOCKED"}
+    except (ValueError, TypeError, KeyError, OverflowError):
+        return {**EVIDENCE_SAFE, "status":"EVIDENCE_VALIDATION_BLOCKED"}
+    except Exception:
+        return {**EVIDENCE_SAFE, "status":"EVIDENCE_INTERNAL_BLOCKED"}
 
 # One stable failure enum per locally-defined validation error. Exact string
 # matches only; never publish the raw provider error, payload or credential.
@@ -203,6 +217,7 @@ def main() -> int:
                     except Exception as exc:
                         exc._tickflow_stage="S4_WS_SUMMARY"
                         raise
+                snapshot["postclose_evidence"] = _postclose_evidence(snapshot,datetime.now(timezone.utc))
                 try:
                     atomic_publish(status_path,snapshot)
                 except Exception as exc:
