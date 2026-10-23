@@ -106,6 +106,16 @@ jobs:
             case "$state" in Success|Failed|TimedOut|Cancelled) break;; esac
             sleep 3
           done
+          # Project only a fixed status enum; never echo raw AWS CLI output.
+          safe_state_class="UNKNOWN_OR_UNAVAILABLE"
+          case "$state" in
+            Success) safe_state_class="SUCCESS" ;;
+            Failed) safe_state_class="FAILED" ;;
+            TimedOut|ExecutionTimedOut|DeliveryTimedOut) safe_state_class="TIMED_OUT" ;;
+            Cancelled) safe_state_class="CANCELLED" ;;
+            Pending|InProgress|Delayed|Cancelling) safe_state_class="POLL_BUDGET_EXHAUSTED" ;;
+          esac
+          echo "SSM_STATUS_CLASS=$safe_state_class"
           if [[ "$state" != "Success" ]]; then
             echo "CN_TICKFLOW_RESEARCH_AUDIT=BLOCKED"
             echo "SSM_PRIVATE_DETAILS_WITHHELD=YES"

@@ -58,6 +58,13 @@ def test_public_workflow_requires_fixed_failure_enum_and_serialized_deploy():
     assert "cancel-in-progress: false" in source
     assert "RADAR_ADMISSION=BLOCKED" in source
     assert "LIVE_TRADE=NO" in source
+    assert 'SSM_STATUS_CLASS=$safe_state_class' in source
+    assert 'Success) safe_state_class="SUCCESS"' in source
+    assert 'Failed) safe_state_class="FAILED"' in source
+    assert 'TimedOut|ExecutionTimedOut|DeliveryTimedOut' in source
+    assert 'POLL_BUDGET_EXHAUSTED' in source
+    assert 'UNKNOWN_OR_UNAVAILABLE' in source
+    assert 'SSM_STATUS_RAW=' not in source
 
 
 def test_aws_audit_accepts_same_bounded_size_as_private_writer_and_reader():
