@@ -459,6 +459,32 @@
         "CN-015",
         "US-003"
       ]
+    },
+    {
+      "id": "US-007",
+      "phrases": [
+        "OpenD heartbeat fixed tmp collision",
+        "FileNotFoundError os.replace runtime.json.tmp",
+        "心跳快照并发临时文件冲突"
+      ],
+      "related": [
+        "ENG-002",
+        "ENG-004",
+        "US-004"
+      ]
+    },
+    {
+      "id": "US-008",
+      "phrases": [
+        "SOURCE_INVALID FileNotFoundError safety contract violation",
+        "缺失快照被误报安全契约违规",
+        "source safety unknown reader"
+      ],
+      "related": [
+        "US-007",
+        "ENG-001",
+        "ENG-004"
+      ]
     }
   ]
 }

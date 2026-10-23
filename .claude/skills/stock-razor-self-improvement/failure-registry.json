@@ -444,6 +444,36 @@
       "regression_evidence": "tests/test_tickflow_unit_diagnostics.py",
       "mandatory_action": "Use one versioned Decimal formula on one fully validated source observation. Record source SHA/sequence/time and counters only; separate missing/zero/invalid values and scale hypotheses. Never turn a fitting envelope into verified units, a corrected price or VWAP/trading admission. Treat the exact ad-hoc algorithm behind13/68 as unknown until supplied; verify deployed counts independently.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-007",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "RUNTIME_PUBLICATION_TMP_COLLISION",
+        "FILE_NOT_FOUND_ON_REPLACE"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Three OpenD publishers reused a fixed destination.tmp path. A deterministic two-writer fsync barrier reproduced FileNotFoundError on replace in heartbeat, canonical and daily publishers. This is a confirmed code defect, not a proven cause of the 2026-10-23 production file loss. Unique same-directory temporary files now isolate writes, reject nonfinite JSON, clean failed staging, and preserve the last publication on pre-replace failure. Production deployment/recovery remains NOT_VERIFIED.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/fix/opend-atomic-runtime-publication/tests/test_us_runtime_publication.py",
+      "regression_evidence": "tests/test_us_runtime_publication.py",
+      "mandatory_action": "Use the shared runtime publisher; preserve source/runtime/sequence and freshness validation. Do not treat atomic per-file publication as a cross-file transaction, restart recovery, or persistent storage across /run deletion. Obtain actual service and journal evidence before attributing the October 23 incident.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-008",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "SOURCE_INVALID_FILENOTFOUNDERROR",
+        "EVALUATION_SAFETY_CONTRACT_VIOLATION"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Actual CanonicalSnapshotRadarWorker failure results leave source safety fields unknown. The US reader required known BLOCKED/false source fields and reclassified missing/corrupt source as a safety violation, obscuring the original failure. Producer-to-reader regressions reproduce the defect. Recognized empty source-less blocked failures now return SOURCE_UNAVAILABLE with unknown source provenance; unsafe or contradictory values still fail the safety contract. Deployment remains NOT_VERIFIED.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/fix/opend-atomic-runtime-publication/tests/test_us_radar_runtime_reader.py",
+      "regression_evidence": "tests/test_us_radar_runtime_reader.py",
+      "mandatory_action": "Preserve the underlying source failure and unknown source safety; never synthesize source_live_trade=false or admit data to satisfy the reader. Check actual worker source fields and service failures independently.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

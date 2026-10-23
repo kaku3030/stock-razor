@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] OpenD 心跳、快照与D1历史使用独立临时文件原子发布；缺失或损坏源保留 SOURCE_UNAVAILABLE 与未知来源安全状态，避免误报安全契约违规。补充并发、权限、写盘失败及真实 worker→reader 回归；云端部署和三交易日验收仍未完成。
+
 - [改进] TickFlow 成交额/成交量假设诊断固定为 Decimal V1 公式和原始量单位包络，只导出20帧计数，避免临时算法口径冲突；单位、VWAP与交易资格仍未验证。
 
 - [改进] TickFlow 收盘双端比较支持只读20帧脱敏指纹摘要，免传私有行情文件；拒绝过期、错版本、错来源和缺帧，保留实际双端来源与最终性未验证状态。

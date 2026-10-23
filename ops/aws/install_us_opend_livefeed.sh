@@ -69,6 +69,7 @@ import json, os, socket, threading, time, uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import futu as ft
+from src.services.live_feed.runtime_publication import write_runtime_json
 from data_provider.futu_k1m_streaming_adapter import (
     FutuK1MStreamingAdapter,
     OPEND_SYNC_CONTEXT_CONNECTED_EVIDENCE,
@@ -421,11 +422,7 @@ state_ret=-1
 idle_fastpath_skips=0
 last_consumer_dispatch_monotonic=None
 def publish(payload):
-    os.makedirs(os.path.dirname(status_path),exist_ok=True)
-    tmp=status_path+".tmp"
-    with open(tmp,"w",encoding="utf-8") as h:
-        json.dump(payload,h,separators=(",",":")); h.flush(); os.fsync(h.fileno())
-    os.replace(tmp,status_path)
+    write_runtime_json(status_path,payload)
 try:
     while True:
         maybe_refresh_daily_history(datetime.now(timezone.utc))

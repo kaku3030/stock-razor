@@ -236,3 +236,83 @@ def test_self_reported_mismatch_diagnostic_vetoes_equal_revisions(tmp_path):
     )
     assert result["source_lineage_status"] == "MISMATCH"
     assert result["radar_admission"] == "BLOCKED"
+
+
+def _unavailable_source_payload(tmp_path, source_content=None):
+    from src.services.stock_radar_v2.canonical_snapshot_worker import (
+        CanonicalSnapshotRadarWorker,
+    )
+
+    source_path = tmp_path / "canonical.json"
+    if source_content is not None:
+        source_path.write_text(source_content, encoding="utf-8")
+    worker = CanonicalSnapshotRadarWorker(expected_repo_sha="b" * 40)
+    evaluation = worker.poll_file(source_path).to_dict()
+    payload = _payload()
+    payload.update(
+        evaluation=evaluation,
+        poll_status=evaluation["status"],
+        radar_analysis_performed=False,
+    )
+    return payload
+
+
+def test_real_missing_source_worker_result_preserves_root_failure(tmp_path):
+    payload = _unavailable_source_payload(tmp_path)
+    path = _write(tmp_path / "radar.json", payload)
+
+    result = read_us_radar_analysis(["QQQ"], path=path, now_utc=NOW)
+
+    assert result["error"] == "SOURCE_UNAVAILABLE"
+    assert result["status"] == "BLOCKED"
+    assert result["ok"] is False
+    assert result["source_reasons"] == ["SOURCE_INVALID:FileNotFoundError"]
+    assert result["source_lineage_status"] == "UNKNOWN"
+    assert result["source_radar_admission"] is None
+    assert result["source_live_trade"] is None
+    assert result["symbols"] == {}
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+    assert result["can_confirm_signal"] is False
+
+
+def test_real_corrupt_source_worker_result_preserves_root_failure(tmp_path):
+    payload = _unavailable_source_payload(tmp_path, "{broken")
+    path = _write(tmp_path / "radar.json", payload)
+
+    result = read_us_radar_analysis(path=path, now_utc=NOW)
+
+    assert result["error"] == "SOURCE_UNAVAILABLE"
+    assert result["source_reasons"] == ["SOURCE_INVALID:JSONDecodeError"]
+    assert result["status"] == "BLOCKED"
+    assert result["source_radar_admission"] is None
+    assert result["source_live_trade"] is None
+
+
+def test_unavailable_source_never_hides_unsafe_or_contradictory_evaluation(tmp_path):
+    import copy
+
+    payload = _unavailable_source_payload(tmp_path)
+    mutations = [
+        {"research_only": False},
+        {"can_confirm_signal": True},
+        {"source_radar_admission": "ADMITTED"},
+        {"source_live_trade": True},
+        {"source_radar_admission": "BLOCKED"},
+        {"source_live_trade": False},
+        {"status": "PASS"},
+        {"source_sequence": 1},
+        {"source_repo_sha": "b" * 40},
+        {"runtime_instance_id": "source-1"},
+        {"symbols": [_state("US.QQQ", "bullish")]},
+        {"reasons": []},
+    ]
+    for mutation in mutations:
+        contradictory = copy.deepcopy(payload)
+        contradictory["evaluation"].update(mutation)
+        path = _write(tmp_path / "radar.json", contradictory)
+        result = read_us_radar_analysis(path=path, now_utc=NOW)
+        assert result["error"] == "EVALUATION_SAFETY_CONTRACT_VIOLATION", mutation
+        assert result["ok"] is False
+        assert result["radar_admission"] == "BLOCKED"
+        assert result["live_trade"] is False
