@@ -326,21 +326,114 @@ def compare_pairing_summaries(first, second, *, now_utc=None):
         return {**SAFE,"status":"EVIDENCE_INVALID"}
 
 
+def _read_validated_cache(*,path=None,now_utc):
+    from data_provider.cn_tickflow_research_cache import DEFAULT_PATH, MAX_BYTES
+    with open(path or DEFAULT_PATH,"rb") as handle:
+        raw=handle.read(MAX_BYTES+1)
+    if len(raw)>MAX_BYTES:
+        raise ValueError("CACHE_TOO_LARGE")
+    observation=json.loads(raw)
+    manifest=manifest_from_observation(observation,endpoint="AWS",now_utc=now_utc)
+    if now_utc-_time(manifest["observed_at_utc"])>timedelta(seconds=330):
+        raise ValueError("PAIR_CACHE_STALE")
+    return observation,manifest
+
+
 def read_pairing_summary(*, path=None, now_utc=None):
     """One atomic local cache read, all20frames validated, no SDK/provider I/O."""
-    from data_provider.cn_tickflow_research_cache import DEFAULT_PATH, MAX_BYTES
     try:
-        with open(path or DEFAULT_PATH,"rb") as handle:
-            raw=handle.read(MAX_BYTES+1)
-        if len(raw)>MAX_BYTES:
-            raise ValueError("CACHE_TOO_LARGE")
-        now=now_utc or datetime.now(timezone.utc)
-        manifest=manifest_from_observation(json.loads(raw),endpoint="AWS",now_utc=now)
-        if now-_time(manifest["observed_at_utc"])>timedelta(seconds=330):
-            raise ValueError("PAIR_CACHE_STALE")
+        _,manifest=_read_validated_cache(path=path,now_utc=now_utc or datetime.now(timezone.utc))
         return {**SAFE,"status":"POSTCLOSE_PAIR_CAPTURE_RESEARCH_ONLY",
                 "pairing_summary":pairing_summary(manifest)}
     except OSError:
         return {**SAFE,"status":"PAIR_CACHE_IO_BLOCKED"}
     except (ValueError,TypeError,KeyError,OverflowError):
         return {**SAFE,"status":"PAIR_CACHE_VALIDATION_BLOCKED"}
+
+
+UNIT_FORMULA = "AMOUNT_OHLC_VOLUME_ENVELOPE_DECIMAL_V1"
+
+
+def audit_amount_volume_rows(rows):
+    """Diagnose two scale hypotheses. No VWAP value or unit acceptance escapes."""
+    from decimal import localcontext
+    from math import isfinite
+    if not isinstance(rows,list) or not 1<=len(rows)<=240:
+        raise ValueError("UNIT_ROWS_INVALID")
+    counts={key:0 for key in (
+        "positive_rows","missing_amount_rows","zero_volume_positive_amount_rows",
+        "zero_volume_zero_amount_rows","positive_volume_zero_amount_rows","fractional_volume_rows",
+        "scale1_exact_inside_rows","scale100_exact_inside_rows",
+        "scale100_exact_outside_rows","outside_fit_half_raw_unit_rows",
+        "outside_fit_one_raw_unit_rows","outside_unexplained_one_raw_unit_rows")}
+    with localcontext() as ctx:
+        ctx.prec=50
+        eps=Decimal("0.00001")
+        hundred=Decimal(100)
+        for row in rows:
+            if not isinstance(row,dict):
+                raise ValueError("UNIT_ROW_INVALID")
+            values=[]
+            for field in ("low","high","volume","amount"):
+                value=row.get(field)
+                if field=="amount" and value is None:
+                    values.append(None)
+                    continue
+                if type(value) not in (int,float) or not isfinite(value) or abs(value)>1e18:
+                    raise ValueError("UNIT_NUMBER_INVALID")
+                values.append(Decimal(str(value)))
+            low,high,vol,amount=values
+            if low<=0 or high<=0 or low-high>eps or vol<0 or (amount is not None and amount<0):
+                raise ValueError("UNIT_NUMBER_INVALID")
+            counts["fractional_volume_rows"]+=vol!=vol.to_integral_value()
+            if amount is None:
+                counts["missing_amount_rows"]+=1
+                continue
+            if vol==0:
+                counts["zero_volume_positive_amount_rows" if amount>0 else
+                       "zero_volume_zero_amount_rows"]+=1
+                continue
+            if amount==0:
+                counts["positive_volume_zero_amount_rows"]+=1
+                continue
+            counts["positive_rows"]+=1
+            lo,hi=low-eps,high+eps
+            def fits(scale,delta=Decimal(0)):
+                return lo*max(Decimal(0),vol-delta)*scale<=amount<=hi*(vol+delta)*scale
+            counts["scale1_exact_inside_rows"]+=fits(Decimal(1))
+            exact=fits(hundred)
+            counts["scale100_exact_inside_rows"]+=exact
+            if not exact:
+                counts["scale100_exact_outside_rows"]+=1
+                counts["outside_fit_half_raw_unit_rows"]+=fits(hundred,Decimal("0.5"))
+                one=fits(hundred,Decimal(1))
+                counts["outside_fit_one_raw_unit_rows"]+=one
+                counts["outside_unexplained_one_raw_unit_rows"]+=not one
+    return counts
+
+
+def read_unit_diagnostics(*,path=None,now_utc=None):
+    """Versioned counts from one validated cache; hypotheses never become units."""
+    try:
+        now=now_utc or datetime.now(timezone.utc)
+        observation,manifest=_read_validated_cache(path=path,now_utc=now)
+        frames={}
+        for symbol in SYMBOLS:
+            for period in TIMEFRAMES:
+                read=read_cn_tickflow_research_data(symbol,period,limit=240,
+                    observation=observation,now_utc=now,
+                    research_mode="historical_only" if period=="1d" else "session_progress")
+                if not read.get("ok"):
+                    raise ValueError("UNQUALIFIED_FRAME")
+                selected=manifest["frames"][symbol+":"+period]
+                frames[symbol+":"+period]=audit_amount_volume_rows(
+                    [row for row in read["rows"] if row["label"] in selected])
+        return {**SAFE,"status":"UNIT_HYPOTHESIS_DIAGNOSTICS_ONLY",
+                "formula_id":UNIT_FORMULA,"units_contract":"NOT_VERIFIED",
+                "scale100_status":"HYPOTHESIS_ONLY","source_sha":manifest["source_sha"],
+                "sequence":manifest["sequence"],"observed_at_utc":manifest["observed_at_utc"],
+                "frames":frames}
+    except OSError:
+        return {**SAFE,"status":"UNIT_CACHE_IO_BLOCKED"}
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return {**SAFE,"status":"UNIT_CACHE_VALIDATION_BLOCKED"}

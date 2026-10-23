@@ -1,6 +1,6 @@
 {
   "schema": "stock_razor_cross_window_failure_registry_v1",
-  "last_reconciled_utc": "2026-10-23T10:48:08Z",
+  "last_reconciled_utc": "2026-10-23T12:37:38Z",
   "authority": "kaku3030/stock-razor/main",
   "scope": "STOCK_RAZOR_PROJECT_WINDOWS_ONLY",
   "update_rule": "New verified defects must be recorded on a PR to main with evidence, diagnosis, regression test status and owner; never erase an OPEN error without exact-run evidence.",
@@ -429,6 +429,20 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/blob/6d5960a72bf18d715580f11876bf72a7c5b4cddb/scripts/run_cn_tickflow_research_worker.py",
       "regression_evidence": "tests/test_tickflow_evidence_checkpoints.py",
       "mandatory_action": "Persist one postclose baseline and one after20 Shanghai checkpoint under bounded private state. Revalidate all20 due grids and hash original OHLCVA values. Compare immutable files without claiming authenticated provenance or finality; expose late baseline and missing/invalid evidence explicitly. Windows/AWS pairing requires actual independent SDK captures within30s at the same code SHA. No source, Radar, paper or live admission.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-017",
+      "owner": "Main Control",
+      "severity": "P2",
+      "signature_tokens": [
+        "UNVERSIONED_VOLUME_ENVELOPE_DIAGNOSTIC"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Two chat-level diagnostics reported64/68 versus13/68 envelope fits against unchanged postclose values without a shared formula ID. A same-formula reread still gives64/68; the other screen is not proven equivalent. This is a reproducibility gap in diagnostics, not proof of a new provider error or confirmed lot units. New Decimal V1 counts distinguish exact price-range checks from raw-volume quantity envelopes.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/pull/924#issuecomment-6364500066",
+      "regression_evidence": "tests/test_tickflow_unit_diagnostics.py",
+      "mandatory_action": "Use one versioned Decimal formula on one fully validated source observation. Record source SHA/sequence/time and counters only; separate missing/zero/invalid values and scale hypotheses. Never turn a fitting envelope into verified units, a corrected price or VWAP/trading admission. Treat the exact ad-hoc algorithm behind13/68 as unknown until supplied; verify deployed counts independently.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]

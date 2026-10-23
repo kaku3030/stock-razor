@@ -111,3 +111,28 @@ MCP/helper-only changes do not justify restarting the collector during an ongoin
 baseline/after20 pair: retain the existing collector SHA so both immutable samples
 can be compared. A different source SHA yields explicit EVIDENCE_INVALID rather
 than silently accepting mixed revisions or overwriting the baseline.
+
+## Reproducible amount/volume hypothesis diagnostics
+
+`get_cn_market_data(symbol="TICKFLOW:UNITS")` uses the same single bounded cache
+read and20-frame validation as the pairing route. It reports counts only under
+`formula_id=AMOUNT_OHLC_VOLUME_ENVELOPE_DECIMAL_V1`; no price, raw quantity, amount
+or K-line label is returned. It does not prove a unit contract or enable VWAP.
+
+For each validated row with positive volume V and positive amount A, the exact
+scale S hypothesis tests `(low-0.00001)*V*S <= A <= (high+0.00001)*V*S`.
+Report S=1 and S=100 separately. For rows outside the exact S=100 range, the
+quantity-envelope test with delta D is
+`(low-0.00001)*max(0,V-D)*100 <= A <= (high+0.00001)*(V+D)*100`,
+for D=0.5 and D=1. D is measured in original raw volume units. All comparisons
+use Decimal values from original number strings and precision50. This is not
+the same as allowing one price unit of VWAP error. The envelope is a diagnostic
+hypothesis, not a permitted mutation or acceptance tolerance.
+
+Zero volume, zero amount, missing amount and fractional raw volume have distinct
+counters. Negative, nonfinite or unbounded values fail closed. Scope is today's
+validated intraday labels plus prior60D1 dates, matching the private manifest.
+Every output retains units_contract NOT_VERIFIED, scale100 HYPOTHESIS_ONLY and
+all source/Radar/paper/live gates closed. Do not infer ETF units from numerical
+fit or official stock examples alone. A range exception is not by itself a proven
+provider defect. Persist the formula ID with all future counter comparisons.

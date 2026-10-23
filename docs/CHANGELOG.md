@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] TickFlow 成交额/成交量假设诊断固定为 Decimal V1 公式和原始量单位包络，只导出20帧计数，避免临时算法口径冲突；单位、VWAP与交易资格仍未验证。
+
 - [改进] TickFlow 收盘双端比较支持只读20帧脱敏指纹摘要，免传私有行情文件；拒绝过期、错版本、错来源和缺帧，保留实际双端来源与最终性未验证状态。
 
 - [改进] TickFlow 隔离研究增加私有不可覆盖盘后基线和中国时间20点后修订对照、只读证据摘要及 Windows 显式单次采集/离线双端比较；迟到基线与缺失证据保留阻断，全部交易门禁不变。
