@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Mapping
 
 from data_provider.market_data_adapter import Bar, MarketDataHealth
 from src.services.realtime_market_data import MarketDataSnapshot
+from src.services.live_feed.runtime_publication import write_runtime_json
 
 
 SCHEMA = "stock_razor_canonical_market_snapshot_v1"
@@ -156,11 +155,4 @@ def build_canonical_snapshot_export(
 
 
 def write_canonical_snapshot_export(path: str | os.PathLike[str], payload: Mapping) -> None:
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(destination.name + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, separators=(",", ":"), allow_nan=False)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, destination)
+    write_runtime_json(path, payload)

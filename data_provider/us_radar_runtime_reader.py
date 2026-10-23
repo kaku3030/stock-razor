@@ -108,6 +108,35 @@ def _source_lineage_status(expected: object, observed: object, diagnostics: dict
     return "WORKER_DECLARED_MATCH_NOT_EXTERNAL_VERIFICATION"
 
 
+def _source_unavailable(evaluation: dict) -> bool:
+    """Recognize the worker's source-less failure without inventing source safety."""
+
+    reasons = evaluation.get("reasons")
+    unknown_fields = (
+        "source_repo_sha", "runtime_instance_id", "source_sequence",
+        "source_emitted_at", "source_delivery_mode", "source_bar_closure",
+        "source_radar_admission", "source_live_trade",
+    )
+    known_failures = {
+        "SOURCE_INVALID:" + name
+        for name in (
+            "FileNotFoundError", "PermissionError", "IsADirectoryError",
+            "NotADirectoryError", "OSError", "JSONDecodeError",
+            "CanonicalSnapshotContractError",
+        )
+    }
+    return (
+        evaluation.get("status") == "BLOCKED"
+        and all(key in evaluation and evaluation[key] is None for key in unknown_fields)
+        and evaluation.get("symbols") == []
+        and evaluation.get("bar_event_ingress") is None
+        and isinstance(reasons, list)
+        and len(reasons) == 1
+        and isinstance(reasons[0], str)
+        and reasons[0] in known_failures
+    )
+
+
 def read_us_radar_analysis(
     symbols: Iterable[object] | None = None,
     *,
@@ -227,11 +256,17 @@ def read_us_radar_analysis(
             started_at,
             _fail("INVALID", error="MISSING_EVALUATION", source_path=source_path),
         )
+    unavailable_source = _source_unavailable(evaluation)
     if not (
         evaluation.get("research_only") is True
         and evaluation.get("can_confirm_signal") is False
-        and evaluation.get("source_radar_admission") == "BLOCKED"
-        and evaluation.get("source_live_trade") is False
+        and (
+            unavailable_source
+            or (
+                evaluation.get("source_radar_admission") == "BLOCKED"
+                and evaluation.get("source_live_trade") is False
+            )
+        )
     ):
         return _finish(
             started_at,
@@ -250,6 +285,24 @@ def read_us_radar_analysis(
                 "INVALID_ARGUMENT",
                 error="INVALID_SYMBOL",
                 invalid_symbols=list(invalid),
+            ),
+        )
+
+    if unavailable_source:
+        return _finish(
+            started_at,
+            _fail(
+                "BLOCKED",
+                error="SOURCE_UNAVAILABLE",
+                source_path=source_path,
+                source_age_seconds=age_seconds,
+                worker_repo_sha=payload.get("worker_repo_sha"),
+                poll_status=payload.get("poll_status"),
+                source_reasons=evaluation["reasons"],
+                source_lineage_status="UNKNOWN",
+                source_radar_admission=None,
+                source_live_trade=None,
+                symbols={},
             ),
         )
 
