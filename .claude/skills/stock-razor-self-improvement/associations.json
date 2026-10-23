@@ -445,6 +445,20 @@
         "ENG-001",
         "ENG-002"
       ]
+    },
+    {
+      "id": "CN-017",
+      "phrases": [
+        "成交量包络诊断不一致",
+        "unversioned volume envelope diagnostic",
+        "64/68 versus13/68",
+        "VWAP单位假设口径冲突"
+      ],
+      "related": [
+        "CN-016",
+        "CN-015",
+        "US-003"
+      ]
     }
   ]
 }
