@@ -254,3 +254,93 @@ def checkpoint_status(*, root=ROOT, day, now_utc=None):
             result["comparison"]["status"] == "EVIDENCE_INVALID" else
             "POSTCLOSE_COMPARISON_RECORDED")
     return result
+
+
+PAIR_SCHEMA = "tickflow_postclose_pair_summary_v1"
+_PAIR_COUNTS = {"1m":240,"5m":48,"15m":16,"60m":4,"1d":60}
+
+
+def pairing_summary(manifest):
+    """Compact postclose fingerprints; never authenticated endpoint proof."""
+    validate_manifest(manifest)
+    local = _time(manifest["observed_at_utc"]).astimezone(CN)
+    if local.weekday() >= 5 or (local.hour,local.minute) < (15,2):
+        raise ValueError("POSTCLOSE_CAPTURE_REQUIRED")
+    frames = {key:{"rows":len(rows),"sha256":_hash(rows)}
+              for key,rows in manifest["frames"].items()}
+    doc = {**SAFE,"schema":PAIR_SCHEMA,"endpoint":manifest["endpoint"],
+           "source_sha":manifest["source_sha"],"sequence":manifest["sequence"],
+           "observed_at_utc":manifest["observed_at_utc"],
+           "session_day":manifest["session_day"],"frames":frames}
+    _validate_pair_summary(doc)
+    return doc
+
+
+def _validate_pair_summary(doc):
+    keys = {"schema","endpoint","source_sha","sequence","observed_at_utc",
+            "session_day","frames",*SAFE}
+    if not isinstance(doc,dict) or set(doc)!=keys or len(_encoded(doc))>16000:
+        raise ValueError("PAIR_SCHEMA_INVALID")
+    if (doc["schema"]!=PAIR_SCHEMA or doc["endpoint"] not in ("AWS","WINDOWS")
+            or not isinstance(doc["source_sha"],str)
+            or not re.fullmatch("[0-9a-f]{40}",doc["source_sha"])
+            or type(doc["sequence"]) is not int or doc["sequence"]<1
+            or any(type(doc[k]) is not type(v) or doc[k]!=v for k,v in SAFE.items())):
+        raise ValueError("PAIR_METADATA_INVALID")
+    local = _time(doc["observed_at_utc"]).astimezone(CN)
+    if (doc["session_day"]!=local.date().isoformat() or local.weekday()>=5
+            or (local.hour,local.minute)<(15,2)):
+        raise ValueError("PAIR_CLOCK_INVALID")
+    expected = {s+":"+p for s in SYMBOLS for p in TIMEFRAMES}
+    frames = doc["frames"]
+    if not isinstance(frames,dict) or set(frames)!=expected:
+        raise ValueError("PAIR_FRAMES_INVALID")
+    for key,value in frames.items():
+        if (not isinstance(value,dict) or set(value)!={"rows","sha256"}
+                or type(value["rows"]) is not int
+                or value["rows"]!=_PAIR_COUNTS[key.split(":")[1]]
+                or not isinstance(value["sha256"],str)
+                or not re.fullmatch("[0-9a-f]{64}",value["sha256"])):
+            raise ValueError("PAIR_FRAME_INVALID")
+
+
+def compare_pairing_summaries(first, second, *, now_utc=None):
+    """Compare two actual recent endpoint receipts; caller verifies provenance."""
+    try:
+        _validate_pair_summary(first)
+        _validate_pair_summary(second)
+        now = now_utc or datetime.now(timezone.utc)
+        a,b = _time(first["observed_at_utc"]),_time(second["observed_at_utc"])
+        if (now.tzinfo is None or {first["endpoint"],second["endpoint"]}!={"AWS","WINDOWS"}
+                or first["source_sha"]!=second["source_sha"]
+                or first["session_day"]!=second["session_day"]
+                or abs((a-b).total_seconds())>30
+                or max(a,b)>now+timedelta(seconds=5)
+                or min(a,b)<now-timedelta(seconds=330)):
+            raise ValueError("PAIR_ALIGNMENT_INVALID")
+        changed = sum(first["frames"][k]!=second["frames"][k] for k in first["frames"])
+        return {**SAFE,"status":"PAIR_DIFFERENCE_OBSERVED" if changed else
+                "PAIR_VALUES_MATCH_RESEARCH_ONLY","frame_count":20,
+                "different_frames":changed}
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return {**SAFE,"status":"EVIDENCE_INVALID"}
+
+
+def read_pairing_summary(*, path=None, now_utc=None):
+    """One atomic local cache read, all20frames validated, no SDK/provider I/O."""
+    from data_provider.cn_tickflow_research_cache import DEFAULT_PATH, MAX_BYTES
+    try:
+        with open(path or DEFAULT_PATH,"rb") as handle:
+            raw=handle.read(MAX_BYTES+1)
+        if len(raw)>MAX_BYTES:
+            raise ValueError("CACHE_TOO_LARGE")
+        now=now_utc or datetime.now(timezone.utc)
+        manifest=manifest_from_observation(json.loads(raw),endpoint="AWS",now_utc=now)
+        if now-_time(manifest["observed_at_utc"])>timedelta(seconds=330):
+            raise ValueError("PAIR_CACHE_STALE")
+        return {**SAFE,"status":"POSTCLOSE_PAIR_CAPTURE_RESEARCH_ONLY",
+                "pairing_summary":pairing_summary(manifest)}
+    except OSError:
+        return {**SAFE,"status":"PAIR_CACHE_IO_BLOCKED"}
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return {**SAFE,"status":"PAIR_CACHE_VALIDATION_BLOCKED"}
