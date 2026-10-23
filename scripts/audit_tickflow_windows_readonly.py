@@ -48,6 +48,19 @@ def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: fl
     except (InvalidOperation,TypeError,ValueError,OverflowError):
         return False
 
+def _binary_etf_ohlc_shape_valid(op: float, hi: float, lo: float, cl: float) -> bool:
+    """Mirror the cloud's eight-ULP representation-only research check."""
+    if not all(math.isfinite(x) and x > 0 for x in (op, hi, lo, cl)):
+        return False
+    if not _vendor_etf_tick_lattice_shape_valid(op, hi, lo, cl):
+        return False
+    prices = tuple(Decimal(str(x)) for x in (op, hi, lo, cl))
+    snapped = tuple(x.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                    for x in prices)
+    return all(abs(raw - tick) <= Decimal(str(8 * math.ulp(value)))
+               for raw, tick, value in zip(prices, snapped, (op, hi, lo, cl)))
+
+
 SYMBOLS = ("159611.SZ", "159209.SZ", "512730.SH", "159363.SZ")
 PERIOD_COUNTS = {"1m": 240, "5m": 144, "15m": 96, "60m": 24, "1d": 40}
 END_CLOCKS = {
@@ -158,7 +171,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                     future_or_forming += 1
                     continue
                 # Keep this diagnostic aligned with the isolated cache builder:
-                # current-session 1m drift remains quarantined until post-close.
+                # Broader 1m vendor drift waits until post-close. Only the
+                # eight-ULP binary representation subset is eligible earlier.
                 # No provider values are rounded or promoted to strict status.
                 if (_vendor_ohlc_float_gap_bucket(*nums[:4])
                         != "WITHIN_1E_MINUS_5"
@@ -170,7 +184,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                     same_session_float_drift_rows += 1
                     if (timeframe in ("5m", "15m", "60m")
                             or (timeframe == "1m" and
-                                (now_cn.hour, now_cn.minute) >= (15, 2))):
+                                ((now_cn.hour, now_cn.minute) >= (15, 2)
+                                 or _binary_etf_ohlc_shape_valid(*nums[:4])))):
                         research_eligible.add(stamp)
                 continue
             if timeframe == "1d":

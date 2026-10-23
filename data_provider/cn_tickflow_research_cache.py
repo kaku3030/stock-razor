@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from math import isfinite
+from math import isfinite, ulp
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import json
@@ -234,6 +234,24 @@ def _vendor_etf_tick_lattice_shape_valid(op: float, hi: float, lo: float, cl: fl
         return False
 
 
+def _binary_etf_ohlc_shape_valid(op: float, hi: float, lo: float, cl: float) -> bool:
+    """Bound binary64 serialization noise to eight ULPs, without mutation.
+
+    This is far narrower than the vendor's 1e-5 CNY research rule. Every
+    field must be within eight ULPs of its ETF tick and the lattice must
+    enclose the body. A real 1e-9 CNY discrepancy is still quarantined.
+    """
+    if not all(isfinite(x) and x > 0 for x in (op, hi, lo, cl)):
+        return False
+    if not _vendor_etf_tick_lattice_shape_valid(op, hi, lo, cl):
+        return False
+    prices = tuple(Decimal(str(x)) for x in (op, hi, lo, cl))
+    snapped = tuple(x.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+                    for x in prices)
+    return all(abs(raw - tick) <= Decimal(str(8 * ulp(value)))
+               for raw, tick, value in zip(prices, snapped, (op, hi, lo, cl)))
+
+
 def _post_close_research_eligible(stamp: datetime, now_utc: datetime) -> bool:
     """Only settled-clock post-close historical research (never live/current)."""
     local = now_utc.astimezone(CN)
@@ -427,7 +445,9 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                 and (not current_shanghai_day or (
                     _post_close_research_eligible(stamp, now_utc)
                     or (
-                        timeframe in ("5m","15m","60m")
+                        (timeframe in ("5m","15m","60m")
+                         or (timeframe == "1m"
+                             and _binary_etf_ohlc_shape_valid(op,hi,lo,cl)))
                         and stamp <= now_utc - timedelta(seconds=90)
                     )
                 )))
@@ -929,7 +949,9 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                                 ((research_mode in ("historical_only", "session_progress"))
                                  and _post_close_research_eligible(bar_stamp, now))
                                 or (research_mode=="session_progress"
-                                    and timeframe in ("5m","15m","60m")
+                                    and (timeframe in ("5m","15m","60m")
+                                         or (timeframe == "1m"
+                                             and _binary_etf_ohlc_shape_valid(op,hi,lo,cl)))
                                     and (now.astimezone(CN).hour,
                                          now.astimezone(CN).minute)<(15,2)
                                     and bar_stamp.astimezone(timezone.utc)
