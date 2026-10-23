@@ -402,6 +402,20 @@
         "CN-004",
         "CN-010"
       ]
+    },
+    {
+      "id": "CN-014",
+      "phrases": [
+        "ONE_MINUTE_BINARY64_PRECISION_QUARANTINE",
+        "1m tiny binary64 ULP representation noise",
+        "1分钟浮点序列化机器精度被隔离",
+        "eight ULP original prices research only"
+      ],
+      "related": [
+        "CN-004",
+        "CN-003",
+        "CN-012"
+      ]
     }
   ]
 }

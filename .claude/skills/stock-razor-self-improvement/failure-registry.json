@@ -237,7 +237,7 @@
       "diagnosis": "Windows standalone audit counted same-session 1m ETF float-drift rows as research-label eligible before post-close, while the isolated cache builder only permits the 1m float-tolerance path after 15:02 China time. This overstated standalone live research coverage; it did not change production cache, Radar or trading admission.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/951",
       "regression_evidence": "tests/test_tickflow_windows_readonly_audit.py",
-      "mandatory_action": "If live-session 1m drift becomes research-eligible before post-close on main, diagnose the new deviation against the exact source revision. Preserve the post-close research-only route and NOT_VERIFIED finality; do not repeat provider reads for the fixed classification defect.",
+      "mandatory_action": "Preserve rejection of substantive same-day 1m vendor drift (including 1e-9 CNY) before post-close and retain the post-close research-only route. CN-014 separately bounds binary64 representation-only drift to eight ULPs per ETF price; verify cloud/Windows classification parity and exact runtime. No immutable finality or admission follows.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     },
     {
@@ -387,6 +387,20 @@
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39904715272",
       "regression_evidence": "tests/test_cn_tickflow_audit_frame_contract.py",
       "mandatory_action": "Separate legal received labels from due labels in sanitized audit diagnostics. Preserve future/off-grid/duplicate rejection and all missing-due checks. Do not change OHLC eligibility, source finality, currentness or admission; independently verify the merged audit runtime.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-014",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "ONE_MINUTE_BINARY64_PRECISION_QUARANTINE"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "The current-session 1m rule treats a few binary64 ULPs of serialization noise like substantive vendor-price inconsistency. Deterministic original-value fixtures (1.5999999999999994 vs1.6) are quarantined despite valid ETF tick shape. A representation-only eight-ULP subset is now distinguished from the broader vendor1e-5 rule. Whether this subset explains all live quarantines remains unverified until exact deployed readback.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39907987265",
+      "regression_evidence": "tests/test_tickflow_binary_precision_research.py",
+      "mandatory_action": "Preserve original OHLC values; require every ETF price within eight ULPs of its tick and lattice shape, age90s and all numeric/grid/continuity checks. Substantive1e-9 or1e-5 intraday1m gaps remain quarantined. Mirror Windows diagnostics. Independently verify protected-head deployment and all20frame session reads; retain all admission and finality restrictions.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
