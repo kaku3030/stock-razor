@@ -191,7 +191,11 @@ def summarize_private_frame_progress(frame: object, *, timeframe: str, now_utc: 
             stamp=datetime.strptime(raw,"%Y-%m-%d %H:%M").replace(tzinfo=CN)
             if stamp.date()!=shnow.date():
                 continue
-            if stamp not in due or stamp in seen:
+            # A legal received label may be newer than the last label due
+            # after the 90-second grace. It is not a malformed grid row.
+            # Keep future/off-grid/duplicate detection independent of due
+            # coverage, and still count every earlier missing due label.
+            if stamp not in all_end or stamp > shnow or stamp in seen:
                 invalid=True
                 break
             seen.add(stamp)

@@ -390,6 +390,18 @@
         "CN-011",
         "CN-010"
       ]
+    },
+    {
+      "id": "CN-013",
+      "phrases": [
+        "AUDIT_GRACE_ROW_INVALID_GRID",
+        "audit INVALID_TODAY_LABEL_GRID while session reader PASS",
+        "90秒宽限内合法1m标签被审计判为异常"
+      ],
+      "related": [
+        "CN-004",
+        "CN-010"
+      ]
     }
   ]
 }
