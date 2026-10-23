@@ -102,9 +102,11 @@ def safe_error_type(error: Exception) -> str:
     return name if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,39}", name) else "OtherError"
 
 
-def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
+def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
+                   vendor_precision_research: bool=False) -> dict:
     """Validate chronological compact SDK columns, never return market values."""
-    if timeframe not in PERIOD_COUNTS or now_utc.tzinfo is None:
+    if (timeframe not in PERIOD_COUNTS or now_utc.tzinfo is None
+            or type(vendor_precision_research) is not bool):
         raise ValueError("invalid period/clock")
     keys = ("timestamp", "open", "high", "low", "close", "volume")
     if not isinstance(frame, dict) or any(
@@ -185,6 +187,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
                     if (timeframe in ("5m", "15m", "60m")
                             or (timeframe == "1m" and
                                 ((now_cn.hour, now_cn.minute) >= (15, 2)
+                                 or vendor_precision_research
                                  or _binary_etf_ohlc_shape_valid(*nums[:4])))):
                         research_eligible.add(stamp)
                 continue
@@ -251,6 +254,8 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true", help="Opt in to <=20 bounded monthly-plan REST reads")
+    parser.add_argument("--vendor-precision-research", action="store_true",
+                        help="Use official bounded precision for 1m research counters only")
     parser.add_argument("--research-exit", action="store_true",
                         help="Success exit only for fully due research labels; strict status stays blocked")
     parser.add_argument("--timeframe", choices=("1m", "5m", "15m", "60m", "1d", "all"), default="all")
@@ -298,7 +303,8 @@ def main() -> int:
                             count=PERIOD_COUNTS[timeframe],
                             as_dataframe=False,
                         )
-                    record = assess_compact(frame, timeframe, datetime.now(timezone.utc))
+                    record = assess_compact(frame, timeframe, datetime.now(timezone.utc),
+                                            vendor_precision_research=args.vendor_precision_research)
                 except Exception as exc:
                     record = {"status": "BLOCKED",
                               "error_class": safe_error_type(exc)}

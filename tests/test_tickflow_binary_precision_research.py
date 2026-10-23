@@ -72,7 +72,8 @@ def test_writer_reader_pipeline_and_forged_larger_gap(tmp_path):
     assert result["currentness"] == "UNPROVEN"
     assert result["bar_finality"] == "NOT_VERIFIED"
     assert result["radar_admission"] == "BLOCKED" and result["live_trade"] is False
-    # The broader vendor 1e-5 rule is still unavailable for intraday 1m.
+    # A legacy frame cannot implicitly claim the broader vendor research policy.
+    snap["symbols"]["159611.SZ"]["1m"].pop("precision_policy")
     snap["symbols"]["159611.SZ"]["1m"]["rows"][-1]["high"] = 1.599999999
     atomic_publish(str(path), snap)
     rejected = read_cn_tickflow_research_data("159611.SZ", "1m", **args)

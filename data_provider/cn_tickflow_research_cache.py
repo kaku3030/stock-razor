@@ -271,7 +271,8 @@ def _select_timestamp(row: dict) -> datetime:
 def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                    quarantine_counts: dict[str,int]|None=None,
                    quarantine_evidence: dict[str,int]|None=None,
-                   session_increment: bool=False) -> list[dict]:
+                   session_increment: bool=False,
+                   vendor_precision_research: bool=False) -> list[dict]:
     """Price-bearing bars stay on AWS; no current-bar finality is asserted.
 
     Optional fixed-enum quarantine counters preserve *why* current-day rows
@@ -282,6 +283,10 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
     """
     if type(session_increment) is not bool or (session_increment and timeframe == "1d"):
         raise ValueError("invalid session increment mode")
+    if (type(vendor_precision_research) is not bool
+            or (vendor_precision_research and
+                (timeframe != "1m" or not session_increment))):
+        raise ValueError("invalid vendor precision research mode")
     minimum_rows = 0 if session_increment else 4
 
     def quarantine(reason: str) -> None:
@@ -447,7 +452,8 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                     or (
                         (timeframe in ("5m","15m","60m")
                          or (timeframe == "1m"
-                             and _binary_etf_ohlc_shape_valid(op,hi,lo,cl)))
+                             and (vendor_precision_research
+                                  or _binary_etf_ohlc_shape_valid(op,hi,lo,cl))))
                         and stamp <= now_utc - timedelta(seconds=90)
                     )
                 )))
@@ -643,7 +649,8 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
                                     quarantine_counts=reasons,
                                     quarantine_evidence=evidence,
-                                    session_increment=not historical_period)
+                                    session_increment=not historical_period,
+                                    vendor_precision_research=(interval == "1m"))
                 historical_quarantined=max(
                     0,_raw_frame_row_count(frame)-len(bars)
                 )
@@ -696,6 +703,8 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                  "currentness":"UNPROVEN", "closure":"NOT_VERIFIED",
                  "volume_units":"NOT_VERIFIED",
                  "adjustment":"NOT_VERIFIED","crosscheck":"NOT_VERIFIED"}
+            if interval == "1m":
+                frame_metadata["precision_policy"] = "VENDOR_FLOAT_RESEARCH_ONLY"
             if historical_period:
                 required_rows=_HISTORY_WARMUP_ROWS[interval]
                 frame_metadata["history_coverage"]={
@@ -866,6 +875,12 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
             return {**base,"status":"NO_DATA",
                     "cache_rejection_reason":"QC_PERIOD_NOT_COLLECTED"}
         rows=raw["rows"]
+        minute_precision_policy=raw.get("precision_policy", "STRICT_OR_BINARY_SUBSET")
+        if timeframe == "1m":
+            if minute_precision_policy not in (
+                    "STRICT_OR_BINARY_SUBSET", "VENDOR_FLOAT_RESEARCH_ONLY"):
+                raise ValueError
+            base["one_minute_precision_policy"] = minute_precision_policy
         history_coverage={"status":"NOT_REQUIRED"}
         if timeframe in _HISTORY_WARMUP_ROWS:
             coverage=raw.get("history_coverage")
@@ -951,7 +966,8 @@ def read_cn_tickflow_research_data(symbol: str, timeframe: str="15m", limit:int=
                                 or (research_mode=="session_progress"
                                     and (timeframe in ("5m","15m","60m")
                                          or (timeframe == "1m"
-                                             and _binary_etf_ohlc_shape_valid(op,hi,lo,cl)))
+                                             and (minute_precision_policy == "VENDOR_FLOAT_RESEARCH_ONLY"
+                                                  or _binary_etf_ohlc_shape_valid(op,hi,lo,cl))))
                                     and (now.astimezone(CN).hour,
                                          now.astimezone(CN).minute)<(15,2)
                                     and bar_stamp.astimezone(timezone.utc)
