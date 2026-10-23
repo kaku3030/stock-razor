@@ -94,7 +94,7 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
-          python3 -m py_compile scripts/sanitize_ssm_probe_output.py
+          python3 -m py_compile scripts/sanitize_ssm_probe_output.py scripts/us_livefeed_runtime_diagnostics.py
 
       - name: Configure short-lived AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -277,9 +277,11 @@ jobs:
               # action emitted large service logs and multi-line heartbeat JSON
               # before its one-line market summary, truncating evidence.
               # Return ONE compact read-only, metadata-only JSON record.
+              runtime_diagnostics_b64="$(base64 -w0 scripts/us_livefeed_runtime_diagnostics.py)"
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
           set -eu
           python3 - <<'PY'
+          import base64
           import datetime as dt
           import json
           import pathlib
@@ -362,10 +364,15 @@ jobs:
               stamp=date_string(snap.get('emitted_at_utc'))
               if stamp is not None:
                   out['emitted_at_utc']=stamp
-          # No names, IDs, prices, positions, process metadata, or raw logs.
+          runtime_namespace={}
+          exec(base64.b64decode('__RUNTIME_DIAGNOSTICS_BASE64__'), runtime_namespace)
+          out['runtime_diagnostics']=runtime_namespace['collect_runtime_diagnostics']()
+          # Only fixed states, exit counts, source hashes and file modes; no raw logs.
           print(json.dumps(out,sort_keys=True,separators=(',',':')),flush=True)
           PY
           REMOTE
+              us_livefeed_status_script="${us_livefeed_status_script/__RUNTIME_DIAGNOSTICS_BASE64__/$runtime_diagnostics_b64}"
+              test "$(printf '%s' "$us_livefeed_status_script" | wc -c)" -le 16000
               jq -c -n --arg script "$us_livefeed_status_script" '[ $script ]' > commands.json
               ;;
             futures_opend_env_probe)

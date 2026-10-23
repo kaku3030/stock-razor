@@ -8,6 +8,11 @@ import re
 import sys
 from collections.abc import Mapping
 
+if __package__:
+    from .us_livefeed_runtime_diagnostics import sanitize_runtime_diagnostics
+else:
+    from us_livefeed_runtime_diagnostics import sanitize_runtime_diagnostics
+
 
 SAFE_KEYS = {
     "schema", "probe", "status", "reason", "observed_at_utc", "emitted_at_utc",
@@ -41,6 +46,9 @@ def _safe_json(value: Mapping[str, object]) -> dict[str, object]:
         item = value[key]
         if isinstance(item, (str, int, float, bool)) and _safe_scalar(key, item) is not None:
             result[key] = item
+    diagnostics = sanitize_runtime_diagnostics(value.get("runtime_diagnostics"))
+    if diagnostics:
+        result["runtime_diagnostics"] = diagnostics
     symbols = value.get("symbols")
     if isinstance(symbols, Mapping) and len(symbols) <= 500:
         result["symbol_count"] = len(symbols)
