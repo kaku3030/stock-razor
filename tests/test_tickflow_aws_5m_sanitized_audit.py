@@ -58,4 +58,4 @@ def test_github_sanitized_projection_includes_five_minute_fixed_enums():
     assert '"159209_SZ_1m","159209_SZ_5m","159209_SZ_15m","159209_SZ_60m"' in workflow
     assert '"supplemental_5m_reader":{p:compact_reader(d["after"]["supplemental_5m_reader"].get(p,{}))' in workflow
     assert 'set(frame_map).issubset(historical_periods)' in workflow
-    assert 'allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144")' in workflow
+    assert 'allowed_rows=("UNKNOWN","FOUR_TO_24","25_TO_96","97_TO_144","145_TO_240")' in workflow
