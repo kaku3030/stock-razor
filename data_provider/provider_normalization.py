@@ -175,3 +175,40 @@ def normalize_eastmoney_quote(**kwargs: Any) -> ProviderEvent:
     if not isinstance(provider_timestamp, datetime):
         provider_timestamp = datetime.fromisoformat(str(provider_timestamp).replace("Z", "+00:00"))
     return _data_event(provider_id="eastmoney", raw=raw, provider_timestamp=provider_timestamp, **kwargs)
+
+
+def normalize_opend_kline_callback(**kwargs: Any) -> ProviderEvent:
+    """Normalize an already-observed OpenD K-line push conservatively."""
+    raw = kwargs.pop("raw")
+    if not isinstance(raw, Mapping):
+        raise TypeError("raw OpenD K-line callback must be a mapping")
+    normalized = dict(raw)
+    normalized.setdefault("phase", "LIVE_CANDIDATE")
+    normalized.setdefault("delivery_mode", "UNKNOWN")
+    normalized.pop("sequence", None)
+    normalized.pop("tie_breaker", None)
+    return normalize_opend_callback(raw=normalized, **kwargs)
+
+
+def normalize_opend_quote_callback(**kwargs: Any) -> ProviderEvent:
+    """Normalize an already-observed OpenD QUOTE push fail-closed."""
+    raw = kwargs.pop("raw")
+    if not isinstance(raw, Mapping):
+        raise TypeError("raw OpenD QUOTE callback must be a mapping")
+    normalized = dict(raw)
+    normalized.setdefault("phase", "LIVE_CANDIDATE")
+    normalized.setdefault("delivery_mode", "UNKNOWN")
+    normalized["progress_identity"] = None
+    event = normalize_opend_callback(raw=normalized, **kwargs)
+    return ProviderEvent(**{**event.__dict__, "progress_identity_candidate": None, "provenance": "moomoo_opend:quote_push_normalization_v0.1"})
+
+
+def normalize_eastmoney_observation(**kwargs: Any) -> ProviderEvent:
+    """Normalize an already-observed Eastmoney-family observation fail-closed."""
+    raw = kwargs.pop("raw")
+    if not isinstance(raw, Mapping):
+        raise TypeError("raw Eastmoney observation must be a mapping")
+    normalized = dict(raw)
+    normalized.setdefault("phase", "OBSERVED")
+    normalized.setdefault("delivery_mode", "UNKNOWN")
+    return normalize_eastmoney_quote(raw=normalized, **kwargs)
