@@ -1,7 +1,9 @@
 # One-minute binary precision research subset
 
 TickFlow support describes original JSON prices and the <=1e-5 vendor OHLC
-rule. That broader same-day 1m rule remains unavailable before post-close.
+rule. Legacy/default normalization keeps that broader same-day 1m rule unavailable
+before post-close. CN-015 adds an explicit vendor-precision research policy
+for the isolated session cache; this is not strict/source qualification.
 The separate binary64 subset requires every raw OHLC price within eight ULPs
 of its 0.001 CNY ETF tick, and a tick lattice enclosing the candle body.
 Original values are preserved, never rounded or repaired in output. A 1e-9

@@ -416,6 +416,20 @@
         "CN-003",
         "CN-012"
       ]
+    },
+    {
+      "id": "CN-015",
+      "phrases": [
+        "ONE_MINUTE_RESEARCH_PRECISION_POLICY_MISMATCH",
+        "1m explicit vendor precision record only policy",
+        "1分钟供应商浮点容差与严格校验分离",
+        "eight ULP subset does not solve all1m gaps"
+      ],
+      "related": [
+        "CN-004",
+        "CN-014",
+        "CN-012"
+      ]
     }
   ]
 }

@@ -237,7 +237,7 @@
       "diagnosis": "Windows standalone audit counted same-session 1m ETF float-drift rows as research-label eligible before post-close, while the isolated cache builder only permits the 1m float-tolerance path after 15:02 China time. This overstated standalone live research coverage; it did not change production cache, Radar or trading admission.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/pull/951",
       "regression_evidence": "tests/test_tickflow_windows_readonly_audit.py",
-      "mandatory_action": "Preserve rejection of substantive same-day 1m vendor drift (including 1e-9 CNY) before post-close and retain the post-close research-only route. CN-014 separately bounds binary64 representation-only drift to eight ULPs per ETF price; verify cloud/Windows classification parity and exact runtime. No immutable finality or admission follows.",
+      "mandatory_action": "Do not classify vendor-tolerated rows as strict OHLC. Legacy Windows mode and default normalization retain the former guard. CN-015 explicitly enables bounded vendor precision only for research-labelled session progress, with provenance and strict status unchanged. Finality/currentness and all source/trading admissions remain unproven/blocked.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     },
     {
@@ -397,10 +397,24 @@
         "ONE_MINUTE_BINARY64_PRECISION_QUARANTINE"
       ],
       "status": "MITIGATED",
-      "diagnosis": "The current-session 1m rule treats a few binary64 ULPs of serialization noise like substantive vendor-price inconsistency. Deterministic original-value fixtures (1.5999999999999994 vs1.6) are quarantined despite valid ETF tick shape. A representation-only eight-ULP subset is now distinguished from the broader vendor1e-5 rule. Whether this subset explains all live quarantines remains unverified until exact deployed readback.",
+      "diagnosis": "The current-session 1m rule treats a few binary64 ULPs of serialization noise like substantive vendor-price inconsistency. Deterministic original-value fixtures (1.5999999999999994 vs1.6) are quarantined despite valid ETF tick shape. A representation-only eight-ULP subset is now distinguished from the broader vendor1e-5 rule. Whether this subset explains all live quarantines remains unverified until exact deployed readback. Exact deployment5b681b4 and audit39911919852 showed the eight-ULP subset does not resolve all live1m gaps; do not repeat that hypothesis as a completed fix.",
       "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39907987265",
       "regression_evidence": "tests/test_tickflow_binary_precision_research.py",
-      "mandatory_action": "Preserve original OHLC values; require every ETF price within eight ULPs of its tick and lattice shape, age90s and all numeric/grid/continuity checks. Substantive1e-9 or1e-5 intraday1m gaps remain quarantined. Mirror Windows diagnostics. Independently verify protected-head deployment and all20frame session reads; retain all admission and finality restrictions.",
+      "mandatory_action": "Retain binary-subset checks for legacy/default normalization. Exact deployment did not close all live gaps. CN-015 reconciles explicit record-only research policy with the written vendor1e-5 contract, without changing strict OHLC, immutable finality or admission. Verify all20frames independently.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-015",
+      "owner": "Main Control",
+      "severity": "P1",
+      "signature_tokens": [
+        "ONE_MINUTE_RESEARCH_PRECISION_POLICY_MISMATCH"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Eight-ULP-only deployment5b681b4 improved some1m coverage but audit39911919852 still found quarantined1m gaps. The existing vendor support OHLC1e-5 contract and record-only5m/15m/60m progress policy were not exposed as an explicit1m research policy. Strict/source qualification must remain separate from vendor-tolerated research.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39911919852",
+      "regression_evidence": "tests/test_tickflow_explicit_minute_vendor_research.py",
+      "mandatory_action": "Only the isolated1m session research builder opts into vendor_precision_research; publish precision_policy and require it in session-progress reader. Preserve original values, exact1e-5 bound, ETF lattice,90s,all numeric and due-grid checks. Legacy/default normalization and strict Windows status remain distinct. Do not report strict/live acceptance; independently verify20frame readback after exact protected-head deployment.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]

@@ -160,7 +160,7 @@ def test_cli_routes_intraday_to_session_endpoint_and_daily_to_history(
                         lambda name: "0.1.25")
     monkeypatch.setattr(audit, "read_windows_credential", lambda: "fixture-key")
     monkeypatch.setattr(audit, "assess_compact",
-                        lambda frame, timeframe, now: {"status": "PASS_RESEARCH_ONLY"})
+                        lambda frame, timeframe, now, **kwargs: {"status": "PASS_RESEARCH_ONLY"})
     monkeypatch.setitem(sys.modules, "tickflow", SimpleNamespace(TickFlow=FakeClient))
     monkeypatch.setattr(sys, "argv", ["probe", "--execute", "--timeframe", "all"])
 
