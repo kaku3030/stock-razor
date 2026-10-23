@@ -280,3 +280,45 @@ def test_cn_radar_reader_rejects_incomplete_telemetry(tmp_path):
     assert result["status"] == "INVALID"
     assert result["error"] == "RADAR_TELEMETRY_INCOMPLETE"
     assert result["radar_admission"] == "BLOCKED"
+
+
+
+def test_missing_evaluation_preserves_independent_worker_heartbeat(tmp_path):
+    payload = _payload()
+    payload.update(evaluation=None, poll_status="BLOCKED")
+    payload["reasons"] = ["SOURCE_OR_ANALYSIS_ERROR:ValueError", "PRIVATE_SHOULD_NOT_LEAK"]
+    path = _write(tmp_path / "blocked-radar.json", payload)
+    result = read_cn_radar_analysis(path=path, now_utc=NOW)
+    assert result["ok"] is False
+    assert result["error"] == "MISSING_EVALUATION"
+    heartbeat = result["worker_heartbeat"]
+    assert heartbeat["status"] == "FRESH"
+    assert heartbeat["age_seconds"] == 5
+    assert heartbeat["sequence"] == 4
+    assert heartbeat["worker_repo_sha"] == "a" * 40
+    assert heartbeat["poll_status"] == "BLOCKED"
+    assert "PRIVATE_SHOULD_NOT_LEAK" not in json.dumps(result)
+    assert "symbols" not in result
+    assert result["radar_admission"] == "BLOCKED"
+    assert result["live_trade"] is False
+
+
+def test_missing_evaluation_stale_or_future_heartbeat_is_not_fresh(tmp_path):
+    for seconds, status in ((-181, "STALE"), (6, "INVALID")):
+        payload = _payload(emitted_at=NOW + timedelta(seconds=seconds))
+        payload["evaluation"] = None
+        path = _write(tmp_path / f"blocked-{seconds}.json", payload)
+        result = read_cn_radar_analysis(path=path, now_utc=NOW)
+        assert result["worker_heartbeat"]["status"] == status
+        assert result["ok"] is False
+
+
+def test_missing_evaluation_invalid_identity_is_withheld(tmp_path):
+    payload = _payload()
+    payload.update(evaluation=None, sequence=True, worker_repo_sha="PRIVATE_SHOULD_NOT_LEAK")
+    path = _write(tmp_path / "blocked-invalid.json", payload)
+    result = read_cn_radar_analysis(path=path, now_utc=NOW)
+    assert result["worker_heartbeat"]["status"] == "INVALID"
+    assert result["worker_heartbeat"]["sequence"] is None
+    assert result["worker_heartbeat"]["worker_repo_sha"] is None
+    assert "PRIVATE_SHOULD_NOT_LEAK" not in json.dumps(result)

@@ -362,6 +362,20 @@
         "CN-009",
         "ENG-001"
       ]
+    },
+    {
+      "id": "CN-011",
+      "phrases": [
+        "S0_60M_NORMALIZE ROW_COUNT_BELOW_MIN",
+        "TickFlow morning hourly sparse increment",
+        "午盘小时线不足四根导致整批失败",
+        "MISSING_EVALUATION worker heartbeat omitted"
+      ],
+      "related": [
+        "CN-001",
+        "CN-009",
+        "ENG-004"
+      ]
     }
   ]
 }

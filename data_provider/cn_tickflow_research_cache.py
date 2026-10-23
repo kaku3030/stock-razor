@@ -243,12 +243,20 @@ def _select_timestamp(row: dict) -> datetime:
 
 def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
                    quarantine_counts: dict[str,int]|None=None,
-                   quarantine_evidence: dict[str,int]|None=None) -> list[dict]:
+                   quarantine_evidence: dict[str,int]|None=None,
+                   session_increment: bool=False) -> list[dict]:
     """Price-bearing bars stay on AWS; no current-bar finality is asserted.
 
     Optional fixed-enum quarantine counters preserve *why* current-day rows
     were withheld without logging price, raw provider payload or timestamps.
+    A separate current-session increment can contain zero to three elapsed
+    rows; historical warmup retains the four-row floor. Per-row validation,
+    quarantine and finality rules are identical in both modes.
     """
+    if type(session_increment) is not bool or (session_increment and timeframe == "1d"):
+        raise ValueError("invalid session increment mode")
+    minimum_rows = 0 if session_increment else 4
+
     def quarantine(reason: str) -> None:
         if quarantine_counts is not None:
             quarantine_counts[reason]=quarantine_counts.get(reason,0)+1
@@ -313,7 +321,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         if len(sizes) != 1:
             raise ValueError("compact SDK column lengths differ")
         count = sizes.pop()
-        if count < 4:
+        if count < minimum_rows:
             raise ValueError("insufficient history")
         if count > _ALLOWED_PERIODS[timeframe]:
             raise ValueError("history exceeds configured bound")
@@ -326,7 +334,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
         raise ValueError("unexpected SDK data type")
     if not isinstance(records, list):
         raise ValueError("unexpected SDK data type")
-    if len(records) < 4:
+    if len(records) < minimum_rows:
         raise ValueError("insufficient history")
     if len(records) > _ALLOWED_PERIODS[timeframe]:
         raise ValueError("history exceeds configured bound")
@@ -447,7 +455,7 @@ def normalize_bars(frame: Any, timeframe: str, *, now_utc: datetime,
             "bar_finality": "NOT_VERIFIED",
             "ohlc_validation":ohlc_validation,
         })
-    if len(bars)<4:
+    if len(bars)<minimum_rows:
         raise ValueError("no sufficient historical closed-time candidates")
     return bars
 
@@ -605,7 +613,8 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                 evidence={}
                 bars=normalize_bars(frame,interval,now_utc=now_utc,
                                     quarantine_counts=reasons,
-                                    quarantine_evidence=evidence)
+                                    quarantine_evidence=evidence,
+                                    session_increment=not historical_period)
                 historical_quarantined=max(
                     0,_raw_frame_row_count(frame)-len(bars)
                 )
@@ -617,6 +626,7 @@ def build_observation(client: Any, *, now_utc: datetime, repo_sha: str, sequence
                         intraday_frame,interval,now_utc=now_utc,
                         quarantine_counts=current_reasons,
                         quarantine_evidence=current_evidence,
+                        session_increment=True,
                     )
                     current_quarantined=max(
                         0,_raw_frame_row_count(intraday_frame)-len(current_bars)
