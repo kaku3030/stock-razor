@@ -254,16 +254,20 @@ class DiscordSender:
                 if attempt < DISCORD_MAX_RETRIES:
                     delay = 2 ** attempt
                     logger.warning(
-                        "Discord %s 请求异常（%d/%d）：%s，%s 秒后重试",
+                        "Discord %s 请求异常（%s，%d/%d），%s 秒后重试",
                         channel_name,
+                        type(e).__name__,
                         attempt,
                         DISCORD_MAX_RETRIES,
-                        e,
                         delay,
                     )
                     time.sleep(delay)
                     continue
-                logger.error("Discord %s 请求重试后仍失败: %s", channel_name, e)
+                logger.error(
+                    "Discord %s 请求重试后仍失败: %s",
+                    channel_name,
+                    type(e).__name__,
+                )
                 return False
 
             if response.status_code in success_statuses:
@@ -296,10 +300,9 @@ class DiscordSender:
                 continue
 
             logger.error(
-                "Discord %s 发送失败: %s %s",
+                "Discord %s 发送失败: HTTP %s",
                 channel_name,
                 response.status_code,
-                response.text,
             )
             return False
 
