@@ -316,3 +316,133 @@ def test_complete_cli_smoke_is_labelled_partial_matrix_not_five_group_result(tmp
     result_table = pd.read_csv(tmp_path/"out"/"metrics.csv")
     assert len(result_table) == 20
     assert set(result_table.arm) == {"B", "C", "D", "E", "QQQ_BH"}
+
+
+@pytest.mark.parametrize("width", [15, 60, 120, 240, 390])
+def test_vectorized_aggregation_matches_scalar_reference_exactly(width):
+    # Independent original bin algorithm, with DST, early close and fractional
+    # volume. This is an arithmetic equivalence test, not source qualification.
+    s = pd.concat([session(), session("2024-03-11"), session("2024-11-29", "13:00")], ignore_index=True)
+    b = candles(s)
+    rng = np.random.default_rng(7403)
+    b["volume"] = rng.uniform(0, 1e5, len(b))
+    b["high"] += rng.uniform(0, 2, len(b))
+    b["low"] -= rng.uniform(0, 2, len(b))
+    checked, schedule = validate_input(b, s)
+    rows = []
+    for j, r in enumerate(schedule.itertuples()):
+        part = checked[(checked.end > r.open_at) & (checked.end <= r.close_at)]
+        for start in pd.date_range(r.open_at, r.close_at, freq=f"{width}min", inclusive="left"):
+            end = min(start+pd.Timedelta(minutes=width), r.close_at)
+            x = part[(part.end>start) & (part.end<=end)]
+            duration = int((end-start).total_seconds()/60)
+            rows.append(dict(start=start,end=end,available_at=end+pd.Timedelta(seconds=1),
+                             session=j,duration_minutes=duration,stub=duration<width,
+                             open=float(x.open.iloc[0]),high=float(x.high.max()),low=float(x.low.min()),
+                             close=float(x.close.iloc[-1]),volume=float(x.volume.sum())))
+    pd.testing.assert_frame_equal(aggregate(b,s,width),pd.DataFrame(rows),check_exact=True)
+
+
+@pytest.mark.parametrize("arm", ["B", "C", "D", "E"])
+def test_cached_signals_match_uncached_without_future_knowledge(arm):
+    from src.services.strategy_lab.s3_mtf import prepare_replay
+    b,s = synthetic_history("retest" if arm=="C" else "pullback")
+    cache = prepare_replay({"X":b},s)
+    expected = build_signals(b,s,arm)
+    actual = build_signals(b,s,arm,prepared=cache,symbol="X")
+    pd.testing.assert_frame_equal(actual,expected,check_exact=True)
+    for width in (60,120,240,390):
+        frame = cache.frames["X",width]
+        known = cache.known["X",width]
+        valid = known >= 0
+        assert (pd.DatetimeIndex(frame.available_at)[known[valid]] <= cache.timeline[valid]+pd.Timedelta(seconds=1)).all()
+
+
+@pytest.mark.parametrize("kind", ["price", "volume", "schedule", "missing_path"])
+def test_cache_reuse_rejects_changed_input_snapshot(kind):
+    from src.services.strategy_lab.s3_mtf import prepare_replay
+    s,b = session(),candles(session())
+    cache = prepare_replay({"X":b},s)
+    if kind=="price": b.loc[0,"close"] += .1
+    elif kind=="volume": b.loc[0,"volume"] += 1
+    elif kind=="schedule": s.loc[0,"close_at"] -= pd.Timedelta(minutes=5)
+    else: b = b.drop(index=5)
+    with pytest.raises(ValueError,match="PREPARED_INPUT_CHANGED"):
+        replay({"X":b},s,{"X":signal()},{"X":"TECH"},prepared=cache)
+
+
+@pytest.mark.parametrize("mode", ["2R", "structure_trail"])
+def test_cached_replay_preserves_events_curve_and_risk_exactly(mode, monkeypatch):
+    from src.services.strategy_lab.s3_mtf import prepare_replay
+    monkeypatch.setattr("src.services.strategy_lab.s3_mtf.daily_allowed",lambda *_:True)
+    s = pd.concat([session("2024-03-06"),session("2024-03-07"),session()],ignore_index=True)
+    b = candles(s)
+    b.loc[166:,["open","close"]]=106.
+    b.loc[166:,"high"]=106.2
+    b.loc[166:,"low"]=105.8
+    inputs={"X":b,"Y":b.copy()}
+    sig={"X":signal(),"Y":signal()}
+    sectors={"X":"TECH","Y":"HEALTH"}
+    rules=replace(Rules(),exit_mode=mode)
+    expected=replay(inputs,s,sig,sectors,rules=rules)
+    cache=prepare_replay(inputs,s)
+    actual=replay(inputs,s,sig,sectors,rules=rules,prepared=cache)
+    for a,z in zip(expected,actual):
+        pd.testing.assert_frame_equal(a,z,check_exact=True)
+
+
+@pytest.mark.parametrize("arm", ["A", "B", "C", "D", "UNKNOWN"])
+def test_time_matched_control_is_only_available_for_e(arm):
+    with pytest.raises(ValueError,match="MATCHED_2H"):
+        build_signals(candles(session()),session(),arm,matched_2h=True)
+
+
+@pytest.mark.parametrize("arm", ["B", "C", "D", "E"])
+def test_matched_option_defaults_to_unchanged_original_arm(arm):
+    b,s=synthetic_history("retest" if arm=="C" else "pullback")
+    default=build_signals(b,s,arm)
+    explicit=build_signals(b,s,arm,matched_2h=False)
+    pd.testing.assert_frame_equal(default,explicit,check_exact=True)
+    assert "structure_atr_end" not in default.columns
+
+
+def test_time_matched_e_freezes_latest_available_h4_atr_and_preserves_cache():
+    from src.services.strategy_lab.s3_mtf import prepare_replay
+    b,s=synthetic_history()
+    cache=prepare_replay({"X":b},s)
+    original_h2=cache.frames["X",120].copy(deep=True)
+    rules=replace(Rules(),stop_mode="structure")
+    signals=build_signals(b,s,"E",rules,prepared=cache,symbol="X",matched_2h=True)
+    assert len(signals)>0
+    h2,h4,h1=(cache.frames["X",w] for w in (120,240,60))
+    for row in signals.itertuples():
+        setup_time=row.setup_end+pd.Timedelta(seconds=1)
+        known=int(h4.available_at.searchsorted(setup_time,side="right"))-1
+        assert known>=0
+        atr_row=h4.iloc[known]
+        assert row.structure_atr_end==atr_row.end
+        assert row.structure_atr_available_at==atr_row.available_at
+        assert row.structure_atr_available_at<=setup_time<row.decision_at
+        if known+1<len(h4):
+            assert h4.available_at.iloc[known+1]>setup_time
+        setup_idx=int(h2.end.searchsorted(row.setup_end))
+        floor=h2.low.iloc[setup_idx-5:setup_idx+1].min()
+        assert row.stop==pytest.approx(floor-.25*atr_row.atr14)
+        trigger=h1.loc[h1.end==row.signal_end].iloc[0]
+        assert row.max_entry==pytest.approx(trigger.close+.25*trigger.atr14)
+    pd.testing.assert_frame_equal(cache.frames["X",120],original_h2,check_exact=True)
+    uncached=build_signals(b,s,"E",rules,matched_2h=True)
+    pd.testing.assert_frame_equal(signals,uncached,check_exact=True)
+
+
+def test_time_matched_e_future_prices_cannot_change_existing_signals():
+    b,s=synthetic_history()
+    before=build_signals(b,s,"E",matched_2h=True)
+    assert len(before)>0
+    # Cut inside a four-hour bar: its future high/low may change its eventual
+    # ATR, but an earlier two-hour setup must retain the previous closed H4.
+    cutoff=before.decision_at.iloc[0]
+    b.loc[b.end>cutoff,["open","high","low","close"]]*=100
+    after=build_signals(b,s,"E",matched_2h=True)
+    pd.testing.assert_frame_equal(before[before.decision_at<=cutoff].reset_index(drop=True),
+                                  after[after.decision_at<=cutoff].reset_index(drop=True),check_exact=True)
