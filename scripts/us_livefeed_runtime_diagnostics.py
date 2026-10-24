@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -34,7 +35,8 @@ ENUMS = {
     "gateway_api_port": {"MATCH", "MISMATCH", "DEFAULT", "UNKNOWN"},
     "gateway_telnet_port": {"CONFLICT", "OTHER", "UNSET", "UNKNOWN"},
     "gateway_rsa": {"CONFIGURED", "NOT_CONFIGURED", "UNKNOWN"},
-    "offline_init_pack": {"PASS", "PACK_REJECTED", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
+    "offline_pack_errno": {"ENOENT", "EACCES", "EPERM", "EROFS", "ENOSPC", "EMFILE", "ENFILE", "ENOMEM", "UNKNOWN"},
+    "offline_init_pack": {"PASS", "PACK_REJECTED", "STRUCT_ERROR", "ENCODE_ERROR", "KEY_ERROR", "OVERFLOW_ERROR", "OS_ERROR", "RUNTIME_ERROR", "ASSERTION_ERROR", "GENERIC_EXCEPTION", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
 PATTERNS = {
@@ -83,26 +85,31 @@ print(result)
 """
 
 
-OFFLINE_INIT_PACK_CODE = """import contextlib,io
+OFFLINE_INIT_PACK_CODE = """import contextlib,io,json,sys,errno,struct
+out={'offline_init_pack':'OTHER_ERROR', 'python_version':'.'.join(map(str,sys.version_info[:3]))}
 try:
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         import futu as ft
+        import google.protobuf
+        out['sdk_version']=getattr(ft,'__version__','UNKNOWN')
+        out['protobuf_version']=google.protobuf.__version__
         from futu.quote.quote_query import InitConnect
         result=InitConnect.pack_req(
-            client_ver=int(ft.SysConfig.get_client_ver()), client_id='readonly-diagnostic',
+            client_ver=int(ft.SysConfig.get_client_ver()), client_id=str(ft.SysConfig.get_client_id()),
             recv_notify=True, is_encrypt=False, push_proto_fmt=ft.SysConfig.get_proto_fmt())
-    status='PASS' if result[0]==ft.RET_OK and isinstance(result[2],bytes) and result[2] else 'PACK_REJECTED'
-except AttributeError:
-    status='ATTRIBUTE_ERROR'
-except TypeError:
-    status='TYPE_ERROR'
-except ValueError:
-    status='VALUE_ERROR'
-except ImportError:
-    status='IMPORT_ERROR'
-except Exception:
-    status='OTHER_ERROR'
-print(status)
+    out['offline_init_pack']='PASS' if result[0]==ft.RET_OK and isinstance(result[2],bytes) and result[2] else 'PACK_REJECTED'
+except Exception as exc:
+    kind=type(exc).__name__
+    out['offline_init_pack']={
+        'EncodeError':'ENCODE_ERROR','KeyError':'KEY_ERROR',
+        'OverflowError':'OVERFLOW_ERROR','RuntimeError':'RUNTIME_ERROR',
+        'AssertionError':'ASSERTION_ERROR','Exception':'GENERIC_EXCEPTION',
+        'AttributeError':'ATTRIBUTE_ERROR','TypeError':'TYPE_ERROR','ValueError':'VALUE_ERROR',
+        'ImportError':'IMPORT_ERROR','ModuleNotFoundError':'IMPORT_ERROR',
+    }.get(kind,'STRUCT_ERROR' if isinstance(exc,struct.error) else 'OS_ERROR' if isinstance(exc,OSError) else 'OTHER_ERROR')
+    if isinstance(exc,OSError):
+        out['offline_pack_errno']=errno.errorcode.get(exc.errno,'UNKNOWN')
+print(json.dumps(out,separators=(',',':')))
 """
 
 
@@ -121,6 +128,10 @@ def sanitize_runtime_diagnostics(value):
     for key, length in (("installed_repo_sha", 40), ("runner_sha256", 64)):
         v = value.get(key)
         out[key] = v if isinstance(v, str) and re.fullmatch("[a-f0-9]{" + str(length) + "}", v) else "UNAVAILABLE"
+    for key in ("sdk_version", "protobuf_version", "python_version"):
+        version = value.get(key)
+        if isinstance(version, str) and re.fullmatch(r"[0-9]{1,5}(?:\.[0-9]{1,5}){1,3}", version):
+            out[key] = version
     files = value.get("files")
     if isinstance(files, dict):
         out["files"] = {}
@@ -339,5 +350,15 @@ def collect_runtime_diagnostics():
     query, text = _command([
         "/opt/stock-razor-opend-client/venv/bin/python", "-c", OFFLINE_INIT_PACK_CODE,
     ])
-    out["offline_init_pack"] = text.strip() if query == "PASS" else query
+    out["offline_init_pack"] = query if query != "PASS" else "UNAVAILABLE"
+    if query == "PASS":
+        try:
+            packed = json.loads(text)
+        except (ValueError, TypeError, RecursionError):
+            packed = None
+        if isinstance(packed, dict):
+            allowed = {key: packed[key] for key in (
+                "offline_init_pack", "offline_pack_errno", "sdk_version", "protobuf_version", "python_version"
+            ) if key in packed}
+            out.update(allowed)
     return sanitize_runtime_diagnostics(out)

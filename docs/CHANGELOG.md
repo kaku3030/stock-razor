@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
+
 - [新功能] S3 研究恢复原 D1+1H/SRVP 身份，完成固定 CORE8 的五组真实历史、四成本、年度留后、七项单因素与时间跨度控制；加入严格因果缓存和来源绑定，结果未建立策略优势，交易门禁不变。
 - [修复] Windows TickFlow 验收拒绝空到期网格与额外非法时间标签；本地定时采样增加精确部署哈希、五周期矩阵、字段哈希与有界超时恢复留痕，保持研究及交易门禁。
 
