@@ -61,7 +61,7 @@ from src.services.live_feed.futu_us_daily_history import (
 )
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
-from src.services.stock_radar_v2.systemd_notify import notify_systemd
+from src.utils.systemd_notify import notify_systemd
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
 
@@ -109,7 +109,7 @@ from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.opend_readonly_candidate_plan import plan_readonly_subscriptions
 from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
-from src.services.stock_radar_v2.systemd_notify import notify_systemd
+from src.utils.systemd_notify import notify_systemd
 
 BASE_CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ","US.GLDM","US.LITE","US.AAOI","US.CIEN")
 AB_BLEND_CODES=("US.SCHD","US.KMLM","US.GLD","US.DBMF","US.BTAL")

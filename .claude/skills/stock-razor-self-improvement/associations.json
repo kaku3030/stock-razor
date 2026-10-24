@@ -500,6 +500,20 @@
         "US-007",
         "US-008"
       ]
+    },
+    {
+      "id": "US-010",
+      "phrases": [
+        "notify import package dependency",
+        "us livefeed install failed",
+        "yaml missing opend",
+        "通知模块依赖泄漏",
+        "仓库已更新运行脚本未更新"
+      ],
+      "related": [
+        "US-009",
+        "ENG-002"
+      ]
     }
   ]
 }

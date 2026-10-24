@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 隔离 OpenD systemd 通知 primitive 的包级应用依赖；增加最小 Python 真实导入回归及云端旧通知入口的有界分类取证，防止安装前置检查失败被误报为运行版本已更新。
+
 - [修复] OpenD 在连接前原子发布阻断态启动心跳，复用 systemd notify 增加启动、停止与发布循环超时监督；监听进程只读诊断与行情资格分开，保留全部交易和受控部署门禁。
 
 - [新功能] Strategy Lab 增加 S3 D1/4H/1H 离线机械规则与统一风险重放、显式时段切分及输入预检；缺失原15m基线、原行情或独立样本外时不宣称五组回测完成或策略晋级。

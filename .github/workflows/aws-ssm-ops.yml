@@ -277,6 +277,8 @@ jobs:
               # action emitted large service logs and multi-line heartbeat JSON
               # before its one-line market summary, truncating evidence.
               # Return ONE compact read-only, metadata-only JSON record.
+              # Includes one bounded legacy notify import classification; no
+              # provider context, subscription or readiness notification.
               runtime_diagnostics_b64="$(gzip -n -c scripts/us_livefeed_runtime_diagnostics.py | base64 -w0)"
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
           set -eu

@@ -70,7 +70,7 @@ def test_fixed_host_collection_classifies_private_errors_without_forwarding_them
     projected = "\n".join(project(json.dumps({"runtime_diagnostics": evidence})))
     for raw in ("/root", "PRIVATE_TOKEN", "secret=value", "ACCOUNT_ID", "PRIVATE_MODULE", str(tmp_path)):
         assert raw not in projected
-    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps"]
+    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps", "/opt/stock-razor-opend-client/venv/bin/python"]
     assert not any("restart" in args or "start" in args for args in commands)
 
 
@@ -158,3 +158,21 @@ def test_gateway_absence_and_failed_queries_remain_distinct(tmp_path, monkeypatc
     unknown = diag.collect_runtime_diagnostics()
     assert unknown["opend_listener"] == "UNKNOWN"
     assert unknown["opend_process"] == "UNKNOWN"
+
+
+def test_legacy_import_probe_reports_fixed_class_without_exception_text(monkeypatch):
+    import subprocess
+    import sys
+    from scripts import us_livefeed_runtime_diagnostics as diag
+
+    # Execute actual child code; secret-bearing exceptions stay private.
+    setup = "import builtins\noriginal_import=builtins.__import__\ndef guard(name,*a,**kw):\n if name.startswith('src.services.stock_radar_v2'):\n  raise ModuleNotFoundError('PRIVATE_ACCOUNT secret=hidden',name='yaml')\n return original_import(name,*a,**kw)\nbuiltins.__import__=guard\n"
+    result = subprocess.run([sys.executable, "-c", setup + diag.LEGACY_IMPORT_PROBE_CODE],
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    assert result.stdout == "MISSING_YAML\n"
+    assert result.stderr == ""
+    safe = diag.sanitize_runtime_diagnostics({"legacy_notify_import": result.stdout.strip()})
+    assert safe["legacy_notify_import"] == "MISSING_YAML"
+    assert "legacy_notify_import" not in diag.sanitize_runtime_diagnostics({
+        "legacy_notify_import": "PRIVATE_ACCOUNT secret=hidden"})

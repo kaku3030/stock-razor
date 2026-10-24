@@ -152,6 +152,29 @@ No production recovery is claimed until the guarded deployment and real host
 restart/network recovery tests pass. The deployment's US session restart veto
 remains unchanged. Three full sessions and Windows parity are still required.
 
+## Quote-only import boundary after the first guarded deployment
+
+[Deployment40050724139](https://github.com/kaku3030/stock-razor/actions/runs/40050724139)
+failed within seconds. Independent [readback40050823035](https://github.com/kaku3030/stock-razor/actions/runs/40050823035)
+shows repo `7e2be356` checked out, while the generated runner hash and original
+process were unchanged and all three files remained missing. Failure occurred
+after checkout and before replacing run.py; this is not a completed restart.
+
+The newly imported notification submodule was individually stdlib-only, but
+Python first executes its `stock_radar_v2` package initializer, which eagerly
+imports yaml and other application dependencies. A minimal Python subprocess
+reproduces that import failure. Move the primitive to `src.utils.systemd_notify`, retain
+the existing Radar import as a compatibility re-export, and import the neutral
+path in the quote-only installer/runner. Do not install the whole application
+stack into the OpenD client to hide this dependency leak.
+
+The existing read-only status diagnostic now runs the legacy import once in a
+separate three-second bounded child. It never constructs a provider context or
+sends systemd notifications; exception text is suppressed. Only PASS,
+MISSING_YAML, MISSING_DEPENDENCY, IMPORT_ERROR or query-failure classifications
+cross the public boundary. Actual host classification and a new guarded deploy
+are required before claiming this production failure recovered.
+
 ## Completion and rollback
 
 Run focused publication, canonical reader/export, daily-history, installer,
@@ -163,6 +186,8 @@ Three full regular sessions require preserved runtime evidence for each entire
 session. Historical warm start and short verifier PASS cannot count as sessions.
 
 Rollback is a normal revert of this patch followed, if deployed, by the existing
-guarded deployment of the previous exact revision. No data migration is needed.
+guarded deployment of the new current-main revert commit after protected-main CI.
+The exact-main guard does not permit deploying an old historical SHA directly.
+No data migration is needed.
 Retain `RADAR_ADMISSION=BLOCKED`, `SOURCE_ARBITER_ADMISSION=BLOCKED`,
 `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO` throughout this diagnosis.
