@@ -104,6 +104,54 @@ read-only diagnostic, with no OpenD provider request, restart, recovery or gate
 change. The existing protected-main postmerge workflow dispatches one observation;
 its actual output must be checked separately from CI.
 
+## Evidence-backed startup failure mechanism
+
+The protected-main postmerge [SSM run39980775405](https://github.com/kaku3030/stock-razor/actions/runs/39980775405)
+returned `ACTIVE/RUNNING`, elapsed33,811seconds, zero restarts, and all three
+files `MISSING`. Its bounded recent journal sample counted117 connection-failure
+lines and zero recognized filesystem/import/serialization failures. Installed
+source was `896f05d4f01763a75413e4cf40d40288e4435c0e`; the observed runner hash
+`39314446cebfdd82bf2fcf3213a9889448fe683a220bcc18d01471d3c4e3650e` exactly matches
+that installer's generated runner bytes. This rules out a mismatched generated
+runner for this observation; it does not prove the upstream gateway cause.
+
+The exact pinned `futu-api==10.11.7108` distribution was independently inspected.
+Its `futu/common/open_context_base.py` SHA256 is
+`06740169d0d46fc5030526fac17f2d6d699e6a64e02c312ad5d7ea04e39b452e`. The default
+synchronous constructor retries connection without a finite attempt bound.
+The old runner performs connection and history warmup before its first heartbeat
+and before starting its callback deadline; `Type=simple` leaves this whole phase
+without a systemd startup deadline. A stalled SDK-I/O phase can therefore remain
+active for hours without publishing or triggering the existing callback guard.
+A live Python stack was not captured: the precise blocking call (constructor vs
+later pre-publication warmup) remains unproven.
+
+The repair publishes an explicitly blocked startup heartbeat before creating
+the quote context, and reuses the existing stdlib systemd notification helper.
+`Type=notify` bounds startup to900seconds, stop to15seconds, and runtime publication
+stalls to a300second watchdog, with30second restart pacing and an existing-unit
+start-rate limit. Readiness and watchdog are sent only after successful full
+heartbeat publication; they do not promote provider currentness, bar closure or
+Radar/trading admission. Imports, connection and warmup share the startup bound. The15minute startup
+and5minute publication budgets account for the existing multi-symbol history
+warmup and up to14 sequential daily-history RPCs; a short20/60second limit
+would restart valid slow batches. These are safety ceilings, not latency targets.
+A startup heartbeat never supplies synthetic quotes, subscriptions or closure.
+The existing guarded deployment's SSM wait and job ceiling now cover the service
+startup plus stop/import/verification budget; otherwise a valid slow startup could
+outlive its deployment observer. Exact-main, source-hash and session veto checks
+remain in force.
+
+The existing status action also observes the fixed local listener and OpenD
+process presence through bounded `ss`/`ps` reads, without opening a provider
+connection. Absence and query failure remain distinct; presence is not quote
+health. The checked-out stdlib helper is gzip/base64 embedded to retain the
+16,000-byte SSM bound. Original command output never enters the public projection.
+
+No production recovery is claimed until the guarded deployment and real host
+restart/network recovery tests pass. The deployment's US session restart veto
+remains unchanged. Three full sessions and Windows parity are still required.
+
 ## Completion and rollback
 
 Run focused publication, canonical reader/export, daily-history, installer,

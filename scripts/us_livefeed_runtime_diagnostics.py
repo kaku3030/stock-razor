@@ -25,6 +25,8 @@ ENUMS = {
     "journal_query": {"PASS", "UNAVAILABLE", "TIMEOUT", "TRUNCATED"},
     "load_state": {"LOADED", "NOT_FOUND", "MASKED", "ERROR", "BAD_SETTING", "UNKNOWN"},
     "working_directory": {"MATCH", "MISMATCH", "UNKNOWN"},
+    "opend_listener": {"LOOPBACK_BIND_OBSERVED", "OTHER_BIND_OBSERVED", "NO_LISTENER", "UNKNOWN"},
+    "opend_process": {"PRESENT", "ABSENT", "UNKNOWN"},
 }
 PATTERNS = {
     "FILE_MISSING": r"FileNotFoundError",
@@ -168,4 +170,22 @@ def collect_runtime_diagnostics():
     # Counts describe a bounded recent journal sample, never a proven root cause.
     out["journal_counts"] = {name: sum(bool(re.search(pattern, line, re.I)) for line in text.splitlines()[:200])
                              for name, pattern in PATTERNS.items()}
+    # Observe the existing fixed gateway endpoint without opening a provider
+    # connection. A listening port or process never certifies usable quotes.
+    query, text = _command(["ss", "-ltnH"])
+    out["opend_listener"] = "UNKNOWN"
+    if query == "PASS":
+        addresses = [parts[3] for line in text.splitlines()
+                     if len(parts := line.split()) >= 5 and parts[3].endswith(":11111")]
+        out["opend_listener"] = (
+            "LOOPBACK_BIND_OBSERVED"
+            if any(address.rsplit(":", 1)[0] in {"127.0.0.1", "0.0.0.0", "*"}
+                   for address in addresses)
+            else "OTHER_BIND_OBSERVED" if addresses else "NO_LISTENER"
+        )
+    query, text = _command(["ps", "-eo", "comm="])
+    out["opend_process"] = (
+        "PRESENT" if any(line.strip() in {"OpenD", "FutuOpenD"}
+                         for line in text.splitlines()) else "ABSENT"
+    ) if query == "PASS" else "UNKNOWN"
     return sanitize_runtime_diagnostics(out)

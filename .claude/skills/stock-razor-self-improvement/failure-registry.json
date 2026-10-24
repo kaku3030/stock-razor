@@ -474,6 +474,22 @@
       "regression_evidence": "tests/test_us_radar_runtime_reader.py",
       "mandatory_action": "Preserve the underlying source failure and unknown source safety; never synthesize source_live_trade=false or admit data to satisfy the reader. Check actual worker source fields and service failures independently.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-009",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "SDK_STARTUP_UNBOUNDED",
+        "HEARTBEAT_UNAVAILABLE",
+        "CONNECT_FAILURE"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Real AWS run39980775405 observed the exact old runner active for33811s with zero restarts, three missing evidence files and117 recent connection-failure lines. Its runner SHA256 matches the896f05d4 installer exactly. Pinned futu-api10.11.7108 source confirms unbounded synchronous constructor retry; initial connection and warmup occur before first heartbeat and callback deadline, while Type=simple provides no startup deadline. This establishes an unsupervised pre-publication SDK-I/O failure mechanism; the precise blocked call and upstream gateway cause need independent host evidence. Code now publishes blocked startup evidence before connection and uses existing systemd notify/startup/watchdog supervision; deployment/recovery NOT_VERIFIED.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/39980775405",
+      "regression_evidence": "tests/test_us_livefeed_startup_readiness.py",
+      "mandatory_action": "Do not equate ACTIVE, TCP listening or READY with quote qualification. Require blocked startup heartbeat before provider construction, finite systemd startup/stop deadlines, readiness/watchdog only after successful full heartbeat publication, actual gateway recovery and fault injection. Preserve guarded restart windows and all trading gates.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }
