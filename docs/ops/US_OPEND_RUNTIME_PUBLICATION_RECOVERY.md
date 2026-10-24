@@ -209,3 +209,20 @@ history. It also binds the existing11111 listener to OPEND/PYTHON/SSH/OTHER or
 UNKNOWN using ss owner metadata; a separate OpenD process elsewhere does not
 prove that this endpoint belongs to it. No raw messages, PID, argv or new
 provider connections are exposed. Unknown/missing owner metadata stays unknown.
+
+Readback40073413088 narrowed the failure: listener owner OPEND,121 InitConnect
+failures, no matched TCP errno family, six service restarts and two startup
+timeout lines in the bounded sample. This locates a handshake-stage failure,
+not its exact cause. The diagnostic now separates fixed handshake reason
+families and runs InitConnect.pack_req in an isolated child with no context or
+socket. It uses the current SDK's default wire format and does not mutate
+configuration, enable/disable encryption, or load credentials. A serialization
+PASS does not prove a server reply, login, entitlement or usable quotes.
+
+The endpoint owner's current startup XML is inspected privately using the
+bounded /proc cmdline -cfg_file override or the vendor-default file beside the
+binary. Only API-port agreement, telnet conflict and RSA-configured booleans
+are projected. Command-line api_port overrides take precedence. No password,
+argv, filename, account, private-key path or key contents are published. This is
+a current on-disk startup candidate, not proof of the already-loaded config.
+Vendor contract: https://openapi.futunn.com/futu-api-doc/en/opend/opend-cmd.html

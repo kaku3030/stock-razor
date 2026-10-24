@@ -238,7 +238,7 @@ def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=N
     if not isinstance(matched_2h, bool) or (matched_2h and arm != "E"):
         raise ValueError("MATCHED_2H_REQUIRES_ARM_E_AND_BOOLEAN_FLAG")
     if arm == "A":
-        raise ValueError("A_BLOCKED_NO_FROZEN_D1_H1_M15_RULE")
+        raise ValueError("A_BLOCKED_USE_EXPLICIT_ORIGINAL_S3_LEGACY_ADAPTER")
     if arm not in ARMS:
         raise ValueError("UNKNOWN_ARM")
     width, model, execution_width = ARMS[arm]

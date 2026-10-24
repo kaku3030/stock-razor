@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Offline B/C/D/E replay on explicitly hash-pinned inputs; A stays blocked.
+"""Offline B/C/D/E replay on explicitly hash-pinned inputs.
 
 No fetches, broker calls, imputation, optimization or new service credentials.
+Original S3 uses the separate explicit legacy adapter/comparison command.
 Each window resets cash and liquidates its own boundary. Prior history is used
 only to warm features. A missing raw path blocks the run, never drops a ticker.
 """
@@ -79,7 +80,7 @@ def main():
     items = manifest["symbols"]
     if not items or len({r["symbol"] for r in items}) != len(items):
         raise ValueError("EMPTY_OR_DUPLICATE_UNIVERSE")
-    receipt = dict(status="BLOCKED", matrix_complete=False, A="BLOCKED_NO_FROZEN_D1_H1_M15_RULE",
+    receipt = dict(status="BLOCKED", matrix_complete=False, A="SEPARATE_ORIGINAL_S3_LEGACY_ADAPTER",
                    manifest_sha256=digest(args.manifest), rules=asdict(rules),
                    source_sha256=digest(Path(__file__).resolve().parents[1]/"src/services/strategy_lab/s3_mtf.py"),
                    history_reused=manifest["history_reused"],
@@ -138,7 +139,7 @@ def main():
                                 actual_end=ss.close_at.iloc[-1].isoformat(), arm="QQQ_BH", cost_bps=cost, **qm))
             qc.to_csv(args.output/f"{window['name']}_QQQ_BH_{int(cost)}bps_equity.csv", index=False)
     pd.DataFrame(results).to_csv(args.output/"metrics.csv", index=False)
-    receipt.update(status="PARTIAL_MATRIX_REPLAYED_RESEARCH_ONLY", reason="A_AND_UNTOUCHED_OOS_MISSING")
+    receipt.update(status="PARTIAL_MATRIX_REPLAYED_RESEARCH_ONLY", reason="RUN_SEPARATE_LEGACY_COMPARISON_HISTORY_IS_REUSED")
     (args.output/"status.json").write_text(json.dumps(receipt, indent=2))
     print(json.dumps(receipt, indent=2))
 
