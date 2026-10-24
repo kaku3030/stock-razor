@@ -16,7 +16,7 @@ import pandas as pd
 
 
 OHLCV = ["open", "high", "low", "close", "volume"]
-ARMS = {"B": (240, "pullback", 60), "C": (240, "retest", 60),
+ARMS = {"A": (60, "legacy_adapter", 60), "B": (240, "pullback", 60), "C": (240, "retest", 60),
         "D": (240, "pullback", 240), "E": (120, "pullback", 60)}
 
 
@@ -351,7 +351,8 @@ def planned_loss(entry, stop, cost_rate):
 
 
 def replay(inputs, schedule, signals, sectors, *, rules=Rules(), cost_bps=10., initial=100000.,
-           trade_start=None, trade_end=None, prepared=None):
+           trade_start=None, trade_end=None, prepared=None, max_holding_bars=None,
+           exit_on_daily_filter=True):
     """One chronological portfolio. Stops win ambiguous bars; no future outcomes.
 
     inputs: symbol -> complete raw end-labelled 5m frame on identical schedule.
@@ -363,6 +364,11 @@ def replay(inputs, schedule, signals, sectors, *, rules=Rules(), cost_bps=10., i
         raise ValueError("INVALID_REPLAY_ARGUMENT")
     if set(inputs) != set(signals) or set(inputs) != set(sectors):
         raise ValueError("SYMBOL_SET_MISMATCH")
+    if max_holding_bars is not None and (isinstance(max_holding_bars,bool)
+            or not isinstance(max_holding_bars,int) or max_holding_bars < 1):
+        raise ValueError("INVALID_HOLDING_BAR_CAP")
+    if not isinstance(exit_on_daily_filter,bool):
+        raise ValueError("INVALID_DAILY_EXIT_SWITCH")
     if prepared is None:
         prepared = prepare_replay(inputs, schedule)
     else:
@@ -498,6 +504,8 @@ def replay(inputs, schedule, signals, sectors, *, rules=Rules(), cost_bps=10., i
                                    target=price+2*(price-stop), reached_2r=False,
                                    entry_session=current_session,
                                    last_hour=None, arm=signal.get("arm", "UNKNOWN"))
+                if max_holding_bars is not None:
+                    active[sym]["entry_execution_index"] = i
             assert active[sym]["risk_spent"] <= budget + 1e-7
             assert cash >= -1e-7
             events.append(dict(symbol=sym, time=start, reason="ADD" if adding else "ENTRY", units=units,
@@ -528,7 +536,9 @@ def replay(inputs, schedule, signals, sectors, *, rules=Rules(), cost_bps=10., i
             if (current_session - p["entry_session"] + 1 >= rules.max_sessions
                     and end == prepared.session_closes[current_session]):
                 exit_queue.setdefault(sym, known_at)
-            if day is not None and not daily_allowed(day, rules):
+            if max_holding_bars is not None and i-p["entry_execution_index"]+1 >= max_holding_bars:
+                exit_queue.setdefault(sym, known_at)
+            if exit_on_daily_filter and day is not None and not daily_allowed(day, rules):
                 exit_queue.setdefault(sym, known_at)
             if hour is not None and hour.end != p["last_hour"]:
                 p["last_hour"] = hour.end
