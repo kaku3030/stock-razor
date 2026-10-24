@@ -16,7 +16,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.services.strategy_lab.s3_mtf import Rules, build_signals, metrics, replay, validate_input
+from src.services.strategy_lab.s3_mtf import Rules, build_signals, metrics, prepare_replay, replay, validate_input
 
 
 def digest(path):
@@ -105,11 +105,12 @@ def main():
     sectors = {r["symbol"]:r["sector"] for r in items}
     for x in source.values():
         validate_input(x, schedule)
+    prepared = prepare_replay(source, schedule)
     qqq = load_bars(manifest["benchmark"], root)
     validate_input(qqq, schedule)
     if manifest["benchmark"]["symbol"] != "QQQ":
         raise ValueError("QQQ_BENCHMARK_REQUIRED")
-    all_signals = {arm:{sym:build_signals(x, schedule, arm, rules) for sym,x in source.items()}
+    all_signals = {arm:{sym:build_signals(x, schedule, arm, rules, prepared=prepared, symbol=sym) for sym,x in source.items()}
                    for arm in ("B", "C", "D", "E")}
     results = []
     for window in manifest["windows"]:
@@ -125,7 +126,7 @@ def main():
                 sig = {sym:x[(x.decision_at>=ss.open_at.iloc[0]) & (x.decision_at<=ss.close_at.iloc[-1])]
                        if not x.empty else x for sym,x in all_signals[arm].items()}
                 t,e,c = replay(source, schedule, sig, sectors, rules=rules, cost_bps=cost,
-                               trade_start=ss.open_at.iloc[0], trade_end=ss.close_at.iloc[-1])
+                               trade_start=ss.open_at.iloc[0], trade_end=ss.close_at.iloc[-1], prepared=prepared)
                 name = f"{window['name']}_{arm}_{int(cost)}bps"
                 t.to_csv(args.output/f"{name}_trades.csv", index=False)
                 e.to_csv(args.output/f"{name}_events.csv", index=False)
