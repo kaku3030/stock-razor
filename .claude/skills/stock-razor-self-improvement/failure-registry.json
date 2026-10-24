@@ -490,6 +490,21 @@
       "regression_evidence": "tests/test_us_livefeed_startup_readiness.py",
       "mandatory_action": "Do not equate ACTIVE, TCP listening or READY with quote qualification. Require blocked startup heartbeat before provider construction, finite systemd startup/stop deadlines, readiness/watchdog only after successful full heartbeat publication, actual gateway recovery and fault injection. Preserve guarded restart windows and all trading gates.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-010",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "NOTIFY_IMPORT_PACKAGE_DEPENDENCY",
+        "US_LIVEFEED_INSTALL_FAILED"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Guarded deployment40050724139 failed within seconds after checkout: independent readback40050823035 confirms installed repo7e2be356 with unchanged old runner hash and process. New notification submodule import executes stock_radar_v2 package initialization and imports yaml plus application dependencies absent from the quote-only environment. A real minimal-Python import reproduces the package dependency failure. Notification transport is moved to a neutral stdlib module with legacy compatibility; production exact missing dependency and recovery remain NOT_VERIFIED until bounded host import classification and redeployment.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/40050823035",
+      "regression_evidence": "tests/test_us_livefeed_startup_readiness.py",
+      "mandatory_action": "Test actual import under python -S before cloud use; do not infer dependency isolation from submodule source alone. Preserve old callers through compatibility exports, never add full strategy dependencies to quote-only AWS merely to satisfy import. Check repo SHA, generated runner hash and process separately after failed installation; no unchanged blind retries.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

@@ -14,7 +14,7 @@ import time
 import pytest
 
 from src.services.live_feed.runtime_publication import write_runtime_json
-from src.services.stock_radar_v2.systemd_notify import notify_systemd
+from src.utils.systemd_notify import notify_systemd
 from data_provider.us_canonical_runtime_reader import read_us_livefeed_health
 
 
@@ -159,7 +159,7 @@ def test_starting_heartbeat_is_visible_but_never_healthy_or_realtime(tmp_path):
 
 def test_systemd_supervises_startup_and_runtime_without_loosening_restart_gate():
     assert any(isinstance(node, ast.ImportFrom)
-               and node.module == "src.services.stock_radar_v2.systemd_notify"
+               and node.module == "src.utils.systemd_notify"
                and any(alias.name == "notify_systemd" for alias in node.names)
                for node in ast.parse(RUNTIME).body)
     assert "Type=notify\nNotifyAccess=main" in INSTALLER

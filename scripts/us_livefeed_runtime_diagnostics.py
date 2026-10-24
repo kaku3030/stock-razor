@@ -27,6 +27,7 @@ ENUMS = {
     "working_directory": {"MATCH", "MISMATCH", "UNKNOWN"},
     "opend_listener": {"LOOPBACK_BIND_OBSERVED", "OTHER_BIND_OBSERVED", "NO_LISTENER", "UNKNOWN"},
     "opend_process": {"PRESENT", "ABSENT", "UNKNOWN"},
+    "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
 PATTERNS = {
     "FILE_MISSING": r"FileNotFoundError",
@@ -42,6 +43,20 @@ PATTERNS = {
     "CALLBACK_STARVATION": r"US_OPEND_STARTUP_CALLBACK_STARVATION",
     "UNCLASSIFIED_TRACEBACK": r"Traceback \(most recent call last\)",
 }
+
+
+LEGACY_IMPORT_PROBE_CODE = """import contextlib,io,sys
+sys.path.insert(0,'/opt/stock-razor-us-livefeed/repo')
+try:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        from src.services.stock_radar_v2.systemd_notify import notify_systemd
+    result='PASS'
+except ModuleNotFoundError as exc:
+    result='MISSING_YAML' if exc.name=='yaml' else 'MISSING_DEPENDENCY'
+except Exception:
+    result='IMPORT_ERROR'
+print(result)
+"""
 
 
 def sanitize_runtime_diagnostics(value):
@@ -188,4 +203,12 @@ def collect_runtime_diagnostics():
         "PRESENT" if any(line.strip() in {"OpenD", "FutuOpenD"}
                          for line in text.splitlines()) else "ABSENT"
     ) if query == "PASS" else "UNKNOWN"
+    # Reproduce the failed installer import without creating an OpenD context,
+    # touching subscriptions or sending a readiness notification. Only fixed
+    # classifications cross the private-host boundary; never exception text.
+    query, text = _command([
+        "/opt/stock-razor-opend-client/venv/bin/python", "-c",
+        LEGACY_IMPORT_PROBE_CODE,
+    ])
+    out["legacy_notify_import"] = text.strip() if query == "PASS" else query
     return sanitize_runtime_diagnostics(out)
