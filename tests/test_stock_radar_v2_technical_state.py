@@ -1,3 +1,4 @@
+
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
@@ -100,12 +101,23 @@ def test_bridge_builds_all_timeframes_without_confirming_signal() -> None:
     assert "buy_signal" not in state.to_dict()
 
 
-def test_forming_bar_is_partial_and_caps_intraday_confidence() -> None:
-    state = StockRadarTechnicalStateService().evaluate(_snapshot(partial=True), daily=_daily())
+def test_forming_bar_is_excluded_from_intraday_indicators() -> None:
+    base = _snapshot()
+    clean = StockRadarTechnicalStateService().evaluate(
+        replace(base, bars_15m=base.bars_15m[:-1]), daily=_daily()
+    )
+    forming = StockRadarTechnicalStateService().evaluate(
+        replace(_snapshot(partial=True), bars_15m=base.bars_15m[:-1] + (
+            _bar(39, "15m", partial=True),
+        )),
+        daily=_daily(),
+    )
 
-    assert state.technical.intraday.quality.is_partial_bar is True
-    assert state.technical.intraday.confidence <= 0.65
-    assert "15m_partial_bar" in state.technical.risk_flags
+    assert forming.technical.intraday.indicators == clean.technical.intraday.indicators
+    assert forming.technical.intraday.quality.is_partial_bar is False
+    assert forming.technical.intraday.quality.status == clean.technical.intraday.quality.status
+    assert "15m_unqualified_bars_excluded" in forming.technical.intraday.quality.warnings
+    assert "15m_partial_bar" not in forming.technical.risk_flags
 
 
 def test_old_temporal_quality_flags_do_not_poison_current_intraday_state() -> None:
@@ -134,7 +146,7 @@ def test_old_temporal_quality_flags_do_not_poison_current_intraday_state() -> No
     assert "15m_delayed_feed" not in state.technical.risk_flags
 
 
-def test_latest_temporal_quality_flag_still_caps_intraday_state() -> None:
+def test_latest_unqualified_bar_is_excluded_and_reported() -> None:
     base = _snapshot()
     bars_15m = tuple(
         _bar(
@@ -149,12 +161,13 @@ def test_latest_temporal_quality_flag_still_caps_intraday_state() -> None:
         daily=_daily(),
     )
 
-    assert state.technical.intraday.quality.status == "partial"
-    assert state.technical.intraday.confidence <= 0.65
-    assert "15m_historical_query" in state.technical.risk_flags
+    assert state.technical.intraday.quality.is_partial_bar is False
+    assert state.technical.intraday.quality.status != "partial"
+    assert "15m_historical_query" not in state.technical.risk_flags
+    assert "15m_unqualified_bars_excluded" in state.technical.intraday.quality.warnings
 
 
-def test_old_structural_quality_flag_still_degrades_intraday_state() -> None:
+def test_structurally_invalid_bar_is_excluded_and_reported() -> None:
     base = _snapshot()
     bars_15m = tuple(
         _bar(
@@ -169,9 +182,10 @@ def test_old_structural_quality_flag_still_degrades_intraday_state() -> None:
         daily=_daily(),
     )
 
-    assert state.technical.intraday.quality.status == "partial"
-    assert state.technical.intraday.confidence <= 0.65
-    assert "15m_missing_bar" in state.technical.risk_flags
+    assert state.technical.intraday.quality.is_partial_bar is False
+    assert state.technical.intraday.quality.status != "partial"
+    assert "15m_missing_bar" not in state.technical.risk_flags
+    assert "15m_unqualified_bars_excluded" in state.technical.intraday.quality.warnings
 
 
 def test_missing_daily_data_degrades_without_inventing_daily_state() -> None:
@@ -197,3 +211,4 @@ def test_blocked_health_permission_is_preserved() -> None:
     assert state.signal_permission is SignalPermission.BLOCKED
     assert state.data_health_score <= 49
     assert "invalid_ohlc" in state.technical.risk_flags
+

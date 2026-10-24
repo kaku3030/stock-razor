@@ -51,20 +51,31 @@ class StockRadarTechnicalStateService:
         *,
         daily: pd.DataFrame | None = None,
     ) -> StockRadarTechnicalState:
-        hourly = _bars_frame(snapshot.bars_1h)
-        intraday = _bars_frame(snapshot.bars_15m)
-        hourly_partial = _latest_is_partial(snapshot.bars_1h)
-        intraday_partial = _latest_is_partial(snapshot.bars_15m)
+        # Technical indicators must never consume a forming or otherwise
+        # unqualified bar. Keep these bars visible as diagnostics below, but
+        # calculate the research state from closed, complete, clean history.
+        hourly_bars = _research_eligible_bars(snapshot.bars_1h)
+        intraday_bars = _research_eligible_bars(snapshot.bars_15m)
+        hourly = _bars_frame(hourly_bars)
+        intraday = _bars_frame(intraday_bars)
         result = self._analyzer.analyze(
             snapshot.symbol,
             daily if daily is not None else pd.DataFrame(),
             hourly,
             intraday,
-            hourly_partial=hourly_partial,
-            intraday_partial=intraday_partial,
+            hourly_partial=False,
+            intraday_partial=False,
         )
-        result.hourly = _apply_bar_quality(result.hourly, snapshot.bars_1h)
-        result.intraday = _apply_bar_quality(result.intraday, snapshot.bars_15m)
+        result.hourly = _apply_bar_quality(
+            result.hourly,
+            hourly_bars,
+            excluded_count=len(snapshot.bars_1h) - len(hourly_bars),
+        )
+        result.intraday = _apply_bar_quality(
+            result.intraday,
+            intraday_bars,
+            excluded_count=len(snapshot.bars_15m) - len(intraday_bars),
+        )
         result.risk_flags = list(
             dict.fromkeys(
                 [
@@ -103,13 +114,27 @@ def _bars_frame(bars: Sequence[Bar]) -> pd.DataFrame:
     )
 
 
-def _latest_is_partial(bars: Sequence[Bar]) -> bool:
-    return bool(bars and (not bars[-1].is_closed or not bars[-1].is_complete))
+def _research_eligible_bars(bars: Sequence[Bar]) -> tuple[Bar, ...]:
+    return tuple(
+        bar for bar in bars
+        if bar.is_closed and bar.is_complete and not bar.quality_flags
+    )
 
 
-def _apply_bar_quality(state: TimeframeState, bars: Sequence[Bar]) -> TimeframeState:
+def _apply_bar_quality(
+    state: TimeframeState,
+    bars: Sequence[Bar],
+    *,
+    excluded_count: int = 0,
+) -> TimeframeState:
     if not bars:
-        return state
+        warnings = list(state.quality.warnings)
+        if excluded_count:
+            warnings.append(f"{state.timeframe}_unqualified_bars_excluded")
+        return replace(
+            state,
+            quality=replace(state.quality, warnings=list(dict.fromkeys(warnings))),
+        )
 
     # Currentness/availability flags are temporal. A historical query or stale
     # observation on an older bar must not permanently poison the current
@@ -131,13 +156,21 @@ def _apply_bar_quality(state: TimeframeState, bars: Sequence[Bar]) -> TimeframeS
     ]
     flags = tuple(dict.fromkeys([*persistent_flags, *latest_flags]))
 
-    warnings = list(dict.fromkeys([*state.quality.warnings, *[f"{state.timeframe}_{flag}" for flag in flags]]))
-    partial = _latest_is_partial(bars) or bool(flags)
+    exclusion_warning = (
+        [f"{state.timeframe}_unqualified_bars_excluded"] if excluded_count else []
+    )
+    warnings = list(dict.fromkeys([
+        *state.quality.warnings,
+        *[f"{state.timeframe}_{flag}" for flag in flags],
+        *exclusion_warning,
+    ]))
+    partial = bool(flags)
     quality = replace(
         state.quality,
         status="partial" if partial else state.quality.status,
-        is_partial_bar=_latest_is_partial(bars),
+        is_partial_bar=False,
         warnings=warnings,
     )
     confidence = min(state.confidence, 0.65) if partial else state.confidence
     return replace(state, confidence=confidence, quality=quality)
+
