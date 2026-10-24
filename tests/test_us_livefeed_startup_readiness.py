@@ -183,5 +183,8 @@ def test_deployment_wait_covers_service_startup_and_verification_budget():
     job_minutes = int(re.search(r"timeout-minutes: (\d+)", workflow)[1])
     assert polls * 5 > startup + stop + verifier_polls * 5
     assert job_minutes * 60 > polls * 5 + 60
+    # SSM TimeoutSeconds bounds delivery before execution starts, rather than
+    # the duration of an already-running service startup. Keep it unchanged.
+    assert "--timeout-seconds 600" in workflow
     assert 'inputs.expected_main_sha == github.sha' in workflow
     assert 'python3 scripts/guard_us_livefeed_restart_window.py' in workflow

@@ -148,7 +148,7 @@ jobs:
             --document-name AWS-RunShellScript \
             --instance-ids "$TARGET_INSTANCE_ID" \
             --parameters "$params" \
-            --timeout-seconds 1200 \
+            --timeout-seconds 600 \
             --query 'Command.CommandId' --output text)"
           [[ "$command_id" =~ ^[a-f0-9-]{36}$ ]]
           echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
