@@ -132,6 +132,13 @@ class CanonicalRadarEvaluation:
         reasons.append("PROMOTION_NOT_AUTHORIZED")
 
         return {
+            # Industry-style two-lane semantics: a fresh source may be accepted
+            # for research/UI while promotion remains independently blocked.
+            "data_acceptance": (
+                "ACCEPTED" if self.status in {"PASS", "UNCHANGED"} else "BLOCKED"
+            ),
+            "bar_state": "PROVEN" if bar_closure_proven else "PROVISIONAL",
+            "strategy_admission": "BLOCKED",
             "decision": "BLOCKED",
             "promotion_authorized": False,
             "minimum_source_prerequisites_met": (
@@ -169,6 +176,13 @@ class CanonicalRadarEvaluation:
     def to_dict(self) -> dict:
         return {
             "status": self.status,
+            "data_acceptance": (
+                "ACCEPTED" if self.status in {"PASS", "UNCHANGED"} else "BLOCKED"
+            ),
+            "bar_state": (
+                "PROVEN" if self.source_bar_closure == "PROVEN" else "PROVISIONAL"
+            ),
+            "strategy_admission": "BLOCKED",
             "source_repo_sha": self.source_repo_sha,
             "runtime_instance_id": self.runtime_instance_id,
             "source_sequence": self.source_sequence,

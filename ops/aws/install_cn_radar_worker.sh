@@ -114,6 +114,11 @@ while True:
     radar_analysis_performed = False
     radar_analysis_latency_ms = None
     data_to_radar_latency_ms = None
+    # Accept a validated raw source independently from strategy promotion.
+    source_acceptance_status = "NOT_READ"
+    analysis_status = "NOT_RUN"
+    bar_state = "UNKNOWN"
+    strategy_admission = "BLOCKED"
 
     try:
         with open(source_path, "rb") as handle:
@@ -132,10 +137,15 @@ while True:
         source_emitted = datetime.fromisoformat(str(source_emitted_at_utc))
         if source_emitted.tzinfo is None or source_emitted.utcoffset() is None:
             raise ValueError("source emitted_at must be timezone-aware")
-        source_age_seconds = max(
-            0.0,
-            (now - source_emitted.astimezone(timezone.utc)).total_seconds(),
-        )
+        source_age_delta_seconds = (
+            now - source_emitted.astimezone(timezone.utc)
+        ).total_seconds()
+        if source_age_delta_seconds < 0:
+            # Future-dated source clocks are invalid; never clamp them to a
+            # plausible zero age. This applies to Eastmoney and TickFlow.
+            raise ValueError("source emitted_at is in the future")
+        source_age_seconds = source_age_delta_seconds
+        source_acceptance_status = "ACCEPTED"
         key = (source_runtime_instance_id, source_sequence)
         if source_provider == "tickflow":
             validate_tickflow_source_clock(source, now)
@@ -143,6 +153,13 @@ while True:
                    source_stat.st_ino, source_stat.st_mtime_ns)
         if key == last_key and last_evaluation is not None:
             evaluation = last_evaluation
+            analysis_status = "PASS"
+            if isinstance(evaluation, dict):
+                bar_state = (
+                    "PROVEN"
+                    if evaluation.get("bar_finality") == "PROVEN"
+                    else "PROVISIONAL"
+                )
             poll_status = "UNCHANGED"
         else:
             analysis_started = time.perf_counter()
@@ -151,6 +168,16 @@ while True:
                 if source_provider == "tickflow"
                 else evaluate_cn_observation_payload(source)
             )
+            analysis_status = "PASS"
+            if isinstance(evaluation, dict):
+                # A successful research evaluation may still contain
+                # provisional bars. Only an explicit PROVEN attestation
+                # changes the bar state; strategy admission stays closed.
+                bar_state = (
+                    "PROVEN"
+                    if evaluation.get("bar_finality") == "PROVEN"
+                    else "PROVISIONAL"
+                )
             radar_analysis_latency_ms = round(
                 (time.perf_counter() - analysis_started) * 1000,
                 3,
@@ -160,6 +187,9 @@ while True:
             last_evaluation = evaluation
             poll_status = "PASS"
     except Exception as exc:
+        analysis_status = "ERROR"
+        if source_acceptance_status == "NOT_READ":
+            source_acceptance_status = "REJECTED"
         reasons.append(f"SOURCE_OR_ANALYSIS_ERROR:{type(exc).__name__}")
 
     completed_at = datetime.now(timezone.utc)
@@ -187,6 +217,10 @@ while True:
         "source_sequence": source_sequence,
         "source_emitted_at_utc": source_emitted_at_utc,
         "source_age_seconds": source_age_seconds,
+        "source_acceptance_status": source_acceptance_status,
+        "analysis_status": analysis_status,
+        "bar_state": bar_state,
+        "strategy_admission": strategy_admission,
         "radar_analysis_performed": radar_analysis_performed,
         "radar_analysis_latency_ms": radar_analysis_latency_ms,
         "data_to_radar_latency_ms": data_to_radar_latency_ms,
