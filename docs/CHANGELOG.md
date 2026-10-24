@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] OpenD 只读诊断区分连接 errno、握手与启动超时，并将固定端口绑定到进程类别；不输出原始日志或打开新行情连接。
+
 - [修复] 隔离 OpenD systemd 通知 primitive 的包级应用依赖；增加最小 Python 真实导入回归及云端旧通知入口的有界分类取证，防止安装前置检查失败被误报为运行版本已更新。
 
 - [修复] OpenD 在连接前原子发布阻断态启动心跳，复用 systemd notify 增加启动、停止与发布循环超时监督；监听进程只读诊断与行情资格分开，保留全部交易和受控部署门禁。
