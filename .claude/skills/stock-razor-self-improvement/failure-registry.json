@@ -522,7 +522,7 @@
     },
     {
       "id": "STRAT-001",
-      "owner": "Strategy Research",
+      "owner": "Main Control",
       "severity": "P1",
       "signature_tokens": [
         "FIRST_RISK_FRACTION_ONE_IS_NOT_NO_ADD"
