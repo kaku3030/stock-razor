@@ -9,8 +9,10 @@ import selectors
 import stat
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
 UNIT = "stock-razor-us-livefeed.service"
+PROC_ROOT = Path("/proc")
 ROOT = Path("/opt/stock-razor-us-livefeed")
 FILES = {name: Path("/run/stock-razor-us-livefeed") / filename for name, filename in (
     ("heartbeat", "latest-heartbeat.json"),
@@ -28,6 +30,11 @@ ENUMS = {
     "opend_listener": {"LOOPBACK_BIND_OBSERVED", "OTHER_BIND_OBSERVED", "NO_LISTENER", "UNKNOWN"},
     "opend_process": {"PRESENT", "ABSENT", "UNKNOWN"},
     "opend_listener_owner": {"OPEND", "PYTHON", "SSH", "OTHER", "MISSING", "UNKNOWN"},
+    "gateway_config": {"PARSED_STARTUP_CANDIDATE", "MISSING", "INVALID", "UNKNOWN"},
+    "gateway_api_port": {"MATCH", "MISMATCH", "DEFAULT", "UNKNOWN"},
+    "gateway_telnet_port": {"CONFLICT", "OTHER", "UNSET", "UNKNOWN"},
+    "gateway_rsa": {"CONFIGURED", "NOT_CONFIGURED", "UNKNOWN"},
+    "offline_init_pack": {"PASS", "PACK_REJECTED", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
 PATTERNS = {
@@ -48,6 +55,14 @@ PATTERNS = {
     "CONNECT_UNREACHABLE": r"connect fail.*(?:ENETUNREACH|EHOSTUNREACH)",
     "CONNECT_FD_LIMIT": r"connect fail.*(?:EMFILE|ENFILE)",
     "HANDSHAKE_FAILURE": r"init connect fail",
+    "HANDSHAKE_TIMEOUT": r"init connect fail.*(?:timeout|超时)",
+    "HANDSHAKE_DISCONNECT": r"init connect fail.*(?:disconnect|断开|连接关闭)",
+    "HANDSHAKE_ENCRYPTION": r"init connect fail.*(?:RSA|encrypt|decrypt|加密|解密|密钥)",
+    "HANDSHAKE_VERSION": r"init connect fail.*(?:version|版本)",
+    "HANDSHAKE_LOGIN": r"init connect fail.*(?:not.login|未登录|未登陆)",
+    "HANDSHAKE_ATTRIBUTE": r"init connect fail.*has no attribute",
+    "HANDSHAKE_SHA": r"init connect fail.*check sha error",
+    "HANDSHAKE_CONTEXT": r"init connect fail.*Context status bad",
     "STARTUP_TIMEOUT": r"start operation timed out|Failed with result 'timeout'",
     "CALLBACK_STARVATION": r"US_OPEND_STARTUP_CALLBACK_STARVATION",
     "UNCLASSIFIED_TRACEBACK": r"Traceback \(most recent call last\)",
@@ -65,6 +80,29 @@ except ModuleNotFoundError as exc:
 except Exception:
     result='IMPORT_ERROR'
 print(result)
+"""
+
+
+OFFLINE_INIT_PACK_CODE = """import contextlib,io
+try:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        import futu as ft
+        from futu.quote.quote_query import InitConnect
+        result=InitConnect.pack_req(
+            client_ver=int(ft.SysConfig.get_client_ver()), client_id='readonly-diagnostic',
+            recv_notify=True, is_encrypt=False, push_proto_fmt=ft.SysConfig.get_proto_fmt())
+    status='PASS' if result[0]==ft.RET_OK and isinstance(result[2],bytes) and result[2] else 'PACK_REJECTED'
+except AttributeError:
+    status='ATTRIBUTE_ERROR'
+except TypeError:
+    status='TYPE_ERROR'
+except ValueError:
+    status='VALUE_ERROR'
+except ImportError:
+    status='IMPORT_ERROR'
+except Exception:
+    status='OTHER_ERROR'
+print(status)
 """
 
 
@@ -176,6 +214,63 @@ def classify_listener_owner(text):
     return next(iter(categories)) if len(categories) == 1 else "UNKNOWN"
 
 
+def gateway_config_metadata(listener_text):
+    """Read the endpoint owner's startup config privately; publish enums only.
+
+    This is current on-disk startup configuration, not proof of loaded state.
+    Passwords, argv, account data, config/key paths and keys never leave here.
+    """
+    pids = {pid for line in listener_text.splitlines()
+            if len(parts := line.split()) >= 5 and parts[3].endswith(":11111")
+            for pid in re.findall(r'\("(?:OpenD|FutuOpenD|moomoo_OpenD)",pid=([0-9]{1,10}),', line)}
+    out = {"gateway_config": "UNKNOWN"}
+    if len(pids) != 1:
+        return out
+    proc = PROC_ROOT / next(iter(pids))
+    try:
+        executable = (proc / "exe").resolve(strict=True)
+        if executable.name not in {"OpenD", "FutuOpenD", "moomoo_OpenD"}:
+            return out
+        with (proc / "cmdline").open("rb") as handle:
+            raw = handle.read(65537)
+        if len(raw) > 65536:
+            return out
+        # Official OpenD command format is -key=value; command-line wins.
+        args = raw.decode("utf-8").split("\x00")
+        overrides = dict(arg[1:].split("=", 1) for arg in args
+                         if arg.startswith(("-cfg_file=", "-api_port=")))
+        default = "FutuOpenD.xml" if executable.name == "FutuOpenD" else "OpenD.xml"
+        config_path = Path(overrides.get("cfg_file", str(executable.parent / default)))
+        if not config_path.is_absolute():
+            return out
+        descriptor = os.open(config_path, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return {"gateway_config": "INVALID"}
+            raw = handle.read(65537)
+        if len(raw) > 65536 or b"<!DOCTYPE" in raw or b"<!ENTITY" in raw:
+            return {"gateway_config": "INVALID"}
+        root = ET.fromstring(raw)
+
+        def value(name):
+            nodes = root.findall(name)
+            if len(nodes) > 1:
+                raise ValueError("duplicate config field")
+            return (nodes[0].text or "").strip() if nodes else ""
+        api = overrides.get("api_port", value("api_port"))
+        telnet = value("telnet_port")
+        rsa = value("rsa_private_key")
+        out = {"gateway_config": "PARSED_STARTUP_CANDIDATE",
+               "gateway_api_port": "DEFAULT" if not api else "MATCH" if api == "11111" else "MISMATCH" if re.fullmatch(r"[0-9]{1,5}", api) and 0 < int(api) <= 65535 else "UNKNOWN",
+               "gateway_telnet_port": "UNSET" if not telnet else "CONFLICT" if telnet == "11111" else "OTHER" if re.fullmatch(r"[0-9]{1,5}", telnet) and 0 < int(telnet) <= 65535 else "UNKNOWN",
+               "gateway_rsa": "CONFIGURED" if rsa else "NOT_CONFIGURED"}
+    except FileNotFoundError:
+        out = {"gateway_config": "MISSING"}
+    except (OSError, ValueError, ET.ParseError, RuntimeError):
+        out = {"gateway_config": "INVALID"}
+    return out
+
+
 def collect_runtime_diagnostics():
     properties = "LoadState,ActiveState,SubState,Result,ExecMainStatus,NRestarts,ExecMainStartTimestampMonotonic,WorkingDirectory"
     query, text = _command(["systemctl", "show", UNIT, "--no-pager", "--property=" + properties])
@@ -217,6 +312,7 @@ def collect_runtime_diagnostics():
     out["opend_listener_owner"] = "UNKNOWN"
     if query == "PASS":
         out["opend_listener_owner"] = classify_listener_owner(text)
+        out.update(gateway_config_metadata(text))
         addresses = [parts[3] for line in text.splitlines()
                      if len(parts := line.split()) >= 5 and parts[3].endswith(":11111")]
         out["opend_listener"] = (
@@ -238,4 +334,10 @@ def collect_runtime_diagnostics():
         LEGACY_IMPORT_PROBE_CODE,
     ])
     out["legacy_notify_import"] = text.strip() if query == "PASS" else query
+    # Serialization only: no context, socket, credentials, subscriptions or
+    # protocol-config mutation. This does not prove server compatibility.
+    query, text = _command([
+        "/opt/stock-razor-opend-client/venv/bin/python", "-c", OFFLINE_INIT_PACK_CODE,
+    ])
+    out["offline_init_pack"] = text.strip() if query == "PASS" else query
     return sanitize_runtime_diagnostics(out)

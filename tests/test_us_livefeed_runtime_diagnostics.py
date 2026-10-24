@@ -70,7 +70,7 @@ def test_fixed_host_collection_classifies_private_errors_without_forwarding_them
     projected = "\n".join(project(json.dumps({"runtime_diagnostics": evidence})))
     for raw in ("/root", "PRIVATE_TOKEN", "secret=value", "ACCOUNT_ID", "PRIVATE_MODULE", str(tmp_path)):
         assert raw not in projected
-    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps", "/opt/stock-razor-opend-client/venv/bin/python"]
+    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps", "/opt/stock-razor-opend-client/venv/bin/python", "/opt/stock-razor-opend-client/venv/bin/python"]
     assert not any("restart" in args or "start" in args for args in commands)
 
 
@@ -211,3 +211,61 @@ def test_listener_owner_must_belong_to_fixed_endpoint_and_remain_categorical():
     safe = sanitize_runtime_diagnostics({"opend_listener_owner": "PRIVATE_ACCOUNT", "owner_pid": 123})
     assert "opend_listener_owner" not in safe
     assert "owner_pid" not in safe
+
+
+def test_offline_init_pack_executes_serialization_without_a_context():
+    import subprocess
+    import sys
+    from scripts import us_livefeed_runtime_diagnostics as diag
+
+    setup = """import sys,types
+ft=types.ModuleType('futu')
+ft.RET_OK=0
+class Config:
+    get_client_ver=staticmethod(lambda: 1011)
+    get_proto_fmt=staticmethod(lambda: 0)
+ft.SysConfig=Config
+class ForbiddenContext:
+    def __init__(self,*a,**kw):
+        raise AssertionError('provider context forbidden')
+ft.OpenQuoteContext=ForbiddenContext
+query=types.ModuleType('futu.quote.quote_query')
+class InitConnect:
+    @staticmethod
+    def pack_req(**kw):
+        assert kw['client_id']=='readonly-diagnostic'
+        assert kw['is_encrypt'] is False
+        return 0,'PRIVATE_SECRET',b'packet',1001,1
+query.InitConnect=InitConnect
+sys.modules['futu']=ft
+sys.modules['futu.quote.quote_query']=query
+"""
+    result = subprocess.run([sys.executable, "-c", setup + diag.OFFLINE_INIT_PACK_CODE],
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0
+    assert result.stdout == "PASS\n"
+    assert result.stderr == ""
+    safe = diag.sanitize_runtime_diagnostics({"offline_init_pack": "PRIVATE_SECRET"})
+    assert "offline_init_pack" not in safe
+
+
+def test_gateway_startup_config_is_bound_to_endpoint_owner_and_never_leaks(tmp_path, monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    proc = tmp_path / "proc" / "123"
+    proc.mkdir(parents=True)
+    binary = tmp_path / "OpenD"
+    binary.write_text("binary-placeholder")
+    (proc / "exe").symlink_to(binary)
+    config = tmp_path / "private.xml"
+    config.write_text('<futu_opend><api_port>22222</api_port><telnet_port>11111</telnet_port><rsa_private_key>/PRIVATE_KEY</rsa_private_key><login_pwd>PRIVATE_PASSWORD</login_pwd></futu_opend>')
+    (proc / "cmdline").write_bytes((str(binary) + "\0-cfg_file=" + str(config) + "\0-login_pwd=PRIVATE_PASSWORD\0").encode())
+    monkeypatch.setattr(diag, "PROC_ROOT", tmp_path / "proc")
+    listener = 'LISTEN 0 128 127.0.0.1:11111 0.0.0.0:* users:(("OpenD",pid=123,fd=4))'
+    observed = diag.gateway_config_metadata(listener)
+    assert observed == {"gateway_config": "PARSED_STARTUP_CANDIDATE", "gateway_api_port": "MISMATCH", "gateway_telnet_port": "CONFLICT", "gateway_rsa": "CONFIGURED"}
+    assert "PRIVATE" not in json.dumps(observed)
+    (proc / "cmdline").write_bytes((str(binary) + "\0-cfg_file=" + str(config) + "\0-api_port=11111\0").encode())
+    assert diag.gateway_config_metadata(listener)["gateway_api_port"] == "MATCH"
+    config.write_text('<!DOCTYPE x [<!ENTITY test "private">]><futu_opend/>')
+    assert diag.gateway_config_metadata(listener) == {"gateway_config": "INVALID"}
+    assert diag.gateway_config_metadata(listener.replace('"OpenD"', '"python3"')) == {"gateway_config": "UNKNOWN"}
