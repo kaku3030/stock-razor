@@ -519,6 +519,20 @@
       "regression_evidence": "tests/test_tickflow_windows_watch.py",
       "mandatory_action": "Deploy only clean exact-SHA copies with per-file hash verification; enforce all20source-specific frames, legal grid and nonempty due-set checks; persist closed/failed observations and bounded restart evidence. Official Python SDK REST is not NativeSDK streaming proof. Independently verify scheduled runtime, actual full CN session, disconnect/restart/wake and Radar consumer. Hybrid V1.0 Windows TickFlow needs no AWS TickFlow pairing; no source/Radar/paper/live promotion.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "STRAT-001",
+      "owner": "Strategy Research",
+      "severity": "P1",
+      "signature_tokens": [
+        "FIRST_RISK_FRACTION_ONE_IS_NOT_NO_ADD"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Offline Work03 EXP33 audit found that first_risk_fraction=1 still queues adds when notional/integer sizing leaves unused campaign budget. Frozen CORE8 A and NO_ADD ledgers contain zero actual adds; their historical conclusions remain unchanged. EXP33 original A includes one one-share AMAT add; separate strict controls disable the unique add-queue conditional and verify zero ADD events in24 corrective scenarios. No production replay or order admission changed.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/research/s3-round2-20261024/docs/research/s3-round2-mechanism-results-20261024.md",
+      "regression_evidence": "tests/test_s3_strict_no_add.py",
+      "mandatory_action": "Never equate full first-leg risk fraction with no-add policy. Require explicit suppression of add queue plus zero-ADD event evidence. Preserve original receipts; publish corrected research as a separate experiment. Do not infer production correction or trading permission.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

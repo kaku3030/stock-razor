@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [文档] 冻结 Work03 第一轮，增加 CORE8/EXP33 机制诊断、严格无加仓控制与简单缩放基准；当前 S3 家族停止调参，不予晋级。
+
+
+- [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
+- [测试] 增加 TickFlow 官方 SDK 本机 socket 断开、超时、429 恢复及硬进程退出持久化实验；使用合成密钥与回环端点，不替代开盘或 Windows 重启验收。
+
 - [新功能] S3 研究恢复原 D1+1H/SRVP 身份，完成固定 CORE8 的五组真实历史、四成本、年度留后、七项单因素与时间跨度控制；加入严格因果缓存和来源绑定，结果未建立策略优势，交易门禁不变。
 - [修复] Windows TickFlow 验收拒绝空到期网格与额外非法时间标签；本地定时采样增加精确部署哈希、五周期矩阵、字段哈希与有界超时恢复留痕，保持研究及交易门禁。
 

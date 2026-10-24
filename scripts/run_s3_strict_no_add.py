@@ -18,7 +18,10 @@ from run_s3_round2 import sha,dump,trade_diagnostics,summarize_trades
 
 def strict_engine(path):
     source=Path(path).read_text(encoding="utf-8")
-    if sha(path)!="b666aa1d9f85c25ba1df5bd326b305a205852748b16dce0786d5f38f5a3a64aa":raise ValueError("FROZEN_ENGINE_MISMATCH")
+    # The merged snapshot differs only in adapter status/error wording.
+    if sha(path) not in {"b666aa1d9f85c25ba1df5bd326b305a205852748b16dce0786d5f38f5a3a64aa",
+                         "5f7d7e5972be4a0683a486584adde3c1cdeefa14af1745602b02967a922a41c5"}:
+        raise ValueError("FROZEN_ENGINE_MISMATCH")
     before='if (not p["added"] and math.isfinite(hour.atr14)'
     after='if (False and not p["added"] and math.isfinite(hour.atr14)'
     if source.count(before)!=1:raise ValueError("STRICT_NO_ADD_PATCH_NOT_UNIQUE")

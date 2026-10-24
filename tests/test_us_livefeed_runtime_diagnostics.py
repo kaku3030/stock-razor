@@ -221,8 +221,16 @@ def test_offline_init_pack_executes_serialization_without_a_context():
     setup = """import sys,types
 ft=types.ModuleType('futu')
 ft.RET_OK=0
+ft.__version__='10.11.7108'
+google=types.ModuleType('google')
+protobuf=types.ModuleType('google.protobuf')
+protobuf.__version__='7.36.2'
+google.protobuf=protobuf
+sys.modules['google']=google
+sys.modules['google.protobuf']=protobuf
 class Config:
     get_client_ver=staticmethod(lambda: 1011)
+    get_client_id=staticmethod(lambda: 'readonly-diagnostic')
     get_proto_fmt=staticmethod(lambda: 0)
 ft.SysConfig=Config
 class ForbiddenContext:
@@ -243,9 +251,11 @@ sys.modules['futu.quote.quote_query']=query
     result = subprocess.run([sys.executable, "-c", setup + diag.OFFLINE_INIT_PACK_CODE],
                             capture_output=True, text=True, timeout=5)
     assert result.returncode == 0
-    assert result.stdout == "PASS\n"
+    packed = json.loads(result.stdout)
+    assert packed["offline_init_pack"] == "PASS"
+    assert packed["sdk_version"] == "10.11.7108"
     assert result.stderr == ""
-    safe = diag.sanitize_runtime_diagnostics({"offline_init_pack": "PRIVATE_SECRET"})
+    safe = diag.sanitize_runtime_diagnostics({"offline_init_pack": "PRIVATE_SECRET", "sdk_version": "PRIVATE_SECRET"})
     assert "offline_init_pack" not in safe
 
 
@@ -269,3 +279,32 @@ def test_gateway_startup_config_is_bound_to_endpoint_owner_and_never_leaks(tmp_p
     config.write_text('<!DOCTYPE x [<!ENTITY test "private">]><futu_opend/>')
     assert diag.gateway_config_metadata(listener) == {"gateway_config": "INVALID"}
     assert diag.gateway_config_metadata(listener.replace('"OpenD"', '"python3"')) == {"gateway_config": "UNKNOWN"}
+
+
+def test_version_and_errno_projection_rejects_arbitrary_messages():
+    from scripts.us_livefeed_runtime_diagnostics import sanitize_runtime_diagnostics
+    result = sanitize_runtime_diagnostics({"sdk_version": "10.11.7108", "protobuf_version": "7.36.2", "python_version": "PRIVATE_SECRET", "offline_init_pack": "STRUCT_ERROR", "offline_pack_errno": "ENOENT", "message": "PRIVATE_SECRET"})
+    assert result["offline_init_pack"] == "STRUCT_ERROR"
+    assert result["sdk_version"] == "10.11.7108"
+    assert result["offline_pack_errno"] == "ENOENT"
+    assert "PRIVATE_SECRET" not in json.dumps(result)
+
+
+def test_valid_offline_packet_cannot_erase_host_provenance(tmp_path, monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+    (tmp_path / "run.py").write_text("known runtime")
+
+    def command(args):
+        if args[0] == "git":
+            return "PASS", "a" * 40
+        if args[-1] == diag.OFFLINE_INIT_PACK_CODE:
+            return "PASS", json.dumps({"offline_init_pack": "OS_ERROR", "offline_pack_errno": "ENOENT", "sdk_version": "10.11.7108", "installed_repo_sha": "secret", "runner_sha256": "secret", "message": "PRIVATE"})
+        return "UNAVAILABLE", ""
+    monkeypatch.setattr(diag, "_command", command)
+    observed = diag.collect_runtime_diagnostics()
+    assert observed["installed_repo_sha"] == "a" * 40
+    assert len(observed["runner_sha256"]) == 64
+    assert observed["offline_init_pack"] == "OS_ERROR"
+    assert observed["offline_pack_errno"] == "ENOENT"
+    assert "PRIVATE" not in json.dumps(observed)
