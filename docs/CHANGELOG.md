@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] OpenD 握手诊断区分超时、断开、加密、版本与属性错误，并仅离线序列化 InitConnect 以隔离 SDK 打包缺陷；不打开连接或修改协议配置。
+
 - [改进] OpenD 只读诊断区分连接 errno、握手与启动超时，并将固定端口绑定到进程类别；不输出原始日志或打开新行情连接。
 
 - [修复] 隔离 OpenD systemd 通知 primitive 的包级应用依赖；增加最小 Python 真实导入回归及云端旧通知入口的有界分类取证，防止安装前置检查失败被误报为运行版本已更新。
