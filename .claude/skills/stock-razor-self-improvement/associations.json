@@ -532,6 +532,20 @@
       ]
     },
     {
+      "id": "US-011",
+      "phrases": [
+        "offline init pack key error",
+        "SSM HOME absent",
+        "SDK import HOME missing",
+        "离线握手探针 KeyError",
+        "探针环境不一致"
+      ],
+      "related": [
+        "US-009",
+        "US-010"
+      ]
+    },
+    {
       "id": "STRAT-001",
       "phrases": [
         "首笔100%仍然加仓",

@@ -308,3 +308,44 @@ def test_valid_offline_packet_cannot_erase_host_provenance(tmp_path, monkeypatch
     assert observed["offline_init_pack"] == "OS_ERROR"
     assert observed["offline_pack_errno"] == "ENOENT"
     assert "PRIVATE" not in json.dumps(observed)
+
+
+def test_offline_sdk_import_survives_ssm_missing_home_without_changing_parent(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from scripts import us_livefeed_runtime_diagnostics as diag
+
+    # Real child import: pinned SDK's logger indexes HOME during import. The
+    # service explicitly has HOME; SSM does not guarantee it. No provider context.
+    (tmp_path / "futu.py").write_text("import os\nassert os.environ['HOME']\nraise ImportError('PRIVATE_SECRET')\n")
+    child_env = dict(os.environ, PYTHONPATH=str(tmp_path))
+    child_env.pop("HOME", None)
+    parent_home = os.environ.get("HOME")
+    result = subprocess.run([sys.executable, "-c", diag.OFFLINE_INIT_PACK_CODE],
+                            env=child_env, capture_output=True, text=True, timeout=5)
+    output = json.loads(result.stdout)
+    assert output["offline_init_pack"] == "IMPORT_ERROR"
+    assert output["offline_pack_stage"] == "IMPORT"
+    assert output["offline_home"] == "DERIVED"
+    assert result.stderr == ""
+    assert "PRIVATE_SECRET" not in result.stdout
+    assert os.environ.get("HOME") == parent_home
+    assert "HOME" not in child_env
+
+
+def test_offline_probe_preserves_existing_home_and_rejects_arbitrary_stage():
+    import os
+    import subprocess
+    import sys
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    setup = "import builtins,os\noriginal=builtins.__import__\ndef guarded(name,*a,**kw):\n if name=='futu':\n  assert os.environ['HOME']=='PRIVATE_HOME'\n  raise KeyError('PRIVATE_SECRET')\n return original(name,*a,**kw)\nbuiltins.__import__=guarded\n"
+    result = subprocess.run([sys.executable, "-c", setup + diag.OFFLINE_INIT_PACK_CODE],
+                            env=dict(os.environ, HOME="PRIVATE_HOME"), capture_output=True, text=True, timeout=5)
+    output = json.loads(result.stdout)
+    assert output["offline_home"] == "INHERITED"
+    assert output["offline_pack_stage"] == "IMPORT"
+    assert output["offline_init_pack"] == "KEY_ERROR"
+    assert "PRIVATE" not in result.stdout
+    safe = diag.sanitize_runtime_diagnostics({"offline_home": "PRIVATE", "offline_pack_stage": "PRIVATE"})
+    assert "offline_home" not in safe and "offline_pack_stage" not in safe
