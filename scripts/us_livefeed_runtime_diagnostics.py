@@ -35,6 +35,8 @@ ENUMS = {
     "gateway_api_port": {"MATCH", "MISMATCH", "DEFAULT", "UNKNOWN"},
     "gateway_telnet_port": {"CONFLICT", "OTHER", "UNSET", "UNKNOWN"},
     "gateway_rsa": {"CONFIGURED", "NOT_CONFIGURED", "UNKNOWN"},
+    "offline_home": {"PRESENT", "DEFAULTED"},
+    "offline_stage": {"ENVIRONMENT", "IMPORT_SDK", "IMPORT_PROTOBUF", "BUILD_REQUEST", "COMPLETE"},
     "offline_pack_errno": {"ENOENT", "EACCES", "EPERM", "EROFS", "ENOSPC", "EMFILE", "ENFILE", "ENOMEM", "UNKNOWN"},
     "offline_init_pack": {"PASS", "PACK_REJECTED", "STRUCT_ERROR", "ENCODE_ERROR", "KEY_ERROR", "OVERFLOW_ERROR", "OS_ERROR", "RUNTIME_ERROR", "ASSERTION_ERROR", "GENERIC_EXCEPTION", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
@@ -85,18 +87,27 @@ print(result)
 """
 
 
-OFFLINE_INIT_PACK_CODE = """import contextlib,io,json,sys,errno,struct
-out={'offline_init_pack':'OTHER_ERROR', 'python_version':'.'.join(map(str,sys.version_info[:3]))}
+OFFLINE_INIT_PACK_CODE = """import contextlib,io,json,sys,errno,struct,os,pathlib
+out={'offline_init_pack':'OTHER_ERROR', 'offline_stage':'ENVIRONMENT', 'python_version':'.'.join(map(str,sys.version_info[:3]))}
 try:
+    # SSM can omit HOME; the service already declares it. Resolve the invoking
+    # user's home only inside this child, without exposing a path.
+    out['offline_home']='PRESENT' if os.environ.get('HOME') else 'DEFAULTED'
+    if not os.environ.get('HOME'):
+        os.environ['HOME']=str(pathlib.Path.home())
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        out['offline_stage']='IMPORT_SDK'
         import futu as ft
+        out['offline_stage']='IMPORT_PROTOBUF'
         import google.protobuf
         out['sdk_version']=getattr(ft,'__version__','UNKNOWN')
         out['protobuf_version']=google.protobuf.__version__
         from futu.quote.quote_query import InitConnect
+        out['offline_stage']='BUILD_REQUEST'
         result=InitConnect.pack_req(
             client_ver=int(ft.SysConfig.get_client_ver()), client_id=str(ft.SysConfig.get_client_id()),
             recv_notify=True, is_encrypt=False, push_proto_fmt=ft.SysConfig.get_proto_fmt())
+    out['offline_stage']='COMPLETE'
     out['offline_init_pack']='PASS' if result[0]==ft.RET_OK and isinstance(result[2],bytes) and result[2] else 'PACK_REJECTED'
 except Exception as exc:
     kind=type(exc).__name__
@@ -358,7 +369,7 @@ def collect_runtime_diagnostics():
             packed = None
         if isinstance(packed, dict):
             allowed = {key: packed[key] for key in (
-                "offline_init_pack", "offline_pack_errno", "sdk_version", "protobuf_version", "python_version"
+                "offline_init_pack", "offline_pack_errno", "sdk_version", "protobuf_version", "python_version", "offline_home", "offline_stage"
             ) if key in packed}
             out.update(allowed)
     return sanitize_runtime_diagnostics(out)

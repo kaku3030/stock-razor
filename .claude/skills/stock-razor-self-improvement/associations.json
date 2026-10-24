@@ -530,6 +530,20 @@
         "ENG-002",
         "ENG-004"
       ]
+    },
+    {
+      "id": "US-011",
+      "phrases": [
+        "offline InitConnect KEY_ERROR before sdk version",
+        "SSM missing HOME SDK logger",
+        "离线打包KEY_ERROR",
+        "诊断环境与服务HOME不一致"
+      ],
+      "related": [
+        "US-009",
+        "US-010",
+        "ENG-002"
+      ]
     }
   ]
 }

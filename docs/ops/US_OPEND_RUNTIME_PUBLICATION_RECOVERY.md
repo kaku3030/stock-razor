@@ -234,3 +234,36 @@ this is not a cloud reproduction. The diagnostic therefore reports finite
 exception classes/OS errno and strict numeric SDK/Python/protobuf versions.
 No raw exception text or packet is projected. Actual cloud dependency versions
 must be known before changing or pinning any shared environment.
+
+## Work01 session succession and probe-environment correction
+
+Recovery baseline: protected main5dffbf8c, merged diagnostic PR1013, read-only
+SSM run40076639439. Actual collector remains b972b282, ACTIVATING, sequence0,
+no canonical/daily snapshot. No new collector deployment or restart is justified
+by a failed *offline diagnostic* alone.
+
+The offline diagnostic reported KEY_ERROR before either SDK/protobuf version
+was emitted. Official pinned SDK ft_logger.py directly accesses environ[HOME]
+on non-Windows platforms. The SSM diagnostic does not export HOME, while the
+existing livefeed unit explicitly declares it. A real child import with an
+SDK-like HOME requirement reproduces KEY_ERROR before correction and PASS
+after correction. This confirms a probe defect, not the real handshake cause.
+The child now resolves the invoking user's home only if absent/empty and emits
+only PRESENT/DEFAULTED plus a finite execution stage; no path, exception text
+or environment value is projected. Present HOME is preserved. The production
+service, SDK package, protocol, subscriptions and environment remain untouched.
+
+New regression source: tests/test_us_livefeed_probe_environment.py. Three initial
+regressions were RED before implementation; five cases including present/empty
+HOME are GREEN on Windows. Existing
+Linux-only diagnostics need Linux CI: Windows selector pipes, POSIX file modes
+and privileged symlinks cannot verify them. New host readback must independently
+prove DEFAULTED/COMPLETE/PASS before dismissing offline pack failure. A PASS
+still cannot prove server handshake compatibility, callback growth or finality.
+
+Executor check: no open OpenD repair PR or running SSM deploy was observed;
+two gh check-watch processes belong to TickFlow PR1015 and are preserved.
+Canonical dirty checkout remains unchanged. This work uses an isolated
+fix/work01-handoff-import-stage-20261024 branch. Session recovery receipts are
+append-only project events on924; check current main and later owner events
+before another executor changes this branch or deploys the service.

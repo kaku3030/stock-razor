@@ -519,6 +519,21 @@
       "regression_evidence": "tests/test_tickflow_windows_watch.py",
       "mandatory_action": "Deploy only clean exact-SHA copies with per-file hash verification; enforce all20source-specific frames, legal grid and nonempty due-set checks; persist closed/failed observations and bounded restart evidence. Official Python SDK REST is not NativeSDK streaming proof. Independently verify scheduled runtime, actual full CN session, disconnect/restart/wake and Radar consumer. Hybrid V1.0 Windows TickFlow needs no AWS TickFlow pairing; no source/Radar/paper/live promotion.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-011",
+      "owner": "OpenD",
+      "severity": "P1",
+      "signature_tokens": [
+        "OFFLINE_INIT_PACK_KEY_ERROR",
+        "SSM_HOME_ENVIRONMENT"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "SSM run40076639439 reported offline KEY_ERROR before SDK versions. Pinned SDK logger directly reads HOME on non-Windows; the offline child inherited an SSM environment without an explicit HOME contract, unlike the existing collector unit. A real child-import regression reproduces KEY_ERROR when HOME is absent and PASS after child-only home resolution. This confirms a diagnostic defect; exact cloud missing key and actual handshake cause remain NOT_VERIFIED until postmerge readback.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/40076639439",
+      "regression_evidence": "tests/test_us_livefeed_probe_environment.py",
+      "mandatory_action": "Resolve absent/empty HOME only within the diagnostic child; preserve present values and publish only finite stage/environment enums. Do not attribute offline import errors to the collector handshake. Require independent host COMPLETE/PASS and real callback/snapshot/finality before recovery claims; do not restart or repin SDK on this probe failure.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }
