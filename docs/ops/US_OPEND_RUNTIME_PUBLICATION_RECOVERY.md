@@ -89,6 +89,19 @@ created by these diagnostics. Existing restart window protection remains in forc
 
 ## Bounded host diagnostics
 
+[Readback 40076639439](https://github.com/kaku3030/stock-razor/actions/runs/40076639439)
+reported offline `KEY_ERROR` before SDK/protobuf version fields were produced.
+The pinned SDK logger indexes `os.environ['HOME']` during import; removing HOME
+locally reproduces that exact probe result. The deployed service explicitly sets
+HOME while the SSM shell does not guarantee it. This explains a **diagnostic
+environment defect**, not the service's InitConnect failure. The offline child
+now preserves an inherited HOME, or derives the effective Unix user's home only
+when missing. It reports a fixed home-origin category and import/pack/completion
+stage, never the home path. Distribution versions are read before SDK import so
+an import failure cannot erase dependency evidence. No parent environment,
+service, subscription or protocol setting changes. Local real pinned-SDK packing
+passes with HOME absent after this correction; cloud readback remains separate.
+
 The existing `us_livefeed_status` action now ships its exact checked-out stdlib
 diagnostic helper through the existing SSM payload. `runtime_diagnostics` exposes
 only allowlisted systemd states, last exit/restart counts, process elapsed time,
