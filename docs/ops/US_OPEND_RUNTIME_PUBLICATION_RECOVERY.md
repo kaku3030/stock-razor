@@ -99,6 +99,15 @@ The service still had no snapshot and remained ACTIVATING, with12 existing
 systemd restarts. The initiating cause on October23, and why the challenge was
 triggered, are not established by this latest journal message.
 
+The same diagnostic also requests up to200 historical InitConnect-failure
+records from2026-10-22 15:00 UTC through2026-10-24 04:00 UTC: the union of the
+October23 JST and New York calendar dates. It exposes only a fixed incident
+window, query state, event classification and bounded challenge/handshake counts.
+Historical counts cannot override the current event or quote health. A missing,
+empty, unavailable or truncated retained sample does not prove no challenge
+occurred; only actual historical matches can support that attribution. This
+incident audit adds one bounded journal read and no provider request.
+
 The temporary encryption probe and its public key are removed after diagnosis.
 Only a fixed GRAPHIC_VERIFICATION_REQUIRED classification/count remains public.
 It describes the most recent matching SDK event in the bounded sample; a later

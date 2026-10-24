@@ -70,7 +70,7 @@ def test_fixed_host_collection_classifies_private_errors_without_forwarding_them
     projected = "\n".join(project(json.dumps({"runtime_diagnostics": evidence})))
     for raw in ("/root", "PRIVATE_TOKEN", "secret=value", "ACCOUNT_ID", "PRIVATE_MODULE", str(tmp_path)):
         assert raw not in projected
-    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps", "/opt/stock-razor-opend-client/venv/bin/python", "/opt/stock-razor-opend-client/venv/bin/python"]
+    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "journalctl", "ss", "ps", "/opt/stock-razor-opend-client/venv/bin/python", "/opt/stock-razor-opend-client/venv/bin/python"]
     assert not any("restart" in args or "start" in args for args in commands)
 
 
@@ -385,3 +385,28 @@ def test_auth_classification_rejects_unknown_values_and_removed_sealed_fields():
     safe = sanitize_runtime_diagnostics({"latest_initconnect_event":"PRIVATE_SECRET", "sealed_initconnect_status":"ENCRYPTED", "sealed_initconnect_message":"A"*512})
     assert "latest_initconnect_event" not in safe
     assert "sealed_initconnect_status" not in safe and "sealed_initconnect_message" not in safe
+
+
+def test_oct23_incident_sample_is_bounded_and_cannot_override_current_error(tmp_path, monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+    commands = []
+    def command(args):
+        commands.append(args)
+        if "--grep=init connect fail" in args:
+            return "PASS", "\n".join(["init connect fail: conn=private msg=Graphic verification code required context=secret"] * 201)
+        if args[0] == "journalctl":
+            return "PASS", "init connect fail: conn=private msg=NEW_PRIVATE_ERROR context=secret"
+        return "UNAVAILABLE", ""
+    monkeypatch.setattr(diag, "_command", command)
+    observed = diag.collect_runtime_diagnostics()
+    assert observed["latest_initconnect_event"] == "OTHER_ERROR"
+    assert observed["incident_initconnect_event"] == "GRAPHIC_VERIFICATION_REQUIRED"
+    assert observed["incident_handshake_count"] == 200
+    assert observed["incident_graphic_verification_count"] == 200
+    historical = next(args for args in commands if "--grep=init connect fail" in args)
+    assert "--since=2026-10-22 15:00:00 UTC" in historical
+    assert "--until=2026-10-24 04:00:00 UTC" in historical
+    projected = "\n".join(project(json.dumps({"runtime_diagnostics":observed})))
+    assert "PRIVATE" not in projected and "secret" not in projected
+    assert '"incident_graphic_verification_count":200' in projected

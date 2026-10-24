@@ -39,6 +39,9 @@ ENUMS = {
     "offline_pack_stage": {"IMPORT", "PACK", "COMPLETE"},
     "offline_home": {"INHERITED", "DERIVED"},
     "latest_initconnect_event": {"GRAPHIC_VERIFICATION_REQUIRED", "OTHER_ERROR", "CONNECTED", "NOT_OBSERVED"},
+    "incident_journal_query": {"PASS", "UNAVAILABLE", "TIMEOUT", "TRUNCATED"},
+    "incident_window": {"OCT23_2026_JST_AND_NY"},
+    "incident_initconnect_event": {"GRAPHIC_VERIFICATION_REQUIRED", "OTHER_ERROR", "CONNECTED", "NOT_OBSERVED"},
     "offline_init_pack": {"PASS", "PACK_REJECTED", "STRUCT_ERROR", "ENCODE_ERROR", "KEY_ERROR", "OVERFLOW_ERROR", "OS_ERROR", "RUNTIME_ERROR", "ASSERTION_ERROR", "GENERIC_EXCEPTION", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
@@ -150,6 +153,7 @@ def sanitize_runtime_diagnostics(value):
     out = {k: v for k, allowed in ENUMS.items()
            if isinstance((v := value.get(k)), str) and v in allowed}
     for key, maximum in (("exit_status", 65535), ("restarts", 1000000),
+                         ("incident_handshake_count", 200), ("incident_graphic_verification_count", 200),
                          ("process_start_monotonic_us", 315360000000000),
                          ("process_elapsed_seconds", 315360000)):
         v = value.get(key)
@@ -348,6 +352,20 @@ def collect_runtime_diagnostics():
                              for name, pattern in PATTERNS.items()}
     if query == "PASS":
         out["latest_initconnect_event"] = latest_initconnect_event(text)
+    # Incident-only audit: union of Oct23 JST and Oct23 New York calendar dates.
+    # Separate from the current sample; old auth errors cannot set current health.
+    query, text = _command([
+        "journalctl", "-u", UNIT, "--since=2026-10-22 15:00:00 UTC",
+        "--until=2026-10-24 04:00:00 UTC", "--grep=init connect fail",
+        "--case-sensitive=no", "-n", "200", "--no-pager", "--quiet", "--output=cat",
+    ])
+    out["incident_window"] = "OCT23_2026_JST_AND_NY"
+    out["incident_journal_query"] = query
+    if query == "PASS":
+        out["incident_initconnect_event"] = latest_initconnect_event(text)
+        for field, pattern in (("incident_handshake_count", PATTERNS["HANDSHAKE_FAILURE"]),
+                               ("incident_graphic_verification_count", PATTERNS["HANDSHAKE_GRAPHIC_VERIFICATION"])):
+            out[field] = sum(bool(re.search(pattern, line, re.I)) for line in text.splitlines()[:200])
     # Observe the existing fixed gateway endpoint without opening a provider
     # connection. A listening port or process never certifies usable quotes.
     query, text = _command(["ss", "-ltnpH"])
