@@ -24,6 +24,9 @@ def test_replay_uses_real_fixture_with_diagnostic_holdout() -> None:
     assert result["holdout"]["b0"]["gross"]["max_drawdown"] >= 0
     assert result["holdout"]["b0"]["gross"]["max_drawdown_status"] == "COMPUTED_FROM_BAR_LOW_CLOSE_MARK_TO_MARKET"
     assert len(result["holdout"]["b0"]["gross"]["equity_curve"]) == 2
+    assert result["holdout"]["benchmark"]["name"] == "BUY_AND_HOLD"
+    assert result["holdout"]["benchmark"]["gross"]["total_return"] == result["holdout"]["b0"]["gross"]["total_return"]
+    assert len(result["holdout"]["benchmark"]["cost_sensitivity"]) == 4
     assert result["walk_forward"]["status"] == "BLOCKED_INSUFFICIENT_SAMPLE"
     assert result["walk_forward"]["leakage_check"] == "PASS"
     assert result["walk_forward"]["train"]["dataset_hash"].startswith("sha256:")

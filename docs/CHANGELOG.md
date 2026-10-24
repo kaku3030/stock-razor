@@ -10,6 +10,8 @@
 
 # Changelog
 
+- [改进] Vibe-Trading Replay Lab 为 train/holdout 报告增加显式 BUY_AND_HOLD 基准，并记录开源回测/日历/绩效库的许可证、维护状态与最小复用组合。
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

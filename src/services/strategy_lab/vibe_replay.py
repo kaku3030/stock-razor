@@ -217,27 +217,39 @@ def replay_fixture(
     train_hash = "sha256:" + _digest([bar.__dict__ for bar in train])
 
     def section(sample: list[Bar]) -> dict[str, Any]:
+        benchmark_trades = _b0(sample)
+        benchmark_flags = [True] * len(sample)
         return {
-            strategy: {
-                "gross": _metrics(
-                    _trades_for(strategy, sample),
-                    sample,
-                    _holding_flags(strategy, sample),
-                    0.0,
-                    0.0,
-                ),
+            "benchmark": {
+                "name": "BUY_AND_HOLD",
+                "gross": _metrics(benchmark_trades, sample, benchmark_flags, 0.0, 0.0),
                 "cost_sensitivity": [
-                    _metrics(
+                    _metrics(benchmark_trades, sample, benchmark_flags, commission, slippage)
+                    for commission, slippage in COST_SCENARIOS
+                ],
+            },
+            **{
+                strategy: {
+                    "gross": _metrics(
                         _trades_for(strategy, sample),
                         sample,
                         _holding_flags(strategy, sample),
-                        commission,
-                        slippage,
-                    )
-                    for commission, slippage in COST_SCENARIOS
-                ],
-            }
-            for strategy in selected
+                        0.0,
+                        0.0,
+                    ),
+                    "cost_sensitivity": [
+                        _metrics(
+                            _trades_for(strategy, sample),
+                            sample,
+                            _holding_flags(strategy, sample),
+                            commission,
+                            slippage,
+                        )
+                        for commission, slippage in COST_SCENARIOS
+                    ],
+                }
+                for strategy in selected
+            },
         }
 
     return {
