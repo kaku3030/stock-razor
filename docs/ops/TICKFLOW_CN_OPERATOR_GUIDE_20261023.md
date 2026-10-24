@@ -1,5 +1,7 @@
 # TickFlow A-share operator guide (research only)
 
+> Hybrid V1.0 update: Windows TickFlow local acceptance follows [the current local procedure](TICKFLOW_WINDOWS_LOCAL_ACCEPTANCE.md). AWS TickFlow pairing is no longer a requirement. The older evidence below retains its original scope.
+
 **As of 2026-10-23.** This is an operator procedure for the isolated TickFlow cache. It does not promote a data source, Radar signal, paper workflow, or trading gate.
 
 ## Current verified state

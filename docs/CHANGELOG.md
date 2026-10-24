@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - [新功能] S3 研究恢复原 D1+1H/SRVP 身份，完成固定 CORE8 的五组真实历史、四成本、年度留后、七项单因素与时间跨度控制；加入严格因果缓存和来源绑定，结果未建立策略优势，交易门禁不变。
+- [修复] Windows TickFlow 验收拒绝空到期网格与额外非法时间标签；本地定时采样增加精确部署哈希、五周期矩阵、字段哈希与有界超时恢复留痕，保持研究及交易门禁。
 
 - [改进] OpenD 握手诊断区分超时、断开、加密、版本与属性错误，并仅离线序列化 InitConnect 以隔离 SDK 打包缺陷；不打开连接或修改协议配置。
 

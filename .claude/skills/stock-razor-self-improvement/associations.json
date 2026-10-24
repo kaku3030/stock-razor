@@ -514,6 +514,22 @@
         "US-009",
         "ENG-002"
       ]
+    },
+    {
+      "id": "CN-018",
+      "phrases": [
+        "Windows TickFlow旧副本",
+        "定时任务8条缺少1m",
+        "WINDOWS_TICKFLOW_AUDITOR_DEPLOYMENT_DRIFT",
+        "empty due grid PASS",
+        "extra off-grid audit label"
+      ],
+      "related": [
+        "CN-002",
+        "CN-010",
+        "ENG-002",
+        "ENG-004"
+      ]
     }
   ]
 }
