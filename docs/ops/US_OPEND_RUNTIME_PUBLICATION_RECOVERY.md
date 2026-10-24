@@ -89,6 +89,21 @@ created by these diagnostics. Existing restart window protection remains in forc
 
 ## Bounded host diagnostics
 
+Readback [40077886878](https://github.com/kaku3030/stock-razor/actions/runs/40077886878)
+confirmed the probe HOME was derived and offline packing completed successfully
+with actual SDK10.11.7108/protobuf7.36.2. The service still logged120 InitConnect
+failures with no recognized detailed family. Dependency changes are not justified
+by this result. To inspect the unknown error without publishing plaintext, the
+temporary diagnostic seals only the most recent SDK `msg=... context=` segment
+from the already bounded journal sample, capped at300 UTF-8 bytes. PyCryptodome
+from the existing quote SDK environment uses RSA3072/OAEP-SHA256 and a diagnostic
+public key; the private key remains in the investigating workspace, outside git
+and AWS. Only a512-character ciphertext and fixed status cross the public-output
+boundary. This adds no journal request, provider connection, subscription, key
+permission, credential or service change. Remove this temporary sealing code/key
+after diagnosis; ordinary diagnostic consumers cannot decrypt it. Missing crypto,
+timeout or malformed output remains unknown and never changes quote admission.
+
 [Readback 40076639439](https://github.com/kaku3030/stock-razor/actions/runs/40076639439)
 reported offline `KEY_ERROR` before SDK/protobuf version fields were produced.
 The pinned SDK logger indexes `os.environ['HOME']` during import; removing HOME

@@ -38,6 +38,7 @@ ENUMS = {
     "offline_pack_errno": {"ENOENT", "EACCES", "EPERM", "EROFS", "ENOSPC", "EMFILE", "ENFILE", "ENOMEM", "UNKNOWN"},
     "offline_pack_stage": {"IMPORT", "PACK", "COMPLETE"},
     "offline_home": {"INHERITED", "DERIVED"},
+    "sealed_initconnect_status": {"ENCRYPTED", "NO_MATCH", "UNAVAILABLE", "TIMEOUT", "MALFORMED"},
     "offline_init_pack": {"PASS", "PACK_REJECTED", "STRUCT_ERROR", "ENCODE_ERROR", "KEY_ERROR", "OVERFLOW_ERROR", "OS_ERROR", "RUNTIME_ERROR", "ASSERTION_ERROR", "GENERIC_EXCEPTION", "ATTRIBUTE_ERROR", "TYPE_ERROR", "VALUE_ERROR", "IMPORT_ERROR", "OTHER_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
@@ -126,12 +127,54 @@ print(json.dumps(out,separators=(',',':')))
 """
 
 
+# Temporary diagnostic public key, not an authentication credential. The private
+# key stays outside the repository and remote host. Remove after root diagnosis.
+HANDSHAKE_EVIDENCE_PUBLIC_KEY = '-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEArWhEfxcuKO5Zjn6UyCRx\nItoMwnhTE2t6b8E3cyBAfTGoiMeMse6WcqVWXqDnyJ4g+FqDI/APcp0xwgKkMs0d\noIGZ2OtOSMBRugJCIsiKgIOSOoS7jAQIcw5pjTFYzQsbrM7kJydgNkyfuaYaXMsQ\niCkrQgo5rXUiTXMwzeflH8Xij7EAEJijuI52YPcF2bVoPBFg+XuwgBRlIG/2Gvok\nOliwuM6IjfWiv9UZo+cclToDFAcQpL9XGHh0clyMTw84qgKi4+dVfCaDfwbelxst\njJGr8kXxgdCHOWhQjr6cXd0ZMKUP3Mbni7sQ4DABxHcxBxZ+VLyV6dKavirh5J19\niwC7PzjXcGzwev4r+ILCpQLjgy5Cg1UCWmktoTXqdO5h7Yir7PZGP935BzZ0N74U\nCPLJl9Uk6LnkyBCJoNyPcuuBcWdc/DYP3scVpOHpY5NbcpqiAJPJTY7JlzV/7CM5\nuXnpW8b9ix4LFzpUE52stxMco24Hk2oKLd2wrXFJpKCXAgMBAAE=\n-----END PUBLIC KEY-----'
+SEALED_HANDSHAKE_CODE = """import sys,base64
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Hash import SHA256
+key=RSA.import_key(%r)
+payload=sys.stdin.buffer.read(301)
+assert 0<len(payload)<=300 and key.size_in_bits()==3072
+print(base64.b64encode(PKCS1_OAEP.new(key,hashAlgo=SHA256).encrypt(payload)).decode('ascii'))
+""" % HANDSHAKE_EVIDENCE_PUBLIC_KEY
+
+
+def sealed_handshake_evidence(journal):
+    """Seal one bounded SDK message; never return plaintext or raw subprocess IO."""
+    messages = [match.group(1) for line in journal.splitlines()[:200]
+                if (match := re.search(r"init connect fail:.*?\bmsg=(.*?)\s+context=", line, re.I))]
+    if not messages:
+        return {"sealed_initconnect_status": "NO_MATCH"}
+    payload = messages[-1].encode("utf-8")[:300]
+    if not payload:
+        return {"sealed_initconnect_status": "NO_MATCH"}
+    try:
+        result = subprocess.run([
+            "/opt/stock-razor-opend-client/venv/bin/python", "-B", "-c", SEALED_HANDSHAKE_CODE,
+        ], input=payload, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3, check=False)
+        if result.returncode:
+            return {"sealed_initconnect_status": "UNAVAILABLE"}
+        encoded = result.stdout.decode("ascii").strip()
+        if re.fullmatch(r"[A-Za-z0-9+/]{512}", encoded):
+            return {"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": encoded}
+        return {"sealed_initconnect_status": "MALFORMED"}
+    except subprocess.TimeoutExpired:
+        return {"sealed_initconnect_status": "TIMEOUT"}
+    except (OSError, UnicodeError, ValueError):
+        return {"sealed_initconnect_status": "UNAVAILABLE"}
+
+
 def sanitize_runtime_diagnostics(value):
     """Second boundary: reject arbitrary fields, log text, hashes and numeric types."""
     if not isinstance(value, dict):
         return {}
     out = {k: v for k, allowed in ENUMS.items()
            if isinstance((v := value.get(k)), str) and v in allowed}
+    sealed = value.get("sealed_initconnect_message")
+    if out.get("sealed_initconnect_status") == "ENCRYPTED" and isinstance(sealed, str) and re.fullmatch(r"[A-Za-z0-9+/]{512}", sealed):
+        out["sealed_initconnect_message"] = sealed
     for key, maximum in (("exit_status", 65535), ("restarts", 1000000),
                          ("process_start_monotonic_us", 315360000000000),
                          ("process_elapsed_seconds", 315360000)):
@@ -329,6 +372,8 @@ def collect_runtime_diagnostics():
     # Counts describe a bounded recent journal sample, never a proven root cause.
     out["journal_counts"] = {name: sum(bool(re.search(pattern, line, re.I)) for line in text.splitlines()[:200])
                              for name, pattern in PATTERNS.items()}
+    if query == "PASS":
+        out.update(sealed_handshake_evidence(text))
     # Observe the existing fixed gateway endpoint without opening a provider
     # connection. A listening port or process never certifies usable quotes.
     query, text = _command(["ss", "-ltnpH"])
