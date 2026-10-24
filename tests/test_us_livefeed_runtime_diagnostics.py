@@ -176,3 +176,38 @@ def test_legacy_import_probe_reports_fixed_class_without_exception_text(monkeypa
     assert safe["legacy_notify_import"] == "MISSING_YAML"
     assert "legacy_notify_import" not in diag.sanitize_runtime_diagnostics({
         "legacy_notify_import": "PRIVATE_ACCOUNT secret=hidden"})
+
+
+def test_connect_error_families_use_pinned_sdk_messages_without_leaking(monkeypatch, tmp_path):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+
+    def command(args):
+        if args[0] == "journalctl":
+            return "PASS", "\n".join([
+                "Connect fail: conn=PRIVATE_ACCOUNT; msg=ECONNREFUSED; context=secret",
+                "Connect fail: conn=private; msg=Timeout; context=secret",
+                "Connect fail: conn=private; msg=EACCES; context=secret",
+                "init connect fail: conn=private; msg=secret",
+                "start operation timed out. Terminating.",
+            ])
+        return "UNAVAILABLE", ""
+    monkeypatch.setattr(diag, "_command", command)
+    evidence = diag.collect_runtime_diagnostics()
+    for key in ("CONNECT_REFUSED", "CONNECT_TIMEOUT", "CONNECT_PERMISSION", "HANDSHAKE_FAILURE", "STARTUP_TIMEOUT"):
+        assert evidence["journal_counts"][key] == 1
+    assert evidence["journal_counts"]["CONNECT_RESET"] == 0
+    assert "PRIVATE_ACCOUNT" not in json.dumps(evidence)
+    assert "secret" not in json.dumps(evidence)
+
+
+def test_listener_owner_must_belong_to_fixed_endpoint_and_remain_categorical():
+    from scripts.us_livefeed_runtime_diagnostics import classify_listener_owner, sanitize_runtime_diagnostics
+    prefix = "LISTEN 0 128 127.0.0.1:11111 0.0.0.0:* "
+    for name, expected in (("OpenD", "OPEND"), ("FutuOpenD", "OPEND"), ("python3", "PYTHON"), ("sshd", "SSH"), ("PRIVATE_ACCOUNT", "OTHER")):
+        assert classify_listener_owner(prefix + 'users:(("' + name + '",pid=123,fd=4))') == expected
+    assert classify_listener_owner(prefix) == "UNKNOWN"
+    assert classify_listener_owner(prefix.replace(":11111", ":22222") + 'users:(("OpenD",pid=123,fd=4))') == "MISSING"
+    safe = sanitize_runtime_diagnostics({"opend_listener_owner": "PRIVATE_ACCOUNT", "owner_pid": 123})
+    assert "opend_listener_owner" not in safe
+    assert "owner_pid" not in safe

@@ -27,6 +27,7 @@ ENUMS = {
     "working_directory": {"MATCH", "MISMATCH", "UNKNOWN"},
     "opend_listener": {"LOOPBACK_BIND_OBSERVED", "OTHER_BIND_OBSERVED", "NO_LISTENER", "UNKNOWN"},
     "opend_process": {"PRESENT", "ABSENT", "UNKNOWN"},
+    "opend_listener_owner": {"OPEND", "PYTHON", "SSH", "OTHER", "MISSING", "UNKNOWN"},
     "legacy_notify_import": {"PASS", "MISSING_YAML", "MISSING_DEPENDENCY", "IMPORT_ERROR", "TIMEOUT", "UNAVAILABLE", "TRUNCATED"},
 }
 PATTERNS = {
@@ -40,6 +41,14 @@ PATTERNS = {
     "INVALID_SERIALIZATION": r"Out of range float values|not JSON serializable",
     "IMPORT_FAILURE": r"ModuleNotFoundError|ImportError",
     "CONNECT_FAILURE": r"ConnectionRefusedError|Connection refused|connect fail",
+    "CONNECT_REFUSED": r"connect fail.*(?:ECONNREFUSED|Connection refused)",
+    "CONNECT_TIMEOUT": r"connect fail.*(?:ETIMEDOUT|Timeout)",
+    "CONNECT_RESET": r"connect fail.*(?:ECONNRESET|Connection reset)",
+    "CONNECT_PERMISSION": r"connect fail.*(?:EACCES|EPERM|Permission denied)",
+    "CONNECT_UNREACHABLE": r"connect fail.*(?:ENETUNREACH|EHOSTUNREACH)",
+    "CONNECT_FD_LIMIT": r"connect fail.*(?:EMFILE|ENFILE)",
+    "HANDSHAKE_FAILURE": r"init connect fail",
+    "STARTUP_TIMEOUT": r"start operation timed out|Failed with result 'timeout'",
     "CALLBACK_STARVATION": r"US_OPEND_STARTUP_CALLBACK_STARVATION",
     "UNCLASSIFIED_TRACEBACK": r"Traceback \(most recent call last\)",
 }
@@ -151,6 +160,22 @@ def _file_state(path):
         return {"state": "UNREADABLE", "mode": None}
 
 
+def classify_listener_owner(text):
+    """Bind a process category to the fixed endpoint, never publish PID/argv."""
+    lines = [line for line in text.splitlines()
+             if len(parts := line.split()) >= 5 and parts[3].endswith(":11111")]
+    if not lines:
+        return "MISSING"
+    names = [name for line in lines for name in re.findall(r'\("([^"\n]+)",pid=', line)]
+    if not names:
+        return "UNKNOWN"  # ss can omit owner metadata without privilege.
+    categories = {"OPEND" if name in {"OpenD", "FutuOpenD", "moomoo_OpenD"}
+                  else "PYTHON" if name in {"python", "python3"}
+                  else "SSH" if name in {"ssh", "sshd"} else "OTHER"
+                  for name in names}
+    return next(iter(categories)) if len(categories) == 1 else "UNKNOWN"
+
+
 def collect_runtime_diagnostics():
     properties = "LoadState,ActiveState,SubState,Result,ExecMainStatus,NRestarts,ExecMainStartTimestampMonotonic,WorkingDirectory"
     query, text = _command(["systemctl", "show", UNIT, "--no-pager", "--property=" + properties])
@@ -187,9 +212,11 @@ def collect_runtime_diagnostics():
                              for name, pattern in PATTERNS.items()}
     # Observe the existing fixed gateway endpoint without opening a provider
     # connection. A listening port or process never certifies usable quotes.
-    query, text = _command(["ss", "-ltnH"])
+    query, text = _command(["ss", "-ltnpH"])
     out["opend_listener"] = "UNKNOWN"
+    out["opend_listener_owner"] = "UNKNOWN"
     if query == "PASS":
+        out["opend_listener_owner"] = classify_listener_owner(text)
         addresses = [parts[3] for line in text.splitlines()
                      if len(parts := line.split()) >= 5 and parts[3].endswith(":11111")]
         out["opend_listener"] = (

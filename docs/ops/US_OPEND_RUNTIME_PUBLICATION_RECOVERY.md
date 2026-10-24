@@ -191,3 +191,21 @@ The exact-main guard does not permit deploying an old historical SHA directly.
 No data migration is needed.
 Retain `RADAR_ADMISSION=BLOCKED`, `SOURCE_ARBITER_ADMISSION=BLOCKED`,
 `PAPER_AUTO_READY=NO`, `LIVE_TRADE=NO` throughout this diagnosis.
+
+## Diagnosing continued connection failure without another restart
+
+Guarded deployment40066832209 at b972b282 reached a real blocked startup
+heartbeat but failed roughly15minutes later, consistent with the900-second
+startup bound; host journal evidence must confirm the exact exit classification. Later MCP reads
+showed a different runtime instance with sequence0, no callbacks and no snapshot.
+This proves startup publication and repeated process initialization, not working
+quotes or the exact upstream error.
+
+The existing read-only status action classifies the pinned SDK's Connect fail
+messages into refused, timeout, reset, permission, unreachable and file-descriptor
+limit counts, separately from InitConnect handshake failures and systemd startup
+timeouts. Counts describe at most200 recent journal lines, never the full outage
+history. It also binds the existing11111 listener to OPEND/PYTHON/SSH/OTHER or
+UNKNOWN using ss owner metadata; a separate OpenD process elsewhere does not
+prove that this endpoint belongs to it. No raw messages, PID, argv or new
+provider connections are exposed. Unknown/missing owner metadata stays unknown.
