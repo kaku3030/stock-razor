@@ -70,7 +70,7 @@ def test_fixed_host_collection_classifies_private_errors_without_forwarding_them
     projected = "\n".join(project(json.dumps({"runtime_diagnostics": evidence})))
     for raw in ("/root", "PRIVATE_TOKEN", "secret=value", "ACCOUNT_ID", "PRIVATE_MODULE", str(tmp_path)):
         assert raw not in projected
-    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl"]
+    assert [args[0] for args in commands] == ["systemctl", "git", "journalctl", "ss", "ps"]
     assert not any("restart" in args or "start" in args for args in commands)
 
 
@@ -122,3 +122,39 @@ def test_adversarial_nested_fields_cannot_leak_or_promote():
     assert evidence == {"installed_repo_sha": "UNAVAILABLE", "runner_sha256": "UNAVAILABLE",
                         "files": {"heartbeat": {"state": "REGULAR", "mode": None}},
                         "journal_counts": {}}
+
+
+def test_gateway_presence_is_observation_not_quote_health(tmp_path, monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+
+    def command(args):
+        if args[0] == "ss":
+            return "PASS", "LISTEN 0 128 127.0.0.1:11111 0.0.0.0:*\n"
+        if args[0] == "ps":
+            return "PASS", "OpenD\nPRIVATE_PROCESS_NAME\n"
+        return "UNAVAILABLE", ""
+
+    monkeypatch.setattr(diag, "_command", command)
+    observed = diag.collect_runtime_diagnostics()
+    assert observed["opend_listener"] == "LOOPBACK_BIND_OBSERVED"
+    assert observed["opend_process"] == "PRESENT"
+    result = "\n".join(project(json.dumps({"runtime_diagnostics": observed})))
+    assert "PRIVATE_PROCESS_NAME" not in result
+    assert '"opend_process":"PRESENT"' in result
+    assert "opend_reachable" not in result
+
+
+def test_gateway_absence_and_failed_queries_remain_distinct(tmp_path, monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+    monkeypatch.setattr(diag, "_command", lambda _args: ("PASS", ""))
+    absent = diag.collect_runtime_diagnostics()
+    assert absent["opend_listener"] == "NO_LISTENER"
+    assert absent["opend_process"] == "ABSENT"
+    monkeypatch.setattr(diag, "_command", lambda _args: ("TIMEOUT", ""))
+    unknown = diag.collect_runtime_diagnostics()
+    assert unknown["opend_listener"] == "UNKNOWN"
+    assert unknown["opend_process"] == "UNKNOWN"

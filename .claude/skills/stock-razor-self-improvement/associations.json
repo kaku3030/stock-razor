@@ -485,6 +485,21 @@
         "ENG-001",
         "ENG-004"
       ]
+    },
+    {
+      "id": "US-009",
+      "phrases": [
+        "OpenD active nine hours missing heartbeat",
+        "SDK constructor infinite connect retry before heartbeat",
+        "启动卡住没有心跳且不重启",
+        "systemd Type simple no startup deadline"
+      ],
+      "related": [
+        "ENG-004",
+        "ENG-002",
+        "US-007",
+        "US-008"
+      ]
     }
   ]
 }

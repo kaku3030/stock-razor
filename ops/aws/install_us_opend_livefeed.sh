@@ -61,6 +61,7 @@ from src.services.live_feed.futu_us_daily_history import (
 )
 from src.services.live_feed.futu_quote_right import classify_futu_us_quote_right
 from src.services.realtime_market_data import RealtimeMarketDataService
+from src.services.stock_radar_v2.systemd_notify import notify_systemd
 print("US_LIVEFEED_IMPORT_SMOKE=PASS")
 PY
 
@@ -108,6 +109,7 @@ from src.services.live_feed.runtime_bridge import LiveFeedRuntimeBridge
 from src.services.live_feed.opend_readonly_candidate_plan import plan_readonly_subscriptions
 from src.services.live_feed.producer_wakeup import DataArrivalWake
 from src.services.realtime_market_data import RealtimeMarketDataService
+from src.services.stock_radar_v2.systemd_notify import notify_systemd
 
 BASE_CODES=("US.AMD","US.NVDA","US.TSLA","US.AAPL","US.QQQ","US.GLDM","US.LITE","US.AAOI","US.CIEN")
 AB_BLEND_CODES=("US.SCHD","US.KMLM","US.GLD","US.DBMF","US.BTAL")
@@ -126,6 +128,38 @@ daily_history_path=os.environ.get(
     "/run/stock-razor-us-livefeed/daily-history.json",
 )
 host_id=socket.gethostname()
+runtime_ready_notified=False
+def publish(payload):
+    write_runtime_json(status_path,payload)
+def publish_startup_heartbeat():
+    # Connection construction may retry forever in the SDK. Publish the
+    # blocked startup state first; systemd owns the independent start deadline.
+    publish({
+        "type":"us_opend_livefeed_heartbeat",
+        "runtime_instance_id":runtime_id,"repo_sha":repo_sha,"host_id":host_id,
+        "sequence":0,"emitted_at_utc":datetime.now(timezone.utc).isoformat(),
+        "controller_lifecycle":"STARTING","startup_phase":"CONNECTING_OPEND",
+        "symbols":list(CODES),"subscribed":[],"event_count":0,
+        "accepted_event_count":0,"last_push_utc":None,
+        "market_state_us":"UNKNOWN","cache_session_us":"unknown",
+        "canonical_cache":{},
+        "canonical_snapshot_export":{
+            "status":"BLOCKED","sequence":0,"path":canonical_snapshot_path,
+        },
+        "delivery_mode":"UNKNOWN","bar_closure":"UNPROVEN",
+        "research_only":True,"can_confirm_signal":False,
+        "radar_admission":"BLOCKED","live_trade":False,
+    })
+def publish_runtime_heartbeat(payload):
+    global runtime_ready_notified
+    publish(payload)
+    if not runtime_ready_notified:
+        notify_systemd("READY=1","WATCHDOG=1",
+                       "STATUS=US LiveFeed heartbeat published; data qualification separate")
+        runtime_ready_notified=True
+    else:
+        notify_systemd("WATCHDOG=1","STATUS=US LiveFeed heartbeat published")
+publish_startup_heartbeat()
 ctx=ft.OpenQuoteContext(host="127.0.0.1",port=11111)
 controller=LiveFeedController(runtime_instance_id=runtime_id,provider_id="futu",command_executor=FakeProviderCommandExecutor())
 market_state_us="UNKNOWN"
@@ -421,8 +455,6 @@ market_state="UNKNOWN"
 state_ret=-1
 idle_fastpath_skips=0
 last_consumer_dispatch_monotonic=None
-def publish(payload):
-    write_runtime_json(status_path,payload)
 try:
     while True:
         maybe_refresh_daily_history(datetime.now(timezone.utc))
@@ -844,7 +876,7 @@ try:
           "delivery_mode":delivery_mode_state,"bar_closure":bar_closure_state,
           "research_only":True,"can_confirm_signal":False,
           "radar_admission":"BLOCKED","live_trade":False}
-        publish(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
+        publish_runtime_heartbeat(heartbeat); print(json.dumps(heartbeat,separators=(",",":")),flush=True)
         # An RTH K_1M feed can legitimately have no callback off-session.
         # Only a POSITIVELY OBSERVED regular session may trigger startup
         # callback-starvation restart; unknown state never proves readiness.
@@ -865,8 +897,14 @@ cat >/etc/systemd/system/"$SERVICE_NAME" <<EOF
 Description=STOCK RAZOR read-only US OpenD live feed
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=900s
+TimeoutStopSec=15s
+WatchdogSec=300s
 WorkingDirectory=$INSTALL_ROOT/repo
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=$INSTALL_ROOT/repo
@@ -879,7 +917,7 @@ RuntimeDirectory=stock-razor-us-livefeed
 RuntimeDirectoryMode=0755
 ExecStart=$OPEND_CLIENT_ROOT/venv/bin/python $INSTALL_ROOT/run.py
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

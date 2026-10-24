@@ -1,5 +1,6 @@
 """Contract tests for a single bounded, research-only US LiveFeed SSM stdout record."""
 import base64
+import gzip
 from contextlib import redirect_stdout
 from io import StringIO
 import json
@@ -24,7 +25,7 @@ def probe_source() -> str:
     return textwrap.dedent(
         action.split("          python3 - <<'PY'\n", 1)[1].split("\n          PY\n", 1)[0]
     ).replace("__RUNTIME_DIAGNOSTICS_BASE64__", base64.b64encode(
-        (ROOT / "scripts/us_livefeed_runtime_diagnostics.py").read_bytes()
+        gzip.compress((ROOT / "scripts/us_livefeed_runtime_diagnostics.py").read_bytes(), mtime=0)
     ).decode())
 
 
@@ -127,5 +128,5 @@ def test_exact_runner_helper_is_embedded_within_ssm_command_limit():
     action = text.split("            us_livefeed_status)\n", 1)[1].split(
         "            futures_opend_env_probe)\n", 1
     )[0]
-    assert 'base64 -w0 scripts/us_livefeed_runtime_diagnostics.py' in action
+    assert 'gzip -n -c scripts/us_livefeed_runtime_diagnostics.py | base64 -w0' in action
     assert ' -le 16000' in action
