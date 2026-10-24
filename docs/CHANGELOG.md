@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
+
 - [改进] OpenD 握手诊断区分超时、断开、加密、版本与属性错误，并仅离线序列化 InitConnect 以隔离 SDK 打包缺陷；不打开连接或修改协议配置。
 
 - [改进] OpenD 只读诊断区分连接 errno、握手与启动超时，并将固定端口绑定到进程类别；不输出原始日志或打开新行情连接。

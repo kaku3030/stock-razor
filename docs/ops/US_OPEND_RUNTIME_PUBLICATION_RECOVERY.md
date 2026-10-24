@@ -226,3 +226,11 @@ are projected. Command-line api_port overrides take precedence. No password,
 argv, filename, account, private-key path or key contents are published. This is
 a current on-disk startup candidate, not proof of the already-loaded config.
 Vendor contract: https://openapi.futunn.com/futu-api-doc/en/opend/opend-cmd.html
+
+Readback40074307261 showed API port MATCH, RSA NOT_CONFIGURED and no telnet
+conflict, with offline packing OTHER_ERROR. A local isolated install of the
+pinned futu-api10.11.7108 with protobuf7.36.2 successfully serialized95 bytes;
+this is not a cloud reproduction. The diagnostic therefore reports finite
+exception classes/OS errno and strict numeric SDK/Python/protobuf versions.
+No raw exception text or packet is projected. Actual cloud dependency versions
+must be known before changing or pinning any shared environment.
