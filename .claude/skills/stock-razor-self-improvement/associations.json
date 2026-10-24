@@ -559,6 +559,21 @@
         "ENG-003",
         "ENG-001"
       ]
+    },
+    {
+      "id": "US-012",
+      "phrases": [
+        "Graphic verification code required",
+        "INITCONNECT_GRAPHIC_VERIFICATION_REQUIRED",
+        "HUMAN_AUTH_CHALLENGE",
+        "OpenD 图形验证码",
+        "需要图形验证",
+        "InitConnect 验证码"
+      ],
+      "related": [
+        "US-009",
+        "US-011"
+      ]
     }
   ]
 }

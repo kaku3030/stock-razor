@@ -89,20 +89,37 @@ created by these diagnostics. Existing restart window protection remains in forc
 
 ## Bounded host diagnostics
 
-Readback [40077886878](https://github.com/kaku3030/stock-razor/actions/runs/40077886878)
-confirmed the probe HOME was derived and offline packing completed successfully
-with actual SDK10.11.7108/protobuf7.36.2. The service still logged120 InitConnect
-failures with no recognized detailed family. Dependency changes are not justified
-by this result. To inspect the unknown error without publishing plaintext, the
-temporary diagnostic seals only the most recent SDK `msg=... context=` segment
-from the already bounded journal sample, capped at300 UTF-8 bytes. PyCryptodome
-from the existing quote SDK environment uses RSA3072/OAEP-SHA256 and a diagnostic
-public key; the private key remains in the investigating workspace, outside git
-and AWS. Only a512-character ciphertext and fixed status cross the public-output
-boundary. This adds no journal request, provider connection, subscription, key
-permission, credential or service change. Remove this temporary sealing code/key
-after diagnosis; ordinary diagnostic consumers cannot decrypt it. Missing crypto,
-timeout or malformed output remains unknown and never changes quote admission.
+[SSM40079113951](https://github.com/kaku3030/stock-razor/actions/runs/40079113951)
+returned one encrypted SDK error from the existing journal. Private local
+inspection identified the fixed technical message `Graphic verification code required`.
+The latest observed InitConnect refusal is an authentication challenge; SDK10.11.7108/
+protobuf7.36.2 offline packing already passed in40077886878. API listening and
+successful request serialization do not prove authenticated OpenD readiness.
+The service still had no snapshot and remained ACTIVATING, with12 existing
+systemd restarts. The initiating cause on October23, and why the challenge was
+triggered, are not established by this latest journal message.
+
+The temporary encryption probe and its public key are removed after diagnosis.
+Only a fixed GRAPHIC_VERIFICATION_REQUIRED classification/count remains public.
+It describes the most recent matching SDK event in the bounded sample; a later
+CONNECTED or other failure supersedes it. CONNECTED is handshake log evidence,
+not live quote qualification. All raw messages, provider data and account details
+remain private, and no verification request or credential mutation was made.
+
+Human action is required on the **AWS OpenD instance**, through its official
+console/login process. The official
+[operation commands](https://openapi.futunn.com/futu-api-doc/en/opend/opend-operate.html)
+document `req_pic_verify_code` and `input_pic_verify_code`; the account holder
+must complete the challenge. Do not send passwords/codes to a public workflow
+or repository, attempt automatic CAPTCHA solving, repeatedly relogin, or use
+restarts/dependency changes as a substitute. The official documentation describes
+repeated incorrect passwords as one trigger; it is not independently proven as
+the trigger on this host. Existing systemd/SDK retries are not proof of recovery;
+this diagnostic does not stop or reconfigure them. After human verification,
+first check the existing client for real handshake recovery without restarting.
+Then independently verify sequence/events, callbacks, canonical publication,
+finality, history/backfill, Windows parity and three full RTH sessions. If it
+still fails, capture the new error before any further controlled mutation.
 
 [Readback 40076639439](https://github.com/kaku3030/stock-razor/actions/runs/40076639439)
 reported offline `KEY_ERROR` before SDK/protobuf version fields were produced.
