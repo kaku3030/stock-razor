@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] OpenD 离线握手探针在 SSM 缺失 HOME 时按当前 Unix 用户补齐子进程环境，并分别记录导入/打包阶段及依赖版本；不将探针导入错误归因于生产握手，不改动服务或交易门禁。
+
 - [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
 - [测试] 增加 TickFlow 官方 SDK 本机 socket 断开、超时、429 恢复及硬进程退出持久化实验；使用合成密钥与回环端点，不替代开盘或 Windows 重启验收。
 

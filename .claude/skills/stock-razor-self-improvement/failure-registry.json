@@ -519,6 +519,21 @@
       "regression_evidence": "tests/test_tickflow_windows_watch.py",
       "mandatory_action": "Deploy only clean exact-SHA copies with per-file hash verification; enforce all20source-specific frames, legal grid and nonempty due-set checks; persist closed/failed observations and bounded restart evidence. Official Python SDK REST is not NativeSDK streaming proof. Independently verify scheduled runtime, actual full CN session, disconnect/restart/wake and Radar consumer. Hybrid V1.0 Windows TickFlow needs no AWS TickFlow pairing; no source/Radar/paper/live promotion.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-011",
+      "owner": "OpenD",
+      "severity": "P1",
+      "signature_tokens": [
+        "OFFLINE_INIT_PACK_KEY_ERROR",
+        "SSM_HOME_ABSENT"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "AWS status run40076639439 returned KEY_ERROR before SDK version evidence. The pinned SDK logger indexes HOME during import; removing HOME locally reproduces KEY_ERROR while the actual service explicitly configures HOME. This is a probe environment defect, not evidence of the production InitConnect cause. Child-only effective-user HOME fallback and independent distribution versions now preserve phase attribution. Actual cloud packing and quote recovery remain NOT_VERIFIED.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/40076639439",
+      "regression_evidence": "tests/test_us_livefeed_runtime_diagnostics.py",
+      "mandatory_action": "Distinguish SDK import from packet packing and server handshake. Preserve inherited HOME; derive the effective Unix user home only in the isolated child when absent. Do not restart the collector or change SDK/protocol versions based on a mismatched probe. Require actual cloud dependency versions, packing stage and quote recovery separately.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

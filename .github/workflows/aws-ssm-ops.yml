@@ -278,7 +278,7 @@ jobs:
               # before its one-line market summary, truncating evidence.
               # Return ONE compact read-only, metadata-only JSON record.
               # Includes fixed connection errno families and endpoint owner,
-              # plus offline packing exception/version evidence and legacy import; no
+              # plus offline packing stage/version evidence with SSM HOME fallback; no
               # provider context, subscription or readiness notification.
               runtime_diagnostics_b64="$(gzip -n -c scripts/us_livefeed_runtime_diagnostics.py | base64 -w0)"
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
