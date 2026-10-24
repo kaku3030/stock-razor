@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] AWS OpenD InitConnect 图形验证挑战有真实日志证据与固定分类回归；按最新事件避免把旧挑战当作当前状态，移除临时加密探针。需要账户持有人在 AWS 官方登录流程完成验证，行情与三日验收仍未通过。
+
 - [改进] OpenD 临时诊断仅将已有日志样本中最后一条 InitConnect 错误的有限字节以 RSA-OAEP-SHA256 加密输出，私钥不进入仓库或 AWS；保留公开日志隐私限制，不增加行情连接、重启或订阅。
 
 - [文档] 冻结 Work03 第一轮，增加 CORE8/EXP33 机制诊断、严格无加仓控制与简单缩放基准；当前 S3 家族停止调参，不予晋级。

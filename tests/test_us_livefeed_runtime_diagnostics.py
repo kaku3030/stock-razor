@@ -351,54 +351,37 @@ def test_offline_probe_preserves_existing_home_and_rejects_arbitrary_stage():
     assert "offline_home" not in safe and "offline_pack_stage" not in safe
 
 
-def test_sealed_handshake_uses_only_latest_bounded_message_and_no_plaintext_args(monkeypatch):
-    from types import SimpleNamespace
+def test_graphic_verification_requires_human_and_does_not_infer_quote_health(tmp_path, monkeypatch):
     from scripts import us_livefeed_runtime_diagnostics as diag
-    calls = []
-
-    def run(args, **kwargs):
-        calls.append((args, kwargs))
-        return SimpleNamespace(returncode=0, stdout=b"A" * 512 + b"\n")
-    monkeypatch.setattr(diag.subprocess, "run", run)
-    observed = diag.sealed_handshake_evidence("\n".join([
-        "init connect fail: conn=PRIVATE_ACCOUNT msg=OLDER context=PRIVATE_CONTEXT",
-        "init connect fail: conn=PRIVATE_ACCOUNT msg=PRIVATE_MESSAGE" + "x" * 500 + " context=PRIVATE_CONTEXT",
-    ]))
-    assert observed == {"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": "A" * 512}
-    args, kwargs = calls[0]
-    assert kwargs["input"] == ("PRIVATE_MESSAGE" + "x" * 500).encode()[:300]
-    assert kwargs["timeout"] == 3 and kwargs["stderr"] == diag.subprocess.DEVNULL
-    assert "PRIVATE" not in repr(args)
-    assert "PRIVATE" not in json.dumps(observed)
+    monkeypatch.setattr(diag, "ROOT", tmp_path)
+    line = "init connect fail: conn=PRIVATE_ACCOUNT msg=Graphic verification code required context=PRIVATE_CONTEXT"
+    monkeypatch.setattr(diag, "_command", lambda args: ("PASS", line) if args[0]=="journalctl" else ("UNAVAILABLE", ""))
+    observed = diag.collect_runtime_diagnostics()
+    assert observed["latest_initconnect_event"] == "GRAPHIC_VERIFICATION_REQUIRED"
+    assert observed["journal_counts"]["HANDSHAKE_GRAPHIC_VERIFICATION"] == 1
+    projected = "\n".join(project(json.dumps({"runtime_diagnostics": observed})))
+    assert "GRAPHIC_VERIFICATION_REQUIRED" in projected
+    assert "PRIVATE" not in projected
+    assert "opend_reachable" not in projected
+    assert "sealed_initconnect" not in projected
 
 
-def test_sealed_handshake_failures_never_forward_child_output(monkeypatch):
-    from types import SimpleNamespace
-    from scripts import us_livefeed_runtime_diagnostics as diag
-    line = "init connect fail: conn=PRIVATE_ACCOUNT msg=PRIVATE_MESSAGE context=PRIVATE_CONTEXT"
-    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=0, stdout=b"PRIVATE_SECRET"))
-    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "MALFORMED"}
-    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=1, stdout=b"PRIVATE_SECRET"))
-    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "UNAVAILABLE"}
-    def timeout(*a, **kw):
-        raise diag.subprocess.TimeoutExpired("PRIVATE_COMMAND", 3, output=b"PRIVATE_SECRET")
-    monkeypatch.setattr(diag.subprocess, "run", timeout)
-    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "TIMEOUT"}
+def test_latest_initconnect_event_supersedes_old_auth_errors_without_admission():
+    from scripts.us_livefeed_runtime_diagnostics import latest_initconnect_event
+    auth = "init connect fail: conn=0(1) msg=Graphic verification code required context=private"
+    connected = "New connect ready: conn=1(2) context=private"
+    other = "init connect fail: conn=0(3) msg=PRIVATE_NEW_ERROR context=private"
+    assert latest_initconnect_event(auth)=="GRAPHIC_VERIFICATION_REQUIRED"
+    assert latest_initconnect_event(auth+'\n'+connected)=="CONNECTED"
+    assert latest_initconnect_event(auth+'\n'+other)=="OTHER_ERROR"
+    assert latest_initconnect_event(connected+'\n'+auth)=="GRAPHIC_VERIFICATION_REQUIRED"
+    assert latest_initconnect_event(auth+'\ninit connect fail: malformed')=="OTHER_ERROR"
+    assert latest_initconnect_event(auth.replace('context=private','context=New connect ready: conn=1(2) context=private'))=="GRAPHIC_VERIFICATION_REQUIRED"
+    assert latest_initconnect_event('unrelated PRIVATE log')=="NOT_OBSERVED"
 
 
-def test_no_sdk_message_means_no_encryption_process(monkeypatch):
-    from scripts import us_livefeed_runtime_diagnostics as diag
-    def forbidden(*a, **kw):
-        raise AssertionError("No journal message to encrypt")
-    monkeypatch.setattr(diag.subprocess, "run", forbidden)
-    assert diag.sealed_handshake_evidence("PRIVATE arbitrary journal") == {"sealed_initconnect_status": "NO_MATCH"}
-
-
-def test_sealed_message_requires_exact_ciphertext_size_and_matching_state():
+def test_auth_classification_rejects_unknown_values_and_removed_sealed_fields():
     from scripts.us_livefeed_runtime_diagnostics import sanitize_runtime_diagnostics
-    for value in ("PRIVATE_SECRET", "A" * 511, "A" * 513, "A" * 511 + "_"):
-        assert "sealed_initconnect_message" not in sanitize_runtime_diagnostics({"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": value})
-    assert "sealed_initconnect_message" not in sanitize_runtime_diagnostics({"sealed_initconnect_status": "UNAVAILABLE", "sealed_initconnect_message": "A" * 512})
-    safe = sanitize_runtime_diagnostics({"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": "A" * 512, "message": "PRIVATE_SECRET"})
-    assert safe["sealed_initconnect_message"] == "A" * 512
-    assert "PRIVATE" not in json.dumps(safe)
+    safe = sanitize_runtime_diagnostics({"latest_initconnect_event":"PRIVATE_SECRET", "sealed_initconnect_status":"ENCRYPTED", "sealed_initconnect_message":"A"*512})
+    assert "latest_initconnect_event" not in safe
+    assert "sealed_initconnect_status" not in safe and "sealed_initconnect_message" not in safe

@@ -548,6 +548,21 @@
       "regression_evidence": "tests/test_s3_strict_no_add.py",
       "mandatory_action": "Never equate full first-leg risk fraction with no-add policy. Require explicit suppression of add queue plus zero-ADD event evidence. Preserve original receipts; publish corrected research as a separate experiment. Do not infer production correction or trading permission.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "US-012",
+      "owner": "OpenD",
+      "severity": "P0",
+      "signature_tokens": [
+        "INITCONNECT_GRAPHIC_VERIFICATION_REQUIRED",
+        "HUMAN_AUTH_CHALLENGE"
+      ],
+      "status": "OPEN",
+      "diagnosis": "SSM40079113951 encrypted the latest bounded SDK InitConnect message; private local inspection confirmed the fixed technical error Graphic verification code required. Actual SDK10.11.7108/protobuf7.36.2 offline packing passed. Gateway authentication, not TCP listening or offline serialization, currently blocks initialization. The October23 initiating cause and challenge trigger remain unproven. Diagnostic classification is fixed; human verification and production recovery remain NOT_VERIFIED.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/actions/runs/40079113951",
+      "regression_evidence": "tests/test_us_livefeed_runtime_diagnostics.py",
+      "mandatory_action": "Account holder must complete the official graphic challenge on the AWS OpenD instance. Do not solve CAPTCHA automatically, change credentials, restart repeatedly or downgrade SDK based on this error. Supersede historical auth errors with newer handshake events; do not equate CONNECTED with quotes. Check existing client recovery before a governed restart. Sequence/events, canonical closure, backfill, Windows sync and three RTH sessions require separate evidence. Current SDK/systemd retries have not been reconfigured by diagnostics.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

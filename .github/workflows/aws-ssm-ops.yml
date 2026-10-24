@@ -278,7 +278,7 @@ jobs:
               # before its one-line market summary, truncating evidence.
               # Return ONE compact read-only, metadata-only JSON record.
               # Includes fixed connection errno families and endpoint owner,
-              # plus offline packing and one sealed journal message; no
+              # plus offline packing and fixed authentication-error classification; no
               # provider context, subscription or readiness notification.
               runtime_diagnostics_b64="$(gzip -n -c scripts/us_livefeed_runtime_diagnostics.py | base64 -w0)"
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
@@ -371,6 +371,8 @@ jobs:
           runtime_namespace={}
           exec(gzip.decompress(base64.b64decode('__RUNTIME_DIAGNOSTICS_BASE64__')), runtime_namespace)
           out['runtime_diagnostics']=runtime_namespace['collect_runtime_diagnostics']()
+          if not active and out['runtime_diagnostics'].get('latest_initconnect_event')=='GRAPHIC_VERIFICATION_REQUIRED':
+              out['reason']='OPEND_GRAPHIC_VERIFICATION_REQUIRED'
           # Only fixed states, exit counts, source hashes and file modes; no raw logs.
           print(json.dumps(out,sort_keys=True,separators=(',',':')),flush=True)
           PY
