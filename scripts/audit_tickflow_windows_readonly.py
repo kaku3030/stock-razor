@@ -9,6 +9,7 @@ Run explicitly: python scripts/audit_tickflow_windows_readonly.py --execute
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timedelta, timezone
 import importlib.metadata
 import json
@@ -142,14 +143,26 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
     duplicate_or_reordered = 0
     same_day_daily_quarantined = 0
     latest_prior_daily_seen = False
+    invalid_grid = 0
     for i in range(count):
         try:
+            if isinstance(frame["timestamp"][i], bool):
+                raise ValueError("boolean timestamp")
             epoch = float(frame["timestamp"][i])
             if not math.isfinite(epoch):
                 raise ValueError("nonfinite timestamp")
             if epoch > 1e12:
                 epoch /= 1000
             stamp = datetime.fromtimestamp(epoch, timezone.utc).astimezone(CN)
+            if timeframe in END_CLOCKS and (
+                stamp.strftime("%H:%M") not in END_CLOCKS[timeframe]
+                or stamp.second or stamp.microsecond or stamp.weekday() >= 5
+            ):
+                invalid_grid += 1
+            if timeframe == "1d" and (stamp.hour or stamp.minute or stamp.second or stamp.microsecond):
+                invalid_grid += 1
+            if any(isinstance(frame[k][i], bool) for k in keys[1:]):
+                raise ValueError("boolean numeric field")
             nums = [float(frame[k][i]) for k in keys[1:]]
             if (not all(math.isfinite(x) for x in nums)
                 or min(nums[:4]) <= 0 or nums[4] < 0
@@ -210,7 +223,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
         status = (
             "PASS_PRIOR_DAILY_RESEARCH_ONLY"
             if latest_prior_daily_seen and not invalid_ohlc
-            and not tiny_vendor_float_drift_rows and not duplicate_or_reordered
+            and not tiny_vendor_float_drift_rows and not duplicate_or_reordered and not invalid_grid
             else "BLOCKED"
         )
         return {
@@ -220,6 +233,7 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
             "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
             "same_session_float_drift_rows": same_session_float_drift_rows,
             "reordered_or_duplicate_rows": duplicate_or_reordered,
+            "invalid_grid_rows": invalid_grid,
             "current_day_d1_finality": "NOT_VERIFIED",
         }
 
@@ -227,12 +241,12 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
     research_missing = len(due - research_eligible)
     research_progress_status = (
         "PASS_RESEARCH_ONLY" if not research_missing and not invalid_ohlc
-        and not duplicate_or_reordered else "BLOCKED_UNVERIFIED"
+        and not duplicate_or_reordered and not invalid_grid and bool(due) else "BLOCKED_UNVERIFIED"
     )
     status = (
         "PASS_RESEARCH_ONLY"
         if not missing and not invalid_ohlc
-        and not same_session_float_drift_rows and not duplicate_or_reordered
+        and not same_session_float_drift_rows and not duplicate_or_reordered and not invalid_grid and bool(due)
         else "BLOCKED_UNVERIFIED"
     )
     return {
@@ -247,9 +261,72 @@ def assess_compact(frame: object, timeframe: str, now_utc: datetime, *,
         "tiny_vendor_float_drift_rows": tiny_vendor_float_drift_rows,
         "same_session_float_drift_rows": same_session_float_drift_rows,
         "reordered_or_duplicate_rows": duplicate_or_reordered,
+            "invalid_grid_rows": invalid_grid,
         "exchange_bar_finality": "NOT_VERIFIED",
     }
 
+
+
+def frame_receipt(frame: object, timeframe: str, now_utc: datetime) -> dict:
+    """Original-value field hashes and label times, never prices or volumes.
+
+    A successor is operational research closure only. Hash stability does not
+    establish immutable finality, authenticated lineage or cumulative units.
+    """
+    if not isinstance(frame, dict):
+        return {}
+    labels = frame.get("timestamp", ())
+    if not isinstance(labels, (list, tuple)) or len(labels) > PERIOD_COUNTS[timeframe]:
+        return {}
+    rows = []
+    for i, raw in enumerate(labels):
+        try:
+            if isinstance(raw, bool):
+                raise ValueError("invalid timestamp")
+            epoch = float(raw)
+            if epoch > 1e12:
+                epoch /= 1000
+            stamp = datetime.fromtimestamp(epoch, timezone.utc)
+            local = stamp.astimezone(CN)
+            if stamp > now_utc:
+                continue
+            if timeframe == "1d":
+                if local.date() >= now_utc.astimezone(CN).date():
+                    continue
+            elif (local.strftime("%H:%M") not in END_CLOCKS[timeframe]
+                  or local.second or local.microsecond or local.weekday() >= 5):
+                continue
+            values = [frame[key][i] for key in ("open", "high", "low", "close", "volume")]
+            encoded = json.dumps(values, allow_nan=False, separators=(",", ":")).encode()
+            rows.append({"bar_time_utc": stamp.isoformat(),
+                         "ohlcv_sha256": hashlib.sha256(encoded).hexdigest(),
+                         "close_sha256": hashlib.sha256(json.dumps(values[3], allow_nan=False).encode()).hexdigest(),
+                         "volume_sha256": hashlib.sha256(json.dumps(values[4], allow_nan=False).encode()).hexdigest(),
+                         "operational_closed": False})
+        except (ValueError, TypeError, IndexError, KeyError, OverflowError, OSError):
+            continue
+    rows.sort(key=lambda item: item["bar_time_utc"])
+    if not rows:
+        return {}
+    for i, row in enumerate(rows[:-1]):
+        stamp = datetime.fromisoformat(row["bar_time_utc"]).astimezone(CN)
+        successor = datetime.fromisoformat(rows[i+1]["bar_time_utc"]).astimezone(CN)
+        if timeframe in END_CLOCKS:
+            clocks = END_CLOCKS[timeframe]
+            ordinal = clocks.index(stamp.strftime("%H:%M"))
+            row["operational_closed"] = (
+                successor.date() == stamp.date() and ordinal + 1 < len(clocks)
+                and successor.strftime("%H:%M") == clocks[ordinal+1]
+            )
+    latest = datetime.fromisoformat(rows[-1]["bar_time_utc"])
+    return {"data_time_utc": latest.isoformat(),
+            "bar_label_age_seconds": round((now_utc-latest).total_seconds(), 3),
+            "bar_label_semantics": "DATE_LABEL" if timeframe == "1d" else "BAR_END",
+            "operational_closure": "PRIOR_DATE_RESEARCH_ONLY" if timeframe == "1d"
+                else "SUCCESSOR_OBSERVED_RESEARCH_ONLY" if any(r["operational_closed"] for r in rows) else "UNPROVEN",
+            "latest_bar_closed": False if timeframe != "1d" else None,
+            "bar_finality": "NOT_VERIFIED",
+            "row_receipts": rows}
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -303,8 +380,10 @@ def main() -> int:
                             count=PERIOD_COUNTS[timeframe],
                             as_dataframe=False,
                         )
-                    record = assess_compact(frame, timeframe, datetime.now(timezone.utc),
+                    observed = datetime.now(timezone.utc)
+                    record = assess_compact(frame, timeframe, observed,
                                             vendor_precision_research=args.vendor_precision_research)
+                    record.update(frame_receipt(frame, timeframe, observed))
                 except Exception as exc:
                     record = {"status": "BLOCKED",
                               "error_class": safe_error_type(exc)}
@@ -312,6 +391,10 @@ def main() -> int:
                     "symbol": symbol, "timeframe": timeframe,
                     "request_ms": round((time.perf_counter() - start) * 1000, 2),
                     "data_source": "TICKFLOW_PREMIUM_DESKTOP_READONLY",
+                    "sdk_version": version,
+                    "transport": "OFFICIAL_PYTHON_SDK_REST",
+                    "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "radar_admission": "BLOCKED",
                     "provider_requests": 1,
                     "trading_admission": "BLOCKED", "live_trade": False,
                 })

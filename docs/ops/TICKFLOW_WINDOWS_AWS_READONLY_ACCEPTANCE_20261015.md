@@ -1,5 +1,7 @@
 # Windows ↔ AWS TickFlow minute-bar acceptance (research-only)
 
+> Hybrid V1.0 update: Windows TickFlow local acceptance follows [the current local procedure](TICKFLOW_WINDOWS_LOCAL_ACCEPTANCE.md). AWS TickFlow pairing is no longer a requirement. The older evidence below retains its original scope.
+
 A Windows desktop and the AWS Tokyo collector are **independent** TickFlow
 observation locations. A green GitHub Action, healthy heartbeat, or a regular
 session-grid label is **not** evidence of exchange-finalized 15m/60m candles.

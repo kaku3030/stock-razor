@@ -92,6 +92,7 @@ jobs:
       - name: Run focused research radar tests
         run: |
           python -m pytest -q \
+            tests/test_tickflow_windows_watch.py \
             tests/test_a_share_provider_lineage.py \
             tests/test_a_share_reconciliation_lineage.py \
             tests/test_a_share_intraday_semantics.py \

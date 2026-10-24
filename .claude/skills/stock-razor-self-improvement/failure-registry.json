@@ -505,6 +505,20 @@
       "regression_evidence": "tests/test_us_livefeed_startup_readiness.py",
       "mandatory_action": "Test actual import under python -S before cloud use; do not infer dependency isolation from submodule source alone. Preserve old callers through compatibility exports, never add full strategy dependencies to quote-only AWS merely to satisfy import. Check repo SHA, generated runner hash and process separately after failed installation; no unchanged blind retries.",
       "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
+    },
+    {
+      "id": "CN-018",
+      "owner": "TickFlow",
+      "severity": "P0",
+      "signature_tokens": [
+        "WINDOWS_TICKFLOW_AUDITOR_DEPLOYMENT_DRIFT"
+      ],
+      "status": "MITIGATED",
+      "diagnosis": "Windows task inspected on2026-10-24 still ran the October15 copied eight-frame auditor without1m or revision manifest, while main requires20frames. Scheduled exit0 also meant an unrecorded off-session skip. Offline auditor additionally accepted empty due sets and failed to reject extra off-grid labels. These defects are confirmed independently of live SDK reliability.",
+      "evidence_url": "https://github.com/kaku3030/stock-razor/blob/fix/work02-tickflow-local-20261024/docs/ops/TICKFLOW_WINDOWS_LOCAL_ACCEPTANCE.md",
+      "regression_evidence": "tests/test_tickflow_windows_watch.py",
+      "mandatory_action": "Deploy only clean exact-SHA copies with per-file hash verification; enforce all20source-specific frames, legal grid and nonempty due-set checks; persist closed/failed observations and bounded restart evidence. Official Python SDK REST is not NativeSDK streaming proof. Independently verify scheduled runtime, actual full CN session, disconnect/restart/wake and Radar consumer. Hybrid V1.0 Windows TickFlow needs no AWS TickFlow pairing; no source/Radar/paper/live promotion.",
+      "repeat_policy": "STOP_ON_SAME_SHA_AND_NO_NEW_EVIDENCE"
     }
   ]
 }

@@ -1,4 +1,6 @@
 # STOCK RAZOR | TickFlow two-end half-hour read-only watch
+
+> Hybrid V1.0 update: Windows TickFlow local acceptance follows [the current local procedure](TICKFLOW_WINDOWS_LOCAL_ACCEPTANCE.md). AWS TickFlow pairing is no longer a requirement. The older evidence below retains its original scope.
 As of 2026-10-15. **Research only. No order, trade, broker, automatic admission or source switch.**
 
 ## Two independently observed endpoints
