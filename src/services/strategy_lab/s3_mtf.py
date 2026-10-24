@@ -226,7 +226,17 @@ def daily_allowed(d, rules):
     return bool(d.close > d.sma50 and d.sma50 > d.sma50_lag10)
 
 
-def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=None):
+def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=None,
+                  matched_2h=False):
+    """Build original arms, or an explicit time-matched E research control.
+
+    E_TIME_MATCHED_SHARED_H4_ATR doubles structure lookback counts and freezes
+    the latest *already available* H4 ATR at setup creation. Stubs mean this is
+    not an exact economic-time or information-equivalence experiment. Original
+    arms and their one-hour execution/ATR semantics remain unchanged by default.
+    """
+    if not isinstance(matched_2h, bool) or (matched_2h and arm != "E"):
+        raise ValueError("MATCHED_2H_REQUIRES_ARM_E_AND_BOOLEAN_FLAG")
     if arm == "A":
         raise ValueError("A_BLOCKED_NO_FROZEN_D1_H1_M15_RULE")
     if arm not in ARMS:
@@ -245,6 +255,17 @@ def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=N
                 or _fingerprint(schedule, ["open_at", "close_at"]) != prepared.schedule_signature):
             raise ValueError("PREPARED_INPUT_CHANGED")
         d, h, e = (prepared.frames[symbol,w] for w in (390, width, execution_width))
+    if matched_2h:
+        # Copy only E's structure frame; never mutate shared cached features.
+        h = h.copy()
+        h["ema20"] = h.close.ewm(span=40, adjust=False, min_periods=40).mean()
+        h["sma50"] = h.close.rolling(100, min_periods=100).mean()
+        h4 = (prepared.frames[symbol,240] if prepared is not None
+              else features(_aggregate_validated(checked, checked_schedule, 240)))
+        h4_asof = h4.available_at.searchsorted(h.available_at, side="right")-1
+        h4_rows = list(h4.itertuples(index=False))
+    slope_lag, decline_lag, floor_count, expiry_count, minimum_hi = (
+        (6, 2, 6, 6, 106) if matched_2h else (3, 1, 3, 3, 53))
     dr, hr = list(d.itertuples(index=False)), list(h.itertuples(index=False))
     high_values = e.high.to_numpy()
     di = hi = -1
@@ -261,14 +282,27 @@ def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=N
             a = hr[hi]
             if setup and (hi > setup["expires"] or a.close < setup["floor"]):
                 setup = None
-            if not allowed or hi < 53:
+            if not allowed or hi < minimum_hi:
                 continue
-            trend = a.ema20 > a.sma50 and a.sma50 > hr[hi - 3].sma50
+            trend = a.ema20 > a.sma50 and a.sma50 > hr[hi - slope_lag].sma50
             if model == "pullback":
-                falling = a.close < hr[hi - 1].close < hr[hi - 2].close
+                falling = a.close < hr[hi - decline_lag].close < hr[hi - 2*decline_lag].close
                 if setup is None and trend and falling and a.low <= a.ema20 and a.close >= a.sma50:
-                    setup = dict(created=a.available_at, expires=hi + 3, floor=min(x.low for x in hr[hi-2:hi+1]),
-                                 atr=float(a.atr14), ready=a.available_at, setup_end=a.end)
+                    if matched_2h:
+                        known_h4 = int(h4_asof[hi])
+                        if known_h4 < 0:
+                            continue
+                        atr_row = h4_rows[known_h4]
+                        if not math.isfinite(atr_row.atr14) or atr_row.atr14 <= 0:
+                            continue
+                        structure_atr = float(atr_row.atr14)
+                    else:
+                        structure_atr = float(a.atr14)
+                    setup = dict(created=a.available_at, expires=hi + expiry_count,
+                                 floor=min(x.low for x in hr[hi-floor_count+1:hi+1]),
+                                 atr=structure_atr, ready=a.available_at, setup_end=a.end)
+                    if matched_2h:
+                        setup.update(atr_end=atr_row.end, atr_available_at=atr_row.available_at)
             else:
                 if setup and setup.get("breakout") and a.available_at > setup["created"]:
                     level = setup["level"]
@@ -299,9 +333,15 @@ def build_signals(bars, schedule, arm, rules=Rules(), *, prepared=None, symbol=N
         signals.append(dict(decision_at=b.available_at, signal_end=b.end, setup_end=setup["setup_end"],
                             d1_end=dr[di].end, structure_end=hr[hi].end, signal_close=b.close,
                             stop=stop, max_entry=b.close + .25*b.atr14, arm=arm))
+        if matched_2h:
+            signals[-1].update(structure_atr_end=setup["atr_end"],
+                               structure_atr_available_at=setup["atr_available_at"])
         setup = None
-    return pd.DataFrame(signals, columns=["decision_at", "signal_end", "setup_end", "d1_end",
-                                         "structure_end", "signal_close", "stop", "max_entry", "arm"])
+    columns = ["decision_at", "signal_end", "setup_end", "d1_end",
+               "structure_end", "signal_close", "stop", "max_entry", "arm"]
+    if matched_2h:
+        columns += ["structure_atr_end", "structure_atr_available_at"]
+    return pd.DataFrame(signals, columns=columns)
 
 
 def planned_loss(entry, stop, cost_rate):
