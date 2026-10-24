@@ -544,6 +544,21 @@
         "US-009",
         "US-010"
       ]
+    },
+    {
+      "id": "STRAT-001",
+      "phrases": [
+        "首笔100%仍然加仓",
+        "无加仓控制被污染",
+        "整数股余量加仓",
+        "FIRST_RISK_FRACTION_ONE_IS_NOT_NO_ADD",
+        "first_risk_fraction one residual add",
+        "NO_ADD_FULL_RISK"
+      ],
+      "related": [
+        "ENG-003",
+        "ENG-001"
+      ]
     }
   ]
 }

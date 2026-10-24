@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [改进] OpenD 临时诊断仅将已有日志样本中最后一条 InitConnect 错误的有限字节以 RSA-OAEP-SHA256 加密输出，私钥不进入仓库或 AWS；保留公开日志隐私限制，不增加行情连接、重启或订阅。
 
+- [文档] 冻结 Work03 第一轮，增加 CORE8/EXP33 机制诊断、严格无加仓控制与简单缩放基准；当前 S3 家族停止调参，不予晋级。
+
+
 - [修复] OpenD 离线握手探针在 SSM 缺失 HOME 时按当前 Unix 用户补齐子进程环境，并分别记录导入/打包阶段及依赖版本；不将探针导入错误归因于生产握手，不改动服务或交易门禁。
 
 - [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
