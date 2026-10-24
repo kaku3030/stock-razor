@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [文档] 冻结 Work03 第一轮，增加 CORE8/EXP33 机制诊断、严格无加仓控制与简单缩放基准；当前 S3 家族停止调参，不予晋级。
+
+
 - [修复] OpenD 离线握手探针在 SSM 缺失 HOME 时按当前 Unix 用户补齐子进程环境，并分别记录导入/打包阶段及依赖版本；不将探针导入错误归因于生产握手，不改动服务或交易门禁。
 
 - [改进] OpenD 离线握手打包失败增加有限异常类别、errno 与 SDK/Python/protobuf 实际版本，避免 OTHER_ERROR 掩盖可修复的本地异常。
