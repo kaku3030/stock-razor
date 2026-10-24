@@ -157,3 +157,68 @@ def test_real_sdk_disconnect_is_sanitized_by_actual_auditor_entry(monkeypatch,ca
         assert recovered["status"] == "PASS_RESEARCH_ONLY"
         assert recovered["radar_admission"] == "BLOCKED"
         assert recovered["bar_finality"] == "NOT_VERIFIED"
+
+def test_installed_sdk_websocket_reconnect_replays_subscription(monkeypatch):
+    sdk=pytest.importorskip("tickflow")
+    pytest.importorskip("websockets.sync.server")
+    if getattr(sdk,"__version__",None) != "0.1.25":
+        pytest.skip("requires installed pinned SDK")
+    from websockets.sync.server import serve
+    from websockets.exceptions import ConnectionClosed
+    from data_provider.tickflow_ws_research_observer import attach_tickflow_stream
+    # Explicit proxy bypass only in this isolated loopback fixture.
+    monkeypatch.setenv("NO_PROXY","127.0.0.1")
+    monkeypatch.setenv("no_proxy","127.0.0.1")
+    original=socket.getaddrinfo
+    def loopback_only(host,*args,**kwargs):
+        if host not in ("127.0.0.1",b"127.0.0.1"):
+            raise AssertionError("external network forbidden")
+        return original(host,*args,**kwargs)
+    monkeypatch.setattr(socket,"getaddrinfo",loopback_only)
+    subscriptions=[]
+    delivered=threading.Event()
+    lock=threading.Lock()
+    stamp=time.time_ns()//1_000_000
+    def handler(ws):
+        message=json.loads(ws.recv(timeout=3))
+        with lock:
+            subscriptions.append(message)
+            ordinal=len(subscriptions)
+        ws.send(json.dumps({"op":"subscribed","channel":"quotes","total":1}))
+        ws.send(json.dumps({"op":"quotes","data":[{
+            "symbol":"159611.SZ","timestamp":stamp+(ordinal-1)*1000,
+            "last_price":1.05,"volume":1000+ordinal}]}))
+        if ordinal==1:
+            ws.close(code=1011,reason="synthetic disconnect")
+        else:
+            delivered.set()
+            try:
+                ws.recv(timeout=5)
+            except ConnectionClosed:
+                pass
+    with serve(handler,"127.0.0.1",0) as server:
+        thread=threading.Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        client=sdk.TickFlow(api_key="SYNTHETIC_TEST_ONLY",
+                           base_url="http://127.0.0.1:"+str(server.socket.getsockname()[1]),
+                           timeout=0.05,max_retries=0)
+        observer=attach_tickflow_stream(client,("159611.SZ",))
+        try:
+            assert delivered.wait(8), "no bounded loopback resubscription"
+            deadline=time.monotonic()+2
+            while observer.summary()["quote_events"]<2 and time.monotonic()<deadline:
+                time.sleep(0.01)
+            assert len(subscriptions)==2
+            for message in subscriptions:
+                assert message=={"op":"subscribe","channel":"quotes","symbols":["159611.SZ"]}
+            evidence=observer.summary()
+            assert evidence["post_initial_update_candidates"]==1
+            assert evidence["continuous_feed_qualified"] is False
+            assert evidence["radar_admission"]=="BLOCKED"
+        finally:
+            client.stream.close()
+            client.close()
+            client.stream._thread.join(timeout=5)
+            server.shutdown()
+            thread.join(timeout=2)
+        assert not client.stream._thread.is_alive()

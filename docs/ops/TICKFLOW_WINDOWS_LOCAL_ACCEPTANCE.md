@@ -135,3 +135,15 @@ full day20frame evidence; actual subscription/stream ownership; disconnect and
 resubscription; sleep and reboot with interval accounting; units and independent
 Radar consumer validation. A synthetic socket or hard process exit cannot
 substitute for any of those production observations. All gates stay blocked.
+
+
+A sixth incremental experiment additionally passed in3.71seconds using the
+installed SDK and websockets15.0.1. A real loopback WebSocket server accepted
+the first subscription, delivered one synthetic quote and closed with1011.
+The SDK opened a second TCP/WebSocket connection, replayed exactly the same
+desired subscription and delivered the next synthetic quote. The existing
+observer counted one post-initial update and still reported continuity false,
+Radar BLOCKED. Both client and server workers were joined after close.
+No provider endpoint, provider subscription ACK, Windows reboot or live quote
+continuity was established. Tests were incremental5+1; the original57were
+not manually rerun, and no real user session was interrupted.
