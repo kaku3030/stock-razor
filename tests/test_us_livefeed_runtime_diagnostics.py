@@ -349,3 +349,56 @@ def test_offline_probe_preserves_existing_home_and_rejects_arbitrary_stage():
     assert "PRIVATE" not in result.stdout
     safe = diag.sanitize_runtime_diagnostics({"offline_home": "PRIVATE", "offline_pack_stage": "PRIVATE"})
     assert "offline_home" not in safe and "offline_pack_stage" not in safe
+
+
+def test_sealed_handshake_uses_only_latest_bounded_message_and_no_plaintext_args(monkeypatch):
+    from types import SimpleNamespace
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout=b"A" * 512 + b"\n")
+    monkeypatch.setattr(diag.subprocess, "run", run)
+    observed = diag.sealed_handshake_evidence("\n".join([
+        "init connect fail: conn=PRIVATE_ACCOUNT msg=OLDER context=PRIVATE_CONTEXT",
+        "init connect fail: conn=PRIVATE_ACCOUNT msg=PRIVATE_MESSAGE" + "x" * 500 + " context=PRIVATE_CONTEXT",
+    ]))
+    assert observed == {"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": "A" * 512}
+    args, kwargs = calls[0]
+    assert kwargs["input"] == ("PRIVATE_MESSAGE" + "x" * 500).encode()[:300]
+    assert kwargs["timeout"] == 3 and kwargs["stderr"] == diag.subprocess.DEVNULL
+    assert "PRIVATE" not in repr(args)
+    assert "PRIVATE" not in json.dumps(observed)
+
+
+def test_sealed_handshake_failures_never_forward_child_output(monkeypatch):
+    from types import SimpleNamespace
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    line = "init connect fail: conn=PRIVATE_ACCOUNT msg=PRIVATE_MESSAGE context=PRIVATE_CONTEXT"
+    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=0, stdout=b"PRIVATE_SECRET"))
+    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "MALFORMED"}
+    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=1, stdout=b"PRIVATE_SECRET"))
+    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "UNAVAILABLE"}
+    def timeout(*a, **kw):
+        raise diag.subprocess.TimeoutExpired("PRIVATE_COMMAND", 3, output=b"PRIVATE_SECRET")
+    monkeypatch.setattr(diag.subprocess, "run", timeout)
+    assert diag.sealed_handshake_evidence(line) == {"sealed_initconnect_status": "TIMEOUT"}
+
+
+def test_no_sdk_message_means_no_encryption_process(monkeypatch):
+    from scripts import us_livefeed_runtime_diagnostics as diag
+    def forbidden(*a, **kw):
+        raise AssertionError("No journal message to encrypt")
+    monkeypatch.setattr(diag.subprocess, "run", forbidden)
+    assert diag.sealed_handshake_evidence("PRIVATE arbitrary journal") == {"sealed_initconnect_status": "NO_MATCH"}
+
+
+def test_sealed_message_requires_exact_ciphertext_size_and_matching_state():
+    from scripts.us_livefeed_runtime_diagnostics import sanitize_runtime_diagnostics
+    for value in ("PRIVATE_SECRET", "A" * 511, "A" * 513, "A" * 511 + "_"):
+        assert "sealed_initconnect_message" not in sanitize_runtime_diagnostics({"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": value})
+    assert "sealed_initconnect_message" not in sanitize_runtime_diagnostics({"sealed_initconnect_status": "UNAVAILABLE", "sealed_initconnect_message": "A" * 512})
+    safe = sanitize_runtime_diagnostics({"sealed_initconnect_status": "ENCRYPTED", "sealed_initconnect_message": "A" * 512, "message": "PRIVATE_SECRET"})
+    assert safe["sealed_initconnect_message"] == "A" * 512
+    assert "PRIVATE" not in json.dumps(safe)
