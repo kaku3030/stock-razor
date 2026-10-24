@@ -278,7 +278,7 @@ jobs:
               # before its one-line market summary, truncating evidence.
               # Return ONE compact read-only, metadata-only JSON record.
               # Includes fixed connection errno families and endpoint owner,
-              # plus offline packing and fixed authentication-error classification; no
+              # plus offline packing, fixed auth classification and Oct23 audit; no
               # provider context, subscription or readiness notification.
               runtime_diagnostics_b64="$(gzip -n -c scripts/us_livefeed_runtime_diagnostics.py | base64 -w0)"
               read -r -d '' us_livefeed_status_script <<'REMOTE' || true
