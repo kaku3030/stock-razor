@@ -93,3 +93,45 @@ the acceptance target; full live trading-day observation, controlled disconnect,
 process termination/restart and wake/reboot recovery with source continuity;
 independent Radar consumer readback. Offline tests, task registration and
 weekend skip are separate evidence tiers. No gate may be opened by these tests.
+
+
+## Incremental pre-session fault evidence — 2026-10-24
+
+The actual installed task was independently re-read at source
+29add70457c13de66d379527cc824685d6080236: both file hashes match, PT2M,
+IgnoreNew, StartWhenAvailable=true, restart count3, Ready, latest result0.
+A subsequent automatic weekend execution recorded CLOSED/NOT_OBSERVED and
+zero provider requests. No task was added, replaced or rescheduled in this phase.
+
+Five NEW Windows tests in tests/test_tickflow_local_fault_injection.py passed
+in4.19seconds. The previous57tests were not rerun. The new tests use real local
+TCP sockets and actual installed official tickflow0.1.25 with a synthetic key,
+explicit loopback endpoint, and an external-address prohibition:
+- response dropped before headers, read timeout, and HTTP429 each raise after
+  exactly one request with max_retries0; a later socket request succeeds;
+- disconnect surfaces as raw httpx.RemoteProtocolError rather than necessarily
+  sdk.ConnectionError. The existing auditor's public main entry already
+  catches it, emits only the safe class and BLOCKED, then a new SDK context
+  revalidates after the local endpoint recovers;
+- a separate Windows Python process exits hard with code71 after writing an
+  incomplete staging file. The published sequence1 remains valid; a fresh
+  process reads it and atomically publishes sequence2/REVALIDATION_REQUIRED.
+  This proves process/filesystem behavior under a synthetic interruption,
+  not restart of a live provider collector or restart of Windows.
+
+The tests use only127.0.0.1, never Credential Manager or provider endpoints,
+never system firewall changes, real sleep/reboot, or live market evidence.
+No production-code defect was found in this bounded experiment; therefore
+there is no SDK/site-package patch, extra dependency, or production redeploy.
+These optional SDK tests skip where the pinned package is absent; the Windows
+five-pass observation is separate from CI skip/pass counts.
+
+Reproduce only the incremental experiment:
+
+    python -m pytest -q tests/test_tickflow_local_fault_injection.py --basetemp=<fresh-private-temp-dir>
+
+Remaining acceptance must use the actual Monday session and provider transport:
+full day20frame evidence; actual subscription/stream ownership; disconnect and
+resubscription; sleep and reboot with interval accounting; units and independent
+Radar consumer validation. A synthetic socket or hard process exit cannot
+substitute for any of those production observations. All gates stay blocked.
