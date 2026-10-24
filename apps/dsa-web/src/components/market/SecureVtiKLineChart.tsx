@@ -15,6 +15,11 @@ export type VtiBridgeState = {
   cacheStatus: string;
   barCount: number;
   sourceAgeSeconds?: number | null;
+  dataAcceptance: string;
+  barState: string;
+  strategyAdmission: string;
+  feedConnection: string;
+  reconnectStatus: string;
 };
 
 export interface SecureVtiKLineChartProps {
@@ -84,6 +89,11 @@ export const SecureVtiKLineChart: React.FC<SecureVtiKLineChartProps> = ({
         cacheStatus: response.cacheStatus,
         barCount: response.barCount,
         sourceAgeSeconds: response.sourceAgeSeconds,
+        dataAcceptance: response.dataAcceptance ?? 'UNKNOWN',
+        barState: response.barState ?? 'UNKNOWN',
+        strategyAdmission: response.strategyAdmission ?? response.radarAdmission ?? 'UNKNOWN',
+        feedConnection: response.feedConnection ?? 'UNKNOWN',
+        reconnectStatus: response.reconnectStatus ?? 'UNKNOWN',
       });
     };
 

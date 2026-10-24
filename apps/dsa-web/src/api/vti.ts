@@ -22,6 +22,12 @@ export type VtiBarsResponse = {
   canonicalAuthority: boolean;
   radarAdmission?: string;
   liveTrade: boolean;
+  /** Runtime provenance fields are optional until the server bridge exposes them. */
+  dataAcceptance?: string;
+  barState?: string;
+  strategyAdmission?: string;
+  feedConnection?: string;
+  reconnectStatus?: string;
 };
 
 type RawResponse = {
@@ -43,6 +49,13 @@ type RawResponse = {
   canonical_authority?: boolean;
   radar_admission?: string;
   live_trade?: boolean;
+  data_acceptance?: string;
+  bar_state?: string;
+  strategy_admission?: string;
+  feed_connection?: string;
+  reconnect_status?: string;
+  bar_closure?: string;
+  delivery_mode?: string;
 };
 
 export const vtiApi = {
@@ -82,6 +95,11 @@ export const vtiApi = {
       canonicalAuthority: Boolean(data.canonical_authority),
       radarAdmission: data.radar_admission,
       liveTrade: Boolean(data.live_trade),
+      dataAcceptance: data.data_acceptance ?? (data.source_status === 'PASS' ? 'ACCEPTED' : 'BLOCKED'),
+      barState: data.bar_state ?? (data.bar_closure === 'PROVEN' ? 'PROVEN' : 'PROVISIONAL'),
+      strategyAdmission: data.strategy_admission ?? data.radar_admission ?? 'BLOCKED',
+      feedConnection: data.feed_connection ?? (data.delivery_mode === 'REALTIME' ? 'CONNECTED' : 'UNKNOWN'),
+      reconnectStatus: data.reconnect_status ?? 'NOT_EXPOSED',
     };
   },
 };
